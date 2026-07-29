@@ -31,7 +31,19 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
+# `.env*.local` alone did not cover `.env` itself, which is where the Supabase keys go.
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+# The committed template carries no values and must stay tracked.
+!.env.example
+
+# Apple Sign In private keys and Google client secrets never belong in the repository.
+*.p8
+AuthKey_*.p8
+client_secret*.json
 
 # typescript
 *.tsbuildinfo

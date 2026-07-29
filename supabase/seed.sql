@@ -1,0 +1,13 @@
+-- NoorLife — local seed data.
+--
+-- Deliberately empty of users. Profiles are created by the on_auth_user_created trigger, so seeding
+-- public.profiles directly would either violate its foreign key or mask a broken trigger during
+-- local testing — the opposite of useful.
+--
+-- To exercise the flow locally, sign up through the app against the local stack; the trigger then
+-- provisions the profile and you can verify RLS with:
+--
+--   select * from public.profiles;                        -- as the owner: one row
+--   set role anon; select * from public.profiles;         -- as anon: zero rows
+--
+-- No credentials, tokens or personal data belong in this file.

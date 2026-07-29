@@ -1,0 +1,47 @@
+# Supabase local configuration for NoorLife.
+#
+# Project-scoped settings only. No keys, tokens or secrets belong in this file — the CLI
+# reads credentials from your own environment, and `supabase link` stores them outside the repo.
+
+project_id = "noorlife"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+# The Expo scheme already declared in app.json. Reset-password and OAuth callbacks
+# come back to the app through it, so it must match exactly.
+site_url = "noorlifeapp://"
+additional_redirect_urls = ["noorlifeapp://", "noorlifeapp://reset-password", "exp://localhost:8081"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+# Verify Email (screen 08) depends on this being on: with confirmations disabled the
+# signup would return a live session and the screen would have nothing to verify.
+enable_confirmations = true
+double_confirm_changes = true
+secure_password_change = true
+
+[auth.external.google]
+enabled = false
+
+[auth.external.apple]
+enabled = false

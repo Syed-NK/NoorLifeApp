@@ -1,98 +1,56 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Redirect } from 'expo-router';
+import { useEffect, useState } from 'react';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { authRoutes, globalRoutes, onboardingRoutes } from '@application/navigation/routes';
+import { useAuth } from '@application/providers/auth-provider';
+import { SplashScreen } from '@features/entry-auth/screens/splash-screen';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
+/**
+ * Minimum time the branded splash stays on screen, in ms.
+ *
+ * The phase prompt asks for "1.5–2 seconds only while routing state is resolved" and forbids a
+ * fake progress spinner. Read together those mean: budget this long for the brand moment and
+ * resolve routing inside it — not "resolve, then idle". In practice resolution is two storage
+ * reads and finishes in tens of ms, so without a floor the locked splash would flash past
+ * unseen. The wait is therefore `max(resolve, 1500 ms)`: never padded beyond the floor, never
+ * cut short if resolution runs long.
+ */
+const SPLASH_MINIMUM_MS = 1500;
+
+/**
+ * Application entry gate — Screen 01's routing behaviour.
+ *
+ * Three destinations, exactly as the entry lock specifies:
+ *   • a valid session          → Main Home
+ *   • first launch, no session → Onboarding 1
+ *   • returning, no session    → Authentication Options
+ *
+ * The decision reads from the auth boundary only, so connecting a real backend changes the
+ * provider and not this file. The splash is rendered here rather than pushed as a route, so it
+ * leaves no history entry for Back to return to.
+ */
+export default function Index() {
+  const { status, hasCompletedOnboarding } = useAuth();
+  const [brandIntervalElapsed, setBrandIntervalElapsed] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBrandIntervalElapsed(true);
+    }, SPLASH_MINIMUM_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // 'unknown' means the session has not resolved. Redirecting now would flash the wrong entry
+  // and then correct itself.
+  if (status === 'unknown' || !brandIntervalElapsed) {
+    return <SplashScreen />;
   }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
+
+  if (status === 'signed-in') {
+    return <Redirect href={globalRoutes.home} />;
   }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
+
+  return <Redirect href={hasCompletedOnboarding ? authRoutes.welcome : onboardingRoutes.one} />;
 }
-
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
-});
