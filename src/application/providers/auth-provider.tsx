@@ -41,9 +41,22 @@ export type AuthState = {
   readonly isBackendConfigured: boolean;
 };
 
+/** What `signUp` resolved to, so the caller can route without re-deriving it. */
+export type SignUpOutcome = {
+  /**
+   * True when the account needs an emailed code before it can be used.
+   *
+   * False when the project auto-confirms: Supabase returns a live session and sends nothing, so there
+   * is no code to wait for and Verify Email would sit there forever asking for one. The screen must
+   * branch on this rather than assume — assuming is exactly what sent auto-confirmed signups to a
+   * screen that could never complete.
+   */
+  readonly needsVerification: boolean;
+};
+
 export type AuthActions = {
   signIn(email: string, password: string): Promise<void>;
-  signUp(input: SignUpInput): Promise<void>;
+  signUp(input: SignUpInput): Promise<SignUpOutcome>;
   verifyEmail(code: string): Promise<void>;
   resendVerificationCode(): Promise<void>;
   requestPasswordReset(email: string): Promise<void>;
@@ -159,9 +172,12 @@ export function AuthProvider({ children }: { readonly children: React.ReactNode 
         const email = input.email.trim().toLowerCase();
         if (needsConfirmation) {
           setState((previous) => ({ ...previous, pendingVerificationEmail: email }));
-          return;
+          return { needsVerification: true };
         }
+        // Auto-confirmed: a live session already exists, so adopt it and let the caller skip
+        // verification entirely.
         await adopt(await authService.getSession());
+        return { needsVerification: false };
       },
       async verifyEmail(code) {
         if (pendingVerificationEmail === null) {

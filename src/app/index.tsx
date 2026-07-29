@@ -32,6 +32,19 @@ const SPLASH_MINIMUM_MS = 1500;
 export default function Index() {
   const { status, hasCompletedOnboarding } = useAuth();
   const [brandIntervalElapsed, setBrandIntervalElapsed] = useState(false);
+  /**
+   * The entry decision, taken once.
+   *
+   * This screen stays mounted after rendering its `Redirect` — it is the stack's root. Recomputing the
+   * destination on every render therefore made it a permanent redirector: signing up flipped the
+   * session to signed-in, this component re-rendered, and its fresh `Redirect` to Main Home overrode
+   * the `replace` that had just sent the user to Account Ready. The account was created correctly and
+   * the success screen was simply skipped.
+   *
+   * Freezing the answer keeps the gate doing what its name says — deciding where a launch begins — and
+   * leaves navigation after that to the screens that own it.
+   */
+  const [destination, setDestination] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -42,15 +55,25 @@ export default function Index() {
     };
   }, []);
 
-  // 'unknown' means the session has not resolved. Redirecting now would flash the wrong entry
-  // and then correct itself.
-  if (status === 'unknown' || !brandIntervalElapsed) {
+  // 'unknown' means the session has not resolved. Deciding now would flash the wrong entry and then
+  // correct itself.
+  const resolved = status !== 'unknown' && brandIntervalElapsed;
+
+  if (resolved && destination === null) {
+    // Set during render, guarded so it happens exactly once — React's sanctioned way to derive state
+    // that must not be recomputed afterwards.
+    setDestination(
+      status === 'signed-in'
+        ? globalRoutes.home
+        : hasCompletedOnboarding
+          ? authRoutes.welcome
+          : onboardingRoutes.one,
+    );
+  }
+
+  if (destination === null) {
     return <SplashScreen />;
   }
 
-  if (status === 'signed-in') {
-    return <Redirect href={globalRoutes.home} />;
-  }
-
-  return <Redirect href={hasCompletedOnboarding ? authRoutes.welcome : onboardingRoutes.one} />;
+  return <Redirect href={destination as Parameters<typeof Redirect>[0]['href']} />;
 }

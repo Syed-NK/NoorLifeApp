@@ -41,6 +41,14 @@ export function VerifyEmailScreen() {
   const [code, setCode] = useState('');
   const [invalid, setInvalid] = useState(false);
 
+  /**
+   * There is nothing to verify.
+   *
+   * Reached when the project auto-confirms new accounts — Supabase returns a live session and sends no
+   * email — or when this route is opened directly. Either way no code exists, so the screen says so
+   * instead of showing six empty boxes and a subtitle promising a message that will never arrive.
+   */
+  const hasPendingVerification = pendingVerificationEmail !== null;
   const email = pendingVerificationEmail ?? 'your email';
 
   const onVerify = () => {
@@ -63,7 +71,7 @@ export function VerifyEmailScreen() {
       <AuthHeader
         onBack={() => router.back()}
         title={verifyEmailCopy.title}
-        subtitle={verifyEmailCopy.subtitleFor(email)}
+        subtitle={hasPendingVerification ? verifyEmailCopy.subtitleFor(email) : verifyEmailCopy.noPendingSubtitle}
         testID="verify-header"
       />
 
@@ -74,6 +82,14 @@ export function VerifyEmailScreen() {
           testID="verify-artwork"
         />
       </View>
+
+      {hasPendingVerification ? null : (
+        <AuthStatusBanner
+          tone="info"
+          message={verifyEmailCopy.nothingToVerify}
+          testID="verify-nothing-pending"
+        />
+      )}
 
       {submit.error === null ? null : (
         <AuthStatusBanner tone="error" message={submit.error.message} testID="verify-banner" />
@@ -95,7 +111,7 @@ export function VerifyEmailScreen() {
         label={verifyEmailCopy.submit}
         onPress={onVerify}
         loading={submit.loading}
-        disabled={code.length !== OTP_LENGTH}
+        disabled={!hasPendingVerification || code.length !== OTP_LENGTH}
         testID="verify-submit"
       />
 
@@ -104,7 +120,7 @@ export function VerifyEmailScreen() {
           token="label"
           color={resend.ready ? entryAuthColors.primary : entryAuthColors.textSecondary}
           onPress={
-            resend.ready
+            resend.ready && hasPendingVerification
               ? () => {
                   resend.restart();
                   void submit.run(() => resendVerificationCode());

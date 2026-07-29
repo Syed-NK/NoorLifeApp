@@ -97,6 +97,15 @@ export const signUpCopy = {
 export const verifyEmailCopy = {
   title: 'Check your email',
   subtitleFor: (email: string) => `We sent a 6-digit code to ${email}`,
+  /**
+   * Shown when no verification is outstanding.
+   *
+   * Either the project auto-confirms new accounts, in which case no code is ever sent, or the screen
+   * was opened directly. Saying so beats six empty boxes above a promise that no message will keep.
+   */
+  nothingToVerify:
+    'No code is needed — this account is already confirmed. Continue to sign in.',
+  noPendingSubtitle: 'There is no verification waiting.',
   submit: 'Verify Email',
   resend: 'Resend code',
   changeEmail: 'Change email',

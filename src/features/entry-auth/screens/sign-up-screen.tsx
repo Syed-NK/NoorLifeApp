@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { authRoutes } from '@application/navigation/routes';
-import { useAuthActions } from '@application/providers/auth-provider';
+import { useAuthActions, type SignUpOutcome } from '@application/providers/auth-provider';
 import { isValidEmail, scorePassword } from '@services/auth/mock-auth-service';
 
 import { AuthFormScaffold } from '../components/auth-form-scaffold';
@@ -25,8 +25,10 @@ import { useSubmit } from '../use-auth-error';
  * Password rules are visible before submission through the strength meter, which scores with the
  * same function the service validates with, so the meter and the server can never disagree.
  *
- * On success the account exists but is unverified, so the provider keeps the session signed out and
- * routes to Verify Email — a deep link to Main Home cannot skip verification.
+ * Where success leads depends on the project. With email confirmation on, the account exists but is
+ * unverified, the provider keeps the session signed out, and the flow goes to Verify Email — so a deep
+ * link to Main Home cannot skip verification. With confirmation off the project auto-confirms, Supabase
+ * returns a live session and sends no email, so the flow goes straight to Account Ready.
  */
 export function SignUpScreen() {
   const router = useRouter();
@@ -54,19 +56,36 @@ export function SignUpScreen() {
       return;
     }
 
+    let outcome: SignUpOutcome | null = null;
     void submit
-      .run(() =>
-        signUp({
+      .run(async () => {
+        outcome = await signUp({
           fullName: fullName.trim(),
           email: email.trim(),
           password,
           acceptedTerms: accepted,
-        }),
-      )
+        });
+      })
       .then((ok) => {
-        if (ok) {
-          router.push(authRoutes.verifyEmail);
+        if (!ok) {
+          return;
         }
+        /**
+         * Branch on what actually happened, rather than assuming a code was sent.
+         *
+         * When the project auto-confirms, Supabase returns a live session and sends no email — so
+         * Verify Email would ask for a code that does not exist and never will. Sending every signup
+         * there regardless is what produced exactly that dead end.
+         *
+         * `push` for verification, so Back and "Change email" can return to this form. `replace` for
+         * the confirmed path, because the account is already signed in and Back must not reopen the
+         * form that created it.
+         */
+        if (outcome?.needsVerification === true) {
+          router.push(authRoutes.verifyEmail);
+          return;
+        }
+        router.replace(authRoutes.accountReady);
       });
   };
 
