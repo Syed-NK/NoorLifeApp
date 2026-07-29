@@ -25,8 +25,40 @@ import 'react-native-url-polyfill/auto';
  * everything *we* write out of plain storage.
  */
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+/**
+ * Normalizes the project URL to its origin.
+ *
+ * `supabase-js` appends its own paths — `/auth/v1/...`, `/rest/v1/...` — to whatever it is given, so a
+ * base URL that already carries a path silently doubles it. Copying the REST endpoint out of the
+ * dashboard instead of the project URL is an easy mistake and produced exactly that: every auth call
+ * became `/rest/v1/auth/v1/signup` and returned a 404 whose message ("Invalid path specified in
+ * request URL") looks nothing like a configuration problem. Trimming to the origin makes the mistake
+ * harmless instead of mystifying.
+ */
+function normalizeProjectUrl(raw: string | undefined): string | undefined {
+  if (typeof raw !== 'string' || raw.trim().length === 0) {
+    return undefined;
+  }
+  try {
+    return new URL(raw.trim()).origin;
+  } catch {
+    // Not a URL at all. Left as-is so the configuration check below rejects it.
+    return raw.trim();
+  }
+}
+
+const rawUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseUrl = normalizeProjectUrl(rawUrl);
 const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+/**
+ * True when the URL carried a path that had to be trimmed.
+ *
+ * Surfaced so a misconfigured `.env` is visible in development rather than only implied by the
+ * requests that would have failed.
+ */
+export const projectUrlWasTrimmed =
+  typeof rawUrl === 'string' && supabaseUrl !== undefined && rawUrl.trim() !== supabaseUrl;
 
 /**
  * Whether Supabase is configured in this build.
@@ -34,11 +66,50 @@ const supabasePublishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
  * Exported so the UI can disable provider actions and show an honest message instead of failing at
  * the first request. Without it a missing `.env` would surface as an opaque network error.
  */
+/**
+ * Whether the value is a usable project origin.
+ *
+ * Must be an origin with no path — a path is what caused every auth call to 404. `https` is required
+ * for a hosted project, but plain `http` is allowed for a loopback host because that is exactly what
+ * `supabase start` serves on (`http://localhost:54321`); rejecting it would break local development.
+ */
+function isUsableOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.pathname !== '/' && url.pathname !== '') {
+      return false;
+    }
+    const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+    return url.protocol === 'https:' || (url.protocol === 'http:' && loopback);
+  } catch {
+    return false;
+  }
+}
+
 export const isSupabaseConfigured =
   typeof supabaseUrl === 'string' &&
-  supabaseUrl.length > 0 &&
+  isUsableOrigin(supabaseUrl) &&
   typeof supabasePublishableKey === 'string' &&
   supabasePublishableKey.length > 0;
+
+if (__DEV__ && !isSupabaseConfigured && typeof rawUrl === 'string' && rawUrl.length > 0) {
+  // Development only, and only the shape — never the key.
+  console.warn(
+    `[supabase] EXPO_PUBLIC_SUPABASE_URL does not look like a project origin. Expected https://<ref>.supabase.co, got a value with pathname "${(() => {
+      try {
+        return new URL(rawUrl).pathname;
+      } catch {
+        return '<unparseable>';
+      }
+    })()}".`,
+  );
+}
+
+if (__DEV__ && projectUrlWasTrimmed) {
+  console.warn(
+    '[supabase] EXPO_PUBLIC_SUPABASE_URL carried a path and was trimmed to its origin. Set it to the project URL, not the REST endpoint.',
+  );
+}
 
 /**
  * Creates the client, or `null` when the environment is not configured.

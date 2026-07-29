@@ -45,6 +45,10 @@ yarn-error.*
 AuthKey_*.p8
 client_secret*.json
 
+# Supabase CLI local state: which project this checkout is linked to, cached server versions and a
+# pooler connection string. Machine-specific and not something another clone should inherit.
+supabase/.temp/
+
 # typescript
 *.tsbuildinfo
 

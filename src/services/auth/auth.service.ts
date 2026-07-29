@@ -20,8 +20,10 @@ import { AuthError, type AuthErrorCode } from './auth-service.contract';
  * `provider-not-configured` rather than pretending; where Supabase itself is not configured, every
  * call rejects with `not-configured`. The app stays buildable and the screens stay honest.
  *
- * ── Nothing is logged ───────────────────────────────────────────────────────
- * No password, OTP, token or identity assertion is written to a log, a breadcrumb or an error message.
+ * ── What may be logged ──────────────────────────────────────────────────────
+ * In development only, a failed call logs its operation name, HTTP status, provider code and message —
+ * enough to identify a fault without a round trip to the dashboard. Never the request payload, the
+ * session, an access or refresh token, a password, an OTP or the publishable key. Silent in production.
  */
 
 /**
@@ -83,12 +85,60 @@ export function toAuthErrorCode(error: unknown): AuthErrorCode {
       ? String((error as { message: unknown }).message)
       : '';
   const message = raw.toLowerCase();
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code: unknown }).code)
+      : '';
+
+  /**
+   * Explicit codes first, fuzzy message matching second.
+   *
+   * The original order put a broad `message.includes('expired')` above the JWT check, so
+   * `PGRST301 "JWT expired"` was classified as an expired OTP. Codes are unambiguous where they exist,
+   * so they decide before any substring test gets a chance to be greedy.
+   */
+  switch (code) {
+    // A base URL carrying a path makes supabase-js request endpoints that do not exist. This is the
+    // fault that reported itself as "Something went wrong on our side" — local misconfiguration, not
+    // an outage, and no amount of retrying would have helped.
+    case 'PGRST125':
+      return 'not-configured';
+    // Postgres permission denied, and a missing or rejected JWT. The caller is not authorised for what
+    // it asked, which is a session problem.
+    case '42501':
+    case 'PGRST301':
+      return 'session-expired';
+    case 'email_address_invalid':
+      return 'invalid-email';
+    case 'email_not_confirmed':
+      return 'email-not-confirmed';
+    case 'user_already_exists':
+    case 'email_exists':
+      return 'email-already-registered';
+    case 'weak_password':
+      return 'weak-password';
+    case 'otp_expired':
+      return 'expired-otp';
+    case 'over_email_send_rate_limit':
+    case 'over_request_rate_limit':
+      return 'rate-limited';
+    case 'validation_failed':
+      return 'invalid-email';
+    default:
+      break;
+  }
 
   if (message.includes('network request failed') || message.includes('failed to fetch')) {
     return 'offline';
   }
   if (status === 429 || message.includes('rate limit') || message.includes('too many requests')) {
     return 'rate-limited';
+  }
+  if (message.includes('invalid path specified') || (status === 404 && message.includes('path'))) {
+    return 'not-configured';
+  }
+  if (status === 401) {
+    return 'session-expired';
   }
   if (message.includes('email not confirmed') || message.includes('not confirmed')) {
     return 'email-not-confirmed';
@@ -102,25 +152,60 @@ export function toAuthErrorCode(error: unknown): AuthErrorCode {
   if (message.includes('password should be') || message.includes('weak password')) {
     return 'weak-password';
   }
-  if (message.includes('token has expired') || message.includes('otp_expired') || message.includes('expired')) {
+  // Session before OTP: a JWT message also contains "expired", and misreading it as a bad code would
+  // send the user to re-enter a verification code they were never asked for.
+  if (message.includes('jwt') || (message.includes('session') && message.includes('expired'))) {
+    return 'session-expired';
+  }
+  if (message.includes('token has expired') || message.includes('expired')) {
     return message.includes('recovery') || message.includes('reset') ? 'expired-reset-link' : 'expired-otp';
   }
   if (message.includes('invalid') && (message.includes('otp') || message.includes('token'))) {
     return 'incorrect-otp';
   }
-  if (message.includes('unable to validate email') || message.includes('invalid email')) {
+  // Covers both "unable to validate email address" and Supabase's "Email address "x" is invalid".
+  if (
+    message.includes('unable to validate email') ||
+    message.includes('invalid email') ||
+    (message.includes('email address') && message.includes('invalid'))
+  ) {
     return 'invalid-email';
-  }
-  if (message.includes('session') && message.includes('expired')) {
-    return 'session-expired';
-  }
-  if (status !== undefined && status >= 500) {
-    return 'server-error';
   }
   return 'server-error';
 }
 
-function fail(error: unknown): never {
+/**
+ * Development-only diagnostic for a failed Supabase call.
+ *
+ * Logs the classification and nothing else: status, provider code and message. Deliberately never the
+ * payload, the session, the access or refresh token, the password, the OTP or the publishable key —
+ * a log line is the easiest place for a credential to escape, and the message alone is what identifies
+ * the fault. Silent in production.
+ */
+function logAuthFailure(operation: string, error: unknown): void {
+  if (!__DEV__) {
+    return;
+  }
+  const read = (key: string): string | undefined => {
+    if (typeof error === 'object' && error !== null && key in error) {
+      const value = (error as Record<string, unknown>)[key];
+      return value === undefined || value === null ? undefined : String(value);
+    }
+    return undefined;
+  };
+  const parts = [
+    `op=${operation}`,
+    read('status') === undefined ? null : `status=${read('status')}`,
+    read('code') === undefined ? null : `code=${read('code')}`,
+    read('name') === undefined ? null : `name=${read('name')}`,
+    `mapped=${toAuthErrorCode(error)}`,
+    read('message') === undefined ? null : `message="${read('message')}"`,
+  ].filter((part): part is string => part !== null);
+  console.warn(`[auth] ${parts.join(' ')}`);
+}
+
+function fail(error: unknown, operation = 'unknown'): never {
+  logAuthFailure(operation, error);
   throw new AuthError(toAuthErrorCode(error));
 }
 
@@ -167,7 +252,7 @@ export async function signUpWithEmail(input: {
     },
   });
   if (error !== null) {
-    fail(error);
+    fail(error, 'signUp');
   }
   // With confirmations on, Supabase returns a user but no session. That absence *is* the signal that
   // verification is required — not an error.
@@ -181,7 +266,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
     password,
   });
   if (error !== null) {
-    fail(error);
+    fail(error, 'signInWithPassword');
   }
   const user = toUser(data.session);
   if (user === null) {
@@ -194,7 +279,7 @@ export async function signOut(): Promise<void> {
   const client = requireClient();
   const { error } = await client.auth.signOut();
   if (error !== null) {
-    fail(error);
+    fail(error, 'signOut');
   }
 }
 
@@ -212,7 +297,7 @@ export async function sendPasswordReset(email: string): Promise<void> {
   });
   // A rate limit is worth surfacing — it is about the caller, not about whether the account exists.
   if (error !== null && toAuthErrorCode(error) === 'rate-limited') {
-    fail(error);
+    fail(error, 'resetPasswordForEmail');
   }
 }
 
@@ -221,7 +306,7 @@ export async function updatePassword(newPassword: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.auth.updateUser({ password: newPassword });
   if (error !== null) {
-    fail(error);
+    fail(error, 'updateUser');
   }
 }
 
@@ -229,7 +314,7 @@ export async function resendVerificationEmail(email: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.auth.resend({ type: 'signup', email: email.trim() });
   if (error !== null) {
-    fail(error);
+    fail(error, 'resend');
   }
 }
 
@@ -242,7 +327,7 @@ export async function verifyOtp(email: string, token: string): Promise<AuthUser>
     type: 'signup',
   });
   if (error !== null) {
-    fail(error);
+    fail(error, 'verifyOtp');
   }
   const user = toUser(data.session);
   if (user === null) {
@@ -260,7 +345,7 @@ export async function exchangeCodeForSession(code: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.auth.exchangeCodeForSession(code);
   if (error !== null) {
-    fail(error);
+    fail(error, 'exchangeCodeForSession');
   }
 }
 
@@ -384,7 +469,7 @@ export async function getProfile(userId: string): Promise<ProfileRow | null> {
     .eq('id', userId)
     .maybeSingle();
   if (error !== null) {
-    fail(error);
+    fail(error, 'select profiles');
   }
   return (data as ProfileRow | null) ?? null;
 }
@@ -396,7 +481,7 @@ export async function setOnboardingCompleted(userId: string): Promise<void> {
     .update({ onboarding_completed: true })
     .eq('id', userId);
   if (error !== null) {
-    fail(error);
+    fail(error, 'update profiles');
   }
 }
 
