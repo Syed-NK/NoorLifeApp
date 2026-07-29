@@ -8,7 +8,9 @@ project_id = "noorlife"
 [api]
 enabled = true
 port = 54321
-schemas = ["public"]
+# `graphql_public` is included because `config push` sends this list to the linked project, and the
+# hosted default exposes it. Omitting it here would silently remove it there.
+schemas = ["public", "graphql_public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
@@ -34,9 +36,18 @@ enable_signup = true
 
 [auth.email]
 enable_signup = true
-# Verify Email (screen 08) depends on this being on: with confirmations disabled the
-# signup would return a live session and the screen would have nothing to verify.
-enable_confirmations = true
+# ── DEVELOPMENT SETTING — RE-ENABLE BEFORE RELEASE ──────────────────────────
+# `false` auto-confirms new accounts, so signup returns a live session and no confirmation email is
+# sent. Turned off deliberately: the project's built-in email service allows only a few messages an
+# hour, and that quota — not any fault in the app — is what was blocking every signup attempt.
+#
+# Two consequences to remember:
+#   • Verify Email (screen 08) is skipped entirely, because there is nothing left to verify.
+#   • Anyone can register any address without proving they control it.
+#
+# Set this back to `true` once custom SMTP is configured (Authentication -> Emails -> SMTP Settings),
+# which removes the quota and makes confirmations practical again.
+enable_confirmations = false
 double_confirm_changes = true
 secure_password_change = true
 
