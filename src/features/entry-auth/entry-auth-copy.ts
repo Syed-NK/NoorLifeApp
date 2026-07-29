@@ -177,7 +177,9 @@ export const authErrorCopy = {
   'provider-not-configured': 'This sign-in method is not available yet. Continue with email.',
   offline: 'You appear to be offline. Check your connection and try again.',
   'email-not-confirmed': 'Confirm your email address first — check your inbox for the code.',
-  'rate-limited': 'Too many attempts. Wait a minute and try again.',
+  'rate-limited': 'Too many attempts. Wait a moment and try again.',
+  'email-rate-limited':
+    'We can’t send any more verification emails right now. Please try again later.',
   'session-expired': 'Your session has expired. Sign in again to continue.',
   'not-configured':
     'Sign-in is not available in this build yet — the Supabase connection has not been configured.',

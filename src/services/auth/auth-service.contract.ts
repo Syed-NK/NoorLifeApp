@@ -51,8 +51,16 @@ export type AuthErrorCode =
   | 'offline'
   /** Signed up but the address has not been confirmed yet. */
   | 'email-not-confirmed'
-  /** Supabase returned 429, or its own rate-limit message. */
+  /** Request rate limit — a short cooldown, measurable in seconds. */
   | 'rate-limited'
+  /**
+   * The project's outbound email quota is exhausted.
+   *
+   * Distinct from `rate-limited` because the remedy and the wait are different: Supabase's built-in
+   * SMTP allows only a few messages per hour, so telling the user to "wait a minute" is wrong and
+   * leaves them tapping a button that cannot succeed.
+   */
+  | 'email-rate-limited'
   /** The stored session is no longer valid and could not be refreshed. */
   | 'session-expired'
   /** No Supabase URL or publishable key in this build. */

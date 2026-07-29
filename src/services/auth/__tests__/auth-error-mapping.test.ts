@@ -1,3 +1,5 @@
+import { authErrorCopy } from '@features/entry-auth/entry-auth-copy';
+
 import { toAuthErrorCode } from '../auth.service';
 import { AuthError } from '../auth-service.contract';
 
@@ -47,6 +49,22 @@ describe('authorization faults', () => {
   });
 });
 
+describe('rate limits are told apart', () => {
+  // The email quota is hourly and needs a project change; a request rate limit clears in seconds.
+  // Reporting both as "wait a minute" left the user tapping a button that could not succeed.
+  it('classifies the email quota separately from a request rate limit', () => {
+    expect(
+      toAuthErrorCode({ status: 429, code: 'over_email_send_rate_limit', message: 'email rate limit exceeded' }),
+    ).toBe('email-rate-limited');
+    expect(toAuthErrorCode({ status: 429, message: 'email rate limit exceeded' })).toBe('email-rate-limited');
+    expect(toAuthErrorCode({ status: 429, message: 'too many requests' })).toBe('rate-limited');
+  });
+
+  it('does not promise a one-minute wait for the email quota', () => {
+    expect(authErrorCopy['email-rate-limited']).not.toMatch(/minute/i);
+  });
+});
+
 describe('signup and sign-in faults', () => {
   it.each([
     [{ status: 400, message: 'Invalid login credentials' }, 'invalid-credentials'],
@@ -54,7 +72,7 @@ describe('signup and sign-in faults', () => {
     [{ status: 400, message: 'Password should be at least 6 characters' }, 'weak-password'],
     [{ status: 400, code: 'email_address_invalid', message: 'Email address "x@y" is invalid' }, 'invalid-email'],
     [{ status: 400, message: 'Email not confirmed' }, 'email-not-confirmed'],
-    [{ status: 429, code: 'over_email_send_rate_limit', message: 'email rate limit exceeded' }, 'rate-limited'],
+    [{ status: 429, code: 'over_request_rate_limit', message: 'too many requests' }, 'rate-limited'],
     [{ message: 'Network request failed' }, 'offline'],
     [{ status: 500, message: 'Database error saving new user' }, 'server-error'],
   ])('maps %j', (error, expected) => {

@@ -119,7 +119,11 @@ export function toAuthErrorCode(error: unknown): AuthErrorCode {
       return 'weak-password';
     case 'otp_expired':
       return 'expired-otp';
+    // Separated deliberately: the email quota is hourly and needs a project change, while a request
+    // rate limit clears in seconds. Collapsing them told the user to wait a minute for something a
+    // minute could not fix.
     case 'over_email_send_rate_limit':
+      return 'email-rate-limited';
     case 'over_request_rate_limit':
       return 'rate-limited';
     case 'validation_failed':
@@ -130,6 +134,9 @@ export function toAuthErrorCode(error: unknown): AuthErrorCode {
 
   if (message.includes('network request failed') || message.includes('failed to fetch')) {
     return 'offline';
+  }
+  if (message.includes('email rate limit')) {
+    return 'email-rate-limited';
   }
   if (status === 429 || message.includes('rate limit') || message.includes('too many requests')) {
     return 'rate-limited';
@@ -202,6 +209,26 @@ function logAuthFailure(operation: string, error: unknown): void {
     read('message') === undefined ? null : `message="${read('message')}"`,
   ].filter((part): part is string => part !== null);
   console.warn(`[auth] ${parts.join(' ')}`);
+
+  /**
+   * Actionable hints for faults that are configuration rather than code.
+   *
+   * These go to the developer, not to the user: the on-screen copy stays short and human, while the
+   * console says which dashboard setting to change. Without this the email quota reads as a mystery —
+   * the request is correct, the server is healthy, and the button still cannot succeed.
+   */
+  const hint: Partial<Record<AuthErrorCode, string>> = {
+    'email-rate-limited':
+      "Supabase's built-in email service allows only a few messages per hour. Configure custom SMTP (Authentication -> Emails -> SMTP Settings), or turn off Confirm email (Authentication -> Providers -> Email) while developing.",
+    'not-configured':
+      'Check EXPO_PUBLIC_SUPABASE_URL is the project origin with no path, and restart Metro with --clear so the new value is inlined into the bundle.',
+    'provider-not-configured':
+      'Enable the provider in Authentication -> Providers and add the redirect URL Supabase should return to.',
+  };
+  const advice = hint[toAuthErrorCode(error)];
+  if (advice !== undefined) {
+    console.warn(`[auth] hint: ${advice}`);
+  }
 }
 
 function fail(error: unknown, operation = 'unknown'): never {
