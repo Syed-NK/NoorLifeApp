@@ -1,5 +1,14 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
 
+/** Health → Records. */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="health" activeKey="records" title="Records" />;
+  return (
+    <ModuleSectionScreen
+      moduleId="health"
+      activeKey="records"
+      title="Records"
+      heroTitle="Your history, kept private"
+      heroBody="Everything you have logged, in one place, stored against your account only."
+    />
+  );
 }

@@ -1,5 +1,6 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleAIScreen } from '@features/modules/screens/module-ai-screen';
 
+/** Health module AI (workflow §3.3: the centre slot opens AI inside the module). */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="health" activeKey="health-ai" title="Health AI" />;
+  return <ModuleAIScreen moduleId="health" />;
 }

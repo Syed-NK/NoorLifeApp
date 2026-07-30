@@ -1,0 +1,556 @@
+import { moduleThemes } from '@ds/modules/module-themes';
+import { getModulePictogram } from '@features/home/module-pictograms';
+
+import { moduleAIPolicies } from './module-ai-policy';
+import type { ModuleDefinition } from './module-definition';
+import { FRAMEWORK_MODULE_IDS, moduleColorThemes, type FrameworkModuleId } from './module-tokens';
+
+/**
+ * The seven NoorLife module definitions.
+ *
+ * Read this file as the answer to "what is a module?". Nothing below is a screen;
+ * it is the description a screen is generated from. Three things are deliberately
+ * *not* re-typed here:
+ *
+ *   • navigation — taken from the Phase 1 `moduleThemes`, which validates the
+ *     five-item / AI-third invariant at import time.
+ *   • pictograms — resolved through the locked `getModulePictogram`, which throws
+ *     rather than substituting an icon for a missing asset.
+ *   • colour — taken from `moduleColorThemes`, whose contrast is asserted by test.
+ *
+ * ── On the content in this file ─────────────────────────────────────────────
+ * Hero copy, quick actions and capability tiles are real framework content, not
+ * lorem ipsum: the phase brief requires complete hero cards with no blank upper
+ * area, and a tile grid that demonstrates the module reads correctly. What is *not*
+ * here is module functionality — every capability that has no screen behind it yet
+ * is marked `available: false` with a reason, so the UI is honest about it rather
+ * than presenting a tile that silently does nothing.
+ */
+
+const faith: ModuleDefinition = {
+  id: 'faith',
+  name: 'Faith',
+  summary: 'Prayer times, Qur’an reading and your daily worship.',
+  theme: moduleColorThemes.faith,
+  pictogram: getModulePictogram('faith'),
+  routes: { home: '/faith', ai: '/faith/ai', help: '/settings/help' },
+  navigation: moduleThemes.faith.navigation,
+  hero: {
+    eyebrow: 'Faith',
+    title: 'Keep your day anchored in prayer',
+    body: 'Your prayer times, Qur’an progress and reminders in one place.',
+    highlight: 'Next: Asr 4:12 pm',
+    artwork: getModulePictogram('faith'),
+    artworkAccessibilityLabel: '',
+  },
+  quickActions: [
+    { key: 'prayer-times', label: 'Prayer times', icon: 'worship', href: '/faith/prayer-times' },
+    { key: 'read-quran', label: 'Read Qur’an', icon: 'quran', href: '/faith/quran' },
+    { key: 'ask-faith-ai', label: 'Ask Faith AI', icon: 'robot', href: '/faith/ai' },
+  ],
+  capabilities: [
+    { key: 'prayer-times', label: 'Prayer', icon: 'worship', href: '/faith/prayer-times', available: true },
+    { key: 'quran', label: 'Qur’an', icon: 'quran', href: '/faith/quran', available: true },
+    { key: 'today', label: 'Today', icon: 'today', href: '/faith', available: true },
+    { key: 'more', label: 'More', icon: 'more', href: '/faith/more', available: true },
+    {
+      key: 'qibla',
+      label: 'Qibla',
+      icon: 'mosque',
+      available: false,
+      unavailableReason: 'Qibla direction needs location access and arrives in a later release.',
+    },
+    {
+      key: 'dhikr',
+      label: 'Dhikr',
+      icon: 'leaf',
+      available: false,
+      unavailableReason: 'Dhikr counter arrives with the Faith module’s full release.',
+    },
+  ],
+  permissions: [
+    {
+      key: 'notifications',
+      title: 'Prayer reminders',
+      rationale: 'So NoorLife can notify you shortly before each prayer time.',
+      required: false,
+    },
+    {
+      key: 'location',
+      title: 'Accurate prayer times',
+      rationale: 'Prayer times depend on where you are. Without it, you can set a city manually.',
+      required: false,
+    },
+  ],
+  ai: moduleAIPolicies.faith,
+  stateCopy: {
+    empty: {
+      title: 'Nothing recorded yet',
+      body: 'Once you start tracking your prayers, your day will appear here.',
+      action: 'Set up prayer times',
+    },
+    error: {
+      title: 'Couldn’t load your Faith data',
+      body: 'The connection dropped on our side. Your recorded prayers are safe.',
+      action: 'Try again',
+    },
+    offline: {
+      title: 'You’re offline',
+      body: 'Prayer times and your saved Qur’an progress still work. New activity syncs later.',
+    },
+    loading: 'Loading your Faith module',
+  },
+};
+
+const health: ModuleDefinition = {
+  id: 'health',
+  name: 'Health',
+  summary: 'Track activity, sleep and habits, and see what changes.',
+  theme: moduleColorThemes.health,
+  pictogram: getModulePictogram('health'),
+  routes: { home: '/health', ai: '/health/ai', help: '/settings/help' },
+  navigation: moduleThemes.health.navigation,
+  hero: {
+    eyebrow: 'Health',
+    title: 'Small habits, tracked honestly',
+    body: 'Log what you do, then see the pattern rather than a single day.',
+    highlight: '5 of 7 days logged',
+    artwork: getModulePictogram('health'),
+    artworkAccessibilityLabel: '',
+  },
+  quickActions: [
+    { key: 'log', label: 'Log entry', icon: 'add-circle', href: '/health/log' },
+    { key: 'trends', label: 'Trends', icon: 'trends', href: '/health/trends' },
+    { key: 'ask-health-ai', label: 'Ask Health AI', icon: 'robot', href: '/health/ai' },
+  ],
+  capabilities: [
+    { key: 'track', label: 'Track', icon: 'track', href: '/health/log', available: true },
+    { key: 'trends', label: 'Trends', icon: 'trends', href: '/health/trends', available: true },
+    { key: 'records', label: 'Records', icon: 'records', href: '/health/records', available: true },
+    { key: 'overview', label: 'Overview', icon: 'home', href: '/health', available: true },
+    {
+      key: 'sleep',
+      label: 'Sleep',
+      icon: 'sleep',
+      available: false,
+      unavailableReason: 'Automatic sleep tracking needs health data access, coming in a later release.',
+    },
+    {
+      key: 'water',
+      label: 'Water',
+      icon: 'water',
+      available: false,
+      unavailableReason: 'Hydration tracking arrives with the Health module’s full release.',
+    },
+  ],
+  permissions: [
+    {
+      key: 'health-data',
+      title: 'Activity and sleep data',
+      rationale:
+        'To read steps and sleep from your phone’s health store so you don’t type them in. NoorLife never writes to it.',
+      required: false,
+    },
+    {
+      key: 'notifications',
+      title: 'Habit reminders',
+      rationale: 'So NoorLife can remind you at the time you choose.',
+      required: false,
+    },
+  ],
+  ai: moduleAIPolicies.health,
+  stateCopy: {
+    empty: {
+      title: 'No entries yet',
+      body: 'Log one thing today — a walk, a glass of water — and your trend starts here.',
+      action: 'Log your first entry',
+    },
+    error: {
+      title: 'Couldn’t load your Health data',
+      body: 'Something failed on our side. Nothing you logged has been lost.',
+      action: 'Try again',
+    },
+    offline: {
+      title: 'You’re offline',
+      body: 'You can still log entries. They’ll sync when you reconnect.',
+    },
+    loading: 'Loading your Health module',
+  },
+};
+
+const planner: ModuleDefinition = {
+  id: 'planner',
+  name: 'Planner',
+  summary: 'Your day, your tasks and the routines that hold them together.',
+  theme: moduleColorThemes.planner,
+  pictogram: getModulePictogram('planner'),
+  routes: { home: '/planner', ai: '/planner/ai', help: '/settings/help' },
+  navigation: moduleThemes.planner.navigation,
+  hero: {
+    eyebrow: 'Planner',
+    title: 'Today, in the order it happens',
+    body: 'Tasks, events and routines together — so nothing needs remembering twice.',
+    highlight: '3 tasks left today',
+    artwork: getModulePictogram('planner'),
+    artworkAccessibilityLabel: '',
+  },
+  quickActions: [
+    { key: 'add-task', label: 'Add task', icon: 'add-circle', href: '/planner/tasks' },
+    { key: 'calendar', label: 'Calendar', icon: 'calendar', href: '/planner/calendar' },
+    { key: 'ask-plan-ai', label: 'Ask Plan AI', icon: 'robot', href: '/planner/ai' },
+  ],
+  capabilities: [
+    { key: 'today', label: 'Today', icon: 'today', href: '/planner', available: true },
+    { key: 'calendar', label: 'Calendar', icon: 'calendar', href: '/planner/calendar', available: true },
+    { key: 'tasks', label: 'Tasks', icon: 'tasks', href: '/planner/tasks', available: true },
+    { key: 'routines', label: 'Routines', icon: 'routines', href: '/planner/routines', available: true },
+    {
+      key: 'focus',
+      label: 'Focus',
+      icon: 'clock',
+      available: false,
+      unavailableReason: 'Focus sessions arrive with the Planner module’s full release.',
+    },
+  ],
+  permissions: [
+    {
+      key: 'calendar',
+      title: 'Your device calendar',
+      rationale: 'To show your existing events beside NoorLife tasks. Read-only unless you add an event.',
+      required: false,
+    },
+    {
+      key: 'notifications',
+      title: 'Task and event reminders',
+      rationale: 'So a task can remind you at the time you set.',
+      required: false,
+    },
+  ],
+  ai: moduleAIPolicies.planner,
+  stateCopy: {
+    empty: {
+      title: 'Your day is clear',
+      body: 'Add a task or bring in your calendar and today will fill itself in.',
+      action: 'Add your first task',
+    },
+    error: {
+      title: 'Couldn’t load your Planner',
+      body: 'A request failed on our side. Your tasks are still saved.',
+      action: 'Try again',
+    },
+    offline: {
+      title: 'You’re offline',
+      body: 'Today’s plan is available and you can still add tasks. Changes sync later.',
+    },
+    loading: 'Loading your Planner module',
+  },
+};
+
+const finance: ModuleDefinition = {
+  id: 'finance',
+  name: 'Finance',
+  summary: 'Where your money goes, and whether you’re on budget.',
+  theme: moduleColorThemes.finance,
+  pictogram: getModulePictogram('finance'),
+  routes: { home: '/finance', ai: '/finance/ai', help: '/settings/help' },
+  navigation: moduleThemes.finance.navigation,
+  hero: {
+    eyebrow: 'Finance',
+    title: 'Know where it went',
+    body: 'Track spending against a budget you set — no advice, just your numbers.',
+    highlight: '68% of budget used',
+    artwork: getModulePictogram('finance'),
+    artworkAccessibilityLabel: '',
+  },
+  quickActions: [
+    { key: 'add-expense', label: 'Add expense', icon: 'add-circle', href: '/finance/transactions' },
+    { key: 'budgets', label: 'Budgets', icon: 'budgets', href: '/finance/budgets' },
+    { key: 'ask-money-ai', label: 'Ask Money AI', icon: 'robot', href: '/finance/ai' },
+  ],
+  capabilities: [
+    { key: 'overview', label: 'Overview', icon: 'home', href: '/finance', available: true },
+    {
+      key: 'transactions',
+      label: 'Spending',
+      icon: 'transactions',
+      href: '/finance/transactions',
+      available: true,
+    },
+    { key: 'budgets', label: 'Budgets', icon: 'budgets', href: '/finance/budgets', available: true },
+    { key: 'goals', label: 'Savings', icon: 'target', href: '/finance/goals', available: true },
+    {
+      key: 'bank-sync',
+      label: 'Bank sync',
+      icon: 'money',
+      available: false,
+      unavailableReason:
+        'Connecting a bank account needs a regulated provider and is not part of this release.',
+    },
+    {
+      key: 'receipts',
+      label: 'Receipts',
+      icon: 'document',
+      available: false,
+      unavailableReason: 'Receipt capture arrives with the Finance module’s full release.',
+    },
+  ],
+  permissions: [
+    {
+      key: 'notifications',
+      title: 'Budget alerts',
+      rationale: 'So NoorLife can tell you when a budget is close to its limit.',
+      required: false,
+    },
+    {
+      key: 'photos',
+      title: 'Receipt photos',
+      rationale: 'Only used when you attach a photo to a transaction yourself.',
+      required: false,
+    },
+  ],
+  ai: moduleAIPolicies.finance,
+  stateCopy: {
+    empty: {
+      title: 'No transactions yet',
+      body: 'Add what you spent today, or set a budget first and fill it in as you go.',
+      action: 'Add a transaction',
+    },
+    error: {
+      title: 'Couldn’t load your Finance data',
+      body: 'A request failed on our side. Your transactions are unaffected.',
+      action: 'Try again',
+    },
+    offline: {
+      title: 'You’re offline',
+      body: 'You can add transactions now and they’ll sync when you reconnect.',
+    },
+    loading: 'Loading your Finance module',
+  },
+};
+
+const learning: ModuleDefinition = {
+  id: 'learning',
+  name: 'Learning',
+  summary: 'Courses, saved material and what you’ve actually retained.',
+  theme: moduleColorThemes.learning,
+  pictogram: getModulePictogram('learning'),
+  routes: { home: '/learning', ai: '/learning/ai', help: '/settings/help' },
+  navigation: moduleThemes.learning.navigation,
+  hero: {
+    eyebrow: 'Learning',
+    title: 'Pick up where you left off',
+    body: 'Your courses, saved reading and quick reviews that make it stick.',
+    highlight: '2 lessons in progress',
+    artwork: getModulePictogram('learning'),
+    artworkAccessibilityLabel: '',
+  },
+  quickActions: [
+    { key: 'continue', label: 'Continue', icon: 'play', href: '/learning' },
+    { key: 'library', label: 'Library', icon: 'library', href: '/learning/library' },
+    { key: 'ask-learn-ai', label: 'Ask Learn AI', icon: 'robot', href: '/learning/ai' },
+  ],
+  capabilities: [
+    { key: 'learn', label: 'Learn', icon: 'learn', href: '/learning', available: true },
+    { key: 'library', label: 'Library', icon: 'library', href: '/learning/library', available: true },
+    { key: 'progress', label: 'Progress', icon: 'progress', href: '/learning/progress', available: true },
+    { key: 'saved', label: 'Saved', icon: 'bookmark', href: '/learning/saved', available: true },
+    {
+      key: 'quiz',
+      label: 'Quiz',
+      icon: 'school-bag',
+      available: false,
+      unavailableReason: 'Quizzes arrive with the Learning module’s full release.',
+    },
+  ],
+  permissions: [
+    {
+      key: 'notifications',
+      title: 'Study reminders',
+      rationale: 'So NoorLife can nudge you at the study time you pick.',
+      required: false,
+    },
+  ],
+  ai: moduleAIPolicies.learning,
+  stateCopy: {
+    empty: {
+      title: 'Nothing started yet',
+      body: 'Save an article or begin a lesson, and your progress will show up here.',
+      action: 'Browse the library',
+    },
+    error: {
+      title: 'Couldn’t load your Learning data',
+      body: 'A request failed on our side. Your saved material is still there.',
+      action: 'Try again',
+    },
+    offline: {
+      title: 'You’re offline',
+      body: 'Anything you downloaded is still readable. Progress syncs when you reconnect.',
+    },
+    loading: 'Loading your Learning module',
+  },
+};
+
+const family: ModuleDefinition = {
+  id: 'family',
+  name: 'Family',
+  summary: 'Shared plans, moments and the people they belong to.',
+  theme: moduleColorThemes.family,
+  pictogram: getModulePictogram('family'),
+  routes: { home: '/family', ai: '/family/ai', help: '/settings/help' },
+  navigation: moduleThemes.family.navigation,
+  hero: {
+    eyebrow: 'Family',
+    title: 'Everyone on the same page',
+    body: 'One shared calendar and a place for the moments worth keeping.',
+    highlight: '2 events this week',
+    artwork: getModulePictogram('family'),
+    artworkAccessibilityLabel: '',
+  },
+  quickActions: [
+    { key: 'add-event', label: 'Add event', icon: 'add-circle', href: '/family/calendar' },
+    { key: 'memories', label: 'Memories', icon: 'memories', href: '/family/memories' },
+    { key: 'ask-family-ai', label: 'Ask Family AI', icon: 'robot', href: '/family/ai' },
+  ],
+  capabilities: [
+    { key: 'family', label: 'Family', icon: 'family', href: '/family', available: true },
+    { key: 'calendar', label: 'Calendar', icon: 'calendar', href: '/family/calendar', available: true },
+    { key: 'memories', label: 'Memories', icon: 'memories', href: '/family/memories', available: true },
+    { key: 'safety', label: 'Safety', icon: 'safety', href: '/family/safety', available: true },
+    {
+      key: 'chores',
+      label: 'Chores',
+      icon: 'tasks',
+      available: false,
+      unavailableReason: 'Shared chores arrive with the Family module’s full release.',
+    },
+  ],
+  permissions: [
+    {
+      key: 'notifications',
+      title: 'Family updates',
+      rationale: 'So you hear when someone adds or changes a shared plan.',
+      required: false,
+    },
+    {
+      key: 'photos',
+      title: 'Shared memories',
+      rationale: 'Only the photos you choose are added to a shared memory.',
+      required: false,
+    },
+    {
+      key: 'contacts',
+      title: 'Inviting family',
+      rationale: 'To find people you already know when inviting them. Nothing is uploaded.',
+      required: false,
+    },
+  ],
+  ai: moduleAIPolicies.family,
+  stateCopy: {
+    empty: {
+      title: 'No one here yet',
+      body: 'Invite a family member, and your shared calendar and memories start filling in.',
+      action: 'Invite family',
+    },
+    error: {
+      title: 'Couldn’t load your Family data',
+      body: 'A request failed on our side. Nothing shared has been lost.',
+      action: 'Try again',
+    },
+    offline: {
+      title: 'You’re offline',
+      body: 'You can see what’s already synced. New shared items need a connection.',
+    },
+    loading: 'Loading your Family module',
+  },
+};
+
+const goals: ModuleDefinition = {
+  id: 'goals',
+  name: 'Goals',
+  summary: 'Intentions broken into habits, and honest progress against them.',
+  theme: moduleColorThemes.goals,
+  pictogram: getModulePictogram('goals'),
+  routes: { home: '/goals', ai: '/goals/ai', help: '/settings/help' },
+  navigation: moduleThemes.goals.navigation,
+  hero: {
+    eyebrow: 'Goals',
+    title: 'One step, repeated',
+    body: 'Break a goal into habits, then keep the streak that matters.',
+    highlight: '4-day streak',
+    artwork: getModulePictogram('goals'),
+    artworkAccessibilityLabel: '',
+  },
+  quickActions: [
+    { key: 'add-goal', label: 'Add goal', icon: 'add-circle', href: '/goals' },
+    { key: 'habits', label: 'Habits', icon: 'habits', href: '/goals/habits' },
+    { key: 'ask-goal-ai', label: 'Ask Goal AI', icon: 'robot', href: '/goals/ai' },
+  ],
+  capabilities: [
+    { key: 'goals', label: 'Goals', icon: 'target', href: '/goals', available: true },
+    { key: 'habits', label: 'Habits', icon: 'habits', href: '/goals/habits', available: true },
+    { key: 'progress', label: 'Progress', icon: 'progress', href: '/goals/progress', available: true },
+    { key: 'wins', label: 'Wins', icon: 'wins', href: '/goals/wins', available: true },
+    {
+      key: 'shared-goals',
+      label: 'Shared',
+      icon: 'family',
+      available: false,
+      unavailableReason: 'Sharing a goal with family arrives in a later release.',
+    },
+  ],
+  permissions: [
+    {
+      key: 'notifications',
+      title: 'Habit reminders',
+      rationale: 'So a habit can check in with you at the time you choose.',
+      required: false,
+    },
+  ],
+  ai: moduleAIPolicies.goals,
+  stateCopy: {
+    empty: {
+      title: 'No goals yet',
+      body: 'Name one thing you want to change, and we’ll turn it into a habit you can keep.',
+      action: 'Add your first goal',
+    },
+    error: {
+      title: 'Couldn’t load your Goals',
+      body: 'A request failed on our side. Your streaks are intact.',
+      action: 'Try again',
+    },
+    offline: {
+      title: 'You’re offline',
+      body: 'You can still tick off today’s habits. They’ll sync when you reconnect.',
+    },
+    loading: 'Loading your Goals module',
+  },
+};
+
+export const moduleRegistry: Readonly<Record<FrameworkModuleId, ModuleDefinition>> = {
+  faith,
+  health,
+  planner,
+  finance,
+  learning,
+  family,
+  goals,
+};
+
+/** Every module definition, in the registry's declared order. */
+export const allModuleDefinitions: readonly ModuleDefinition[] = FRAMEWORK_MODULE_IDS.map(
+  (id) => moduleRegistry[id],
+);
+
+/**
+ * Resolves a module definition.
+ *
+ * Throws on an unknown id rather than returning a default. A module screen rendered
+ * with the wrong module's colour and copy is worse than a visible failure.
+ */
+export function getModuleDefinition(id: FrameworkModuleId): ModuleDefinition {
+  const definition = moduleRegistry[id];
+  if (definition === undefined) {
+    throw new Error(`Unknown module "${id}". Register it in module-registry.ts.`);
+  }
+  return definition;
+}

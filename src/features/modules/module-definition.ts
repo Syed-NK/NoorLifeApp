@@ -1,0 +1,133 @@
+import type { Href } from 'expo-router';
+import type { ImageSourcePropType } from 'react-native';
+
+import type { IconName } from '@shared/models/icon';
+import type { ModuleNavigation } from '@shared/models/module-theme';
+
+import type { ModuleAIPolicy } from './module-ai-policy';
+import type { FrameworkModuleId, ModuleColorTheme } from './module-tokens';
+
+/**
+ * The typed contract every NoorLife module satisfies.
+ *
+ * A module is *configuration*, not a screen. Everything the shared components need
+ * to render a module — its colour, its artwork, its destinations, what it can do,
+ * what it may ask the OS for, and what it says when it has nothing to show — is
+ * declared here. Adding the eighth module should mean adding one entry to the
+ * registry, not writing another screen.
+ *
+ * The practical test of that claim is the Module Gallery, which renders all seven
+ * modules and every state from this data alone.
+ */
+
+/**
+ * A capability the module offers the user, rendered in the feature grid.
+ *
+ * `available: false` is a first-class state. A module ships with features that are
+ * not built yet, and the honest presentation is a visibly unavailable tile with a
+ * reason — not a tile that looks live and does nothing.
+ */
+export type ModuleCapability = {
+  readonly key: string;
+  readonly label: string;
+  readonly icon: IconName;
+  /** Where the tile leads. Omitted when the capability is not available yet. */
+  readonly href?: Href;
+  readonly available: boolean;
+  /** Why it is unavailable. Required when `available` is false. */
+  readonly unavailableReason?: string;
+  /** Screen-reader label when the visible label needs more context. */
+  readonly accessibilityLabel?: string;
+};
+
+/** An OS or data permission the module may request, with the reason shown to the user. */
+export type ModulePermission = {
+  readonly key:
+    | 'notifications'
+    | 'location'
+    | 'calendar'
+    | 'health-data'
+    | 'contacts'
+    | 'photos'
+    | 'microphone';
+  /** Plain-language title used on the permission state. */
+  readonly title: string;
+  /**
+   * Why the module needs it, in the user's terms.
+   *
+   * Required, and required to be specific: a permission prompt that cannot say what
+   * it unlocks should not be asked for.
+   */
+  readonly rationale: string;
+  /** False when the module still works without it, which most should. */
+  readonly required: boolean;
+};
+
+/** Copy for a state the module can be in. Every module supplies all of them. */
+export type ModuleStateCopy = {
+  /** Nothing recorded yet. */
+  readonly empty: { readonly title: string; readonly body: string; readonly action: string };
+  /** A request failed. Never blames the user, always offers a retry. */
+  readonly error: { readonly title: string; readonly body: string; readonly action: string };
+  /** No connection. States what still works offline. */
+  readonly offline: { readonly title: string; readonly body: string };
+  /** Loading, announced to a screen reader. */
+  readonly loading: string;
+};
+
+/** The hero card at the top of a module home. */
+export type ModuleHeroContent = {
+  /** Small line above the headline. */
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly body: string;
+  /**
+   * Optional headline figure, e.g. "4 of 5". Rendered as a chip, never as the only
+   * indicator of a value that matters.
+   */
+  readonly highlight?: string;
+  /** Approved PNG artwork. The module's own pictogram — no invented illustration. */
+  readonly artwork: ImageSourcePropType;
+  /** Describes the artwork to a screen reader, or '' when purely decorative. */
+  readonly artworkAccessibilityLabel: string;
+};
+
+/** A quick action in the row beneath the hero. */
+export type ModuleQuickActionSpec = {
+  readonly key: string;
+  readonly label: string;
+  readonly icon: IconName;
+  readonly href?: Href;
+  readonly accessibilityLabel?: string;
+};
+
+export type ModuleDefinition = {
+  readonly id: FrameworkModuleId;
+  /** Display name, used in the header and as the hero eyebrow default. */
+  readonly name: string;
+  /** One line describing the module, used on the Module Gallery and in Help. */
+  readonly summary: string;
+  readonly theme: ModuleColorTheme;
+  /** The approved normalized pictogram, resolved from the locked registry. */
+  readonly pictogram: ImageSourcePropType;
+  readonly routes: {
+    readonly home: Href;
+    readonly ai: Href;
+    /** Module-specific help destination reached from the header's Help control. */
+    readonly help: Href;
+  };
+  /**
+   * Exactly five destinations, the third being module AI.
+   *
+   * Reused from the Phase 1 `ModuleTheme`, which validates that invariant at import
+   * time. Re-declaring it here would create a second source of truth for the same
+   * five routes and a way for them to disagree.
+   */
+  readonly navigation: ModuleNavigation;
+  readonly hero: ModuleHeroContent;
+  readonly quickActions: readonly ModuleQuickActionSpec[];
+  readonly capabilities: readonly ModuleCapability[];
+  readonly permissions: readonly ModulePermission[];
+  readonly ai: ModuleAIPolicy;
+  readonly stateCopy: ModuleStateCopy;
+};

@@ -1,5 +1,6 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleHomeScreen } from '@features/modules/screens/module-home-screen';
 
+/** Health module home (workflow §3.2: a module card opens its default home). */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="health" activeKey="overview" />;
+  return <ModuleHomeScreen moduleId="health" />;
 }

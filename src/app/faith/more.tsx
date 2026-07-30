@@ -1,5 +1,14 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
 
+/** Faith → More. */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="faith" activeKey="more" title="More" />;
+  return (
+    <ModuleSectionScreen
+      moduleId="faith"
+      activeKey="more"
+      title="More"
+      heroTitle="The rest of Faith"
+      heroBody="Dhikr, Qibla and the settings that shape how this module behaves."
+    />
+  );
 }

@@ -1,5 +1,6 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleAIScreen } from '@features/modules/screens/module-ai-screen';
 
+/** Planner module AI (workflow §3.3: the centre slot opens AI inside the module). */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="planner" activeKey="plan-ai" title="Plan AI" />;
+  return <ModuleAIScreen moduleId="planner" />;
 }

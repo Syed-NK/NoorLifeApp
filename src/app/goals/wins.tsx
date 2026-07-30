@@ -1,5 +1,14 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
 
+/** Goals → Wins. */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="goals" activeKey="wins" title="Wins" />;
+  return (
+    <ModuleSectionScreen
+      moduleId="goals"
+      activeKey="wins"
+      title="Wins"
+      heroTitle="Proof it is working"
+      heroBody="The streaks you kept and the goals you closed, worth re-reading on a hard week."
+    />
+  );
 }
