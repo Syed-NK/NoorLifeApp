@@ -60,10 +60,28 @@ describe.each(FRAMEWORK_MODULE_IDS)('module home: %s', (moduleId) => {
     // illustration to zero width and no test noticed.
     await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
 
+    const box = screen.getByTestId(`${moduleId}-hero-artbox`);
+    const style = box.props.style as { width?: number; height?: number };
+    // The approved band is 78–92 dp, and the box is what fixes it — the Image inside
+    // fills its parent, so a collapsed box is the only way the artwork can vanish.
+    expect(style.width ?? 0).toBeGreaterThanOrEqual(78);
+    expect(style.height ?? 0).toBeGreaterThanOrEqual(78);
+    expect(style.width ?? 0).toBeLessThanOrEqual(92);
+  });
+
+  it('renders the module’s approved PNG, untinted and uncropped', async () => {
+    // The artwork lock, asserted where it actually matters: at render. A hero pointing at
+    // any other asset — a generic icon, a second illustration — fails here.
+    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
+
     const art = screen.getByTestId(`${moduleId}-hero-art`);
-    const style = art.props.style as { width?: number; height?: number };
-    expect(style.width ?? 0).toBeGreaterThan(40);
-    expect(style.height ?? 0).toBeGreaterThan(40);
+    expect(art.props.source).toBe(definition.heroPictogram);
+    expect(art.props.source).toBe(definition.pictogram);
+    // `contain` never stretches or crops; a tint would recolour approved artwork.
+    expect(art.props.resizeMode).toBe('contain');
+    const style = (art.props.style ?? {}) as { tintColor?: string; backgroundColor?: string };
+    expect(style.tintColor).toBeUndefined();
+    expect(style.backgroundColor).toBeUndefined();
   });
 
   it('names the AI centre control after this module’s assistant', async () => {

@@ -59,3 +59,4 @@ export {
   type ModuleStatusTone,
 } from './module-status-banner';
 export { ModuleText, type ModuleTextProps } from './module-text';
+export { ModuleHeroAudit, type ModuleHeroAuditProps } from './module-hero-audit';

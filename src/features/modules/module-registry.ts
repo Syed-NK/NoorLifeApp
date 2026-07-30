@@ -18,6 +18,45 @@ import { FRAMEWORK_MODULE_IDS, moduleColorThemes, type FrameworkModuleId } from 
  *     rather than substituting an icon for a missing asset.
  *   • colour — taken from `moduleColorThemes`, whose contrast is asserted by test.
  *
+ * ── Which PNG set is canonical, and why ─────────────────────────────────────
+ * `getModulePictogram` is the registry Main Home's grid itself renders from, so
+ * routing every module surface through it is what makes "the hero shows the same
+ * pictogram as the tile" true by construction rather than by inspection.
+ *
+ * It resolves `assets/images/pictograms/normalized/*.png`. The project also holds
+ * the pre-normalization originals one directory up, and those two sets are not
+ * interchangeable: measured, the originals occupy 85.9% of their canvas with an
+ * 18 px margin, the normalized set 71.1% with a 37 px margin. Both are internally
+ * uniform — every one of the eight sits at exactly the same occupancy, so no
+ * per-module optical correction is needed in either set.
+ *
+ * The normalized set is the one Main Home ships and is therefore the canonical one
+ * here. Its extra transparent padding is compensated for once, in the hero card's
+ * `heroArtSize`, rather than by per-module scale tweaks.
+ *
+ * The Entry/Auth onboarding medallions still read the originals through
+ * `noorLifeAssets.modules`. That is a real inconsistency, but changing it would
+ * alter an approved Entry/Auth layout, which this pass is explicitly scoped out of
+ * — it is recorded in docs/PRE_RELEASE_BACKLOG.md instead.
+ */
+
+/**
+ * One canonical asset resolution per module.
+ *
+ * Both `pictogram` and `heroPictogram` read from this, so the two fields cannot
+ * disagree even by accident — there is nowhere to type a second asset.
+ */
+const ASSET = {
+  faith: getModulePictogram('faith'),
+  health: getModulePictogram('health'),
+  planner: getModulePictogram('planner'),
+  finance: getModulePictogram('finance'),
+  learning: getModulePictogram('learning'),
+  family: getModulePictogram('family'),
+  goals: getModulePictogram('goals'),
+} as const;
+
+/*
  * ── On the content in this file ─────────────────────────────────────────────
  * Hero copy, quick actions and capability tiles are real framework content, not
  * lorem ipsum: the phase brief requires complete hero cards with no blank upper
@@ -32,7 +71,8 @@ const faith: ModuleDefinition = {
   name: 'Faith',
   summary: 'Prayer times, Qur’an reading and your daily worship.',
   theme: moduleColorThemes.faith,
-  pictogram: getModulePictogram('faith'),
+  pictogram: ASSET.faith,
+  heroPictogram: ASSET.faith,
   routes: { home: '/faith', ai: '/faith/ai', help: '/settings/help' },
   navigation: moduleThemes.faith.navigation,
   hero: {
@@ -40,7 +80,6 @@ const faith: ModuleDefinition = {
     title: 'Keep your day anchored in prayer',
     body: 'Your prayer times, Qur’an progress and reminders in one place.',
     highlight: 'Next: Asr 4:12 pm',
-    artwork: getModulePictogram('faith'),
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -107,7 +146,8 @@ const health: ModuleDefinition = {
   name: 'Health',
   summary: 'Track activity, sleep and habits, and see what changes.',
   theme: moduleColorThemes.health,
-  pictogram: getModulePictogram('health'),
+  pictogram: ASSET.health,
+  heroPictogram: ASSET.health,
   routes: { home: '/health', ai: '/health/ai', help: '/settings/help' },
   navigation: moduleThemes.health.navigation,
   hero: {
@@ -115,7 +155,6 @@ const health: ModuleDefinition = {
     title: 'Small habits, tracked honestly',
     body: 'Log what you do, then see the pattern rather than a single day.',
     highlight: '5 of 7 days logged',
-    artwork: getModulePictogram('health'),
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -183,7 +222,8 @@ const planner: ModuleDefinition = {
   name: 'Planner',
   summary: 'Your day, your tasks and the routines that hold them together.',
   theme: moduleColorThemes.planner,
-  pictogram: getModulePictogram('planner'),
+  pictogram: ASSET.planner,
+  heroPictogram: ASSET.planner,
   routes: { home: '/planner', ai: '/planner/ai', help: '/settings/help' },
   navigation: moduleThemes.planner.navigation,
   hero: {
@@ -191,7 +231,6 @@ const planner: ModuleDefinition = {
     title: 'Today, in the order it happens',
     body: 'Tasks, events and routines together — so nothing needs remembering twice.',
     highlight: '3 tasks left today',
-    artwork: getModulePictogram('planner'),
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -251,7 +290,8 @@ const finance: ModuleDefinition = {
   name: 'Finance',
   summary: 'Where your money goes, and whether you’re on budget.',
   theme: moduleColorThemes.finance,
-  pictogram: getModulePictogram('finance'),
+  pictogram: ASSET.finance,
+  heroPictogram: ASSET.finance,
   routes: { home: '/finance', ai: '/finance/ai', help: '/settings/help' },
   navigation: moduleThemes.finance.navigation,
   hero: {
@@ -259,7 +299,6 @@ const finance: ModuleDefinition = {
     title: 'Know where it went',
     body: 'Track spending against a budget you set — no advice, just your numbers.',
     highlight: '68% of budget used',
-    artwork: getModulePictogram('finance'),
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -333,7 +372,8 @@ const learning: ModuleDefinition = {
   name: 'Learning',
   summary: 'Courses, saved material and what you’ve actually retained.',
   theme: moduleColorThemes.learning,
-  pictogram: getModulePictogram('learning'),
+  pictogram: ASSET.learning,
+  heroPictogram: ASSET.learning,
   routes: { home: '/learning', ai: '/learning/ai', help: '/settings/help' },
   navigation: moduleThemes.learning.navigation,
   hero: {
@@ -341,7 +381,6 @@ const learning: ModuleDefinition = {
     title: 'Pick up where you left off',
     body: 'Your courses, saved reading and quick reviews that make it stick.',
     highlight: '2 lessons in progress',
-    artwork: getModulePictogram('learning'),
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -395,7 +434,8 @@ const family: ModuleDefinition = {
   name: 'Family',
   summary: 'Shared plans, moments and the people they belong to.',
   theme: moduleColorThemes.family,
-  pictogram: getModulePictogram('family'),
+  pictogram: ASSET.family,
+  heroPictogram: ASSET.family,
   routes: { home: '/family', ai: '/family/ai', help: '/settings/help' },
   navigation: moduleThemes.family.navigation,
   hero: {
@@ -403,7 +443,6 @@ const family: ModuleDefinition = {
     title: 'Everyone on the same page',
     body: 'One shared calendar and a place for the moments worth keeping.',
     highlight: '2 events this week',
-    artwork: getModulePictogram('family'),
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -469,7 +508,8 @@ const goals: ModuleDefinition = {
   name: 'Goals',
   summary: 'Intentions broken into habits, and honest progress against them.',
   theme: moduleColorThemes.goals,
-  pictogram: getModulePictogram('goals'),
+  pictogram: ASSET.goals,
+  heroPictogram: ASSET.goals,
   routes: { home: '/goals', ai: '/goals/ai', help: '/settings/help' },
   navigation: moduleThemes.goals.navigation,
   hero: {
@@ -477,7 +517,6 @@ const goals: ModuleDefinition = {
     title: 'One step, repeated',
     body: 'Break a goal into habits, then keep the streak that matters.',
     highlight: '4-day streak',
-    artwork: getModulePictogram('goals'),
     artworkAccessibilityLabel: '',
   },
   quickActions: [

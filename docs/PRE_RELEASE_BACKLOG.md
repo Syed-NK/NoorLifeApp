@@ -71,12 +71,33 @@ Forgot Password and Reset Link Sent are built, and the service calls Supabase
 correctly. The email itself cannot be verified until 1.1 is done. Do not claim password
 recovery works until a real reset link has been received and used.
 
-### 1.5 OTP length mismatch — **Ready**
+### 1.5 OTP length — **Resolved and pinned** (2026-07-30)
 
-The hosted project is configured with `otp_length = 8`, while `OtpInput` renders **six**
-boxes. Nobody has hit this because confirmation is off (1.3). Either set the project to
-6 or widen the input — 6 is the better user experience and matches the design. Must be
-resolved before 1.3 is enabled.
+The production design is **six digits**, and that is now the contract in all three places
+it has to hold:
+
+- `OTP_LENGTH = 6` in `src/features/entry-auth/components/otp-input.tsx` (unchanged — the
+  UI was always six boxes, with paste, autofill and backspace handled by a single hidden
+  input).
+- `otp_length = 6` is now declared in `supabase/config.toml`. It previously was not, which
+  is why the value could drift unnoticed: `config push` had nothing to compare against.
+- The remote project reports **no drift** against that declaration, so the hosted value is
+  6.
+
+Verification caveat, stated plainly: the Supabase CLI offers no `config pull` or read
+command for auth settings, and I did not extract the CLI's access token to query the
+Management API directly. The evidence that the remote value is 6 is therefore that
+`supabase config push` reports "Remote Auth config is up to date" *with `otp_length = 6`
+declared locally*. An earlier session recorded the project as 8; that is no longer
+reproducible, so it was either already corrected by a prior push or misread at the time.
+
+Two tests now guard it — `src/features/entry-auth/__tests__/otp-length.test.ts` asserts
+`OTP_LENGTH === 6`, reads `config.toml` to assert the pinned value, and rejects anything
+that is not exactly six ASCII digits (including an eight-digit code, and full-width digits
+that some keyboards paste).
+
+Email confirmation remains deliberately deferred (1.3) during module building, so this
+path is not yet exercised end to end by a real email.
 
 ---
 
@@ -186,6 +207,31 @@ must stay that way. `moduleAIPolicies` is the policy the future orchestrator has
 satisfy: per-module scope, the refusal and qualification rules, and the confirm-before-
 mutating requirement. The orchestrator itself must be server-side, so the key never
 reaches a device.
+
+### 4.3 Migrate the onboarding medallions to the canonical pictograms — **Ready**
+
+There are two variants of the same eight approved pictograms in the project:
+
+| Set | Path | Occupancy | Margin | Used by |
+| --- | --- | --- | --- | --- |
+| Normalized | `assets/images/pictograms/normalized/` | 71.1% | 37 px | Main Home tiles, module heroes, module states |
+| Originals | `assets/images/pictograms/` | 85.9% | 18 px | Entry/Auth onboarding medallions |
+
+Same artwork, different transparent padding. Both sets are internally uniform — all eight
+assets in each measure at identical occupancy — so this is not per-asset drift, just two
+canvases.
+
+The module framework was locked onto the normalized set because that is what locked Main
+Home renders, which makes "the hero shows the same pictogram as the tile" true by
+construction. The medallions were left alone because changing them would alter an approved
+Entry/Auth layout, which the artwork-lock pass was explicitly scoped out of.
+
+To finish it: point `noorLifeAssets.modules` at `normalized/`, re-check the medallion's
+optical size (the artwork will render ~17% smaller inside the same 56 dp medallion, so
+`medallionSpec.pictogramRatio` likely needs raising), re-validate onboarding screens 03 and
+04 on the Pixel 8, and delete the test in
+`src/features/modules/__tests__/module-hero-assets.test.ts` that currently *records* the
+difference.
 
 ---
 

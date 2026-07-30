@@ -86,9 +86,15 @@ export type ModuleHeroContent = {
    * indicator of a value that matters.
    */
   readonly highlight?: string;
-  /** Approved PNG artwork. The module's own pictogram — no invented illustration. */
-  readonly artwork: ImageSourcePropType;
-  /** Describes the artwork to a screen reader, or '' when purely decorative. */
+  /**
+   * Describes the hero artwork to a screen reader, or '' when purely decorative.
+   *
+   * The artwork itself is **not** declared here — it is `ModuleDefinition.heroPictogram`,
+   * so there is exactly one field in the whole system that decides which PNG a module
+   * shows. A per-hero `artwork` field existed here first, and that is precisely the
+   * drift path this correction closes: it made it possible for a hero to point at
+   * something other than the module's approved pictogram.
+   */
   readonly artworkAccessibilityLabel: string;
 };
 
@@ -108,8 +114,26 @@ export type ModuleDefinition = {
   /** One line describing the module, used on the Module Gallery and in Help. */
   readonly summary: string;
   readonly theme: ModuleColorTheme;
-  /** The approved normalized pictogram, resolved from the locked registry. */
+  /**
+   * The module's approved PNG pictogram, resolved from the locked Main Home registry.
+   *
+   * Used wherever the module identifies itself at a small size — feature tiles, list
+   * rows, state illustrations.
+   */
   readonly pictogram: ImageSourcePropType;
+  /**
+   * The hero card's artwork.
+   *
+   * Declared separately from `pictogram` so the hero's asset is explicit and auditable
+   * rather than implied, but it **must be the same asset**: a test asserts
+   * `heroPictogram === pictogram` for all seven modules, and a second test asserts both
+   * equal what Main Home's grid renders. That is what stops a future hero from acquiring
+   * its own illustration, which is the drift this field exists to make visible.
+   *
+   * Static requires only — no dynamic path, no conditional require, and no per-feature
+   * copy of the same PNG.
+   */
+  readonly heroPictogram: ImageSourcePropType;
   readonly routes: {
     readonly home: Href;
     readonly ai: Href;

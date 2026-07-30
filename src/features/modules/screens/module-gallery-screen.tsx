@@ -21,6 +21,7 @@ import {
   ModuleSummaryCard,
   ModuleText,
 } from '../components';
+import { ModuleHeroAudit } from '../components/module-hero-audit';
 import type { ModuleActivityItem } from '../components/module-activity-card';
 import type { ModuleSummaryMetric } from '../components/module-summary-card';
 import { ModuleProvider } from '../module-context';
@@ -126,6 +127,69 @@ export function ModuleGalleryScreen() {
       <ModuleProvider moduleId={moduleId}>
         <GalleryBody moduleId={moduleId} />
       </ModuleProvider>
+    </View>
+  );
+}
+
+/**
+ * All seven heroes with their asset facts, on one page.
+ *
+ * This is the artwork lock's review surface: the seven hero cards in sequence, each
+ * followed by the filename actually resolved, the rendered box, the theme colours, the
+ * measured contrast ratios, and the `heroPictogram === pictogram` result. A reviewer can
+ * confirm the lock from a single screenshot run instead of reading the registry.
+ */
+export function ModuleHeroAuditScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={[styles.root, { paddingTop: insets.top }]} testID="module-hero-audit">
+      <View style={styles.titleBar}>
+        <ModuleText token="sectionTitle" numberOfLines={1} style={styles.flexText}>
+          Hero asset audit
+        </ModuleText>
+        <PressableScale
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Close the audit"
+          testID="module-hero-audit-close"
+        >
+          <ModuleText token="sectionAction" color={moduleNeutrals.info}>
+            Close
+          </ModuleText>
+        </PressableScale>
+      </View>
+      <View style={styles.subtitleBar}>
+        <ModuleText token="caption" color={moduleNeutrals.textTertiary}>
+          Development only. Every module hero uses the approved PNG that Main Home renders.
+        </ModuleText>
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+        testID="module-hero-audit-scroll"
+      >
+        <View style={styles.auditList}>
+          {FRAMEWORK_MODULE_IDS.map((id) => (
+            <ModuleProvider key={id} moduleId={id}>
+              <View style={styles.auditEntry}>
+                <ModuleText
+                  token="caption"
+                  color={moduleNeutrals.textTertiary}
+                  style={styles.sectionLabel}
+                >
+                  {getModuleDefinition(id).name.toUpperCase()}
+                </ModuleText>
+                <ModuleHeroCard testID={`audit-hero-${id}`} />
+                <ModuleHeroAudit testID={`audit-facts-${id}`} />
+              </View>
+            </ModuleProvider>
+          ))}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -365,5 +429,11 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     letterSpacing: 0.6,
+  },
+  auditList: {
+    rowGap: 22,
+  },
+  auditEntry: {
+    rowGap: 6,
   },
 });

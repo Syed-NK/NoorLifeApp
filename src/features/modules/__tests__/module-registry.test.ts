@@ -75,7 +75,7 @@ describe.each(FRAMEWORK_MODULE_IDS)('module definition: %s', (moduleId) => {
     expect(definition.hero.title.length).toBeGreaterThan(0);
     expect(definition.hero.body.length).toBeGreaterThan(0);
     expect(definition.hero.eyebrow.length).toBeGreaterThan(0);
-    expect(definition.hero.artwork).toBeDefined();
+    expect(definition.heroPictogram).toBeDefined();
   });
 
   it('gives every unavailable capability a reason and no destination', () => {

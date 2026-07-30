@@ -51,6 +51,17 @@ enable_confirmations = false
 double_confirm_changes = true
 secure_password_change = true
 
+# ── Email OTP length — must stay 6 ──────────────────────────────────────────
+# The approved Verify Email design (screen 08) renders exactly six boxes, and `OTP_LENGTH` in
+# src/features/entry-auth/components/otp-input.tsx is 6. A project set to 8 would email a code the
+# UI cannot accept — the user would type six digits, submit, and be told the code was wrong.
+#
+# This was previously unpinned here, so the value was whatever the dashboard held and the CLI had
+# nothing to compare against. Declaring it makes the contract version-controlled: `config push` now
+# reports drift instead of silently agreeing.
+otp_length = 6
+otp_expiry = 3600
+
 [auth.external.google]
 enabled = false
 

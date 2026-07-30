@@ -54,12 +54,21 @@ export type ModuleHeroCardProps = {
  */
 export function ModuleHeroCard({ title, body, eyebrow, highlight, testID }: ModuleHeroCardProps) {
   const module = useModule();
-  const { dp, type } = useModuleMetrics();
+  const { dp, type, contentWidth } = useModuleMetrics();
   const hero = module.hero;
 
   const artSize = dp(moduleLayout.heroArtSize);
   const padding = dp(moduleLayout.heroPadding);
   const resolvedHighlight = highlight ?? hero.highlight;
+  /**
+   * The copy occupies a fixed share of the card, never a flexible remainder.
+   *
+   * At the 393 dp baseline the card is 361 dp wide, so 62% is ~224 dp of text against an
+   * 88 dp pictogram — inside the specified 60–65% band with the gap and padding
+   * accounted for. Fixing the proportion is what guarantees the two never overlap
+   * regardless of how long a module's headline is.
+   */
+  const textColumnWidth = Math.floor(contentWidth * moduleLayout.heroTextColumnRatio);
 
   return (
     <View
@@ -92,7 +101,7 @@ export function ModuleHeroCard({ title, body, eyebrow, highlight, testID }: Modu
       {/* `columnGap` keeps the copy off the artwork. Without it a three-line body ran
           flush against the pictogram's edge. */}
       <View style={[styles.row, { padding, columnGap: dp(10) }]}>
-        <View style={[styles.textColumn, { rowGap: dp(4) }]}>
+        <View style={[styles.textColumn, { rowGap: dp(4), width: textColumnWidth }]}>
           <ModuleText
             token="eyebrow"
             color={module.theme.onFill}
@@ -133,16 +142,28 @@ export function ModuleHeroCard({ title, body, eyebrow, highlight, testID }: Modu
           )}
         </View>
 
-        <Image
-          source={hero.artwork}
+        {/*
+          The approved PNG, straight from the module definition's single asset field.
+
+          No `tintColor`, no background, no pedestal or shadow view, and `contain` so it
+          is never stretched or cropped. The wrapper is sized rather than the Image being
+          allowed to drive layout, so a change of asset cannot change the card's height.
+        */}
+        <View
           style={{ width: artSize, height: artSize }}
-          resizeMode="contain"
-          accessible={hero.artworkAccessibilityLabel !== ''}
-          accessibilityLabel={
-            hero.artworkAccessibilityLabel === '' ? undefined : hero.artworkAccessibilityLabel
-          }
-          testID={`${testID ?? 'module-hero'}-art`}
-        />
+          testID={`${testID ?? 'module-hero'}-artbox`}
+        >
+          <Image
+            source={module.heroPictogram}
+            style={styles.art}
+            resizeMode="contain"
+            accessible={hero.artworkAccessibilityLabel !== ''}
+            accessibilityLabel={
+              hero.artworkAccessibilityLabel === '' ? undefined : hero.artworkAccessibilityLabel
+            }
+            testID={`${testID ?? 'module-hero'}-art`}
+          />
+        </View>
       </View>
     </View>
   );
@@ -150,6 +171,8 @@ export function ModuleHeroCard({ title, body, eyebrow, highlight, testID }: Modu
 
 const styles = StyleSheet.create({
   root: {
+    // Clips the wash to the card's radius. The artwork sits inside the padding, well
+    // clear of the rounded corners, so nothing of the PNG is ever cut.
     overflow: 'hidden',
   },
   wash: {
@@ -164,10 +187,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   textColumn: {
-    flex: 1,
-    // Without this a long headline expands the column and squeezes the artwork to
-    // nothing — the same collapse that lost an illustration in the entry flow.
+    // A share of the row rather than `flex: 1`, so the copy can never expand into the
+    // artwork's column: text and PNG occupy fixed proportions of the card. `flex: 1`
+    // let a long headline squeeze the artwork — the collapse that lost an illustration
+    // in the entry flow.
+    flexGrow: 0,
+    flexShrink: 1,
     minWidth: 0,
+  },
+  art: {
+    width: '100%',
+    height: '100%',
   },
   eyebrow: {
     letterSpacing: 0.6,

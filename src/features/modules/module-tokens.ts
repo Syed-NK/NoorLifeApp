@@ -251,7 +251,23 @@ export const moduleLayout = {
   /** Hero card. */
   heroMinHeight: 132,
   heroPadding: 14,
-  heroArtSize: 84,
+  /**
+   * The hero pictogram's box, in dp.
+   *
+   * 88 sits in the specified 78–92 dp band, near the top of it deliberately: the
+   * canonical normalized PNGs carry a 37 px transparent margin and fill 71.1% of their
+   * canvas, so an 88 dp box renders about 63 dp of visible artwork. Compensating once
+   * here is the alternative to per-module scale tweaks, which the brief caps at ±4% and
+   * which would not be needed anyway — all eight assets measure at identical occupancy.
+   */
+  heroArtSize: 88,
+  /**
+   * Share of the card width given to the hero's copy (spec: 60–65%).
+   *
+   * A fixed proportion rather than a flex remainder, so a long headline cannot encroach
+   * on the pictogram.
+   */
+  heroTextColumnRatio: 0.62,
   /** Cards. */
   cardPadding: 13,
   cardRadius: 16,

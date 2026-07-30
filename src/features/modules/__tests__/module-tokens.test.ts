@@ -1,6 +1,7 @@
 import { MODULE_TILE_TINT } from '@features/home/module-tile-theme';
 import { modulePalettes } from '@ds/tokens';
 
+import { AA_TEXT, AA_UI, contrastRatio as contrast } from '../contrast';
 import {
   FRAMEWORK_MODULE_IDS,
   moduleColorThemes,
@@ -18,34 +19,7 @@ import {
  * failure mode this whole derivation exists to prevent.
  */
 
-/** WCAG relative luminance. */
-function luminance(hex: string): number {
-  const channels = [1, 3, 5].map((index) => {
-    const value = parseInt(hex.slice(index, index + 2), 16) / 255;
-    return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
-  }) as [number, number, number];
-  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-}
-
-function contrast(a: string, b: string): number {
-  const first = luminance(a);
-  const second = luminance(b);
-  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
-}
-
 const WHITE = '#FFFFFF';
-/** WCAG AA for normal text. */
-const AA_TEXT = 4.5;
-/** WCAG AA for non-text UI components and boundaries. */
-const AA_UI = 3;
-
-describe('contrast helper', () => {
-  it('matches the known reference ratios', () => {
-    // Black on white is exactly 21:1, and a colour against itself is 1:1.
-    expect(contrast('#000000', WHITE)).toBeCloseTo(21, 2);
-    expect(contrast('#777777', '#777777')).toBeCloseTo(1, 5);
-  });
-});
 
 describe.each(FRAMEWORK_MODULE_IDS)('module theme: %s', (moduleId) => {
   const theme = moduleColorThemes[moduleId];
