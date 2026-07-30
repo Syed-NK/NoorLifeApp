@@ -191,6 +191,15 @@ export const moduleType = {
   headerTitle: [17, 24],
   /** Hero headline inside the hero card. */
   heroTitle: [19, 26],
+  /**
+   * The hero display figure — Faith's prayer name and time, Health's score.
+   *
+   * Measured at ~30 dp on the Faith reference. Line height is deliberately tight (1.13)
+   * because Faith stacks two of these lines and the reference shows them close-set.
+   */
+  heroDisplay: [27, 31],
+  /** Health's wellness score, larger again at ~40 dp in its reference. */
+  heroScore: [40, 44],
   /** Hero supporting line. */
   heroBody: [12.5, 18],
   /** Hero eyebrow / module name above the headline. */
@@ -199,12 +208,42 @@ export const moduleType = {
   sectionTitle: [14, 20],
   /** Section trailing action ("See all"). */
   sectionAction: [12, 17],
+  /**
+   * Heading inside a half-width card, e.g. "Today's Worship".
+   *
+   * Smaller than `sectionTitle`: measured ~13 dp on the reference, and at the full 14 dp
+   * "Today's Worship" plus its "View All" link cannot fit a 176 dp column — it truncated to
+   * "Today's Wor…" on the first build.
+   */
+  cardHeading: [12, 17],
+  /** The trailing link beside a `cardHeading`. ~11.5 dp on the reference. */
+  cardAction: [10.5, 14],
+  /** A list row's label inside a half-width card. ~11.5 dp measured. */
+  rowLabel: [11, 15],
+  /** A list row's trailing value or time. ~10.5 dp measured. */
+  rowMeta: [9.5, 13],
+  /**
+   * A metric card's figure, e.g. "7,542".
+   *
+   * Its own token because a quarter-width card leaves ~45 dp for text: at the shared
+   * 13.5 dp card title every one of Health's four metrics truncated ("7,5…", "Go…").
+   */
+  metricValue: [12.5, 16],
+  /** Chart axis ticks. A seventh of a half-width card is ~18 dp, so these must be small. */
+  chartAxis: [9.5, 13],
   /** Card title. */
   cardTitle: [13.5, 19],
   /** Card body and list rows. */
   body: [12.5, 18],
   /** Metadata, timestamps, units. */
   caption: [11, 15],
+  /**
+   * Qur'anic Arabic.
+   *
+   * Larger than body text and with a much taller line height: harakat sit above and
+   * below the baseline, and a 1.3 ratio clips them. Measured ~18 dp on the reference.
+   */
+  arabic: [18, 32],
   /** A large metric inside a summary card. */
   metric: [22, 27],
   /** Metric unit suffix. */
@@ -238,8 +277,16 @@ export type ModuleTypeToken = keyof typeof moduleType;
 export const moduleLayout = {
   referenceWidth: 393,
   pagePadding: 16,
-  /** Vertical gap between stacked sections. */
-  sectionGap: 18,
+  /**
+   * Vertical gap between stacked sections.
+   *
+   * 10 dp, measured off the approved individual-core-screen references. It was 18 dp
+   * while the framework had one generic composition, and at that value neither Faith nor
+   * Health fits its reference: the eight sections Faith needs plus a 68 dp navigation bar
+   * exceed a 852 dp viewport before any card grows. Density is not decoration here — it
+   * is what makes the approved screens fit.
+   */
+  sectionGap: 8,
   /** Gap between a section heading and its content. */
   headingGap: 10,
   /** Gap between cards within a section. */
@@ -269,7 +316,9 @@ export const moduleLayout = {
    */
   heroTextColumnRatio: 0.62,
   /** Cards. */
-  cardPadding: 13,
+  cardPadding: 11,
+  /** Padding inside a half-width card, where every dp of inner width counts. */
+  twoColumnPadding: 10,
   cardRadius: 16,
   radiusSmall: 10,
   radiusPill: 999,
@@ -287,6 +336,38 @@ export const moduleLayout = {
   navAIButton: 58,
   navAIImage: 50,
   navAIRaise: 15,
+  /**
+   * ── Metrics derived from the approved individual-core-screen references ────
+   *
+   * Every value below was measured off `design-reference/individual-core-screens/`
+   * (Faith at 1.18 px/dp, Health at 1.23 px/dp — see docs/PHASE_4A_MISMATCH_AUDIT.md).
+   * They are grouped and named after what they measure so a future screen cannot reach
+   * for "roughly the card size" and drift.
+   */
+  /** Header back/help control: a bordered white disc, as both references draw it. */
+  headerControl: 36,
+  /** Hero height. Faith measures ~168 dp, Health ~156 dp. */
+  heroFaith: 128,
+  heroHealth: 132,
+  /** Faith's eight-card feature grid: 4 columns, 9 dp gaps, 54 dp tall. */
+  faithFeatureHeight: 48,
+  faithFeatureIcon: 27,
+  /** Health's four metric cards: icon left, value/label stacked right. */
+  healthMetricHeight: 42,
+  healthMetricIcon: 21,
+  /** Faith's Continue-Quran card. */
+  continueCardHeight: 62,
+  /** The two-column content rows both screens are built from. */
+  twoColumnGap: 9,
+  /** Faith's compact Upcoming / Islamic Calendar pair. */
+  compactCardHeight: 64,
+  /** Health's Quick Log mini-cards. */
+  quickLogHeight: 49,
+  /** Health's wellness score ring. */
+  scoreRing: 88,
+  scoreRingStroke: 9,
+  /** The AI insight card's robot artwork. */
+  insightRobot: 50,
   /** Minimum touch target, both axes. WCAG 2.5.5 / Android accessibility. */
   minTouchTarget: 44,
   /** Space reserved below scrollable content so the nav bar never covers a card. */

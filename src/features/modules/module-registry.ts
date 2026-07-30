@@ -73,6 +73,10 @@ const faith: ModuleDefinition = {
   theme: moduleColorThemes.faith,
   pictogram: ASSET.faith,
   heroPictogram: ASSET.faith,
+  // Faith's approved reference captions its centre control; the others do not.
+  showAICaption: true,
+  // No approved standalone hero illustration exists yet — see the mismatch audit.
+  heroArtwork: null,
   routes: { home: '/faith', ai: '/faith/ai', help: '/settings/help' },
   navigation: moduleThemes.faith.navigation,
   hero: {
@@ -148,6 +152,10 @@ const health: ModuleDefinition = {
   theme: moduleColorThemes.health,
   pictogram: ASSET.health,
   heroPictogram: ASSET.health,
+  // Faith's approved reference captions its centre control; the others do not.
+  showAICaption: false,
+  // No approved standalone hero illustration exists yet — see the mismatch audit.
+  heroArtwork: null,
   routes: { home: '/health', ai: '/health/ai', help: '/settings/help' },
   navigation: moduleThemes.health.navigation,
   hero: {
@@ -224,6 +232,10 @@ const planner: ModuleDefinition = {
   theme: moduleColorThemes.planner,
   pictogram: ASSET.planner,
   heroPictogram: ASSET.planner,
+  // Faith's approved reference captions its centre control; the others do not.
+  showAICaption: false,
+  // No approved standalone hero illustration exists yet — see the mismatch audit.
+  heroArtwork: null,
   routes: { home: '/planner', ai: '/planner/ai', help: '/settings/help' },
   navigation: moduleThemes.planner.navigation,
   hero: {
@@ -292,6 +304,10 @@ const finance: ModuleDefinition = {
   theme: moduleColorThemes.finance,
   pictogram: ASSET.finance,
   heroPictogram: ASSET.finance,
+  // Faith's approved reference captions its centre control; the others do not.
+  showAICaption: false,
+  // No approved standalone hero illustration exists yet — see the mismatch audit.
+  heroArtwork: null,
   routes: { home: '/finance', ai: '/finance/ai', help: '/settings/help' },
   navigation: moduleThemes.finance.navigation,
   hero: {
@@ -374,6 +390,10 @@ const learning: ModuleDefinition = {
   theme: moduleColorThemes.learning,
   pictogram: ASSET.learning,
   heroPictogram: ASSET.learning,
+  // Faith's approved reference captions its centre control; the others do not.
+  showAICaption: false,
+  // No approved standalone hero illustration exists yet — see the mismatch audit.
+  heroArtwork: null,
   routes: { home: '/learning', ai: '/learning/ai', help: '/settings/help' },
   navigation: moduleThemes.learning.navigation,
   hero: {
@@ -436,6 +456,10 @@ const family: ModuleDefinition = {
   theme: moduleColorThemes.family,
   pictogram: ASSET.family,
   heroPictogram: ASSET.family,
+  // Faith's approved reference captions its centre control; the others do not.
+  showAICaption: false,
+  // No approved standalone hero illustration exists yet — see the mismatch audit.
+  heroArtwork: null,
   routes: { home: '/family', ai: '/family/ai', help: '/settings/help' },
   navigation: moduleThemes.family.navigation,
   hero: {
@@ -510,6 +534,10 @@ const goals: ModuleDefinition = {
   theme: moduleColorThemes.goals,
   pictogram: ASSET.goals,
   heroPictogram: ASSET.goals,
+  // Faith's approved reference captions its centre control; the others do not.
+  showAICaption: false,
+  // No approved standalone hero illustration exists yet — see the mismatch audit.
+  heroArtwork: null,
   routes: { home: '/goals', ai: '/goals/ai', help: '/settings/help' },
   navigation: moduleThemes.goals.navigation,
   hero: {

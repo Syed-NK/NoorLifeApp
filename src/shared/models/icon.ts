@@ -89,5 +89,18 @@ export type IconName =
   | 'steps'
   | 'mood'
   | 'money'
+  // ── Faith module surfaces (Phase 4A, from 03-faith.png) ──────────────────
+  | 'hadith'
+  | 'qibla'
+  | 'tasbih'
+  | 'crescent'
+  | 'share'
+  // ── Health module surfaces (Phase 4A, from 04-health.png) ────────────────
+  | 'medication'
+  | 'weight'
+  | 'walk'
+  | 'breathing'
+  | 'chart-bar'
+  | 'info-outline'
   | 'document'
   | 'image';

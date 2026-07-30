@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react-native';
 
 import { ModuleProvider } from '../module-context';
 import { moduleRegistry } from '../module-registry';
+import { hasApprovedComposition } from '../module-compositions';
 import { FRAMEWORK_MODULE_IDS, type FrameworkModuleId } from '../module-tokens';
 import { ModuleHomeScreen } from '../screens/module-home-screen';
 import { ModuleAIScreen } from '../screens/module-ai-screen';
@@ -25,11 +26,21 @@ import {
  * rendered it.
  */
 
+/**
+ * Modules still rendering the shared generic layout.
+ *
+ * Faith and Health are composed to their own approved references (Phase 4A), so the
+ * generic-composition assertions below do not apply to them — their content contract lives
+ * in `faith-health-screens.test.tsx`. Deriving the list from `hasApprovedComposition` rather
+ * than hard-coding it means composing the next module updates this automatically.
+ */
+const GENERIC_MODULE_IDS = FRAMEWORK_MODULE_IDS.filter((id) => !hasApprovedComposition(id));
+
 /** A provider pinned to one scenario, so a screen's non-content states are reachable. */
 const scenarioProvider = (scenario: MockScenario) => (moduleId: FrameworkModuleId) =>
   createMockModuleRepository(moduleId, scenario);
 
-describe.each(FRAMEWORK_MODULE_IDS)('module home: %s', (moduleId) => {
+describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   const definition = moduleRegistry[moduleId];
 
   it('renders the header, hero and five-slot navigation', async () => {

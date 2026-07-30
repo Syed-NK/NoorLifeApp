@@ -59,7 +59,11 @@ export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
       <View style={[styles.cluster, { width: clusterWidth }]}>
         <PressableScale
           onPress={onBack ?? (() => router.replace(globalRoutes.home))}
-          style={[styles.control, { width: target, height: target }]}
+          style={[
+            styles.control,
+            styles.disc,
+            { width: target, height: target, borderRadius: target / 2 },
+          ]}
           {...iconButtonA11y('Back to Main Home')}
           testID={`${testID ?? 'module-header'}-back`}
         >
@@ -104,7 +108,11 @@ export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
       <View style={[styles.cluster, styles.clusterEnd, { width: clusterWidth }]}>
         <PressableScale
           onPress={() => router.push(module.routes.help)}
-          style={[styles.control, { width: target, height: target }]}
+          style={[
+            styles.control,
+            styles.disc,
+            { width: target, height: target, borderRadius: target / 2 },
+          ]}
           {...iconButtonA11y(`Help with ${module.name}`)}
           testID={`${testID ?? 'module-header'}-help`}
         >
@@ -131,6 +139,17 @@ const styles = StyleSheet.create({
   control: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /**
+   * The bordered white disc both approved references draw around Back and Help.
+   *
+   * The disc *is* the 44 dp touch target, so the visible chrome and the tappable area are
+   * the same rectangle — no hit-slop to keep in step with a smaller visual.
+   */
+  disc: {
+    backgroundColor: moduleNeutrals.surface,
+    borderWidth: 1,
+    borderColor: moduleNeutrals.border,
   },
   title: {
     flex: 1,

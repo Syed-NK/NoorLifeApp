@@ -83,7 +83,25 @@ export function ModuleBottomNavigation({
                     testID={`${prefix}-ai`}
                   />
                 </View>
-                {/* No caption by design — see ModuleAICenterButton. */}
+                {/*
+                  Whether a caption appears is per module, read from the definition.
+
+                  The approved Faith reference labels the centre control "Faith AI"; the
+                  approved Health reference labels nothing. Locked Main Home also shows
+                  none, which is why the framework originally hard-coded its absence — but
+                  "no caption anywhere" turned out to be an assumption, not a rule.
+                */}
+                {module.showAICaption ? (
+                  <ModuleText
+                    token="navLabel"
+                    color={module.theme.ink}
+                    numberOfLines={1}
+                    maxFontSizeMultiplier={1.2}
+                    style={styles.aiCaption}
+                  >
+                    {item.label}
+                  </ModuleText>
+                ) : null}
               </View>
             );
           }
@@ -168,6 +186,15 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     textAlign: 'center',
     marginTop: 2,
+  },
+  /**
+   * The centre caption sits below the raised control, so it needs its own spacing rather
+   * than the side items' 2 dp — the control's negative margin has already lifted it.
+   */
+  aiCaption: {
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    marginTop: 3,
   },
   /** Spans the slot so its child centres horizontally without a magic offset. */
   activeBarRow: {

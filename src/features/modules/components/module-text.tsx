@@ -14,13 +14,22 @@ import { useModuleMetrics } from '../use-module-metrics';
 const FACE: Record<ModuleTypeToken, keyof typeof fontFamilies> = {
   headerTitle: 'semiBold',
   heroTitle: 'semiBold',
+  heroDisplay: 'semiBold',
+  heroScore: 'semiBold',
   heroBody: 'regular',
   eyebrow: 'medium',
   sectionTitle: 'semiBold',
   sectionAction: 'medium',
+  cardHeading: 'semiBold',
+  cardAction: 'medium',
+  rowLabel: 'regular',
+  rowMeta: 'regular',
+  metricValue: 'semiBold',
+  chartAxis: 'regular',
   cardTitle: 'semiBold',
   body: 'regular',
   caption: 'regular',
+  arabic: 'regular',
   metric: 'semiBold',
   metricUnit: 'medium',
   tileLabel: 'medium',
@@ -40,6 +49,8 @@ const SECONDARY_BY_DEFAULT: ReadonlySet<ModuleTypeToken> = new Set<ModuleTypeTok
   'caption',
   'metricUnit',
   'stateBody',
+  'rowMeta',
+  'chartAxis',
 ]);
 
 export type ModuleTextProps = TextProps & {

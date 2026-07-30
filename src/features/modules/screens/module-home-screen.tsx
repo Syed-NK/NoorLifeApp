@@ -15,6 +15,7 @@ import {
   ModuleSection,
   ModuleSummaryCard,
 } from '../components';
+import { ModuleHomeComposition, hasApprovedComposition } from '../module-compositions';
 import { getModuleDefinition } from '../module-registry';
 import { moduleLayout, type FrameworkModuleId } from '../module-tokens';
 import type { ModuleRepositoryProvider } from '../services/module-data.contract';
@@ -31,25 +32,42 @@ export type ModuleHomeScreenProps = {
 /**
  * A module home, for any module.
  *
- * This is the framework's own proof. There is one screen for seven modules, and
- * everything that differs between them — colour, artwork, copy, destinations,
- * capabilities, which AI answers, what the empty state says — comes from the registry.
- * Adding the eighth module means adding a registry entry and a route file, not writing
- * this again.
+ * ── Shared shell, module-specific composition ───────────────────────────────
+ * The shell is the same for all seven: scaffold, header, five-slot navigation, theme,
+ * type. What goes *between* them is not. A module with an approved
+ * individual-core-screen reference supplies its own composition through
+ * `getModuleHomeContent`, and this screen renders it verbatim.
  *
- * The body is a `switch` over the load state, so content and skeletons cannot render
- * together, and the offline case cannot be forgotten. Each non-content state gets the
- * module's own copy.
+ * The generic layout below is the fallback for the five modules whose references have not
+ * been implemented yet. It was previously the layout for all seven, which is what made
+ * every module look like the same screen in a different colour — the thing Phase 4A
+ * corrects. It is kept, not deleted, because those five routes must keep working.
+ *
+ * The fallback's body is a `switch` over the load state, so content and skeletons cannot
+ * render together and the offline case cannot be forgotten.
  */
 export function ModuleHomeScreen({ moduleId, provider, testID }: ModuleHomeScreenProps) {
   const router = useRouter();
   const { dp } = useModuleMetrics();
   const definition = getModuleDefinition(moduleId);
   const state = useModuleOverview(moduleId, provider);
+  const composed = hasApprovedComposition(moduleId);
 
   // The home is always the first navigation slot for every module.
   const activeKey = definition.navigation[0].key;
   const gap = dp(moduleLayout.sectionGap);
+
+  if (composed) {
+    return (
+      <ModuleScaffold
+        moduleId={moduleId}
+        activeKey={activeKey}
+        testID={testID ?? `${moduleId}-home`}
+      >
+        <ModuleHomeComposition moduleId={moduleId} />
+      </ModuleScaffold>
+    );
+  }
 
   return (
     <ModuleScaffold

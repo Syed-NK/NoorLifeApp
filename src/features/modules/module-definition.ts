@@ -148,6 +148,26 @@ export type ModuleDefinition = {
    * five routes and a way for them to disagree.
    */
   readonly navigation: ModuleNavigation;
+  /**
+   * Whether the raised centre control shows its label beneath it.
+   *
+   * Per module, because the approved references disagree: `03-faith.png` captions the
+   * control "Faith AI", `04-health.png` captions nothing. The framework first assumed no
+   * caption anywhere, following locked Main Home — an assumption, not a rule.
+   */
+  readonly showAICaption: boolean;
+  /**
+   * The module's full hero illustration, distinct from its `pictogram`.
+   *
+   * `null` means the approved artwork does not exist in the project yet. Consumers must
+   * render **nothing** in that case — never the small pictogram as a stand-in, and never
+   * an invented scene. This mirrors how the absent Google "G" mark is handled: the
+   * registry admits the gap rather than papering over it.
+   *
+   * See docs/PHASE_4A_MISMATCH_AUDIT.md for the two files still needed and their
+   * expected paths and dimensions.
+   */
+  readonly heroArtwork: ImageSourcePropType | null;
   readonly hero: ModuleHeroContent;
   readonly quickActions: readonly ModuleQuickActionSpec[];
   readonly capabilities: readonly ModuleCapability[];
