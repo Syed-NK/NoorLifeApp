@@ -199,7 +199,7 @@ export const moduleType = {
    */
   heroDisplay: [27, 31],
   /** Health's wellness score, larger again at ~40 dp in its reference. */
-  heroScore: [40, 44],
+  heroScore: [32, 36],
   /** Hero supporting line. */
   heroBody: [12.5, 18],
   /** Hero eyebrow / module name above the headline. */
@@ -309,12 +309,14 @@ export const moduleLayout = {
    */
   heroArtSize: 88,
   /**
-   * Share of the card width given to the hero's copy (spec: 60–65%).
+   * Share of the card width given to the hero copy.
    *
-   * A fixed proportion rather than a flex remainder, so a long headline cannot encroach
-   * on the pictogram.
+   * 0.52, matching the quiet band the locked artwork leaves on the copy side. It was 0.62
+   * while the hero was a flat gradient with a pictogram, and at that width Finance's body
+   * copy ran straight over the wallet. The brief is explicit that copy must not cover the
+   * main artwork, and the artwork decides where the room is.
    */
-  heroTextColumnRatio: 0.62,
+  heroTextColumnRatio: 0.52,
   /** Cards. */
   cardPadding: 11,
   /** Padding inside a half-width card, where every dp of inner width counts. */
@@ -346,9 +348,23 @@ export const moduleLayout = {
    */
   /** Header back/help control: a bordered white disc, as both references draw it. */
   headerControl: 36,
-  /** Hero height. Faith measures ~168 dp, Health ~156 dp. */
-  heroFaith: 128,
-  heroHealth: 132,
+  /**
+   * Hero height, shared by every module.
+   *
+   * 132 dp, and not a matter of taste: the locked hero PNGs are 1083 x 396 px, which at 3x
+   * is 361 x 132 dp — exactly the module content column. At this height each asset renders
+   * one-to-one, so `cover` neither crops nor stretches it.
+   *
+   * This supersedes the per-screen heights measured off the individual-core-screen mockups
+   * (Faith ~168, Health ~156). Those mockups pre-date the locked artwork, and honouring them
+   * would force `cover` to scale by height and crop 27-49 dp off each side — which on Faith
+   * removes the flanking minarets and on Health the trees. Given a locked canvas cut to the
+   * content column, showing all of the artwork is the faithful reading.
+   *
+   * The consequence, stated plainly: hero type is smaller than in those mockups, because a
+   * 132 dp box holds less. See docs/PHASE_4A_MISMATCH_AUDIT.md.
+   */
+  heroHeight: 132,
   /** Faith's eight-card feature grid: 4 columns, 9 dp gaps, 54 dp tall. */
   faithFeatureHeight: 48,
   faithFeatureIcon: 27,
@@ -364,8 +380,8 @@ export const moduleLayout = {
   /** Health's Quick Log mini-cards. */
   quickLogHeight: 49,
   /** Health's wellness score ring. */
-  scoreRing: 88,
-  scoreRingStroke: 9,
+  scoreRing: 74,
+  scoreRingStroke: 8,
   /** The AI insight card's robot artwork. */
   insightRobot: 50,
   /** Minimum touch target, both axes. WCAG 2.5.5 / Android accessibility. */

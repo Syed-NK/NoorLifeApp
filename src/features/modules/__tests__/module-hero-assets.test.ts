@@ -73,24 +73,23 @@ describe('there is one canonical asset per module', () => {
   });
 });
 
-describe('hero geometry stays inside the approved band', () => {
-  it('sizes the pictogram between 78 and 92 dp', () => {
-    expect(moduleLayout.heroArtSize).toBeGreaterThanOrEqual(78);
-    expect(moduleLayout.heroArtSize).toBeLessThanOrEqual(92);
+describe('hero geometry follows the locked artwork', () => {
+  it(`sizes the hero to the artwork’s own aspect ratio`, () => {
+    // 1083 x 396 at 3x is 361 x 132 dp, and 361 dp is the content column. Matching it means
+    // `cover` neither crops nor stretches the locked asset.
+    const contentWidth = moduleLayout.referenceWidth - moduleLayout.pagePadding * 2;
+    expect(moduleLayout.heroHeight).toBe(Math.round(contentWidth / (1083 / 396)));
   });
 
-  it('gives the copy 60–65% of the card', () => {
-    expect(moduleLayout.heroTextColumnRatio).toBeGreaterThanOrEqual(0.6);
-    expect(moduleLayout.heroTextColumnRatio).toBeLessThanOrEqual(0.65);
-  });
-
-  it('leaves the copy and the pictogram unable to overlap', () => {
-    // Text width + gap + art must fit inside the card's content box. If this ever fails,
-    // the two columns are fighting for the same pixels.
-    const card = moduleLayout.referenceWidth - moduleLayout.pagePadding * 2;
-    const inner = card - moduleLayout.heroPadding * 2;
-    const text = Math.floor(card * moduleLayout.heroTextColumnRatio);
-    expect(text + 10 + moduleLayout.heroArtSize).toBeLessThanOrEqual(inner);
+  it(`keeps the copy inside the artwork’s quiet band`, () => {
+    /*
+     * Was 60-65%, measured off the individual-core-screen mockups where the hero was a flat
+     * gradient with a small pictogram on the right. The locked artwork moved the constraint:
+     * each asset leaves roughly the left half quiet and puts its subject in the right half,
+     * so the copy column follows the artwork. At 62% Finance’s body copy ran over the wallet.
+     */
+    expect(moduleLayout.heroTextColumnRatio).toBeGreaterThanOrEqual(0.45);
+    expect(moduleLayout.heroTextColumnRatio).toBeLessThanOrEqual(0.55);
   });
 });
 

@@ -66,33 +66,34 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
     expect(screen.getByLabelText(`Help with ${definition.name}`)).toBeTruthy();
   });
 
-  it('renders the hero artwork rather than collapsing it', async () => {
-    // The exact defect an entry-flow panel shipped with: a centring style collapsed the
-    // illustration to zero width and no test noticed.
+  it('renders the locked hero artwork, covered and untinted', async () => {
+    /*
+     * This replaces two tests that asserted the hero rendered the module *pictogram*. It
+     * did, while no hero artwork existed. Now that the eight locked PNGs are in the project,
+     * putting the small pictogram in the hero is explicitly forbidden — so the assertion is
+     * inverted: the hero shows its own artwork, and never the pictogram.
+     */
     await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
 
-    const box = screen.getByTestId(`${moduleId}-hero-artbox`);
-    const style = box.props.style as { width?: number; height?: number };
-    // The approved band is 78–92 dp, and the box is what fixes it — the Image inside
-    // fills its parent, so a collapsed box is the only way the artwork can vanish.
-    expect(style.width ?? 0).toBeGreaterThanOrEqual(78);
-    expect(style.height ?? 0).toBeGreaterThanOrEqual(78);
-    expect(style.width ?? 0).toBeLessThanOrEqual(92);
-  });
-
-  it('renders the module’s approved PNG, untinted and uncropped', async () => {
-    // The artwork lock, asserted where it actually matters: at render. A hero pointing at
-    // any other asset — a generic icon, a second illustration — fails here.
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
-
-    const art = screen.getByTestId(`${moduleId}-hero-art`);
-    expect(art.props.source).toBe(definition.heroPictogram);
-    expect(art.props.source).toBe(definition.pictogram);
-    // `contain` never stretches or crops; a tint would recolour approved artwork.
-    expect(art.props.resizeMode).toBe('contain');
-    const style = (art.props.style ?? {}) as { tintColor?: string; backgroundColor?: string };
-    expect(style.tintColor).toBeUndefined();
-    expect(style.backgroundColor).toBeUndefined();
+    const art = screen.getByTestId(`${moduleId}-hero-artwork`);
+    expect(art.props.source).toBe(definition.heroArtwork);
+    expect(art.props.source).not.toBe(definition.pictogram);
+    // `cover` fills the card without unequal scaling; a tint would recolour locked artwork.
+    expect(art.props.resizeMode).toBe('cover');
+    const style = [art.props.style].flat(3).filter(Boolean) as Record<string, unknown>[];
+    for (const entry of style) {
+      expect(entry.tintColor).toBeUndefined();
+      expect(entry.backgroundColor).toBeUndefined();
+    }
+    /*
+     * Fills its parent, which is itself absolutely positioned over the card.
+     *
+     * Asserted as `100%` rather than `position: 'absolute'` on the image: sizing it with
+     * absolute insets alone made Android lay it out at its intrinsic 1083 × 396 and show
+     * only the artwork's top-left corner at ~3×. A definite percentage box is what makes
+     * `cover` behave, so that is the property worth locking.
+     */
+    expect(style.some((entry) => entry.width === '100%' && entry.height === '100%')).toBe(true);
   });
 
   it('names the AI centre control after this module’s assistant', async () => {

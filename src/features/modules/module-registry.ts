@@ -1,5 +1,6 @@
 import { moduleThemes } from '@ds/modules/module-themes';
 import { getModulePictogram } from '@features/home/module-pictograms';
+import { noorLifeAssets } from '@shared/assets/noorlife-assets';
 
 import { moduleAIPolicies } from './module-ai-policy';
 import type { ModuleDefinition } from './module-definition';
@@ -75,8 +76,9 @@ const faith: ModuleDefinition = {
   heroPictogram: ASSET.faith,
   // Faith's approved reference captions its centre control; the others do not.
   showAICaption: true,
-  // No approved standalone hero illustration exists yet — see the mismatch audit.
-  heroArtwork: null,
+  heroArtwork: noorLifeAssets.moduleHeroes.faith,
+  heroScrim: 0,
+  heroCopySide: 'left',
   routes: { home: '/faith', ai: '/faith/ai', help: '/settings/help' },
   navigation: moduleThemes.faith.navigation,
   hero: {
@@ -154,8 +156,9 @@ const health: ModuleDefinition = {
   heroPictogram: ASSET.health,
   // Faith's approved reference captions its centre control; the others do not.
   showAICaption: false,
-  // No approved standalone hero illustration exists yet — see the mismatch audit.
-  heroArtwork: null,
+  heroArtwork: noorLifeAssets.moduleHeroes.health,
+  heroScrim: 0.45,
+  heroCopySide: 'left',
   routes: { home: '/health', ai: '/health/ai', help: '/settings/help' },
   navigation: moduleThemes.health.navigation,
   hero: {
@@ -234,8 +237,9 @@ const planner: ModuleDefinition = {
   heroPictogram: ASSET.planner,
   // Faith's approved reference captions its centre control; the others do not.
   showAICaption: false,
-  // No approved standalone hero illustration exists yet — see the mismatch audit.
-  heroArtwork: null,
+  heroArtwork: noorLifeAssets.moduleHeroes.planner,
+  heroScrim: 0,
+  heroCopySide: 'left',
   routes: { home: '/planner', ai: '/planner/ai', help: '/settings/help' },
   navigation: moduleThemes.planner.navigation,
   hero: {
@@ -306,8 +310,9 @@ const finance: ModuleDefinition = {
   heroPictogram: ASSET.finance,
   // Faith's approved reference captions its centre control; the others do not.
   showAICaption: false,
-  // No approved standalone hero illustration exists yet — see the mismatch audit.
-  heroArtwork: null,
+  heroArtwork: noorLifeAssets.moduleHeroes.finance,
+  heroScrim: 0.2,
+  heroCopySide: 'left',
   routes: { home: '/finance', ai: '/finance/ai', help: '/settings/help' },
   navigation: moduleThemes.finance.navigation,
   hero: {
@@ -392,8 +397,9 @@ const learning: ModuleDefinition = {
   heroPictogram: ASSET.learning,
   // Faith's approved reference captions its centre control; the others do not.
   showAICaption: false,
-  // No approved standalone hero illustration exists yet — see the mismatch audit.
-  heroArtwork: null,
+  heroArtwork: noorLifeAssets.moduleHeroes.learning,
+  heroScrim: 0,
+  heroCopySide: 'left',
   routes: { home: '/learning', ai: '/learning/ai', help: '/settings/help' },
   navigation: moduleThemes.learning.navigation,
   hero: {
@@ -458,8 +464,9 @@ const family: ModuleDefinition = {
   heroPictogram: ASSET.family,
   // Faith's approved reference captions its centre control; the others do not.
   showAICaption: false,
-  // No approved standalone hero illustration exists yet — see the mismatch audit.
-  heroArtwork: null,
+  heroArtwork: noorLifeAssets.moduleHeroes.family,
+  heroScrim: 0,
+  heroCopySide: 'left',
   routes: { home: '/family', ai: '/family/ai', help: '/settings/help' },
   navigation: moduleThemes.family.navigation,
   hero: {
@@ -536,8 +543,9 @@ const goals: ModuleDefinition = {
   heroPictogram: ASSET.goals,
   // Faith's approved reference captions its centre control; the others do not.
   showAICaption: false,
-  // No approved standalone hero illustration exists yet — see the mismatch audit.
-  heroArtwork: null,
+  heroArtwork: noorLifeAssets.moduleHeroes.goals,
+  heroScrim: 0.2,
+  heroCopySide: 'left',
   routes: { home: '/goals', ai: '/goals/ai', help: '/settings/help' },
   navigation: moduleThemes.goals.navigation,
   hero: {

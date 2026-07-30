@@ -114,7 +114,7 @@ export function ModuleHeroAudit({ testID }: ModuleHeroAuditProps) {
       <Fact label="Source size" value={intrinsic} />
       <Fact
         label="Rendered box"
-        value={`${dp(moduleLayout.heroArtSize)}×${dp(moduleLayout.heroArtSize)} dp · contain · no tint`}
+        value={`full-bleed · ${dp(moduleLayout.heroHeight)} dp tall · cover · no tint`}
       />
       <Fact
         label="heroPictogram === pictogram"

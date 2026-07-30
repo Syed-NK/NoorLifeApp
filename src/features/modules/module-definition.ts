@@ -157,17 +157,26 @@ export type ModuleDefinition = {
    */
   readonly showAICaption: boolean;
   /**
-   * The module's full hero illustration, distinct from its `pictogram`.
+   * The module's locked hero illustration — text-free, 1083 x 396 px.
    *
-   * `null` means the approved artwork does not exist in the project yet. Consumers must
-   * render **nothing** in that case — never the small pictogram as a stand-in, and never
-   * an invented scene. This mirrors how the absent Google "G" mark is handled: the
-   * registry admits the gap rather than papering over it.
+   * Distinct from `pictogram`, and never interchangeable with it: the pictogram is the
+   * small mark for tiles and rows, this is the full-bleed scene behind the hero's live UI.
+   * Substituting one for the other is explicitly forbidden and asserted against by test.
    *
-   * See docs/PHASE_4A_MISMATCH_AUDIT.md for the two files still needed and their
-   * expected paths and dimensions.
+   * No longer nullable. The artwork was missing through Phase 4A, and the honest handling
+   * then was a slot that rendered nothing; now that all eight assets exist, a required field
+   * is the stronger contract — a module cannot be registered without its hero.
    */
-  readonly heroArtwork: ImageSourcePropType | null;
+  readonly heroArtwork: ImageSourcePropType;
+  /**
+   * Black-scrim opacity over the copy side, 0 for none.
+   *
+   * Measured, not chosen: the 95th-percentile luminance of each asset's actual copy area,
+   * solved for the opacity at which white text clears 4.5:1. Five heroes need none.
+   */
+  readonly heroScrim: number;
+  /** Which side the live copy occupies. Noor AI is right; every module hero is left. */
+  readonly heroCopySide: 'left' | 'right';
   readonly hero: ModuleHeroContent;
   readonly quickActions: readonly ModuleQuickActionSpec[];
   readonly capabilities: readonly ModuleCapability[];

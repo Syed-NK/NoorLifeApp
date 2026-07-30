@@ -272,18 +272,12 @@ describe('theme and asset use stay correct', () => {
     expect(moduleRegistry[moduleId].heroPictogram).toBe(moduleRegistry[moduleId].pictogram);
   });
 
-  it.each(['faith', 'health'] as const)(
-    '%s has no standalone hero artwork yet, and admits it',
-    (moduleId) => {
-      /*
-       * The two hero illustrations do not exist as assets — see
-       * docs/PHASE_4A_MISMATCH_AUDIT.md. `null` is the honest record of that, and this test
-       * exists so that supplying the artwork is a deliberate change with a failing test to
-       * update, rather than something that could be faked with the small pictogram.
-       */
-      expect(moduleRegistry[moduleId].heroArtwork).toBeNull();
-    },
-  );
+  it.each(['faith', 'health'] as const)('%s renders its locked hero artwork', (moduleId) => {
+    // Through Phase 4A this asserted  was null, which was the honest record of
+    // artwork that did not exist. The eight locked PNGs now do exist, so the contract flips.
+    expect(moduleRegistry[moduleId].heroArtwork).toBe(noorLifeAssets.moduleHeroes[moduleId]);
+    expect(moduleRegistry[moduleId].heroArtwork).not.toBe(moduleRegistry[moduleId].pictogram);
+  });
 
   it('uses the approved Noor AI robot for both insight cards', async () => {
     // One asset for the assistant everywhere, never a per-screen variant.

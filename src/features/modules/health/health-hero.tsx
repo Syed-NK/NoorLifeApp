@@ -1,7 +1,8 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale, ProgressRing } from '@ds/components';
 
+import { ModuleHeroArtwork } from '../components/module-hero-artwork';
 import { ModuleText } from '../components/module-text';
 import { useModule } from '../module-context';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
@@ -42,31 +43,27 @@ export function HealthHero({ model, onViewInsights, testID }: HealthHeroProps) {
       style={[
         styles.root,
         {
-          minHeight: dp(moduleLayout.heroHealth),
+          height: dp(moduleLayout.heroHeight),
           borderRadius: dp(moduleLayout.cardRadius),
           backgroundColor: module.theme.gradientEnd,
         },
       ]}
       testID={testID}
     >
-      {/* Artwork slot. Renders only when the approved illustration exists. */}
-      {module.heroArtwork === null ? null : (
-        <Image
-          source={module.heroArtwork}
-          style={styles.artwork}
-          resizeMode="cover"
-          accessible={false}
-          testID={`${testID ?? 'health-hero'}-artwork`}
-        />
-      )}
+      <ModuleHeroArtwork
+        source={module.heroArtwork}
+        scrim={module.heroScrim}
+        copySide={module.heroCopySide}
+        testID={`${testID ?? 'health-hero'}-artwork`}
+      />
 
-      <View style={[styles.row, { padding: dp(moduleLayout.heroPadding), columnGap: dp(10) }]}>
+      <View style={[styles.row, { padding: dp(10), columnGap: dp(8) }]}>
         <View style={styles.textColumn}>
-          <ModuleText token="eyebrow" color={module.theme.onFill} numberOfLines={1}>
+          <ModuleText token="rowMeta" color={module.theme.onFill} numberOfLines={1}>
             {model.eyebrow}
           </ModuleText>
           <ModuleText
-            token="heroTitle"
+            token="cardHeading"
             color={module.theme.onFill}
             numberOfLines={1}
             maxFontSizeMultiplier={1.2}
@@ -84,7 +81,7 @@ export function HealthHero({ model, onViewInsights, testID }: HealthHeroProps) {
           >
             {String(model.score)}
           </ModuleText>
-          <ModuleText token="heroBody" color={module.theme.onFill} numberOfLines={2}>
+          <ModuleText token="rowMeta" color={module.theme.onFill} numberOfLines={2}>
             {model.encouragement}
           </ModuleText>
 
@@ -97,21 +94,21 @@ export function HealthHero({ model, onViewInsights, testID }: HealthHeroProps) {
               {
                 marginTop: dp(7),
                 borderRadius: dp(moduleLayout.radiusSmall),
-                paddingHorizontal: dp(11),
-                paddingVertical: dp(7),
+                paddingHorizontal: dp(9),
+                paddingVertical: dp(5),
                 columnGap: dp(6),
               },
             ]}
             testID={`${testID ?? 'health-hero'}-action`}
           >
             <AppIcon name="chart-bar" size={dp(15)} color={module.theme.ink} />
-            <ModuleText token="button" color={module.theme.ink} numberOfLines={1}>
+            <ModuleText token="cardAction" color={module.theme.ink} numberOfLines={1}>
               {model.actionLabel}
             </ModuleText>
           </PressableScale>
         </View>
 
-        <View style={styles.ringColumn}>
+        <View style={[styles.ringColumn, { marginRight: dp(44) }]}>
           <ProgressRing
             progress={model.score}
             size={ring}
@@ -137,13 +134,6 @@ export function HealthHero({ model, onViewInsights, testID }: HealthHeroProps) {
 const styles = StyleSheet.create({
   root: {
     overflow: 'hidden',
-  },
-  artwork: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
   },
   row: {
     flexDirection: 'row',
