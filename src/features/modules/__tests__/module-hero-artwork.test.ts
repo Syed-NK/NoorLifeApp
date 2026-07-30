@@ -77,7 +77,9 @@ describe.each(FRAMEWORK_MODULE_IDS)('module hero artwork: %s', (moduleId) => {
   const definition = moduleRegistry[moduleId];
 
   it('references its own locked hero', () => {
-    expect(definition.heroArtwork).toBe(noorLifeAssets.moduleHeroes[moduleId]);
+    // The asset registry keys Noor AI as `noorAI`; module ids are kebab-case.
+    const key = moduleId === 'noor-ai' ? 'noorAI' : moduleId;
+    expect(definition.heroArtwork).toBe(noorLifeAssets.moduleHeroes[key]);
   });
 
   it('never uses a pictogram as its hero artwork', () => {
@@ -93,9 +95,10 @@ describe.each(FRAMEWORK_MODULE_IDS)('module hero artwork: %s', (moduleId) => {
     );
   });
 
-  it('places its copy on the left, as the artwork’s quiet band is on the left', () => {
-    // Noor AI is the one asset with copy on the right, and it is not a framework module.
-    expect(definition.heroCopySide).toBe('left');
+  it('places its copy on whichever side its artwork leaves quiet', () => {
+    // Seven assets put their subject right and leave the left quiet. Noor AI is the mirror:
+    // the waving robot is on the left, so its copy goes right.
+    expect(definition.heroCopySide).toBe(moduleId === 'noor-ai' ? 'right' : 'left');
   });
 
   it('carries only the scrim its own artwork requires', () => {
@@ -106,6 +109,7 @@ describe.each(FRAMEWORK_MODULE_IDS)('module hero artwork: %s', (moduleId) => {
      * artwork that does not need it, which the brief rules out.
      */
     const REQUIRED: Readonly<Record<string, number>> = {
+      'noor-ai': 0, //  its copy area measures 8.61:1 — no scrim needed
       faith: 0,
       health: 0.45,
       planner: 0,

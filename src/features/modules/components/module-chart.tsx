@@ -10,6 +10,13 @@ export type ModuleProgressBarProps = {
   readonly value: number;
   /** Baseline dp. */
   readonly height?: number;
+  /**
+   * Renders for a coloured surface rather than a white card.
+   *
+   * The default ink-on-grey fill disappears over hero artwork, so the on-fill variant uses
+   * white on a translucent track — the treatment the Finance reference shows.
+   */
+  readonly onFillSurface?: boolean;
   /** Screen-reader description, e.g. "Surah Al-Kahf, 55 percent read". */
   readonly accessibilityLabel: string;
   readonly testID?: string;
@@ -25,6 +32,7 @@ export type ModuleProgressBarProps = {
 export function ModuleProgressBar({
   value,
   height = 5,
+  onFillSurface = false,
   accessibilityLabel,
   testID,
 }: ModuleProgressBarProps) {
@@ -35,7 +43,14 @@ export function ModuleProgressBar({
 
   return (
     <View
-      style={[styles.track, { height: h, borderRadius: h / 2 }]}
+      style={[
+        styles.track,
+        {
+          height: h,
+          borderRadius: h / 2,
+          backgroundColor: onFillSurface ? 'rgba(255,255,255,0.34)' : moduleNeutrals.skeleton,
+        },
+      ]}
       accessible
       accessibilityRole="progressbar"
       accessibilityLabel={accessibilityLabel}
@@ -47,7 +62,7 @@ export function ModuleProgressBar({
           width: `${clamped * 100}%`,
           height: '100%',
           borderRadius: h / 2,
-          backgroundColor: theme.ink,
+          backgroundColor: onFillSurface ? '#FFFFFF' : theme.ink,
         }}
       />
     </View>

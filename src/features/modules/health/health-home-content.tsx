@@ -44,7 +44,7 @@ export function HealthHomeContent() {
   return (
     <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
       <HealthHero
-        model={model.wellness}
+        score={model.wellness.score}
         onViewInsights={() => router.push('/health/trends')}
         testID="health-hero"
       />

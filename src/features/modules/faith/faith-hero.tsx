@@ -7,7 +7,6 @@ import { ModuleText } from '../components/module-text';
 import { useModule } from '../module-context';
 import { moduleLayout } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
-import type { FaithHomeViewModel } from './faith-view-model';
 
 /** Gold, sampled from the locked artwork's ornament and the reference's button. */
 const GOLD = '#E3BE73';
@@ -16,27 +15,38 @@ const GOLD_DEEP = '#C99B45';
 const GOLD_INK = '#3D2E10';
 
 export type FaithHeroProps = {
-  readonly model: FaithHomeViewModel['nextPrayer'];
   readonly onViewPrayerTimes: () => void;
   readonly testID?: string;
 };
 
 /**
- * Faith's next-prayer hero: locked artwork behind, live UI in front.
+ * Faith's next-prayer hero — the one hero whose copy is centred.
  *
- * ── Copy on the left, and why ───────────────────────────────────────────────
- * `03-faith-hero.png` puts its mosque, crescent and stars on the right and leaves the left
- * ~45% as quiet night sky. So the live text sits left, inside that quiet band, and never
- * over the subject. Measured, that band is 8.90:1 against white at its brightest — well past
- * AA — so this hero carries **no scrim at all**. The gold corner ornament is low-contrast
- * against the sky and reads as texture behind the eyebrow rather than as clutter.
+ * ── Why Faith is the exception ───────────────────────────────────────────────
+ * Every other locked hero puts its subject on one side and leaves the other quiet, so its copy
+ * goes in that band. `03-faith-hero.png` is symmetrical: mosques and ornament on both flanks
+ * with calm sky through the middle. Its reference centres the prayer information there, and the
+ * correction brief names it as the exception.
  *
- * Everything visible is live React Native: the prayer name, the time, both date lines and
- * the button. Nothing is baked into the image, so the same artwork serves every prayer.
+ * ── The hierarchy, and the one-line rule ────────────────────────────────────
+ *     Next Prayer
+ *     Dhuhr 12:35 PM        ← one line, never wrapped
+ *     May 19, 2025
+ *     21 Dhul-Qa'dah 1446 AH
+ *     [View Prayer Times]
+ *
+ * The prayer and time are a single string in the registry rather than two fields, because two
+ * fields is how they end up on two lines. At 24 dp semibold "Dhuhr 12:35 PM" measures about
+ * 158 dp against the 361 dp card, so it fits with room to spare and no shrinking is needed.
+ *
+ * Spacing is explicit rather than derived from one device's measurements: a real top margin
+ * above the eyebrow, a small gap before the dates, and a real bottom clearance so the button
+ * never touches the card's edge.
  */
-export function FaithHero({ model, onViewPrayerTimes, testID }: FaithHeroProps) {
+export function FaithHero({ onViewPrayerTimes, testID }: FaithHeroProps) {
   const module = useModule();
-  const { dp, contentWidth } = useModuleMetrics();
+  const { dp } = useModuleMetrics();
+  const hero = module.hero;
 
   return (
     <View
@@ -61,53 +71,51 @@ export function FaithHero({ model, onViewPrayerTimes, testID }: FaithHeroProps) 
         style={[
           styles.copy,
           {
-            paddingLeft: dp(14),
-            paddingVertical: dp(9),
-            // The quiet band is the left ~45%; a little more is safe because the mosque's
-            // silhouette starts further right than its bounding box suggests.
-            width: contentWidth * 0.5,
+            // Explicit top and bottom padding: the brief asks for breathing room above
+            // "Next Prayer" and below the button, on any device.
+            paddingTop: dp(moduleLayout.faithHeroPaddingTop),
+            paddingBottom: dp(moduleLayout.faithHeroPaddingBottom),
+            paddingHorizontal: dp(moduleLayout.heroPadding),
           },
         ]}
       >
-        <ModuleText token="eyebrow" color={GOLD} numberOfLines={1}>
-          {model.eyebrow}
+        <ModuleText token="eyebrow" color={GOLD} align="center" numberOfLines={1}>
+          {hero.eyebrow}
         </ModuleText>
 
+        {/* One line. A wrapped time is the specific defect this replaces. */}
         <ModuleText
-          token="heroDisplay"
+          token="faithPrayer"
           color={module.theme.onFill}
+          align="center"
           numberOfLines={1}
           maxFontSizeMultiplier={1.1}
+          style={{ marginTop: dp(2) }}
+          testID={`${testID ?? 'faith-hero'}-prayer`}
         >
-          {model.name}
-        </ModuleText>
-        <ModuleText
-          token="heroDisplay"
-          color={module.theme.onFill}
-          numberOfLines={1}
-          maxFontSizeMultiplier={1.1}
-        >
-          {model.time}
+          {hero.headline}
         </ModuleText>
 
-        <ModuleText token="rowMeta" color={module.theme.onFill} numberOfLines={1}>
-          {model.gregorianDate}
-        </ModuleText>
-        <ModuleText token="rowMeta" color={module.theme.onFill} numberOfLines={1}>
-          {model.hijriDate}
-        </ModuleText>
+        <View style={{ marginTop: dp(moduleLayout.faithHeroDateGap) }}>
+          <ModuleText token="rowMeta" color={module.theme.onFill} align="center" numberOfLines={1}>
+            {hero.support}
+          </ModuleText>
+          <ModuleText token="rowMeta" color={module.theme.onFill} align="center" numberOfLines={1}>
+            {hero.supportSecondary}
+          </ModuleText>
+        </View>
 
         <PressableScale
           onPress={onViewPrayerTimes}
           accessibilityRole="button"
-          accessibilityLabel={model.actionLabel}
+          accessibilityLabel={hero.actionLabel}
           style={[
             styles.button,
             {
-              marginTop: dp(6),
+              marginTop: dp(moduleLayout.faithHeroButtonGap),
+              minHeight: dp(moduleLayout.heroButtonHeight),
               borderRadius: dp(moduleLayout.radiusPill),
-              paddingHorizontal: dp(10),
-              paddingVertical: dp(5),
+              paddingHorizontal: dp(12),
               columnGap: dp(5),
             },
           ]}
@@ -115,7 +123,7 @@ export function FaithHero({ model, onViewPrayerTimes, testID }: FaithHeroProps) 
         >
           <AppIcon name="clock" size={dp(13)} color={GOLD_INK} />
           <ModuleText token="cardAction" color={GOLD_INK} numberOfLines={1}>
-            {model.actionLabel}
+            {hero.actionLabel}
           </ModuleText>
         </PressableScale>
       </View>
@@ -125,12 +133,12 @@ export function FaithHero({ model, onViewPrayerTimes, testID }: FaithHeroProps) 
 
 const styles = StyleSheet.create({
   root: {
-    // The card owns the radius and the clipping; the artwork carries neither.
+    // The card owns the radius and does the clipping; the artwork carries neither.
     overflow: 'hidden',
-    justifyContent: 'center',
   },
   copy: {
-    alignItems: 'flex-start',
+    flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   button: {

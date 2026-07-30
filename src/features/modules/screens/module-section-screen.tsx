@@ -67,11 +67,11 @@ export function ModuleSectionScreen({
     >
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
         <ModuleHeroCard
-          title={heroTitle}
-          body={heroBody}
           eyebrow={title}
-          // No figure to show, and inventing one would be a fabricated metric.
-          highlight={undefined}
+          headline={heroTitle}
+          support={heroBody}
+          // A sub-screen must not repeat the module home's call to action.
+          hideAction
           testID={`${moduleId}-${activeKey}-hero`}
         />
 

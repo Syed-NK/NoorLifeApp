@@ -41,6 +41,13 @@ type Fixture = {
 };
 
 const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
+  // Noor AI's home is its own composition rather than the generic metric/activity layout, so
+  // these are unused by its screen; they exist because every module must satisfy the contract.
+  'noor-ai': {
+    metrics: [],
+    activity: [],
+    insight: 'Ask me about a feature, your progress, or how to plan your week.',
+  },
   faith: {
     metrics: [
       { key: 'prayers', label: 'Prayers', value: '4', unit: 'of 5', icon: 'worship' },

@@ -1,4 +1,5 @@
 import { FaithHomeContent } from './faith/faith-home-content';
+import { NoorAIHomeContent } from './noor-ai/noor-ai-home-content';
 import { HealthHomeContent } from './health/health-home-content';
 import type { FrameworkModuleId } from './module-tokens';
 
@@ -13,7 +14,7 @@ import type { FrameworkModuleId } from './module-tokens';
  *
  * So the shell stays shared and the arrangement becomes per module. A module handled below
  * renders its own composition; the rest fall back to the generic layout, which is what
- * Planner, Finance, Learning, Family and Goals still use — deliberately untouched here.
+ * Planner, Finance, Learning, Family and Goals still use.
  *
  * ── Why a switch rather than a lookup map ───────────────────────────────────
  * A `Record<id, ComponentType>` read during render produces a component *value*, and the
@@ -23,6 +24,8 @@ import type { FrameworkModuleId } from './module-tokens';
  */
 export function ModuleHomeComposition({ moduleId }: { readonly moduleId: FrameworkModuleId }) {
   switch (moduleId) {
+    case 'noor-ai':
+      return <NoorAIHomeContent />;
     case 'faith':
       return <FaithHomeContent />;
     case 'health':
@@ -40,7 +43,7 @@ export function ModuleHomeComposition({ moduleId }: { readonly moduleId: Framewo
  * choose a branch and by tests to assert that a composed module is *not* rendering the
  * generic sample layout.
  */
-export const COMPOSED_MODULE_IDS: readonly FrameworkModuleId[] = ['faith', 'health'];
+export const COMPOSED_MODULE_IDS: readonly FrameworkModuleId[] = ['noor-ai', 'faith', 'health'];
 
 export function hasApprovedComposition(moduleId: FrameworkModuleId): boolean {
   return COMPOSED_MODULE_IDS.includes(moduleId);

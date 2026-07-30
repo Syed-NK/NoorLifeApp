@@ -39,8 +39,9 @@ describe.each(FRAMEWORK_MODULE_IDS)('module AI policy: %s', (moduleId) => {
     const response = moduleAIBoundaryResponse(moduleId, other, '/test');
     expect(response).not.toBeNull();
     expect(response?.message).toBe(policy.outOfScopeMessage);
-    // The offer requires the user to accept — the AI never crosses on its own.
-    expect(response?.handoffPrompt).toMatch(/Noor AI/);
+    // The offer requires the user to accept — the AI never crosses on its own. A module AI
+    // hands off to Noor AI; Noor AI is the destination, so it points back at NoorLife instead.
+    expect(response?.handoffPrompt).toMatch(moduleId === 'noor-ai' ? /NoorLife/ : /Noor AI/);
   });
 
   it('returns no boundary response for an in-scope request', () => {
@@ -131,7 +132,7 @@ describe('academic integrity — Learning', () => {
 describe('modules without a regulatory obligation', () => {
   it('carry no standing disclaimer, so the ones that do still stand out', () => {
     // A disclaimer on every screen is a disclaimer nobody reads.
-    for (const moduleId of ['planner', 'goals', 'learning', 'family', 'faith'] as const) {
+    for (const moduleId of ['planner', 'goals', 'learning', 'family', 'faith', 'noor-ai'] as const) {
       expect(moduleAIPolicies[moduleId].standingDisclaimer).toBeUndefined();
     }
   });

@@ -53,8 +53,16 @@ export function ModuleHomeScreen({ moduleId, provider, testID }: ModuleHomeScree
   const state = useModuleOverview(moduleId, provider);
   const composed = hasApprovedComposition(moduleId);
 
-  // The home is always the first navigation slot for every module.
-  const activeKey = definition.navigation[0].key;
+  /*
+   * The slot whose destination *is* this screen.
+   *
+   * For seven modules that is the first slot. Noor AI is the exception: its home and its AI
+   * destination are both `/ai`, so slot one points at Main Home and the AI slot is the one to
+   * highlight. Matching on the href rather than hard-coding an index gets both cases right.
+   */
+  const activeKey =
+    definition.navigation.find((item) => item.href === definition.routes.home)?.key ??
+    definition.navigation[0].key;
   const gap = dp(moduleLayout.sectionGap);
 
   if (composed) {

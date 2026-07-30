@@ -1,44 +1,61 @@
 import { StyleSheet, View } from 'react-native';
 
+import { AppIcon, PressableScale } from '@ds/components';
+
 import { useModule } from '../module-context';
-import { moduleLayout } from '../module-tokens';
+import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
+import { ModuleProgressBar } from './module-chart';
 import { ModuleHeroArtwork } from './module-hero-artwork';
 import { ModuleText } from './module-text';
 
 export type ModuleHeroCardProps = {
-  /** Overrides the registry's hero copy — used on sub-screens. */
-  readonly title?: string;
-  readonly body?: string;
+  /** Overrides the registry copy — used on sub-screens. */
   readonly eyebrow?: string;
-  readonly highlight?: string;
+  readonly headline?: string;
+  readonly support?: string;
+  /** Suppresses the call to action on screens that should not repeat it. */
+  readonly hideAction?: boolean;
+  readonly onAction?: () => void;
   readonly testID?: string;
 };
 
 /**
- * The shared hero card: locked artwork behind, live copy in front.
+ * The shared hero: locked artwork behind, approved concise copy in front.
  *
- * Used by the five modules that do not yet have a composition of their own, and by every
- * module sub-screen. Faith and Health have their own heroes because their references place
- * specific controls — a gold CTA, a live score ring — inside the card.
+ * Used by every module except Faith, whose reference centres its copy, and Noor AI, whose
+ * reference puts copy on the right beside the robot. Both have their own hero for that
+ * reason; everything else — Health, Planner, Finance, Learning, Family, Goals — is this one
+ * component reading different data.
  *
- * ── What changed when the artwork arrived ───────────────────────────────────
- * This card previously drew a twelve-band gradient wash and placed the module's small
- * pictogram on the right, because no hero artwork existed. Both are now gone: the locked
- * 1083 × 396 PNG fills the card, and putting the pictogram on top of it is explicitly
- * forbidden — it is the small mark for tiles, not a hero subject.
+ * ── The three corrections this component carries ────────────────────────────
+ * **Copy is short and approved.** The eyebrow / headline / support fields hold the
+ * reference's own wording. The framework used to invent sentences here, and they were long
+ * enough to run across the artwork and ellipsise.
  *
- * The copy occupies a fixed share of the card rather than a flexible remainder, so a long
- * headline can never expand into the artwork's subject. Every asset puts its quiet band on
- * the copy side, and the scrim — where one is needed at all — ramps away from it.
+ * **Nothing truncates.** The headline is one line by design because every approved headline
+ * is short; the support lines allow two and shrink rather than clip. `adjustsFontSizeToFit`
+ * is deliberately not used — it is unreliable on Android — so the type ramp is sized to fit
+ * the widest approved string instead.
+ *
+ * **Explicit vertical padding.** The copy group is centred in the card with real padding at
+ * both ends, so the button can never sit against the bottom edge, on any device.
  */
-export function ModuleHeroCard({ title, body, eyebrow, highlight, testID }: ModuleHeroCardProps) {
+export function ModuleHeroCard({
+  eyebrow,
+  headline,
+  support,
+  hideAction = false,
+  onAction,
+  testID,
+}: ModuleHeroCardProps) {
   const module = useModule();
-  const { dp, type, contentWidth } = useModuleMetrics();
+  const { dp, contentWidth } = useModuleMetrics();
   const hero = module.hero;
 
-  const resolvedHighlight = highlight ?? hero.highlight;
-  const textColumnWidth = Math.floor(contentWidth * moduleLayout.heroTextColumnRatio);
+  const resolvedEyebrow = eyebrow ?? hero.eyebrow;
+  const resolvedSupport = support ?? hero.support;
+  const showAction = !hideAction && hero.actionLabel !== '';
 
   return (
     <View
@@ -47,8 +64,6 @@ export function ModuleHeroCard({ title, body, eyebrow, highlight, testID }: Modu
         {
           height: dp(moduleLayout.heroHeight),
           borderRadius: dp(moduleLayout.cardRadius),
-          // Shows only in the instant before the image decodes, and behind its edges if a
-          // future asset ever ships with transparency.
           backgroundColor: module.theme.gradientStart,
         },
       ]}
@@ -61,47 +76,90 @@ export function ModuleHeroCard({ title, body, eyebrow, highlight, testID }: Modu
         testID={`${testID ?? 'module-hero'}-artwork`}
       />
 
-      <View style={[styles.row, { padding: dp(moduleLayout.heroPadding) }]}>
-        <View style={[styles.textColumn, { rowGap: dp(3), width: textColumnWidth }]}>
+      <View
+        style={[
+          styles.copy,
+          {
+            paddingHorizontal: dp(moduleLayout.heroPadding),
+            paddingVertical: dp(moduleLayout.heroCopyPaddingV),
+            width: contentWidth * moduleLayout.heroTextColumnRatio,
+            rowGap: dp(2),
+          },
+        ]}
+      >
+        {resolvedEyebrow === '' ? null : (
+          <ModuleText token="eyebrow" color={module.theme.onFill} numberOfLines={1}>
+            {resolvedEyebrow}
+          </ModuleText>
+        )}
+
+        <View style={[styles.headlineRow, { columnGap: dp(5) }]}>
           <ModuleText
-            token="eyebrow"
+            token="heroDisplay"
             color={module.theme.onFill}
             numberOfLines={1}
-            style={styles.eyebrow}
+            maxFontSizeMultiplier={1.1}
           >
-            {(eyebrow ?? hero.eyebrow).toUpperCase()}
+            {headline ?? hero.headline}
           </ModuleText>
-          <ModuleText token="heroTitle" color={module.theme.onFill} numberOfLines={2}>
-            {title ?? hero.title}
-          </ModuleText>
-          <ModuleText token="heroBody" color={module.theme.onFill} numberOfLines={2}>
-            {body ?? hero.body}
-          </ModuleText>
-
-          {resolvedHighlight === undefined ? null : (
-            <View
-              style={[
-                styles.chip,
-                {
-                  marginTop: dp(4),
-                  borderRadius: dp(moduleLayout.radiusPill),
-                  paddingHorizontal: dp(8),
-                  paddingVertical: dp(3),
-                },
-              ]}
+          {hero.headlineSuffix === undefined ? null : (
+            <ModuleText
+              token="heroBody"
+              color={module.theme.onFill}
+              numberOfLines={1}
+              style={styles.suffix}
             >
-              <ModuleText
-                token="rowMeta"
-                color={module.theme.onFill}
-                numberOfLines={1}
-                maxFontSizeMultiplier={1.3}
-                style={{ lineHeight: type('rowMeta').lineHeight }}
-              >
-                {resolvedHighlight}
-              </ModuleText>
-            </View>
+              {hero.headlineSuffix}
+            </ModuleText>
           )}
         </View>
+
+        {resolvedSupport === undefined ? null : (
+          <ModuleText token="heroBody" color={module.theme.onFill} numberOfLines={2}>
+            {resolvedSupport}
+          </ModuleText>
+        )}
+        {hero.supportSecondary === undefined ? null : (
+          <ModuleText token="heroBody" color={module.theme.onFill} numberOfLines={2}>
+            {hero.supportSecondary}
+          </ModuleText>
+        )}
+
+        {hero.progress === undefined ? null : (
+          <View style={{ marginTop: dp(4), alignSelf: 'stretch' }}>
+            {/* Reads the same value as the "62% spent" line above, so the two cannot disagree. */}
+            <ModuleProgressBar
+              value={hero.progress}
+              onFillSurface
+              accessibilityLabel={`${resolvedSupport ?? 'Budget'} of your budget`}
+              testID={`${testID ?? 'module-hero'}-progress`}
+            />
+          </View>
+        )}
+
+        {showAction ? (
+          <PressableScale
+            onPress={onAction ?? (() => undefined)}
+            accessibilityRole="button"
+            accessibilityLabel={hero.actionLabel}
+            style={[
+              styles.button,
+              {
+                marginTop: dp(6),
+                minHeight: dp(moduleLayout.heroButtonHeight),
+                borderRadius: dp(moduleLayout.radiusSmall),
+                paddingHorizontal: dp(11),
+                columnGap: dp(5),
+              },
+            ]}
+            testID={`${testID ?? 'module-hero'}-action`}
+          >
+            <ModuleText token="cardAction" color={module.theme.ink} numberOfLines={1}>
+              {hero.actionLabel}
+            </ModuleText>
+            <AppIcon name="chevron-forward" size={dp(13)} color={module.theme.ink} />
+          </PressableScale>
+        ) : null}
       </View>
     </View>
   );
@@ -112,22 +170,22 @@ const styles = StyleSheet.create({
     // The card owns the radius and does the clipping; the artwork carries neither.
     overflow: 'hidden',
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  copy: {
     flex: 1,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
-  textColumn: {
-    flexGrow: 0,
-    flexShrink: 1,
-    minWidth: 0,
+  headlineRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
   },
-  eyebrow: {
-    letterSpacing: 0.6,
+  suffix: {
     opacity: 0.92,
   },
-  chip: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(0, 0, 0, 0.24)',
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: moduleNeutrals.surface,
   },
 });

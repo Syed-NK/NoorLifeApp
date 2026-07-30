@@ -48,6 +48,7 @@ import { FRAMEWORK_MODULE_IDS, moduleColorThemes, type FrameworkModuleId } from 
  * disagree even by accident — there is nowhere to type a second asset.
  */
 const ASSET = {
+  'noor-ai': getModulePictogram('noor-ai'),
   faith: getModulePictogram('faith'),
   health: getModulePictogram('health'),
   planner: getModulePictogram('planner'),
@@ -67,6 +68,81 @@ const ASSET = {
  * than presenting a tile that silently does nothing.
  */
 
+/**
+ * Noor AI.
+ *
+ * A core module with its own approved reference (`02-noor-ai.png`), not the "arrives in
+ * Phase 2" placeholder it was left as. Its AI scope is the one that differs from every
+ * other module: Noor AI may reach across modules the user has granted, where a module AI
+ * may not — which is why its policy comes from `noorlife` scope rather than `module`.
+ */
+const noorAI: ModuleDefinition = {
+  id: 'noor-ai',
+  name: 'Noor AI',
+  summary: 'Help with NoorLife itself — features, progress and planning.',
+  theme: moduleColorThemes['noor-ai'],
+  pictogram: ASSET['noor-ai'],
+  heroPictogram: ASSET['noor-ai'],
+  // Its reference is one of only two that caption the centre control.
+  showAICaption: true,
+  heroArtwork: noorLifeAssets.moduleHeroes.noorAI,
+  heroScrim: 0,
+  // The one hero whose robot sits left and copy sits right.
+  heroCopySide: 'right',
+  routes: { home: '/ai', ai: '/ai', help: '/settings/help' },
+  navigation: moduleThemes['noor-ai'].navigation,
+  hero: {
+    eyebrow: '',
+    headline: 'How can I help\nwith NoorLife?',
+    support: 'NoorLife questions only',
+    actionLabel: '',
+    artworkAccessibilityLabel: '',
+  },
+  quickActions: [
+    { key: 'find-feature', label: 'Find a feature', icon: 'search' },
+    { key: 'explain-progress', label: 'Explain my progress', icon: 'insights' },
+    { key: 'help-plan', label: 'Help me plan', icon: 'calendar' },
+  ],
+  capabilities: [
+    { key: 'find-feature', label: 'Find a feature', icon: 'search', href: '/ai', available: true },
+    { key: 'explain-progress', label: 'Explain my progress', icon: 'insights', href: '/insights', available: true },
+    { key: 'help-plan', label: 'Help me plan', icon: 'calendar', href: '/planner', available: true },
+    { key: 'app-settings', label: 'App settings', icon: 'settings', href: '/settings', available: true },
+  ],
+  permissions: [
+    {
+      key: 'notifications',
+      title: 'Noor AI suggestions',
+      rationale: 'So Noor AI can offer a suggestion at a moment it is actually useful.',
+      required: false,
+    },
+    {
+      key: 'microphone',
+      title: 'Voice input',
+      rationale: 'Only used while you hold the microphone to dictate a question.',
+      required: false,
+    },
+  ],
+  ai: moduleAIPolicies['noor-ai'],
+  stateCopy: {
+    empty: {
+      title: 'Nothing asked yet',
+      body: 'Ask about a feature, your progress, or how to plan your week.',
+      action: 'See suggestions',
+    },
+    error: {
+      title: 'Couldn’t reach Noor AI',
+      body: 'A request failed on our side. Your conversations are safe.',
+      action: 'Try again',
+    },
+    offline: {
+      title: 'You’re offline',
+      body: 'Saved conversations are still readable. New questions need a connection.',
+    },
+    loading: 'Loading Noor AI',
+  },
+};
+
 const faith: ModuleDefinition = {
   id: 'faith',
   name: 'Faith',
@@ -82,10 +158,11 @@ const faith: ModuleDefinition = {
   routes: { home: '/faith', ai: '/faith/ai', help: '/settings/help' },
   navigation: moduleThemes.faith.navigation,
   hero: {
-    eyebrow: 'Faith',
-    title: 'Keep your day anchored in prayer',
-    body: 'Your prayer times, Qur’an progress and reminders in one place.',
-    highlight: 'Next: Asr 4:12 pm',
+    eyebrow: 'Next Prayer',
+    headline: 'Dhuhr 12:35 PM',
+    support: 'May 19, 2025',
+    supportSecondary: '21 Dhul-Qa‘dah 1446 AH',
+    actionLabel: 'View Prayer Times',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -162,10 +239,11 @@ const health: ModuleDefinition = {
   routes: { home: '/health', ai: '/health/ai', help: '/settings/help' },
   navigation: moduleThemes.health.navigation,
   hero: {
-    eyebrow: 'Health',
-    title: 'Small habits, tracked honestly',
-    body: 'Log what you do, then see the pattern rather than a single day.',
-    highlight: '5 of 7 days logged',
+    eyebrow: 'Today’s Wellness',
+    headline: '86',
+    support: 'Wellness Score',
+    supportSecondary: 'You’re building a balanced day.',
+    actionLabel: 'View Insights',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -243,10 +321,11 @@ const planner: ModuleDefinition = {
   routes: { home: '/planner', ai: '/planner/ai', help: '/settings/help' },
   navigation: moduleThemes.planner.navigation,
   hero: {
-    eyebrow: 'Planner',
-    title: 'Today, in the order it happens',
-    body: 'Tasks, events and routines together — so nothing needs remembering twice.',
-    highlight: '3 tasks left today',
+    eyebrow: 'Your Day',
+    headline: '3 priorities',
+    support: 'Next: School drop-off',
+    supportSecondary: '8:00 AM',
+    actionLabel: 'Optimize My Day',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -316,10 +395,12 @@ const finance: ModuleDefinition = {
   routes: { home: '/finance', ai: '/finance/ai', help: '/settings/help' },
   navigation: moduleThemes.finance.navigation,
   hero: {
-    eyebrow: 'Finance',
-    title: 'Know where it went',
-    body: 'Track spending against a budget you set — no advice, just your numbers.',
-    highlight: '68% of budget used',
+    eyebrow: 'My Budget',
+    headline: '$2,450',
+    headlineSuffix: 'left',
+    support: '62% spent',
+    progress: 0.62,
+    actionLabel: 'View Budget',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -403,10 +484,10 @@ const learning: ModuleDefinition = {
   routes: { home: '/learning', ai: '/learning/ai', help: '/settings/help' },
   navigation: moduleThemes.learning.navigation,
   hero: {
-    eyebrow: 'Learning',
-    title: 'Pick up where you left off',
-    body: 'Your courses, saved reading and quick reviews that make it stick.',
-    highlight: '2 lessons in progress',
+    eyebrow: 'Learning Streak',
+    headline: '12 days',
+    support: 'Keep it up! ★',
+    actionLabel: 'Continue Learning',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -470,10 +551,10 @@ const family: ModuleDefinition = {
   routes: { home: '/family', ai: '/family/ai', help: '/settings/help' },
   navigation: moduleThemes.family.navigation,
   hero: {
-    eyebrow: 'Family',
-    title: 'Everyone on the same page',
-    body: 'One shared calendar and a place for the moments worth keeping.',
-    highlight: '2 events this week',
+    eyebrow: 'Family Connection',
+    headline: 'Strong ❤️',
+    support: '+18 points from last week',
+    actionLabel: 'Family Check-in',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -549,10 +630,10 @@ const goals: ModuleDefinition = {
   routes: { home: '/goals', ai: '/goals/ai', help: '/settings/help' },
   navigation: moduleThemes.goals.navigation,
   hero: {
-    eyebrow: 'Goals',
-    title: 'One step, repeated',
-    body: 'Break a goal into habits, then keep the streak that matters.',
-    highlight: '4-day streak',
+    eyebrow: 'Overall Progress',
+    headline: '68%',
+    support: 'You’re on track! 🎯',
+    actionLabel: 'View Weekly Steps',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -602,6 +683,7 @@ const goals: ModuleDefinition = {
 };
 
 export const moduleRegistry: Readonly<Record<FrameworkModuleId, ModuleDefinition>> = {
+  'noor-ai': noorAI,
   faith,
   health,
   planner,

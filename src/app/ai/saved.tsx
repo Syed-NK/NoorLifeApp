@@ -1,5 +1,14 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
 
+/** Noor AI → Saved answers. */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="noor-ai" activeKey="saved" title="Saved Answers" />;
+  return (
+    <ModuleSectionScreen
+      moduleId="noor-ai"
+      activeKey="saved"
+      title="Saved"
+      heroTitle="Answers worth keeping"
+      heroBody="Anything you save stays here, ready to read again."
+    />
+  );
 }

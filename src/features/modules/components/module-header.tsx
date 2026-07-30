@@ -17,9 +17,9 @@ export type ModuleHeaderProps = {
   /**
    * Where Back goes. Defaults to Main Home.
    *
-   * The brief fixes Back's meaning as "return to Main Home", not "pop one screen".
-   * A module is entered from the grid, so popping would strand a user who arrived
-   * three screens deep via a notification.
+   * The brief fixes Back's meaning as "return to Main Home", not "pop one screen". A module
+   * is entered from the grid, so popping would strand a user who arrived three screens deep
+   * from a notification.
    */
   readonly onBack?: () => void;
   readonly testID?: string;
@@ -28,14 +28,21 @@ export type ModuleHeaderProps = {
 /**
  * The header every module screen shares.
  *
- * Four controls, in the order the brief fixes: Back, the user's profile image,
- * the screen title, and Help. Help is module-scoped — it opens assistance *for this
- * module*, which is why the destination comes from the module definition rather
- * than being a single global help route hard-coded here.
+ * Order, fixed by the correction brief and applied to all eight modules:
  *
- * The title is centred between the two control clusters and truncates to one line.
- * The clusters are equal fixed widths so the title's centre is the header's centre
- * regardless of how long the module name is.
+ *     [Back]        [centred title]        [Help] [Profile]
+ *
+ * ── Why the title is absolutely positioned ──────────────────────────────────
+ * "Visually centered relative to the complete screen, not merely the remaining flex area."
+ * Those differ: Back is one control on the left and Help+Profile are two on the right, so a
+ * flex-centred title sits left of the screen's true centre by half that difference. The title
+ * therefore spans the full header width with `textAlign: 'center'`, and the controls sit above
+ * it. `pointerEvents: 'none'` on the title keeps it from swallowing taps meant for a control.
+ *
+ * ── Why Profile is last ─────────────────────────────────────────────────────
+ * It used to sit beside Back, which the brief rules out. Both right-hand controls carry the
+ * full 44 dp touch target while the avatar itself stays 34–36 dp, so the visible portrait is
+ * the reference's size without the tappable area being under-sized.
  */
 export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
   const router = useRouter();
@@ -45,8 +52,7 @@ export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
   const iconSize = dp(moduleLayout.headerIcon);
   const avatarSize = dp(moduleLayout.headerAvatar);
   const target = dp(moduleLayout.minTouchTarget);
-  // Both clusters reserve the same width, so the centred title is truly centred.
-  const clusterWidth = target + avatarSize + dp(4);
+  const prefix = testID ?? 'module-header';
 
   return (
     <View
@@ -56,26 +62,47 @@ export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
       ]}
       testID={testID}
     >
-      <View style={[styles.cluster, { width: clusterWidth }]}>
-        <PressableScale
-          onPress={onBack ?? (() => router.replace(globalRoutes.home))}
-          style={[
-            styles.control,
-            styles.disc,
-            { width: target, height: target, borderRadius: target / 2 },
-          ]}
-          {...iconButtonA11y('Back to Main Home')}
-          testID={`${testID ?? 'module-header'}-back`}
+      {/* Centred on the whole header, independent of how wide the control clusters are. */}
+      <View style={styles.titleLayer} pointerEvents="none">
+        <ModuleText
+          token="headerTitle"
+          align="center"
+          numberOfLines={1}
+          // Caps growth so a large OS text size cannot push the title under the controls.
+          maxFontSizeMultiplier={1.3}
+          accessibilityRole="header"
+          testID={`${prefix}-title`}
         >
-          <AppIcon name="back" size={iconSize} color={moduleNeutrals.textPrimary} />
+          {title ?? module.name}
+        </ModuleText>
+      </View>
+
+      <PressableScale
+        onPress={onBack ?? (() => router.replace(globalRoutes.home))}
+        style={[styles.control, styles.disc, { width: target, height: target, borderRadius: target / 2 }]}
+        {...iconButtonA11y('Back to Main Home')}
+        testID={`${prefix}-back`}
+      >
+        <AppIcon name="back" size={iconSize} color={moduleNeutrals.textPrimary} />
+      </PressableScale>
+
+      <View style={[styles.rightCluster, { columnGap: dp(moduleLayout.headerControlGap) }]}>
+        <PressableScale
+          onPress={() => router.push(module.routes.help)}
+          style={[styles.control, styles.disc, { width: target, height: target, borderRadius: target / 2 }]}
+          {...iconButtonA11y(`Help with ${module.name}`)}
+          testID={`${prefix}-help`}
+        >
+          <AppIcon name="help" size={iconSize} color={module.theme.ink} />
         </PressableScale>
 
         <PressableScale
           onPress={() => router.push(globalRoutes.profile)}
-          style={[styles.control, { width: avatarSize, height: avatarSize }]}
-          hitSlop={Math.max(0, Math.ceil((target - avatarSize) / 2))}
+          // The target is 44 dp while the portrait stays 34–36 dp, so the visible avatar
+          // matches the reference without an under-sized tap area.
+          style={[styles.control, { width: target, height: target }]}
           {...iconButtonA11y('Your profile')}
-          testID={`${testID ?? 'module-header'}-profile`}
+          testID={`${prefix}-profile`}
         >
           <Image
             source={profileAvatar}
@@ -91,34 +118,6 @@ export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
           />
         </PressableScale>
       </View>
-
-      <ModuleText
-        token="headerTitle"
-        align="center"
-        numberOfLines={1}
-        // Caps growth so a large OS text size cannot push the title into the controls.
-        maxFontSizeMultiplier={1.3}
-        style={styles.title}
-        accessibilityRole="header"
-        testID={`${testID ?? 'module-header'}-title`}
-      >
-        {title ?? module.name}
-      </ModuleText>
-
-      <View style={[styles.cluster, styles.clusterEnd, { width: clusterWidth }]}>
-        <PressableScale
-          onPress={() => router.push(module.routes.help)}
-          style={[
-            styles.control,
-            styles.disc,
-            { width: target, height: target, borderRadius: target / 2 },
-          ]}
-          {...iconButtonA11y(`Help with ${module.name}`)}
-          testID={`${testID ?? 'module-header'}-help`}
-        >
-          <AppIcon name="help" size={iconSize} color={module.theme.ink} />
-        </PressableScale>
-      </View>
     </View>
   );
 }
@@ -127,14 +126,22 @@ const styles = StyleSheet.create({
   root: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: 'transparent',
   },
-  cluster: {
+  /** Spans the header so the title centres on the screen, not on the leftover space. */
+  titleLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rightCluster: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  clusterEnd: {
-    justifyContent: 'flex-end',
   },
   control: {
     alignItems: 'center',
@@ -143,16 +150,12 @@ const styles = StyleSheet.create({
   /**
    * The bordered white disc both approved references draw around Back and Help.
    *
-   * The disc *is* the 44 dp touch target, so the visible chrome and the tappable area are
-   * the same rectangle — no hit-slop to keep in step with a smaller visual.
+   * The disc *is* the 44 dp touch target, so the visible chrome and the tappable area are the
+   * same rectangle — no hit-slop to keep in step with a smaller visual.
    */
   disc: {
     backgroundColor: moduleNeutrals.surface,
     borderWidth: 1,
     borderColor: moduleNeutrals.border,
-  },
-  title: {
-    flex: 1,
-    minWidth: 0,
   },
 });

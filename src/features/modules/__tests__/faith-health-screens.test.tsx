@@ -20,13 +20,13 @@ import { noorLifeAssets } from '@shared/assets/noorlife-assets';
  */
 
 describe('the architecture correction holds', () => {
-  it('composes exactly Faith and Health in this pass', () => {
-    expect([...COMPOSED_MODULE_IDS].sort()).toEqual(['faith', 'health']);
+  it('composes Noor AI, Faith and Health to their references', () => {
+    expect([...COMPOSED_MODULE_IDS].sort()).toEqual(['faith', 'health', 'noor-ai']);
   });
 
   it('leaves the other five modules on the generic layout', () => {
     for (const id of FRAMEWORK_MODULE_IDS) {
-      if (id === 'faith' || id === 'health') {
+      if (id === 'faith' || id === 'health' || id === 'noor-ai') {
         continue;
       }
       expect(hasApprovedComposition(id)).toBe(false);
@@ -106,7 +106,9 @@ describe('Faith home — 03-faith.png', () => {
   });
 
   it('carries the next-prayer content from the reference', () => {
-    expect(screen.getByText('Dhuhr')).toBeTruthy();
+    // One line, as the correction requires: the prayer and its time are a single string, so a
+    // wrapped time is not possible.
+    expect(screen.getByText('Dhuhr 12:35 PM')).toBeTruthy();
     expect(screen.getByTestId('faith-hero-action')).toBeTruthy();
     /*
      * `getAllBy` on purpose: the reference shows both of these twice, and that repetition is
@@ -114,8 +116,8 @@ describe('Faith home — 03-faith.png', () => {
      * Dhuhr row's time in Today's Worship; the Hijri date is in the hero *and* the Islamic
      * Calendar card. A `getBy` here would fail on a screen that is correct.
      */
-    expect(screen.getAllByText('12:35 PM')).toHaveLength(2);
-    expect(screen.getAllByText('21 Dhul-Qadah 1446 AH')).toHaveLength(2);
+    // The bare time still appears once, in the Dhuhr row of Today's Worship.
+    expect(screen.getAllByText('12:35 PM')).toHaveLength(1);
   });
 
   it('renders the Continue Quran card with progress and a play control', () => {

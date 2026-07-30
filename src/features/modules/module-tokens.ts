@@ -42,10 +42,18 @@ import { modulePalettes, type ModuleId } from '@ds/tokens';
  * instead of a convention.
  */
 
-/** The seven feature modules. Excludes `main` (locked) and `noor-ai` (global, not a module). */
-export type FrameworkModuleId = Exclude<ModuleId, 'main' | 'noor-ai'>;
+/**
+ * The eight core modules. Excludes only `main`, which is locked Main Home.
+ *
+ * Noor AI was previously excluded as "global, not a module". That was wrong: it has its own
+ * approved individual-core-screen reference, its own five-slot navigation and its own hero
+ * asset, so it is a core module like the rest. Treating it as a placeholder is what left a
+ * "Noor AI arrives in Phase 2" screen in the app.
+ */
+export type FrameworkModuleId = Exclude<ModuleId, 'main'>;
 
 export const FRAMEWORK_MODULE_IDS: readonly FrameworkModuleId[] = [
+  'noor-ai',
   'faith',
   'health',
   'planner',
@@ -74,6 +82,14 @@ export type ModuleColorTheme = {
  * guessed — see the test for the assertions that keep them true.
  */
 const DERIVED: Readonly<Record<FrameworkModuleId, Omit<ModuleColorTheme, 'primary' | 'onFill'>>> = {
+  'noor-ai': {
+    ink: '#6556C8', //  4.95 on surface · 5.65 on white — already AA, no darkening needed
+    fill: '#6556C8', //  5.65 white-on-fill
+    border: '#6556C8', //  4.95 · 5.65
+    gradientStart: '#5544C2', //  7.02 on white
+    gradientEnd: '#6556C8',
+    lightSurface: '#F1EEFF',
+  },
   faith: {
     ink: '#217E68', //  4.54 on surface · 4.94 on white
     fill: '#23856D', //  4.52 white-on-fill
@@ -134,6 +150,11 @@ const DERIVED: Readonly<Record<FrameworkModuleId, Omit<ModuleColorTheme, 'primar
 
 /** The seven module colour themes. Brand hue from the locked palette, roles derived here. */
 export const moduleColorThemes: Readonly<Record<FrameworkModuleId, ModuleColorTheme>> = {
+  'noor-ai': {
+    primary: modulePalettes['noor-ai'].primary,
+    onFill: '#FFFFFF',
+    ...DERIVED['noor-ai'],
+  },
   faith: { primary: modulePalettes.faith.primary, onFill: '#FFFFFF', ...DERIVED.faith },
   health: { primary: modulePalettes.health.primary, onFill: '#FFFFFF', ...DERIVED.health },
   planner: { primary: modulePalettes.planner.primary, onFill: '#FFFFFF', ...DERIVED.planner },
@@ -197,9 +218,17 @@ export const moduleType = {
    * Measured at ~30 dp on the Faith reference. Line height is deliberately tight (1.13)
    * because Faith stacks two of these lines and the reference shows them close-set.
    */
-  heroDisplay: [27, 31],
+  heroDisplay: [24, 28],
+  /**
+   * Faith's combined prayer and time line, e.g. "Dhuhr 12:35 PM".
+   *
+   * 24 dp, the lower end of the brief's 24-27 dp band, chosen so the string fits one line at
+   * the 361 dp card width with margin to spare. The brief permits reducing to 22 dp if it does
+   * not fit; it does, so no reduction is applied.
+   */
+  faithPrayer: [24, 28],
   /** Health's wellness score, larger again at ~40 dp in its reference. */
-  heroScore: [32, 36],
+  heroScore: [30, 34],
   /** Hero supporting line. */
   heroBody: [12.5, 18],
   /** Hero eyebrow / module name above the headline. */
@@ -292,9 +321,12 @@ export const moduleLayout = {
   /** Gap between cards within a section. */
   cardGap: 10,
   /** Module header. */
-  headerHeight: 52,
+  headerHeight: 54,
   headerIcon: 22,
-  headerAvatar: 32,
+  /** Profile portrait (brief: 34-36 dp). Its touch target is the full 44 dp. */
+  headerAvatar: 35,
+  /** Gap between Help and Profile (brief: 4-8 dp). */
+  headerControlGap: 6,
   /** Hero card. */
   heroMinHeight: 132,
   heroPadding: 14,
@@ -336,7 +368,16 @@ export const moduleLayout = {
   navHeight: 68,
   navIcon: 24,
   navAIButton: 58,
-  navAIImage: 50,
+  /**
+   * The Noor AI mark inside the raised control.
+   *
+   * 53 dp fills the 54 dp inner circle (58 outer, 2 dp ring each side) without clipping, so
+   * the mark reads as large as it can. The brief asks for 76-82% of the inner diameter; note
+   * the normalized asset carries ~29% transparent margin, so the *visible* robot lands nearer
+   * 70% of the inner circle. Closing that gap would need the tighter-cropped original, which
+   * would break the "same asset as Main Home" requirement — so the asset wins.
+   */
+  navAIImage: 53,
   navAIRaise: 15,
   /**
    * ── Metrics derived from the approved individual-core-screen references ────
@@ -365,6 +406,17 @@ export const moduleLayout = {
    * 132 dp box holds less. See docs/PHASE_4A_MISMATCH_AUDIT.md.
    */
   heroHeight: 132,
+  /** Vertical padding inside the hero copy group, so a button never touches the card edge. */
+  heroCopyPaddingV: 12,
+  /** Hero call-to-action height (brief: 34-38 dp). */
+  heroButtonHeight: 34,
+  /** Faith hero spacing, all explicit per the correction brief. */
+  faithHeroPaddingTop: 15,
+  faithHeroPaddingBottom: 12,
+  faithHeroDateGap: 7,
+  faithHeroButtonGap: 10,
+  /** Noor AI's four capability cards. */
+  noorAICapabilityHeight: 62,
   /** Faith's eight-card feature grid: 4 columns, 9 dp gaps, 54 dp tall. */
   faithFeatureHeight: 48,
   faithFeatureIcon: 27,
@@ -380,7 +432,9 @@ export const moduleLayout = {
   /** Health's Quick Log mini-cards. */
   quickLogHeight: 49,
   /** Health's wellness score ring. */
-  scoreRing: 74,
+  scoreRing: 72,
+  /** Keeps the score ring off the artwork's runner on the far right. */
+  healthRingInset: 40,
   scoreRingStroke: 8,
   /** The AI insight card's robot artwork. */
   insightRobot: 50,

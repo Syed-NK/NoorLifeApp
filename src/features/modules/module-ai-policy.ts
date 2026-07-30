@@ -70,6 +70,45 @@ export type ModuleAIPolicy = {
 
 const HANDOFF = 'Ask Noor AI instead?';
 
+/**
+ * Noor AI.
+ *
+ * ── The one policy that is not module-scoped ────────────────────────────────
+ * Every other assistant here refuses to leave its module. Noor AI is the opposite: it is the
+ * assistant a module AI hands *off* to, so it may reach modules the user has granted. What it
+ * is not is a general-purpose chatbot — its subject is NoorLife itself, which is why its
+ * reference labels the hero "NoorLife questions only".
+ *
+ * The scope machinery already models this: `canAccessModule` treats a `noorlife` scope as
+ * permitted-if-granted rather than out-of-scope, so an ungranted module returns
+ * `permission-required` and Noor AI must ask before reading it.
+ */
+const noorAI: ModuleAIPolicy = {
+  moduleId: 'noor-ai',
+  label: 'Noor AI',
+  tagline: 'Help with NoorLife — features, your progress and planning.',
+  capabilities: [
+    { key: 'find-feature', label: 'Find a feature', mutatesData: false },
+    { key: 'explain-progress', label: 'Explain my progress', mutatesData: false },
+    { key: 'help-plan', label: 'Help me plan', mutatesData: false },
+    { key: 'app-settings', label: 'App settings', mutatesData: false },
+  ],
+  safetyRules: [
+    {
+      kind: 'refuse',
+      subject: 'questions unrelated to NoorLife',
+      message: 'I only cover NoorLife — its features, your data in it, and planning with it.',
+    },
+    {
+      kind: 'qualify',
+      subject: 'reading a module the user has not granted',
+      message: 'I need your permission to look at that module first. Grant access?',
+    },
+  ],
+  outOfScopeMessage: 'Noor AI only covers NoorLife.',
+  handoffPrompt: 'Ask about something in NoorLife?',
+};
+
 const faith: ModuleAIPolicy = {
   moduleId: 'faith',
   label: 'Faith AI',
@@ -261,6 +300,7 @@ const goals: ModuleAIPolicy = {
 };
 
 export const moduleAIPolicies: Readonly<Record<FrameworkModuleId, ModuleAIPolicy>> = {
+  'noor-ai': noorAI,
   faith,
   health,
   planner,

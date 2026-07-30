@@ -75,25 +75,46 @@ export type ModuleStateCopy = {
   readonly loading: string;
 };
 
-/** The hero card at the top of a module home. */
+/**
+ * The hero card at the top of a module home.
+ *
+ * ── Concise, approved copy only ─────────────────────────────────────────────
+ * These fields carry the wording from each individual-core-screen reference and nothing
+ * else. The framework originally generated marketing sentences here — "Today, in the order
+ * it happens", "Know where it went" — which read well but are not the approved content, and
+ * were long enough to truncate over the artwork. Short lines are the point: they fit the
+ * quiet band without ellipses.
+ */
 export type ModuleHeroContent = {
-  /** Small line above the headline. */
+  /** Small line above the headline, e.g. "Today’s Wellness". */
   readonly eyebrow: string;
-  readonly title: string;
-  readonly body: string;
   /**
-   * Optional headline figure, e.g. "4 of 5". Rendered as a chip, never as the only
-   * indicator of a value that matters.
+   * The hero’s headline figure or phrase, e.g. "86", "12 days", "$2,450".
+   *
+   * Rendered at display size. Kept separate from `eyebrow` and `support` so each module can
+   * emphasise the right thing without a per-module layout.
    */
-  readonly highlight?: string;
+  readonly headline: string;
+  /** Optional smaller word set beside the headline, e.g. "left" after an amount. */
+  readonly headlineSuffix?: string;
+  /** One short supporting line, e.g. "You’re on track! 🎯". */
+  readonly support?: string;
+  /** A second supporting line where the reference shows one, e.g. a time under a label. */
+  readonly supportSecondary?: string;
+  /** The hero’s call to action. Every reference has exactly one. */
+  readonly actionLabel: string;
+  /**
+   * A live progress value, 0–1, where the reference draws a bar in the hero.
+   *
+   * Only Finance has one. It is a value rather than a flag so the bar and the "62% spent"
+   * text cannot disagree.
+   */
+  readonly progress?: number;
   /**
    * Describes the hero artwork to a screen reader, or '' when purely decorative.
    *
-   * The artwork itself is **not** declared here — it is `ModuleDefinition.heroPictogram`,
-   * so there is exactly one field in the whole system that decides which PNG a module
-   * shows. A per-hero `artwork` field existed here first, and that is precisely the
-   * drift path this correction closes: it made it possible for a hero to point at
-   * something other than the module's approved pictogram.
+   * The artwork itself is `ModuleDefinition.heroArtwork`, so there is one field in the whole
+   * system that decides which PNG a hero shows.
    */
   readonly artworkAccessibilityLabel: string;
 };

@@ -13,16 +13,27 @@ import { FRAMEWORK_MODULE_IDS } from '../module-tokens';
  */
 
 describe('module registry', () => {
-  it('defines exactly the seven framework modules', () => {
+  it('defines exactly the eight core modules', () => {
     expect(Object.keys(moduleRegistry).sort()).toEqual([...FRAMEWORK_MODULE_IDS].sort());
-    expect(allModuleDefinitions).toHaveLength(7);
+    expect(allModuleDefinitions).toHaveLength(8);
+    expect([...FRAMEWORK_MODULE_IDS].sort()).toEqual([
+      'faith',
+      'family',
+      'finance',
+      'goals',
+      'health',
+      'learning',
+      'noor-ai',
+      'planner',
+    ]);
   });
 
-  it('does not include Main Home or the global Noor AI', () => {
-    // Main Home is locked and Noor AI is a global destination, not a module. Either one
-    // appearing here would let a module screen render over locked territory.
+  it('includes Noor AI and excludes locked Main Home', () => {
+    // Noor AI was previously excluded as "global, not a module". It has its own approved
+    // reference, navigation and hero, so it is a core module; excluding it is what left a
+    // placeholder screen in the app. Main Home stays out because it is locked.
+    expect(Object.keys(moduleRegistry)).toContain('noor-ai');
     expect(Object.keys(moduleRegistry)).not.toContain('main');
-    expect(Object.keys(moduleRegistry)).not.toContain('noor-ai');
   });
 
   it('throws on an unknown module rather than returning a default', () => {
@@ -72,9 +83,9 @@ describe.each(FRAMEWORK_MODULE_IDS)('module definition: %s', (moduleId) => {
 
   it('ships a complete hero with no blank upper area', () => {
     // The brief's requirement, asserted: a module cannot ship an empty hero.
-    expect(definition.hero.title.length).toBeGreaterThan(0);
-    expect(definition.hero.body.length).toBeGreaterThan(0);
-    expect(definition.hero.eyebrow.length).toBeGreaterThan(0);
+    // Every hero carries an approved headline. Eyebrow and action are empty only for Noor AI,
+    // whose reference shows a question rather than a labelled figure with a button.
+    expect(definition.hero.headline.length).toBeGreaterThan(0);
     expect(definition.heroPictogram).toBeDefined();
   });
 

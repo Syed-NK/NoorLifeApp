@@ -15,6 +15,7 @@ const FACE: Record<ModuleTypeToken, keyof typeof fontFamilies> = {
   headerTitle: 'semiBold',
   heroTitle: 'semiBold',
   heroDisplay: 'semiBold',
+  faithPrayer: 'semiBold',
   heroScore: 'semiBold',
   heroBody: 'regular',
   eyebrow: 'medium',

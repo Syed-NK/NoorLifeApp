@@ -1,11 +1,26 @@
 import { Image, StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '@ds/components';
-import { noorLifeAssets } from '@shared/assets/noorlife-assets';
+import { getModulePictogram } from '@features/home/module-pictograms';
 import { iconButtonA11y } from '@shared/utils/a11y';
 
 import { useModuleTheme } from '../module-context';
 import { moduleNeutrals } from '../module-tokens';
+
+/**
+ * The one Noor AI mark, resolved through the same locked registry Main Home's centre control
+ * renders from.
+ *
+ * ── Why this is a module-level constant and not a new require ───────────────
+ * Every module's raised control must be the *same asset instance* as Main Home's, and the
+ * framework previously used `noorLifeAssets.entryAuth.noorAiRobot` — a different file, the
+ * standing robot extracted from the splash. That is exactly the "second visually similar file"
+ * the correction rules out, and it is why the centre robot differed between screens.
+ *
+ * Resolved once here rather than inside the component so identity is stable, and via
+ * `getModulePictogram` rather than a fresh `require()` so there is no duplicate path to drift.
+ */
+const NOOR_AI_MARK = getModulePictogram('noor-ai');
 
 export type ModuleAICenterButtonProps = {
   /** Outer diameter in dp, already scaled. */
@@ -70,10 +85,11 @@ export function ModuleAICenterButton({
         ]}
       />
       <Image
-        source={noorLifeAssets.entryAuth.noorAiRobot}
+        source={NOOR_AI_MARK}
         style={{ width: imageSize, height: imageSize }}
         resizeMode="contain"
         accessible={false}
+        testID={testID === undefined ? undefined : `${testID}-mark`}
       />
     </PressableScale>
   );

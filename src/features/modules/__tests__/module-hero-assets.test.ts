@@ -53,21 +53,25 @@ describe('there is one canonical asset per module', () => {
     }
   });
 
-  it('never uses the Noor AI robot as a module hero', () => {
-    // Noor AI is the global assistant. A module hero showing it would misrepresent which
-    // module the user is in.
+  it('never uses the Noor AI robot for a module other than Noor AI', () => {
+    // A Faith or Health tile showing the robot would misrepresent which module the user is in.
+    // Noor AI itself is the one module whose own mark *is* the robot.
     const robot = JSON.stringify(modulePictograms.ai);
     for (const id of FRAMEWORK_MODULE_IDS) {
+      if (id === 'noor-ai') {
+        expect(JSON.stringify(moduleRegistry[id].heroPictogram)).toBe(robot);
+        continue;
+      }
       expect(JSON.stringify(moduleRegistry[id].heroPictogram)).not.toBe(robot);
     }
   });
 
   it('covers every module Main Home offers, with no extras', () => {
-    // Main Home's grid is the product's module list; the framework must match it exactly
-    // apart from the global Noor AI destination.
+    // Main Home's grid is the product's module list; the framework must match it exactly,
+    // Noor AI included.
     const fromMainHome = Object.values(moduleThemes)
       .map((theme) => theme.id)
-      .filter((id) => id !== 'main' && id !== 'noor-ai')
+      .filter((id) => id !== 'main')
       .sort();
     expect([...FRAMEWORK_MODULE_IDS].sort()).toEqual(fromMainHome);
   });

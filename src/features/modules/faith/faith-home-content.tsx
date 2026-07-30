@@ -48,11 +48,7 @@ export function FaithHomeContent() {
 
   return (
     <View style={{ rowGap: gap }}>
-      <FaithHero
-        model={model.nextPrayer}
-        onViewPrayerTimes={go('/faith/prayer-times')}
-        testID="faith-hero"
-      />
+      <FaithHero onViewPrayerTimes={go('/faith/prayer-times')} testID="faith-hero" />
 
       <FaithFeatureGrid />
 
