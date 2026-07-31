@@ -7,6 +7,7 @@ import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
+import { FaithIdentity } from '../components/faith-identity';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import { SourceBadge } from '../components/faith-states';
 import type { Hadith, HadithGrade } from '../data/hadith.repository';
@@ -47,6 +48,10 @@ export function HadithScreen() {
   return (
     <FaithScreen title="Hadith" activeKey={faithNavKeys.more} testID="faith-hadith">
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+        <FaithIdentity
+          submenu="hadith"
+          summary="Narrations from the major collections, with their grading."
+        />
         <SourceBadge source={MOCK_HADITH_SOURCE} testID="faith-hadith" />
 
         <FaithResourceView

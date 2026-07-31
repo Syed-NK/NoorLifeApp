@@ -10,6 +10,7 @@ import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { ArabicText, FaithRow, FaithRowGroup } from '../components/faith-list';
+import { FaithIdentity } from '../components/faith-identity';
 import { FaithScreen } from '../components/faith-screen';
 import type { DhikrPreset, TasbihSession } from '../data/tasbih.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
@@ -54,6 +55,8 @@ export function TasbihScreen() {
   return (
     <FaithScreen title="Tasbih" activeKey={faithNavKeys.more} testID="faith-tasbih">
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+        <FaithIdentity submenu="tasbih" summary="Count your dhikr. Saved on this device." />
+
         {error === null ? null : (
           <ModuleStatusBanner
             tone="error"

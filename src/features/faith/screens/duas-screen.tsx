@@ -10,6 +10,7 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { ArabicText, FaithRow, FaithRowGroup } from '../components/faith-list';
+import { FaithIdentity } from '../components/faith-identity';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import { SourceBadge } from '../components/faith-states';
 import type { Dua } from '../data/dua.repository';
@@ -51,6 +52,7 @@ export function DuasScreen() {
   return (
     <FaithScreen title="Duas" activeKey={faithNavKeys.more} testID="faith-duas">
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+        <FaithIdentity submenu="duas" summary="Supplications for the day and for difficulty." />
         <SourceBadge source={MOCK_SOURCE} testID="faith-duas" />
 
         <FaithResourceView

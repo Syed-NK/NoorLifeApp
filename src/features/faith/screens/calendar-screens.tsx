@@ -7,6 +7,7 @@ import { moduleLayout } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
+import { FaithIdentity } from '../components/faith-identity';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import { useFaithRepositories } from '../di/faith-repository-context';
 import { faithNavKeys } from '../faith-routes';
@@ -39,6 +40,8 @@ export function CalendarScreen() {
   return (
     <FaithScreen title="Islamic Calendar" activeKey={faithNavKeys.more} testID="faith-calendar">
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+        <FaithIdentity submenu="calendar" summary="Hijri dates alongside the Gregorian calendar." />
+
         <ModuleStatusBanner
           tone="info"
           message="Dates are calculated. Your local authority’s moon sighting takes precedence."

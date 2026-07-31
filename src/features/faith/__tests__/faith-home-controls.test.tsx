@@ -42,7 +42,7 @@ const CONTROL_DESTINATIONS: readonly (readonly [string, string])[] = [
   ['faith-feature-mosques', faithRoutes.mosques],
   ['faith-feature-calendar', faithRoutes.calendar],
   // Cards
-  ['faith-continue-play', faithRoutes.reader],
+  ['faith-continue', faithRoutes.reader],
   ['faith-ayah', faithRoutes.dailyAyah],
   ['faith-ayah-share', faithRoutes.dailyAyah],
   ['faith-worship-viewall', faithRoutes.worship],

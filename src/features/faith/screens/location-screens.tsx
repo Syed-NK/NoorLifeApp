@@ -9,6 +9,7 @@ import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
+import { FaithIdentity } from '../components/faith-identity';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import { hasData } from '../data/faith-result';
 import type { QiblaBearing } from '../data/mosque.repository';
@@ -64,6 +65,8 @@ export function QiblaScreen() {
       testID="faith-qibla"
     >
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+        <FaithIdentity submenu="qibla" summary="The direction of prayer from where you are." />
+
         <FaithResourceView
           resource={bearing}
           empty={{ title: 'No bearing', body: 'The Qibla direction could not be calculated.' }}
@@ -137,6 +140,8 @@ export function MosquesScreen() {
   return (
     <FaithScreen title="Mosques" activeKey={faithNavKeys.more} testID="faith-mosques">
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+        <FaithIdentity submenu="mosques" summary="Places to pray near you." />
+
         <ModuleStatusBanner
           tone="info"
           message="Sample listings. Verified mosque data arrives with an approved directory source."

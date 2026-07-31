@@ -64,7 +64,7 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
     expect(screen.getByTestId(`${moduleId}-home-header-profile`)).toBeTruthy();
     expect(screen.getByTestId(`${moduleId}-home-header-help`)).toBeTruthy();
     expect(screen.getByLabelText('Back to Main Home')).toBeTruthy();
-    expect(screen.getByLabelText(`Help with ${definition.name}`)).toBeTruthy();
+    expect(screen.getByLabelText(`${definition.name} help`)).toBeTruthy();
   });
 
   it('renders the locked hero artwork, covered and untinted', async () => {

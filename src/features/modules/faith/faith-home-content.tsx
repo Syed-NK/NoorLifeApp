@@ -1,4 +1,5 @@
 import { useRouter, type Href } from 'expo-router';
+import { useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
@@ -6,7 +7,11 @@ import { fontFamilies } from '@ds/tokens';
 import { minimumHitSlop, statusLabel } from '@shared/utils/a11y';
 
 import { faithRoutes } from '@features/faith/faith-routes';
-import { faithSubmenu } from '@features/faith/faith-submenu-assets';
+import {
+  faithSubmenu,
+  getFaithSubmenuEntry,
+  type FaithSubmenuKey,
+} from '@features/faith/faith-submenu-assets';
 
 import { ModuleAIInsightCard } from '../components/module-ai-insight-card';
 import { ModuleCard, ModuleCardHeading, ModuleTwoColumn } from '../components/module-card';
@@ -42,6 +47,15 @@ export function FaithHomeContent() {
   const module = useModule();
   const { dp } = useModuleMetrics();
   const model = faithHomeFixture;
+  /**
+   * Recitation playback state.
+   *
+   * No audio pipeline exists yet, so pressing the control flips this and nothing streams.
+   * That is deliberate over a silent no-op: the glyph and the spoken label both change, so
+   * the control visibly responds and a screen reader announces the new state. What it must
+   * not do is look like a working play button that does nothing at all.
+   */
+  const [playing, setPlaying] = useState(false);
 
   const gap = dp(moduleLayout.sectionGap);
   /**
@@ -60,9 +74,31 @@ export function FaithHomeContent() {
       <FaithFeatureGrid />
 
       {/* ── Continue Quran ───────────────────────────────────────────────── */}
-      <ModuleCard testID="faith-continue">
+      {/*
+        The card opens the reader; the control beside it is transport, not navigation.
+        They were the same button before, which meant there was no way to listen without
+        leaving the screen — and no way to read without pressing something labelled Play.
+      */}
+      <ModuleCard
+        onPress={go(faithRoutes.reader)}
+        accessibilityLabel={`${model.continueQuran.title}. ${model.continueQuran.detail}. Opens the reader.`}
+        testID="faith-continue"
+      >
         <View style={[styles.row, { columnGap: dp(11) }]}>
-          <AppIcon name="quran" size={dp(30)} color={module.theme.ink} />
+          {/*
+            The approved Quran pictogram, not the icon-font book it replaced. Transparent,
+            `contain`, untinted, sitting directly on the card — no wrapper well.
+          */}
+          <Image
+            source={getFaithSubmenuEntry('quran').source}
+            style={{
+              width: dp(moduleLayout.faithContinueImage),
+              height: dp(moduleLayout.faithContinueImage),
+            }}
+            resizeMode="contain"
+            accessible={false}
+            testID="faith-continue-image"
+          />
           <View style={styles.flex}>
             <ModuleText token="cardTitle" numberOfLines={1}>
               {model.continueQuran.title}
@@ -78,23 +114,7 @@ export function FaithHomeContent() {
               />
             </View>
           </View>
-          <PressableScale
-            onPress={go(faithRoutes.reader)}
-            accessibilityRole="button"
-            accessibilityLabel={`Resume ${model.continueQuran.detail}`}
-            style={[
-              styles.playButton,
-              {
-                width: dp(moduleLayout.minTouchTarget),
-                height: dp(moduleLayout.minTouchTarget),
-                borderRadius: dp(moduleLayout.minTouchTarget) / 2,
-                borderColor: module.theme.border,
-              },
-            ]}
-            testID="faith-continue-play"
-          >
-            <AppIcon name="play" size={dp(18)} color={module.theme.ink} />
-          </PressableScale>
+          <RecitationControl playing={playing} onToggle={() => setPlaying((value) => !value)} />
         </View>
       </ModuleCard>
 
@@ -183,6 +203,7 @@ export function FaithHomeContent() {
         right={
           <CompactDateCard
             icon="calendar"
+            pictogram="calendar"
             iconColor={module.theme.ink}
             eyebrow={model.islamicCalendar.eyebrow}
             title={model.islamicCalendar.title}
@@ -287,6 +308,59 @@ function FaithFeatureGrid() {
   );
 }
 
+/**
+ * The Continue-Quran recitation control.
+ *
+ * ── A vector, and why ───────────────────────────────────────────────
+ * It stays an `AppIcon` rather than becoming a PNG: it is a *functional control* with two
+ * states, and a generated triangle could neither swap to a pause bar nor stay crisp at
+ * 18 dp. The approved PNG set covers feature identities, not transport controls.
+ *
+ * ── Optical centring ───────────────────────────────────────────────
+ * A play triangle's visual mass sits left of its bounding box, so a mathematically centred
+ * glyph reads as offset. The 2 dp nudge is the standard correction; pause is symmetrical
+ * and gets none.
+ */
+function RecitationControl({
+  playing,
+  onToggle,
+}: {
+  readonly playing: boolean;
+  readonly onToggle: () => void;
+}) {
+  const module = useModule();
+  const { dp } = useModuleMetrics();
+  const size = dp(moduleLayout.minTouchTarget);
+
+  return (
+    <PressableScale
+      onPress={onToggle}
+      accessibilityRole="button"
+      accessibilityState={{ selected: playing }}
+      accessibilityLabel={playing ? 'Pause Quran recitation' : 'Play Quran recitation'}
+      accessibilityHint="Audio playback arrives with the approved recitation source."
+      style={[
+        styles.playButton,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderColor: module.theme.border,
+          backgroundColor: playing ? module.theme.lightSurface : moduleNeutrals.surface,
+        },
+      ]}
+      testID="faith-continue-play"
+    >
+      <AppIcon
+        name={playing ? 'pause' : 'play'}
+        size={dp(18)}
+        color={module.theme.ink}
+        style={playing ? undefined : { marginLeft: dp(2) }}
+      />
+    </PressableScale>
+  );
+}
+
 /** Status is carried by an icon shape *and* a word, never by colour alone. */
 function WorshipRow({ item }: { readonly item: WorshipItem }) {
   const module = useModule();
@@ -345,14 +419,23 @@ function WorshipRow({ item }: { readonly item: WorshipItem }) {
 function CompactDateCard({
   icon,
   iconColor,
+  pictogram,
   eyebrow,
   title,
   detail,
   onPress,
   testID,
 }: {
+  /**
+   * Vector fallback, used only where no approved pictogram exists.
+   *
+   * Upcoming/Ramadan has none in the design pack, so it keeps a restrained crescent rather
+   * than borrowing an unrelated mark. Recorded in `docs/FAITH_ASSET_GAPS.md`.
+   */
   readonly icon: 'crescent' | 'calendar';
   readonly iconColor: string;
+  /** The approved pictogram, where one exists. Takes precedence over `icon`. */
+  readonly pictogram?: FaithSubmenuKey;
   readonly eyebrow: string;
   readonly title: string;
   readonly detail: string;
@@ -370,7 +453,20 @@ function CompactDateCard({
       testID={testID}
     >
       <View style={[styles.row, { columnGap: dp(8) }]}>
-        <AppIcon name={icon} size={dp(24)} color={iconColor} />
+        {pictogram === undefined ? (
+          <AppIcon name={icon} size={dp(24)} color={iconColor} />
+        ) : (
+          <Image
+            source={getFaithSubmenuEntry(pictogram).source}
+            style={{
+              width: dp(moduleLayout.faithCompactImage),
+              height: dp(moduleLayout.faithCompactImage),
+            }}
+            resizeMode="contain"
+            accessible={false}
+            testID={`${testID}-image`}
+          />
+        )}
         <View style={styles.flex}>
           <ModuleText token="rowMeta" numberOfLines={1}>
             {eyebrow}

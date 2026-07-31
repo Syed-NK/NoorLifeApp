@@ -322,20 +322,23 @@ export const moduleLayout = {
   /**
    * Vertical gap between stacked sections.
    *
-   * 10 dp, measured off the approved individual-core-screen references. It was 18 dp
-   * while the framework had one generic composition, and at that value neither Faith nor
-   * Health fits its reference: the eight sections Faith needs plus a 68 dp navigation bar
-   * exceed a 852 dp viewport before any card grows. Density is not decoration here — it
-   * is what makes the approved screens fit.
+   * 7 dp. It was 18 while the framework had one generic composition, then 8 once the
+   * approved compositions landed, and 7 after Faith Home was measured on a Pixel 8 and
+   * found to overflow by 10.9 dp. Density is not decoration here — it is what makes the
+   * approved screens fit without scrolling, and the alternative was dropping content the
+   * reference shows.
+   *
+   * (The comment here previously claimed 10, which never matched the value. Corrected.)
    */
-  sectionGap: 8,
+  sectionGap: 7,
   /** Gap between a section heading and its content. */
   headingGap: 10,
   /** Gap between cards within a section. */
   cardGap: 10,
   /** Module header. */
   headerHeight: 54,
-  headerIcon: 22,
+  /** Back and Help glyph. 19 dp, mid of the specified 18-20 band. */
+  headerIcon: 19,
   /** Profile portrait (brief: 34-36 dp). Its touch target is the full 44 dp. */
   headerAvatar: 35,
   /** Gap between Help and Profile (brief: 4-8 dp). */
@@ -460,6 +463,17 @@ export const moduleLayout = {
    */
   faithSubmenuTileHeight: 74,
   faithSubmenuImage: 40,
+  /**
+   * The pictogram a Faith child screen repeats from the tile that opened it.
+   *
+   * 56 dp, mid-band of the specified 48–64, and identical on all eight children: they are
+   * seen in sequence, so a per-screen size would read as a hierarchy that does not exist.
+   */
+  faithIdentityImage: 56,
+  /** The Continue-Quran card's identity pictogram. */
+  faithContinueImage: 42,
+  /** The supporting date cards' identity pictogram — smaller, as they are secondary. */
+  faithCompactImage: 28,
   /** Health's four metric cards: icon left, value/label stacked right. */
   healthMetricHeight: 42,
   healthMetricIcon: 21,
@@ -480,8 +494,15 @@ export const moduleLayout = {
   insightRobot: 50,
   /** Minimum touch target, both axes. WCAG 2.5.5 / Android accessibility. */
   minTouchTarget: 44,
-  /** Space reserved below scrollable content so the nav bar never covers a card. */
-  scrollBottomInset: 24,
+  /**
+   * Space below scrollable content, on top of the navigation bar and the safe area.
+   *
+   * 14, down from 24. The scaffold already insets by `navHeight + insets.bottom`, so this
+   * is purely breathing room under the last card — and it was the cheapest 10 dp of the
+   * 10.9 dp Faith Home was overflowing by. 14 dp still keeps the AI Insight visibly clear
+   * of the bar rather than tucked against it.
+   */
+  scrollBottomInset: 14,
 } as const;
 
 /**

@@ -34,6 +34,7 @@ export type IconName =
   | 'send'
   | 'microphone'
   | 'play'
+  | 'pause'
   | 'bookmark'
   | 'star'
   // ── Status and feedback ──────────────────────────────────────────────────

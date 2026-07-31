@@ -62,7 +62,16 @@ export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: Mod
 
   const iconSize = dp(moduleLayout.headerIcon);
   const avatarSize = dp(moduleLayout.headerAvatar);
+  /** The tappable rectangle: 44 dp, the accessibility minimum on both axes. */
   const target = dp(moduleLayout.minTouchTarget);
+  /**
+   * The visible disc inside it: 36 dp, as both approved references draw it.
+   *
+   * Target and visual were the same 44 dp rectangle before, which made the chrome heavier
+   * than the reference and left no gap between Help and the profile portrait. Separating
+   * them keeps the 44 dp target while the drawn circle matches the design.
+   */
+  const disc = dp(moduleLayout.headerControl);
   const prefix = testID ?? 'module-header';
 
   return (
@@ -99,29 +108,33 @@ export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: Mod
           is not — the same visible outcome from any entry point, with no duplicate push.
         */
         onPress={onBack ?? (() => router.dismissTo(backHref))}
-        style={[
-          styles.control,
-          styles.disc,
-          { width: target, height: target, borderRadius: target / 2 },
-        ]}
+        style={[styles.control, { width: target, height: target }]}
         {...iconButtonA11y(`Back to ${backLabel}`)}
         testID={`${prefix}-back`}
       >
-        <AppIcon name="back" size={iconSize} color={moduleNeutrals.textPrimary} />
+        <View
+          style={[styles.disc, { width: disc, height: disc, borderRadius: disc / 2 }]}
+          pointerEvents="none"
+        >
+          <AppIcon name="back" size={iconSize} color={moduleNeutrals.textPrimary} />
+        </View>
       </PressableScale>
 
       <View style={[styles.rightCluster, { columnGap: dp(moduleLayout.headerControlGap) }]}>
         <PressableScale
           onPress={() => router.push(module.routes.help)}
-          style={[
-            styles.control,
-            styles.disc,
-            { width: target, height: target, borderRadius: target / 2 },
-          ]}
-          {...iconButtonA11y(`Help with ${module.name}`)}
+          style={[styles.control, { width: target, height: target }]}
+          accessibilityRole="button"
+          accessibilityLabel={`${module.name} help`}
+          accessibilityHint={`Opens help for the ${module.name} module.`}
           testID={`${prefix}-help`}
         >
-          <AppIcon name="help" size={iconSize} color={module.theme.ink} />
+          <View
+            style={[styles.disc, { width: disc, height: disc, borderRadius: disc / 2 }]}
+            pointerEvents="none"
+          >
+            <AppIcon name="help" size={iconSize} color={module.theme.ink} />
+          </View>
         </PressableScale>
 
         <PressableScale
@@ -178,10 +191,13 @@ const styles = StyleSheet.create({
   /**
    * The bordered white disc both approved references draw around Back and Help.
    *
-   * The disc *is* the 44 dp touch target, so the visible chrome and the tappable area are the
-   * same rectangle — no hit-slop to keep in step with a smaller visual.
+   * 36 dp, centred inside a 44 dp pressable. The two were the same rectangle before, which
+   * drew heavier chrome than the reference and closed the gap to the profile portrait.
+   * `pointerEvents: 'none'` keeps the pressable — not the disc — the accessibility node.
    */
   disc: {
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: moduleNeutrals.surface,
     borderWidth: 1,
     borderColor: moduleNeutrals.border,

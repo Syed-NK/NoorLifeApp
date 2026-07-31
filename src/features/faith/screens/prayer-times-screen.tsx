@@ -8,6 +8,7 @@ import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
+import { FaithIdentity } from '../components/faith-identity';
 import { FaithResourceView, FaithScreen, FaithSuccessBanner } from '../components/faith-screen';
 import { hasData } from '../data/faith-result';
 import type {
@@ -67,6 +68,8 @@ export function PrayerTimesScreen() {
   return (
     <FaithScreen title="Prayer Times" activeKey={faithNavKeys.worship} testID="faith-prayer-times">
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+        <FaithIdentity submenu="prayer" summary="Today’s times, and the reminders you choose." />
+
         {savedPrayer === null ? null : (
           <FaithSuccessBanner
             message="Reminder preference saved. Scheduling arrives with notification support."

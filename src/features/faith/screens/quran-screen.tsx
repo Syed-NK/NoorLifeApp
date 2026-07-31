@@ -8,6 +8,7 @@ import { ModuleProgressBar } from '@features/modules/components/module-chart';
 import { moduleLayout } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
+import { FaithIdentity } from '../components/faith-identity';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
 import { SourceBadge } from '../components/faith-states';
@@ -38,6 +39,7 @@ export function QuranScreen() {
   return (
     <FaithScreen title="Qur’an" activeKey={faithNavKeys.quran} testID="faith-quran">
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+        <FaithIdentity submenu="quran" summary="Read, search and resume where you stopped." />
         <SourceBadge source={MOCK_SOURCE} testID="faith-quran" />
 
         {position === null ? null : (
