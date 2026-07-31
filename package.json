@@ -54,6 +54,7 @@
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "deploy:both": "node ./scripts/deploy-both.js",
     "web": "expo start --web",
     "lint": "expo lint",
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"*.{json,js}\"",

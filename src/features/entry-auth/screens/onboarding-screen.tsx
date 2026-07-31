@@ -2,17 +2,20 @@ import { StyleSheet, View } from 'react-native';
 
 import { AuthScaffold } from '../components/auth-scaffold';
 import { EntryAuthText } from '../components/entry-auth-text';
+import { EntryStepDots } from '../components/entry-step-dots';
+import { EntrySwipeBack } from '../components/entry-swipe-back';
 import { PrimaryButton } from '../components/primary-button';
-import { ProgressDots } from '../components/progress-dots';
 import { SecondaryButton } from '../components/secondary-button';
 import { entryAuthLayout } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
 
-/** Total onboarding panels. Drives the step indicator; see ProgressDots for why it is three. */
-export const ONBOARDING_STEPS = 3;
-
 export type OnboardingScreenProps = {
-  /** Zero-based panel index. */
+  /**
+   * Zero-based panel index.
+   *
+   * Doubles as the dot index: the three onboarding panels are steps 0–2 of the five-step entry
+   * sequence, so `entryStepIndex.onboardingOne` … `onboardingThree` are 0, 1 and 2.
+   */
   readonly step: number;
   readonly title: string;
   readonly subtitle: string;
@@ -66,69 +69,67 @@ export function OnboardingScreen({
   const { dp } = useEntryAuthMetrics();
 
   return (
-    <AuthScaffold
-      testID={testID}
-      footer={
-        <View style={{ gap: dp(20) }}>
-          <ProgressDots
-            count={ONBOARDING_STEPS}
-            activeIndex={step}
-            testID={`${testID ?? 'onboarding'}-dots`}
-          />
-          {onSkip === undefined ? (
-            <PrimaryButton
-              label={primaryLabel}
-              onPress={onPrimary}
-              testID={`${testID ?? 'onboarding'}-primary`}
-            />
-          ) : (
-            <View style={[styles.controls, { gap: dp(12) }]}>
-              <SecondaryButton
-                label="Skip"
-                onPress={onSkip}
-                style={styles.secondary}
-                testID={`${testID ?? 'onboarding'}-skip`}
-              />
+    <EntrySwipeBack activeIndex={step} testID={`${testID ?? 'onboarding'}-swipe`}>
+      <AuthScaffold
+        testID={testID}
+        footer={
+          <View style={{ gap: dp(20) }}>
+            <EntryStepDots activeIndex={step} testID={`${testID ?? 'onboarding'}-dots`} />
+            {onSkip === undefined ? (
               <PrimaryButton
                 label={primaryLabel}
                 onPress={onPrimary}
-                style={styles.primary}
                 testID={`${testID ?? 'onboarding'}-primary`}
               />
-            </View>
-          )}
-        </View>
-      }
-    >
-      {/* Both measures are capped and centred rather than filling the column — see
-          headingMaxWidth and subtitleMaxWidth for the measurements behind the numbers. */}
-      <View style={[styles.copy, { paddingTop: dp(28), gap: dp(10) }]}>
-        <EntryAuthText
-          token="title"
-          align="center"
-          accessibilityRole="header"
-          style={{ maxWidth: dp(entryAuthLayout.headingMaxWidth) }}
-        >
-          {title}
-        </EntryAuthText>
-        <EntryAuthText
-          token="subtitle"
-          align="center"
-          style={{ maxWidth: dp(entryAuthLayout.subtitleMaxWidth) }}
-        >
-          {subtitle}
-        </EntryAuthText>
-      </View>
-
-      {/* Absorbs the space left between the fixed text and the fixed controls, so a shorter
-          device shrinks the artwork rather than clipping it or scrolling. */}
-      <View
-        style={[styles.illustration, { marginTop: dp(8) }]}
-        testID={`${testID ?? 'onboarding'}-illustration`}
+            ) : (
+              <View style={[styles.controls, { gap: dp(12) }]}>
+                <SecondaryButton
+                  label="Skip"
+                  onPress={onSkip}
+                  style={styles.secondary}
+                  testID={`${testID ?? 'onboarding'}-skip`}
+                />
+                <PrimaryButton
+                  label={primaryLabel}
+                  onPress={onPrimary}
+                  style={styles.primary}
+                  testID={`${testID ?? 'onboarding'}-primary`}
+                />
+              </View>
+            )}
+          </View>
+        }
       >
-        {illustration}
-      </View>
-    </AuthScaffold>
+        {/* Both measures are capped and centred rather than filling the column — see
+          headingMaxWidth and subtitleMaxWidth for the measurements behind the numbers. */}
+        <View style={[styles.copy, { paddingTop: dp(28), gap: dp(10) }]}>
+          <EntryAuthText
+            token="title"
+            align="center"
+            accessibilityRole="header"
+            style={{ maxWidth: dp(entryAuthLayout.headingMaxWidth) }}
+          >
+            {title}
+          </EntryAuthText>
+          <EntryAuthText
+            token="subtitle"
+            align="center"
+            style={{ maxWidth: dp(entryAuthLayout.subtitleMaxWidth) }}
+          >
+            {subtitle}
+          </EntryAuthText>
+        </View>
+
+        {/* Absorbs the space left between the fixed text and the fixed controls, so a shorter
+          device shrinks the artwork rather than clipping it or scrolling. */}
+        <View
+          style={[styles.illustration, { marginTop: dp(8) }]}
+          testID={`${testID ?? 'onboarding'}-illustration`}
+        >
+          {illustration}
+        </View>
+      </AuthScaffold>
+    </EntrySwipeBack>
   );
 }
 

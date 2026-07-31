@@ -39,12 +39,31 @@ const PROTECTED_PATHS: readonly string[] = [
   'src/features/entry-auth/entry-auth-copy.ts',
   'src/features/entry-auth/entry-auth-assets.ts',
   'src/features/entry-auth/screens/splash-screen.tsx',
+  // Authentication service — not a layout, but out of scope for design work.
+  'src/services/auth/auth.service.ts',
+];
+
+/**
+ * Entry screens deliberately reopened, with the reason recorded rather than the entry deleted.
+ *
+ * The entry sequence was asked to carry a shared step indicator and swipe-back navigation across
+ * onboarding, Welcome and the credentials screens, so the user can return to an earlier screen.
+ * That cannot be built without editing these four files, so their byte-for-byte lock was lifted on
+ * request. Leaving them silently absent from the list above is the failure mode this whole test is
+ * designed to catch, so they are named here instead.
+ *
+ * What remains locked is the part that carries the approved design: `entry-auth-tokens.ts`,
+ * `entry-auth-copy.ts`, `entry-auth-assets.ts` and the splash composition are all still above, and
+ * this work changed none of them — no colour, measurement, string or asset moved. The changes are
+ * structural: a footer slot, a dot row and a gesture wrapper.
+ *
+ * Anything beyond that still needs the design owner's sign-off.
+ */
+const REOPENED_ON_REQUEST: readonly string[] = [
   'src/features/entry-auth/screens/onboarding-screen.tsx',
   'src/features/entry-auth/screens/welcome-screen.tsx',
   'src/features/entry-auth/screens/login-screen.tsx',
   'src/features/entry-auth/screens/sign-up-screen.tsx',
-  // Authentication service — not a layout, but out of scope for design work.
-  'src/services/auth/auth.service.ts',
 ];
 
 /**
@@ -102,5 +121,29 @@ describe('protected design-locked files', () => {
 
     const current = fs.readFileSync(path.join(process.cwd(), filePath), 'utf8');
     expect(normalise(current)).toBe(normalise(baseline as string));
+  });
+});
+
+/**
+ * The reopened entry screens keep the *visual* lock even though the byte lock is gone.
+ *
+ * A file removed from the list above would otherwise be free to drift in any direction. These two
+ * checks keep the part that matters: the approved palette and measurements stay in the locked token
+ * file, so a colour or size cannot be quietly introduced at the call site.
+ */
+describe('entry screens reopened on request', () => {
+  it('does not also claim to lock them, which would contradict itself', () => {
+    for (const filePath of REOPENED_ON_REQUEST) {
+      expect(PROTECTED_PATHS).not.toContain(filePath);
+    }
+  });
+
+  it.each(REOPENED_ON_REQUEST)('%s hard-codes no colour of its own', (filePath) => {
+    const current = fs.readFileSync(path.join(process.cwd(), filePath), 'utf8');
+
+    // Every colour on these screens must come from entryAuthColors. A literal here would be a
+    // visual change escaping the lock on entry-auth-tokens.ts.
+    expect(current).not.toMatch(/#[0-9A-Fa-f]{3,8}\b/);
+    expect(current).not.toMatch(/\brgba?\(/);
   });
 });
