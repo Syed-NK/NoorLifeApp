@@ -132,7 +132,9 @@ describe('Faith home — 03-faith.png', () => {
     const arabic = screen.getByText(faithHomeFixture.dailyAyah.arabic);
     expect(arabic.props.accessibilityLanguage).toBe('ar');
     // RTL on this node only: the app must not flip globally.
-    const flattened = [arabic.props.style].flat(3).filter(Boolean) as { writingDirection?: string }[];
+    const flattened = [arabic.props.style].flat(3).filter(Boolean) as {
+      writingDirection?: string;
+    }[];
     expect(flattened.some((style) => style.writingDirection === 'rtl')).toBe(true);
   });
 
@@ -147,9 +149,23 @@ describe('Faith home — 03-faith.png', () => {
     expect(faithHomeFixture.worship.items).toHaveLength(4);
   });
 
-  it('attributes the insight to its source', () => {
+  /**
+   * The narration's source moved off this card, on purpose.
+   *
+   * It used to sit in a pill inside the insight, and that pill was what made Faith's card
+   * taller than every other module's. The standardisation brief fixes the card's geometry
+   * at Main Home's, so the source now lives on the Faith AI screen beside the full
+   * narration. What this asserts is that the *insight* still names its assistant and still
+   * leads somewhere the source can be read.
+   */
+  it('attributes the insight to its assistant and leads to the source', () => {
     const insight = screen.getByTestId('faith-insight');
-    expect(String(insight.props.accessibilityLabel)).toContain('Sahih Bukhari');
+    const label = String(insight.props.accessibilityLabel);
+
+    expect(label).toContain('Faith AI Insight');
+    expect(String(insight.props.accessibilityHint)).toContain('Faith AI');
+    // The pill is gone, so the card can no longer grow past the shared height.
+    expect(screen.queryByText(/Source: Sahih Bukhari/)).toBeNull();
   });
 
   it('labels the bottom navigation exactly as the reference does', () => {
@@ -288,8 +304,6 @@ describe('theme and asset use stay correct', () => {
 
   it.each(['faith', 'health'] as const)('%s AI stays scoped to itself', (moduleId) => {
     expect(moduleAIPolicies[moduleId].moduleId).toBe(moduleId);
-    expect(moduleAIPolicies[moduleId].outOfScopeMessage).toContain(
-      moduleRegistry[moduleId].name,
-    );
+    expect(moduleAIPolicies[moduleId].outOfScopeMessage).toContain(moduleRegistry[moduleId].name);
   });
 });

@@ -97,7 +97,9 @@ describe('financial safety — Finance', () => {
   });
 
   it('refuses investment, tax and legal advice', () => {
-    const refusal = policy.safetyRules.find((rule) => /investment, tax or legal/i.test(rule.subject));
+    const refusal = policy.safetyRules.find((rule) =>
+      /investment, tax or legal/i.test(rule.subject),
+    );
     expect(refusal?.kind).toBe('refuse');
   });
 
@@ -124,7 +126,9 @@ describe('privacy safety — Family', () => {
 
 describe('academic integrity — Learning', () => {
   it('will not produce work to be submitted as the user’s own', () => {
-    const rule = moduleAIPolicies.learning.safetyRules.find((item) => /graded work/i.test(item.subject));
+    const rule = moduleAIPolicies.learning.safetyRules.find((item) =>
+      /graded work/i.test(item.subject),
+    );
     expect(rule?.kind).toBe('refuse');
   });
 });
@@ -132,7 +136,14 @@ describe('academic integrity — Learning', () => {
 describe('modules without a regulatory obligation', () => {
   it('carry no standing disclaimer, so the ones that do still stand out', () => {
     // A disclaimer on every screen is a disclaimer nobody reads.
-    for (const moduleId of ['planner', 'goals', 'learning', 'family', 'faith', 'noor-ai'] as const) {
+    for (const moduleId of [
+      'planner',
+      'goals',
+      'learning',
+      'family',
+      'faith',
+      'noor-ai',
+    ] as const) {
       expect(moduleAIPolicies[moduleId].standingDisclaimer).toBeUndefined();
     }
   });

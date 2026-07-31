@@ -67,7 +67,8 @@ const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
       { key: 'asr', title: 'Asr', meta: '4:12 pm', icon: 'worship', status: 'due' },
       { key: 'maghrib', title: 'Maghrib', meta: '7:38 pm', icon: 'worship', status: 'upcoming' },
     ],
-    insight: 'You have kept every Fajr this week. Asr is the one you most often miss — a reminder 20 minutes earlier might help.',
+    insight:
+      'You have kept every Fajr this week. Asr is the one you most often miss — a reminder 20 minutes earlier might help.',
   },
   health: {
     metrics: [
@@ -84,10 +85,23 @@ const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
     activity: [
       { key: 'walk', title: 'Morning walk', meta: '25 minutes', icon: 'steps', status: 'done' },
       { key: 'water', title: 'Water', meta: '5 of 8 glasses', icon: 'water', status: 'due' },
-      { key: 'stretch', title: 'Evening stretch', meta: '8:30 pm', icon: 'wellness', status: 'upcoming' },
-      { key: 'weigh-in', title: 'Weekly weigh-in', meta: 'Yesterday', icon: 'records', status: 'missed' },
+      {
+        key: 'stretch',
+        title: 'Evening stretch',
+        meta: '8:30 pm',
+        icon: 'wellness',
+        status: 'upcoming',
+      },
+      {
+        key: 'weigh-in',
+        title: 'Weekly weigh-in',
+        meta: 'Yesterday',
+        icon: 'records',
+        status: 'missed',
+      },
     ],
-    insight: 'Your sleep is shorter on the nights you log an evening walk after 9 pm. Worth trying it earlier for a week.',
+    insight:
+      'Your sleep is shorter on the nights you log an evening walk after 9 pm. Worth trying it earlier for a week.',
   },
   planner: {
     metrics: [
@@ -104,11 +118,30 @@ const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
     ],
     activity: [
       { key: 'standup', title: 'Team stand-up', meta: '9:30 am', icon: 'work', status: 'done' },
-      { key: 'report', title: 'Send the report', meta: 'Due 4:00 pm', icon: 'document', status: 'due' },
-      { key: 'school', title: 'School pick-up', meta: '3:15 pm', icon: 'school-bag', status: 'upcoming' },
-      { key: 'invoice', title: 'File the invoice', meta: 'Yesterday', icon: 'tasks', status: 'missed' },
+      {
+        key: 'report',
+        title: 'Send the report',
+        meta: 'Due 4:00 pm',
+        icon: 'document',
+        status: 'due',
+      },
+      {
+        key: 'school',
+        title: 'School pick-up',
+        meta: '3:15 pm',
+        icon: 'school-bag',
+        status: 'upcoming',
+      },
+      {
+        key: 'invoice',
+        title: 'File the invoice',
+        meta: 'Yesterday',
+        icon: 'tasks',
+        status: 'missed',
+      },
     ],
-    insight: 'Your afternoons carry twice as many tasks as your mornings. Moving one to before 11 am tends to be what clears the day.',
+    insight:
+      'Your afternoons carry twice as many tasks as your mornings. Moving one to before 11 am tends to be what clears the day.',
   },
   finance: {
     metrics: [
@@ -123,12 +156,37 @@ const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
       },
     ],
     activity: [
-      { key: 'groceries', title: 'Groceries', meta: 'Today · £38.40', icon: 'meal', status: 'done' },
-      { key: 'transport', title: 'Transport', meta: 'Yesterday · £6.20', icon: 'transactions', status: 'done' },
-      { key: 'subscription', title: 'Subscription renews', meta: 'In 3 days · £9.99', icon: 'clock', status: 'upcoming' },
-      { key: 'savings', title: 'Savings transfer', meta: 'Missed on the 1st', icon: 'target', status: 'missed' },
+      {
+        key: 'groceries',
+        title: 'Groceries',
+        meta: 'Today · £38.40',
+        icon: 'meal',
+        status: 'done',
+      },
+      {
+        key: 'transport',
+        title: 'Transport',
+        meta: 'Yesterday · £6.20',
+        icon: 'transactions',
+        status: 'done',
+      },
+      {
+        key: 'subscription',
+        title: 'Subscription renews',
+        meta: 'In 3 days · £9.99',
+        icon: 'clock',
+        status: 'upcoming',
+      },
+      {
+        key: 'savings',
+        title: 'Savings transfer',
+        meta: 'Missed on the 1st',
+        icon: 'target',
+        status: 'missed',
+      },
     ],
-    insight: 'Groceries are your largest category and rose 14% this month. This is a description of your own spending, not advice.',
+    insight:
+      'Groceries are your largest category and rose 14% this month. This is a description of your own spending, not advice.',
   },
   learning: {
     metrics: [
@@ -144,11 +202,30 @@ const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
       },
     ],
     activity: [
-      { key: 'tajweed', title: 'Tajweed basics', meta: 'Lesson 4 of 9', icon: 'learn', status: 'due' },
-      { key: 'article', title: 'Saved: focus habits', meta: '8 min read', icon: 'bookmark', status: 'upcoming' },
-      { key: 'arabic', title: 'Arabic vocabulary', meta: 'Completed today', icon: 'school-bag', status: 'done' },
+      {
+        key: 'tajweed',
+        title: 'Tajweed basics',
+        meta: 'Lesson 4 of 9',
+        icon: 'learn',
+        status: 'due',
+      },
+      {
+        key: 'article',
+        title: 'Saved: focus habits',
+        meta: '8 min read',
+        icon: 'bookmark',
+        status: 'upcoming',
+      },
+      {
+        key: 'arabic',
+        title: 'Arabic vocabulary',
+        meta: 'Completed today',
+        icon: 'school-bag',
+        status: 'done',
+      },
     ],
-    insight: 'You finish lessons you start before noon and abandon the ones you start after 9 pm. Your mornings are working.',
+    insight:
+      'You finish lessons you start before noon and abandon the ones you start after 9 pm. Your mornings are working.',
   },
   family: {
     metrics: [
@@ -156,11 +233,24 @@ const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
       { key: 'members', label: 'Members', value: '4', icon: 'family' },
     ],
     activity: [
-      { key: 'dinner', title: 'Family dinner', meta: 'Friday, 7:00 pm', icon: 'meal', status: 'upcoming' },
+      {
+        key: 'dinner',
+        title: 'Family dinner',
+        meta: 'Friday, 7:00 pm',
+        icon: 'meal',
+        status: 'upcoming',
+      },
       { key: 'trip', title: 'Weekend trip', meta: 'Saturday', icon: 'today', status: 'upcoming' },
-      { key: 'photos', title: 'Eid photos added', meta: 'By Fatima · yesterday', icon: 'memories', status: 'done' },
+      {
+        key: 'photos',
+        title: 'Eid photos added',
+        meta: 'By Fatima · yesterday',
+        icon: 'memories',
+        status: 'done',
+      },
     ],
-    insight: 'Two plans this week have no one assigned to them yet. Naming someone is usually what makes them happen.',
+    insight:
+      'Two plans this week have no one assigned to them yet. Naming someone is usually what makes them happen.',
   },
   goals: {
     metrics: [
@@ -181,7 +271,8 @@ const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
       { key: 'arabic', title: 'Practise Arabic', meta: 'Today', icon: 'learn', status: 'upcoming' },
       { key: 'sleep', title: 'Sleep by 11 pm', meta: 'Yesterday', icon: 'sleep', status: 'missed' },
     ],
-    insight: 'Two of your three goals depend on the evening. Spreading them across the day is usually what protects a streak.',
+    insight:
+      'Two of your three goals depend on the evening. Spreading them across the day is usually what protects a streak.',
   },
 };
 

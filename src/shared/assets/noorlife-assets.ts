@@ -73,7 +73,17 @@ export const noorLifeAssets = {
    */
   moduleHeroes: {
     noorAI: require('@assets/images/modules/heroes/02-noor-ai-hero.png') as ImageSourcePropType,
-    faith: require('@assets/images/modules/heroes/03-faith-hero.png') as ImageSourcePropType,
+    /**
+     * The left-copy revision.
+     *
+     * `03-faith-hero.png` was symmetrical — mosques on both flanks — which forced Faith's
+     * copy into the centre and made it the one hero that did not match the others'
+     * left-aligned treatment. `…-left-copy-v2` moves the architecture to the right and
+     * leaves a quiet dark-green field on the left, so Faith now reads like every other
+     * module. The superseded asset stays in the repository; nothing references it.
+     */
+    faith:
+      require('@assets/images/modules/faith/faith-hero-left-copy-v2.png') as ImageSourcePropType,
     health: require('@assets/images/modules/heroes/04-health-hero.png') as ImageSourcePropType,
     planner: require('@assets/images/modules/heroes/05-planner-hero.png') as ImageSourcePropType,
     finance: require('@assets/images/modules/heroes/06-finance-hero.png') as ImageSourcePropType,

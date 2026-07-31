@@ -1,15 +1,17 @@
 import { useRouter, type Href } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { fontFamilies } from '@ds/tokens';
 import { minimumHitSlop, statusLabel } from '@shared/utils/a11y';
 
+import { faithRoutes } from '@features/faith/faith-routes';
+import { faithSubmenu } from '@features/faith/faith-submenu-assets';
+
+import { ModuleAIInsightCard } from '../components/module-ai-insight-card';
 import { ModuleCard, ModuleCardHeading, ModuleTwoColumn } from '../components/module-card';
 import { ModuleProgressBar } from '../components/module-chart';
-import { ModuleInsightBanner } from '../components/module-insight-banner';
 import { ModuleText } from '../components/module-text';
-import { comingSoon } from '../module-routes';
 import { useModule } from '../module-context';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
@@ -42,13 +44,18 @@ export function FaithHomeContent() {
   const model = faithHomeFixture;
 
   const gap = dp(moduleLayout.sectionGap);
-  /** Every control resolves to a real destination or a themed placeholder. */
+  /**
+   * Every control resolves to a real, built destination.
+   *
+   * `comingSoon` is gone from this screen. It existed while the Faith routes did not, and
+   * routing a live control to a placeholder was the honest choice then. Now that all
+   * seventeen Faith routes exist, a placeholder here would be hiding a working screen.
+   */
   const go = (href: Href) => () => router.push(href);
-  const soon = (label: string) => () => router.push(comingSoon('faith', label));
 
   return (
     <View style={{ rowGap: gap }}>
-      <FaithHero onViewPrayerTimes={go('/faith/prayer-times')} testID="faith-hero" />
+      <FaithHero onViewPrayerTimes={go(faithRoutes.prayerTimes)} testID="faith-hero" />
 
       <FaithFeatureGrid />
 
@@ -72,7 +79,7 @@ export function FaithHomeContent() {
             </View>
           </View>
           <PressableScale
-            onPress={soon('Quran player')}
+            onPress={go(faithRoutes.reader)}
             accessibilityRole="button"
             accessibilityLabel={`Resume ${model.continueQuran.detail}`}
             style={[
@@ -95,7 +102,13 @@ export function FaithHomeContent() {
       <ModuleTwoColumn
         testID="faith-ayah-worship"
         left={
-          <ModuleCard padding={moduleLayout.twoColumnPadding} style={styles.fillHeight} testID="faith-ayah">
+          <ModuleCard
+            onPress={go(faithRoutes.dailyAyah)}
+            accessibilityLabel={`${model.dailyAyah.title}. ${model.dailyAyah.translation} ${model.dailyAyah.reference}`}
+            padding={moduleLayout.twoColumnPadding}
+            style={styles.fillHeight}
+            testID="faith-ayah"
+          >
             <ModuleText token="cardTitle" numberOfLines={1}>
               {model.dailyAyah.title}
             </ModuleText>
@@ -121,9 +134,9 @@ export function FaithHomeContent() {
                 {model.dailyAyah.reference}
               </ModuleText>
               <PressableScale
-                onPress={soon('Share ayah')}
+                onPress={go(faithRoutes.dailyAyah)}
                 accessibilityRole="button"
-                accessibilityLabel={`Share ${model.dailyAyah.reference}`}
+                accessibilityLabel={`Open ${model.dailyAyah.reference} in full`}
                 hitSlop={minimumHitSlop(dp(18))}
                 testID="faith-ayah-share"
               >
@@ -133,11 +146,15 @@ export function FaithHomeContent() {
           </ModuleCard>
         }
         right={
-          <ModuleCard padding={moduleLayout.twoColumnPadding} style={styles.fillHeight} testID="faith-worship">
+          <ModuleCard
+            padding={moduleLayout.twoColumnPadding}
+            style={styles.fillHeight}
+            testID="faith-worship"
+          >
             <ModuleCardHeading
               title={model.worship.title}
               actionLabel="View All"
-              onAction={go('/faith/prayer-times')}
+              onAction={go(faithRoutes.worship)}
               testID="faith-worship-viewall"
             />
             <View style={{ rowGap: dp(7) }}>
@@ -159,7 +176,7 @@ export function FaithHomeContent() {
             eyebrow={model.upcoming.eyebrow}
             title={model.upcoming.title}
             detail={model.upcoming.detail}
-            onPress={soon('Upcoming events')}
+            onPress={go(faithRoutes.events)}
             testID="faith-upcoming"
           />
         }
@@ -170,19 +187,21 @@ export function FaithHomeContent() {
             eyebrow={model.islamicCalendar.eyebrow}
             title={model.islamicCalendar.title}
             detail={model.islamicCalendar.detail}
-            onPress={go('/faith/more')}
+            onPress={go(faithRoutes.calendar)}
             testID="faith-calendar"
           />
         }
       />
 
-      {/* ── Faith AI Insight ─────────────────────────────────────────────── */}
-      <ModuleInsightBanner
-        title={model.insight.title}
-        body={model.insight.body}
-        footnote={model.insight.source}
-        footnoteStyle="pill"
-        trailing="chevron"
+      {/*
+        ── Faith AI Insight ───────────────────────────────────────────────
+        The shared card, at Main Home's exact geometry. It replaced a taller banner
+        that carried the narration's source in a pill — that pill was what made Faith's
+        card the tallest in the app. The source is not lost: it is shown on the Faith AI
+        screen, beside the full narration, which is where a reader can actually act on it.
+      */}
+      <ModuleAIInsightCard
+        message={model.insight.body}
         onPress={go(module.routes.ai)}
         testID="faith-insight"
       />
@@ -191,76 +210,79 @@ export function FaithHomeContent() {
 }
 
 /**
- * The eight feature cards: two rows of four, in the reference's order.
+ * The eight approved submenu tiles: two rows of four, in the reference's order.
  *
- * Not `ModuleFeatureGrid` — that renders the registry's *capabilities*, which model
- * availability and carry unavailable-with-reason tiles. These eight are the reference's
- * own set, all live, and every one routes somewhere.
+ * ── Approved PNG pictograms, not icon-font glyphs ───────────────────────────
+ * The eight marks come from `faithSubmenu`, which holds a literal `require` per tile.
+ * They were `AppIcon` glyphs tinted gold or green; the approved set replaces that. There
+ * is no fallback path — `source` is required by the entry type, so a tile without its PNG
+ * cannot be constructed.
+ *
+ * ── The rendering rules, and where each one lives ───────────────────────────
+ *   • `contain`, so a pictogram is never cropped or stretched     → `resizeMode`
+ *   • no tint                                                     → no `tintColor` prop
+ *   • no background, no border, no second icon well               → the `Image` has no
+ *     wrapper of its own; the tile surface is the only container
+ *   • identical image box for all eight                           → one `imageBox` value
+ *   • consistent baseline                                         → fixed box + `contain`
+ *   • ≥44 dp touch target                                         → `minHeight` on the tile
+ *
+ * ── Sizing ──────────────────────────────────────────────────────────────────
+ * A 40 dp image box inside a 74 dp tile. The previous build drew a 27 dp glyph in a 48 dp
+ * tile, which left the large empty band the brief calls out. 40 dp fills the tile's upper
+ * area while leaving room for the label at 11 dp without wrapping.
  */
 function FaithFeatureGrid() {
   const router = useRouter();
-  const module = useModule();
   const { dp, contentWidth } = useModuleMetrics();
 
   const gap = dp(moduleLayout.featureGap);
   // Fractional width: flooring four columns is what left a sliver down Main Home's grid.
   const tileWidth = (contentWidth - gap * 3) / 4;
-
-  /**
-   * The three feature cards that already have a screen.
-   *
-   * The other five route to the themed placeholder. Listing only what exists — rather than
-   * mapping all eight and hoping — means a new Faith screen is wired by adding one line
-   * here, and nothing silently points at a route that was never built.
-   */
-  const DESTINATIONS: Partial<Record<string, Href>> = {
-    quran: '/faith/quran',
-    prayer: '/faith/prayer-times',
-    calendar: '/faith/more',
-  };
+  const imageBox = dp(moduleLayout.faithSubmenuImage);
 
   return (
     <View style={[styles.grid, { columnGap: gap, rowGap: gap }]} testID="faith-features">
-      {faithHomeFixture.features.map((feature) => {
-        const href = DESTINATIONS[feature.key];
-        return (
-          <PressableScale
-            key={feature.key}
-            onPress={
-              href === undefined
-                ? () => router.push(comingSoon('faith', feature.label))
-                : () => router.push(href)
-            }
-            accessibilityRole="button"
-            accessibilityLabel={feature.label}
-            style={[
-              styles.tile,
-              {
-                width: tileWidth,
-                height: dp(moduleLayout.faithFeatureHeight),
-                borderRadius: dp(moduleLayout.radiusSmall),
-                rowGap: dp(4),
-              },
-            ]}
-            testID={`faith-feature-${feature.key}`}
+      {faithSubmenu.map((entry) => (
+        <PressableScale
+          key={entry.key}
+          onPress={() => router.push(entry.href)}
+          accessibilityRole="button"
+          accessibilityLabel={entry.accessibilityLabel}
+          style={[
+            styles.tile,
+            {
+              width: tileWidth,
+              height: dp(moduleLayout.faithSubmenuTileHeight),
+              minHeight: dp(moduleLayout.minTouchTarget),
+              borderRadius: dp(moduleLayout.radiusSmall),
+              rowGap: dp(3),
+            },
+          ]}
+          testID={`faith-feature-${entry.key}`}
+        >
+          {/*
+            No wrapper view, no tint, no background. The tile's own surface is the only
+            container the pictogram sits on.
+          */}
+          <Image
+            source={entry.source}
+            style={{ width: imageBox, height: imageBox }}
+            resizeMode="contain"
+            accessible={false}
+            testID={`faith-feature-${entry.key}-image`}
+          />
+          <ModuleText
+            token="tileLabel"
+            align="center"
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.25}
+            style={styles.stretch}
           >
-            <AppIcon
-              name={feature.icon}
-              size={dp(moduleLayout.faithFeatureIcon)}
-              color={feature.green ? module.theme.ink : GOLD_ICON}
-            />
-            <ModuleText
-              token="tileLabel"
-              align="center"
-              numberOfLines={1}
-              maxFontSizeMultiplier={1.25}
-              style={styles.stretch}
-            >
-              {feature.label}
-            </ModuleText>
-          </PressableScale>
-        );
-      })}
+            {entry.label}
+          </ModuleText>
+        </PressableScale>
+      ))}
     </View>
   );
 }

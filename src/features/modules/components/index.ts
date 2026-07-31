@@ -25,6 +25,7 @@ export {
   type ModuleTrend,
 } from './module-summary-card';
 export { ModuleInsightCard, type ModuleInsightCardProps } from './module-insight-card';
+export { ModuleAIInsightCard, type ModuleAIInsightCardProps } from './module-ai-insight-card';
 export {
   ModuleQuickAction,
   ModuleQuickActionRow,
@@ -35,18 +36,12 @@ export {
   ModuleBottomNavigation,
   type ModuleBottomNavigationProps,
 } from './module-bottom-navigation';
-export {
-  ModuleAICenterButton,
-  type ModuleAICenterButtonProps,
-} from './module-ai-center-button';
+export { ModuleAICenterButton, type ModuleAICenterButtonProps } from './module-ai-center-button';
 export { ModuleEmptyState, type ModuleEmptyStateProps } from './module-empty-state';
 export { ModuleLoadingState, type ModuleLoadingStateProps } from './module-loading-state';
 export { ModuleErrorState, type ModuleErrorStateProps } from './module-error-state';
 export { ModuleOfflineState, type ModuleOfflineStateProps } from './module-offline-state';
-export {
-  ModulePermissionState,
-  type ModulePermissionStateProps,
-} from './module-permission-state';
+export { ModulePermissionState, type ModulePermissionStateProps } from './module-permission-state';
 export {
   ModuleSkeleton,
   ModuleSkeletonGroup,

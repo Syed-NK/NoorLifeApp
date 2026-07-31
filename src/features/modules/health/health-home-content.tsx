@@ -3,9 +3,9 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 
+import { ModuleAIInsightCard } from '../components/module-ai-insight-card';
 import { ModuleCard, ModuleCardHeading, ModuleTwoColumn } from '../components/module-card';
 import { ModuleLineChart } from '../components/module-chart';
-import { ModuleInsightBanner } from '../components/module-insight-banner';
 import { ModuleText } from '../components/module-text';
 import { useModule } from '../module-context';
 import { comingSoon } from '../module-routes';
@@ -113,7 +113,11 @@ export function HealthHomeContent() {
           </ModuleCard>
         }
         right={
-          <ModuleCard padding={moduleLayout.twoColumnPadding} style={styles.fillHeight} testID="health-focus">
+          <ModuleCard
+            padding={moduleLayout.twoColumnPadding}
+            style={styles.fillHeight}
+            testID="health-focus"
+          >
             <ModuleCardHeading title={model.focus.title} />
             <View style={{ rowGap: dp(7) }}>
               {model.focus.items.map((item, index) => (
@@ -201,7 +205,11 @@ export function HealthHomeContent() {
           </ModuleCard>
         }
         right={
-          <ModuleCard padding={moduleLayout.twoColumnPadding} style={styles.fillHeight} testID="health-activity">
+          <ModuleCard
+            padding={moduleLayout.twoColumnPadding}
+            style={styles.fillHeight}
+            testID="health-activity"
+          >
             <ModuleCardHeading
               title={model.recentActivity.title}
               actionLabel="View All"
@@ -279,14 +287,15 @@ export function HealthHomeContent() {
         </View>
       </ModuleCard>
 
-      {/* ── Health AI Insight ────────────────────────────────────────────── */}
-      <ModuleInsightBanner
-        title={model.insight.title}
-        body={model.insight.body}
-        footnote={model.insight.disclaimer}
-        footnoteStyle="plain"
-        trailing="info"
-        artworkTreatment="tile"
+      {/*
+        ── Health AI Insight ──────────────────────────────────────────────
+        The medical disclaimer is required by Health's AI policy and must stay visible,
+        so it is folded into the body copy rather than dropped — a compact source that
+        fits the fixed geometry, which is the permitted option. The full wording is on
+        the Health AI screen's standing banner.
+      */}
+      <ModuleAIInsightCard
+        message={`${model.insight.body} ${model.insight.disclaimer}`}
         onPress={() => router.push(module.routes.ai)}
         testID="health-insight"
       />

@@ -101,7 +101,7 @@ export const faithHomeFixture: FaithHomeViewModel = {
     name: 'Dhuhr',
     time: '12:35 PM',
     gregorianDate: 'May 19, 2025',
-    hijriDate: '21 Dhul-Qadah 1446 AH',
+    hijriDate: '21 Dhul-Qa‘dah 1446 AH',
     actionLabel: 'View Prayer Times',
   },
   features: FEATURES,

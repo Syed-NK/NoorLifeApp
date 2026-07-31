@@ -1,6 +1,6 @@
-import { ModuleAIScreen } from '@features/modules/screens/module-ai-screen';
+import { FaithAiScreen } from '@features/faith/screens/faith-ai-screen';
 
-/** Faith module AI (workflow §3.3: the centre slot opens AI inside the module). */
+/** Faith → Faith AI. The raised centre navigation control. */
 export default function Screen() {
-  return <ModuleAIScreen moduleId="faith" />;
+  return <FaithAiScreen />;
 }

@@ -66,7 +66,11 @@ export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
     >
       {metrics.map((metric) => {
         const trendColor =
-          metric.trend === 'down' ? moduleNeutrals.warning : metric.trend === 'up' ? moduleNeutrals.success : moduleNeutrals.textSecondary;
+          metric.trend === 'down'
+            ? moduleNeutrals.warning
+            : metric.trend === 'up'
+              ? moduleNeutrals.success
+              : moduleNeutrals.textSecondary;
 
         const accessibleValue = `${metric.label}, ${metric.value}${metric.unit === undefined ? '' : ` ${metric.unit}`}`;
 

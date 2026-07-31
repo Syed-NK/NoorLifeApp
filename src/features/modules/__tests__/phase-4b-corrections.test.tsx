@@ -149,7 +149,11 @@ describe.each(EXPECTED_MODULES)('4 & 5 — header order: %s', (moduleId) => {
     const layer = screen.getByTestId(`${moduleId}-home-header-title`).parent;
     const styles = [layer?.props?.style].flat(3).filter(Boolean) as Record<string, unknown>[];
     // Absolutely positioned edge-to-edge, so the centre is the screen's centre.
-    expect(styles.some((entry) => entry.position === 'absolute' && entry.left === 0 && entry.right === 0)).toBe(true);
+    expect(
+      styles.some(
+        (entry) => entry.position === 'absolute' && entry.left === 0 && entry.right === 0,
+      ),
+    ).toBe(true);
   });
 });
 

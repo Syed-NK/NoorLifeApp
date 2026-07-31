@@ -40,6 +40,8 @@ const FACE: Record<ModuleTypeToken, keyof typeof fontFamilies> = {
   stateTitle: 'semiBold',
   stateBody: 'regular',
   banner: 'regular',
+  aiInsightTitle: 'semiBold',
+  aiInsightBody: 'regular',
 };
 
 /** Tokens whose default colour is the supporting grey rather than primary text. */
@@ -52,6 +54,7 @@ const SECONDARY_BY_DEFAULT: ReadonlySet<ModuleTypeToken> = new Set<ModuleTypeTok
   'stateBody',
   'rowMeta',
   'chartAxis',
+  'aiInsightBody',
 ]);
 
 export type ModuleTextProps = TextProps & {

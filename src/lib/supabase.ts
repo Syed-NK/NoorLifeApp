@@ -79,7 +79,8 @@ function isUsableOrigin(value: string): boolean {
     if (url.pathname !== '/' && url.pathname !== '') {
       return false;
     }
-    const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+    const loopback =
+      url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
     return url.protocol === 'https:' || (url.protocol === 'http:' && loopback);
   } catch {
     return false;

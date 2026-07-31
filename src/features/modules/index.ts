@@ -29,11 +29,7 @@ export type {
   ModuleQuickActionSpec,
   ModuleStateCopy,
 } from './module-definition';
-export {
-  allModuleDefinitions,
-  getModuleDefinition,
-  moduleRegistry,
-} from './module-registry';
+export { allModuleDefinitions, getModuleDefinition, moduleRegistry } from './module-registry';
 export {
   moduleAIBoundaryResponse,
   moduleAIPolicies,
@@ -70,4 +66,12 @@ export { ModuleHomeScreen } from './screens/module-home-screen';
 export { ModuleSectionScreen } from './screens/module-section-screen';
 export { ModuleAIScreen } from './screens/module-ai-screen';
 export { ModuleGalleryScreen, ModuleHeroAuditScreen } from './screens/module-gallery-screen';
-export { AA_LARGE_TEXT, AA_TEXT, AA_UI, contrastRatio, formatRatio, luminance, meets } from './contrast';
+export {
+  AA_LARGE_TEXT,
+  AA_TEXT,
+  AA_UI,
+  contrastRatio,
+  formatRatio,
+  luminance,
+  meets,
+} from './contrast';

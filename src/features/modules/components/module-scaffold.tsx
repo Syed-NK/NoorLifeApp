@@ -5,7 +5,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { NavItem } from '@shared/models/module-theme';
 
-import { ModuleProvider } from '../module-context';
+import { resolveBackDestination } from '@application/navigation/module-navigation';
+
+import { ModuleProvider, useModule } from '../module-context';
 import { moduleLayout, moduleNeutrals, type FrameworkModuleId } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleBottomNavigation } from './module-bottom-navigation';
@@ -17,7 +19,16 @@ export type ModuleScaffoldProps = {
   readonly activeKey: string;
   /** Sub-screen title. Omit on a module home to use the module name. */
   readonly title?: string;
-  /** Overrides Back. Defaults to returning to Main Home. */
+  /**
+   * True only for a module's own home screen.
+   *
+   * Decides where the visible back arrow goes: a home goes up to Main Home, everything
+   * else goes up to its module home. Defaulting to `false` is deliberate — a new screen
+   * added without thinking about it is a child, which is the safe answer. Getting it
+   * wrong the other way would strand a user on Main Home from three levels deep.
+   */
+  readonly isModuleHome?: boolean;
+  /** Overrides Back entirely, for a screen with a genuinely different meaning. */
   readonly onBack?: () => void;
   /** Overrides navigation, for the gallery and for tests. */
   readonly onNavigate?: (item: NavItem) => void;
@@ -55,6 +66,7 @@ export function ModuleScaffold({
   moduleId,
   activeKey,
   title,
+  isModuleHome = false,
   onBack,
   onNavigate,
   scrollable = true,
@@ -67,6 +79,7 @@ export function ModuleScaffold({
       <ModuleScaffoldBody
         activeKey={activeKey}
         title={title}
+        isModuleHome={isModuleHome}
         onBack={onBack}
         onNavigate={onNavigate}
         scrollable={scrollable}
@@ -88,6 +101,7 @@ export function ModuleScaffold({
 function ModuleScaffoldBody({
   activeKey,
   title,
+  isModuleHome = false,
   onBack,
   onNavigate,
   scrollable,
@@ -96,11 +110,13 @@ function ModuleScaffoldBody({
   testID,
 }: Omit<ModuleScaffoldProps, 'moduleId'>) {
   const insets = useSafeAreaInsets();
+  const module = useModule();
   // `contentWidth` is the capped column minus both page paddings, so centring a view of
   // that width reproduces the page margins without applying padding a second time.
   const { dp, contentWidth } = useModuleMetrics();
 
-  const bottomInset = dp(moduleLayout.navHeight) + insets.bottom + dp(moduleLayout.scrollBottomInset);
+  const bottomInset =
+    dp(moduleLayout.navHeight) + insets.bottom + dp(moduleLayout.scrollBottomInset);
   const column = { width: contentWidth, alignSelf: 'center' as const };
 
   const content = (
@@ -114,7 +130,13 @@ function ModuleScaffoldBody({
       {/* Module pages are light surfaces throughout, so the status bar is always dark-on-light. */}
       <StatusBar style="dark" />
 
-      <ModuleHeader title={title} onBack={onBack} testID={`${testID ?? 'module'}-header`} />
+      <ModuleHeader
+        title={title}
+        backHref={resolveBackDestination(module.id, isModuleHome)}
+        backLabel={isModuleHome ? 'Main Home' : module.name}
+        onBack={onBack}
+        testID={`${testID ?? 'module'}-header`}
+      />
 
       {banner === undefined ? null : (
         <View style={[column, { paddingBottom: dp(10) }]}>{banner}</View>

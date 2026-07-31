@@ -82,7 +82,10 @@ const faith: ModuleTheme = {
       isAI: true,
       accessibilityLabel: 'Open Faith AI',
     },
-    { key: 'worship', label: 'Worship', icon: 'worship', href: '/faith/prayer-times' },
+    // Worship is the user's own record; Prayer Times is the schedule. They were the same
+    // destination while neither screen existed — now that both do, the slot points at the
+    // one the approved reference labels it with.
+    { key: 'worship', label: 'Worship', icon: 'worship', href: '/faith/worship' },
     { key: 'more', label: 'More', icon: 'more', href: '/faith/more' },
   ],
 };

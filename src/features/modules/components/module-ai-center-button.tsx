@@ -79,10 +79,7 @@ export function ModuleAICenterButton({
       {/* A faint wash of the module colour behind the robot, so the control reads as
           the module's assistant even before the ring is noticed. */}
       <View
-        style={[
-          styles.wash,
-          { borderRadius: size / 2, backgroundColor: theme.lightSurface },
-        ]}
+        style={[styles.wash, { borderRadius: size / 2, backgroundColor: theme.lightSurface }]}
       />
       <Image
         source={NOOR_AI_MARK}

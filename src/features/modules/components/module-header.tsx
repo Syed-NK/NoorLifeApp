@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { Image, StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
@@ -15,12 +15,16 @@ export type ModuleHeaderProps = {
   /** Overrides the module name — used on sub-screens ("Prayer Times"). */
   readonly title?: string;
   /**
-   * Where Back goes. Defaults to Main Home.
+   * Where the visible back arrow goes, one level up the hierarchy.
    *
-   * The brief fixes Back's meaning as "return to Main Home", not "pop one screen". A module
-   * is entered from the grid, so popping would strand a user who arrived three screens deep
-   * from a notification.
+   * Supplied by `ModuleScaffold` from `resolveBackDestination`, so a screen never
+   * decides the rule for itself: a module home goes up to Main Home, a module child
+   * goes up to its module home.
    */
+  readonly backHref: Href;
+  /** Human-readable destination for the accessibility label, e.g. "Faith". */
+  readonly backLabel: string;
+  /** Escape hatch for a screen with a genuinely different back meaning. */
   readonly onBack?: () => void;
   readonly testID?: string;
 };
@@ -42,9 +46,16 @@ export type ModuleHeaderProps = {
  * ── Why Profile is last ─────────────────────────────────────────────────────
  * It used to sit beside Back, which the brief rules out. Both right-hand controls carry the
  * full 44 dp touch target while the avatar itself stays 34–36 dp, so the visible portrait is
- * the reference's size without the tappable area being under-sized.
+ * the reference's size without the tappable area being under-sized. The portrait is the
+ * approved `profileAvatar` PNG — never an initial or a letter placeholder.
+ *
+ * ── Where Back goes ─────────────────────────────────────────────────────────
+ * One level up the hierarchy, resolved by `resolveBackDestination` and passed in. A module
+ * home goes to Main Home; a module child goes to its module home and never straight to Main
+ * Home. See `application/navigation/module-navigation.ts` for why that is a property of the
+ * route rather than of the history.
  */
-export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
+export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: ModuleHeaderProps) {
   const router = useRouter();
   const module = useModule();
   const { dp, pagePadding } = useModuleMetrics();
@@ -78,9 +89,22 @@ export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
       </View>
 
       <PressableScale
-        onPress={onBack ?? (() => router.replace(globalRoutes.home))}
-        style={[styles.control, styles.disc, { width: target, height: target, borderRadius: target / 2 }]}
-        {...iconButtonA11y('Back to Main Home')}
+        /*
+          `dismissTo`, not `replace` or `back`.
+
+          `back()` pops history, which exits the app on a cold deep link and skips the
+          module home when the user arrived from Main Home's timeline. `replace()` would
+          leave a duplicate entry when the destination is already below us in the stack.
+          `dismissTo` pops *to* the destination when it is present and replaces when it
+          is not — the same visible outcome from any entry point, with no duplicate push.
+        */
+        onPress={onBack ?? (() => router.dismissTo(backHref))}
+        style={[
+          styles.control,
+          styles.disc,
+          { width: target, height: target, borderRadius: target / 2 },
+        ]}
+        {...iconButtonA11y(`Back to ${backLabel}`)}
         testID={`${prefix}-back`}
       >
         <AppIcon name="back" size={iconSize} color={moduleNeutrals.textPrimary} />
@@ -89,7 +113,11 @@ export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
       <View style={[styles.rightCluster, { columnGap: dp(moduleLayout.headerControlGap) }]}>
         <PressableScale
           onPress={() => router.push(module.routes.help)}
-          style={[styles.control, styles.disc, { width: target, height: target, borderRadius: target / 2 }]}
+          style={[
+            styles.control,
+            styles.disc,
+            { width: target, height: target, borderRadius: target / 2 },
+          ]}
           {...iconButtonA11y(`Help with ${module.name}`)}
           testID={`${prefix}-help`}
         >

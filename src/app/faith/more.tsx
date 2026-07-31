@@ -1,14 +1,6 @@
-import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
+import { MoreScreen } from '@features/faith/screens/more-screen';
 
-/** Faith → More. */
+/** Faith → More. The `more` bottom-navigation slot. */
 export default function Screen() {
-  return (
-    <ModuleSectionScreen
-      moduleId="faith"
-      activeKey="more"
-      title="More"
-      heroTitle="The rest of Faith"
-      heroBody="Dhikr, Qibla and the settings that shape how this module behaves."
-    />
-  );
+  return <MoreScreen />;
 }

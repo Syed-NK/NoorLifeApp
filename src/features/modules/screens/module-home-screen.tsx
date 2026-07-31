@@ -3,11 +3,11 @@ import { View } from 'react-native';
 
 import {
   ModuleActivityCard,
+  ModuleAIInsightCard,
   ModuleEmptyState,
   ModuleErrorState,
   ModuleFeatureGrid,
   ModuleHeroCard,
-  ModuleInsightCard,
   ModuleLoadingState,
   ModuleOfflineState,
   ModuleQuickActionRow,
@@ -70,6 +70,7 @@ export function ModuleHomeScreen({ moduleId, provider, testID }: ModuleHomeScree
       <ModuleScaffold
         moduleId={moduleId}
         activeKey={activeKey}
+        isModuleHome
         testID={testID ?? `${moduleId}-home`}
       >
         <ModuleHomeComposition moduleId={moduleId} />
@@ -81,6 +82,7 @@ export function ModuleHomeScreen({ moduleId, provider, testID }: ModuleHomeScree
     <ModuleScaffold
       moduleId={moduleId}
       activeKey={activeKey}
+      isModuleHome
       testID={testID ?? `${moduleId}-home`}
     >
       <View style={{ rowGap: gap }}>
@@ -126,7 +128,7 @@ export function ModuleHomeScreen({ moduleId, provider, testID }: ModuleHomeScree
             )}
 
             {state.overview.insight === null ? null : (
-              <ModuleInsightCard
+              <ModuleAIInsightCard
                 message={state.overview.insight}
                 onPress={() => router.push(definition.routes.ai)}
                 testID={`${moduleId}-insight`}

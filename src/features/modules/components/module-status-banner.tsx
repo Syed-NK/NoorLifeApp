@@ -11,17 +11,40 @@ import { ModuleText } from './module-text';
 export type ModuleStatusTone = 'info' | 'success' | 'warning' | 'error';
 
 const TONE: Readonly<
-  Record<ModuleStatusTone, { readonly color: string; readonly surface: string; readonly icon: IconName; readonly prefix: string }>
+  Record<
+    ModuleStatusTone,
+    {
+      readonly color: string;
+      readonly surface: string;
+      readonly icon: IconName;
+      readonly prefix: string;
+    }
+  >
 > = {
-  info: { color: moduleNeutrals.info, surface: moduleNeutrals.infoSurface, icon: 'info', prefix: 'Information' },
+  info: {
+    color: moduleNeutrals.info,
+    surface: moduleNeutrals.infoSurface,
+    icon: 'info',
+    prefix: 'Information',
+  },
   success: {
     color: moduleNeutrals.success,
     surface: moduleNeutrals.successSurface,
     icon: 'check-circle',
     prefix: 'Success',
   },
-  warning: { color: moduleNeutrals.warning, surface: moduleNeutrals.warningSurface, icon: 'warning', prefix: 'Warning' },
-  error: { color: moduleNeutrals.error, surface: moduleNeutrals.errorSurface, icon: 'error', prefix: 'Error' },
+  warning: {
+    color: moduleNeutrals.warning,
+    surface: moduleNeutrals.warningSurface,
+    icon: 'warning',
+    prefix: 'Warning',
+  },
+  error: {
+    color: moduleNeutrals.error,
+    surface: moduleNeutrals.errorSurface,
+    icon: 'error',
+    prefix: 'Error',
+  },
 };
 
 export type ModuleStatusBannerProps = {
