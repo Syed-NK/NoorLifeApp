@@ -5,6 +5,17 @@ import { parsePeriodParam, parsePlanParam } from '@features/subscription/subscri
 
 /** Screen 06 — Purchase Processing (Phase 5 §5.06). Guards against a duplicate attempt. */
 export default function Screen() {
-  const { plan, period } = useLocalSearchParams<{ plan?: string; period?: string }>();
-  return <PurchaseProcessingScreen plan={parsePlanParam(plan)} period={parsePeriodParam(period)} />;
+  const { plan, period, intent } = useLocalSearchParams<{
+    plan?: string;
+    period?: string;
+    intent?: string;
+  }>();
+
+  return (
+    <PurchaseProcessingScreen
+      plan={parsePlanParam(plan)}
+      period={parsePeriodParam(period)}
+      intentNonce={typeof intent === 'string' ? intent : undefined}
+    />
+  );
 }

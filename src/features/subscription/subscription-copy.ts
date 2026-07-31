@@ -303,9 +303,30 @@ export const familyMembersCopy = {
   cannotRemoveSelf:
     'The organizer cannot be removed. Transferring the organizer role is coming later.',
   privacyLink: 'How family privacy works',
-  roleLabels: { organizer: 'Organizer', adult: 'Member', child: 'Child' },
+  /**
+   * The line under a member's name.
+   *
+   * The organizer's does not repeat the word "Organizer" — the badge beside their name already says
+   * it, and printing it twice in one row read as a rendering fault. It says what the role *means*
+   * instead, which is the part a new organizer benefits from seeing.
+   */
+  roleLabels: {
+    organizer: 'Manages the family and holds one of the six accounts',
+    adult: 'Member',
+    child: 'Child',
+  },
   memberOnlyNote:
     'You are a member of this family. Only the organizer can invite or remove members.',
+  /** Section headings, so a one-member family still reads as a complete screen. */
+  seatSection: 'Accounts',
+  membersSection: 'Members',
+  pendingSection: 'Pending invitations',
+  noPending: 'No invitations waiting.',
+  pendingCount: (count: number) =>
+    `${count} invitation${count === 1 ? '' : 's'} waiting to be accepted.`,
+  invite: 'Invite a family member',
+  seatsFree: (free: number) =>
+    free === 0 ? 'All accounts are in use.' : `${free} account${free === 1 ? '' : 's'} still free.`,
 } as const;
 
 export const familyFullCopy = {

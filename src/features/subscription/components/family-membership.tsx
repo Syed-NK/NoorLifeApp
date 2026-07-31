@@ -291,6 +291,13 @@ export function InvitationRow({ invitation, onResend, onCancel, testID }: Invita
 export type FamilySeatRowProps = {
   readonly usage: FamilySeatUsage;
   readonly organizerName: string;
+  /**
+   * Whether to draw the small Family mark beside the seats.
+   *
+   * False on the Premium Family details screen, which already shows the same asset at 104 dp
+   * directly above — two copies of one pictogram in one view reads as a mistake.
+   */
+  readonly showPictogram?: boolean;
   readonly testID?: string;
 };
 
@@ -300,21 +307,28 @@ export type FamilySeatRowProps = {
  * Drawn as one row so the shape of the plan is visible at a glance — and drawn with the approved
  * Family pictogram beside it rather than a generated illustration.
  */
-export function FamilySeatRow({ usage, organizerName, testID }: FamilySeatRowProps) {
+export function FamilySeatRow({
+  usage,
+  organizerName,
+  showPictogram = true,
+  testID,
+}: FamilySeatRowProps) {
   const { dp } = useEntryAuthMetrics();
   const seat = dp(subscriptionLayout.seatDot);
 
   return (
     <View style={[styles.seatRow, { columnGap: dp(8) }]} testID={testID}>
-      <Image
-        source={getModulePictogram('family')}
-        style={{ width: dp(44), height: dp(44) }}
-        contentFit="contain"
-        accessible
-        accessibilityRole="image"
-        accessibilityLabel="Family"
-        testID={`${testID ?? 'seats'}-pictogram`}
-      />
+      {showPictogram ? (
+        <Image
+          source={getModulePictogram('family')}
+          style={{ width: dp(44), height: dp(44) }}
+          contentFit="contain"
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel="Family"
+          testID={`${testID ?? 'seats'}-pictogram`}
+        />
+      ) : null}
       <View
         style={[styles.dots, { columnGap: dp(5) }]}
         accessible

@@ -29,9 +29,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FAFFFD",
-          "image": "./assets/images/entry-auth/splash-icon-robot.png",
-          "imageWidth": 120
+          "backgroundColor": "#FAFFFD"
         }
       ],
       "expo-secure-store"

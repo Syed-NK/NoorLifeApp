@@ -71,14 +71,22 @@ export const subscriptionLayout = {
   buttonHeight: entryAuthLayout.buttonHeight,
   minTouchTarget: entryAuthLayout.minTouchTarget,
 
-  /** Gap between stacked plan cards. */
-  cardGap: 10,
-  /** Padding inside a plan card. */
-  cardPadding: 13,
+  /**
+   * Gap between stacked plan cards.
+   *
+   * ── Phase 5B density correction ────────────────────────────────────────────
+   * These four were 10 / 13 / 7 / 16. Measured against Main Home, which stacks sections at 7 dp and
+   * pads cards at 11 dp, the subscription screens were spending roughly a fifth more vertical space
+   * per card than the rest of the app — enough that three plan cards no longer fitted a Pixel 8
+   * without scrolling past the third. They now sit on the module rhythm.
+   */
+  cardGap: 8,
+  /** Padding inside a plan card. Matches `moduleLayout.cardPadding`. */
+  cardPadding: 11,
   /** Gap between a card's rows. */
-  rowGap: 7,
+  rowGap: 5,
   /** Section spacing on a scrolling screen. */
-  sectionGap: 16,
+  sectionGap: 12,
 
   /**
    * The billing-period toggle.
@@ -92,6 +100,17 @@ export const subscriptionLayout = {
 
   /** The module pictogram on a locked-module sheet. */
   sheetPictogram: 56,
+  /**
+   * The plan identity pictogram on a details screen.
+   *
+   * Two sizes, because the assets carry different visual weight. 72 was used for both in Phase 5
+   * and left the Family artwork looking lost in its own whitespace — the normalized pictograms fill
+   * about 71% of their canvas, so 72 dp renders ~51 dp of visible mark. 104 dp on Family renders
+   * ~74 dp, which reads as product artwork rather than a list icon, and is what connects it to the
+   * seat row directly beneath.
+   */
+  planIdentityImage: 72,
+  familyIdentityImage: 104,
   /** The module pictogram in a comparison or feature row. */
   rowPictogram: 24,
   /** The Noor AI robot on processing and success states. */

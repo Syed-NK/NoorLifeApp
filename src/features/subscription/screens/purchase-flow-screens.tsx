@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -26,6 +26,12 @@ import { formatRenewalDate, yearlyPerMonth } from '../domain/pricing';
 import { providerStoreName } from '../domain/subscription';
 import type { PurchaseOutcome } from '../services/purchase-adapter';
 import { useEntitlement, useEntitlementActions } from '../services/entitlement-context';
+import {
+  clearPendingIntent,
+  consumePendingIntent,
+  createPendingIntent,
+  type PendingPurchaseIntent,
+} from '../services/purchase-intent';
 import { confirmCopy, planNames, processingCopy, successCopy } from '../subscription-copy';
 import { subscriptionColors, subscriptionLayout } from '../subscription-tokens';
 import { familyRoutes, subscriptionRoutes, type PeriodParam } from '../subscription-routes';
@@ -70,15 +76,27 @@ export function PurchaseConfirmScreen({ plan, period }: PurchaseConfirmScreenPro
       isMockMode={isMockMode}
       footer={
         <View style={{ rowGap: dp(8) }}>
+          {/* The only place a purchase is authorised. Pressing this mints a one-time intent; the
+              processing screen can do nothing without it. */}
           <PrimaryButton
             label={confirmCopy.confirm}
-            onPress={() => router.replace(subscriptionRoutes.processing(plan, period))}
+            onPress={() => {
+              if (offer === undefined) {
+                return;
+              }
+              const intent = createPendingIntent(offer.productId, plan, period);
+              router.replace(subscriptionRoutes.processing(plan, period, intent.nonce));
+            }}
             disabled={offer === undefined}
             testID="confirm-continue"
           />
           <SecondaryButton
             label={confirmCopy.changePlan}
-            onPress={() => router.back()}
+            onPress={() => {
+              // Backing out withdraws the authorisation rather than leaving it to be picked up.
+              clearPendingIntent();
+              router.back();
+            }}
             testID="confirm-change"
           />
           <SubscriptionLegalLinks testID="confirm-legal" />
@@ -151,6 +169,8 @@ export function PurchaseConfirmScreen({ plan, period }: PurchaseConfirmScreenPro
 export type PurchaseProcessingScreenProps = {
   readonly plan: 'premium_single' | 'premium_family';
   readonly period: PeriodParam;
+  /** The nonce minted by Confirmation. Absent on a direct deep link. */
+  readonly intentNonce?: string;
 };
 
 /** How long before the screen offers a way out rather than spinning indefinitely. */
@@ -170,12 +190,31 @@ const SLOW_PURCHASE_MS = 12000;
  * message beneath changes when the wait runs long. A layout that reflows while a payment is in
  * flight reads as a fault.
  */
-export function PurchaseProcessingScreen({ plan, period }: PurchaseProcessingScreenProps) {
+export function PurchaseProcessingScreen({
+  plan,
+  period,
+  intentNonce,
+}: PurchaseProcessingScreenProps) {
   const router = useRouter();
   const { dp } = useEntryAuthMetrics();
   const { isMockMode } = useEntitlement();
   const { purchase } = useEntitlementActions();
   const offers = usePlanOffers();
+
+  /**
+   * The authorisation for this screen, taken exactly once per mount.
+   *
+   * A ref, read during the first render rather than in an effect or a state initialiser. A state
+   * initialiser can be invoked twice for one mount under StrictMode, which would consume the intent
+   * on the first call and see null on the second — turning the guard into a bug that rejects
+   * legitimate purchases. `undefined` means not yet attempted, `null` means no valid authorisation,
+   * and a ref survives both renders of a double-invoked mount.
+   */
+  const intent = useRef<PendingPurchaseIntent | null | undefined>(undefined);
+  if (intent.current === undefined) {
+    intent.current = consumePendingIntent(intentNonce);
+  }
+  const authorised = intent.current;
 
   const attempted = useRef(false);
   const [outcome, setOutcome] = useState<PurchaseOutcome | null>(null);
@@ -185,6 +224,10 @@ export function PurchaseProcessingScreen({ plan, period }: PurchaseProcessingScr
   const offer = offers.offerFor(plan, period);
 
   const run = useCallback(async () => {
+    // No authorisation: nothing is purchased, whatever the route parameters say.
+    if (authorised === null || authorised === undefined) {
+      return;
+    }
     if (offer === undefined) {
       return;
     }
@@ -194,15 +237,20 @@ export function PurchaseProcessingScreen({ plan, period }: PurchaseProcessingScr
     }
     attempted.current = true;
 
-    const result = await purchase(offer.productId);
+    // The product comes from the *intent*, not from the route, so a crafted URL cannot point a
+    // legitimate authorisation at a different product.
+    const result = await purchase(authorised.productId);
     setOutcome(result.outcome);
     setMessage(result.message ?? null);
 
     if (result.outcome === 'purchased') {
       // Replace, so Back cannot return to a completed purchase and retry it.
       router.replace(subscriptionRoutes.success);
+      return;
     }
-  }, [offer, purchase, router]);
+    // Any terminal non-purchase outcome ends the authorisation; a retry mints a fresh one.
+    clearPendingIntent();
+  }, [authorised, offer, purchase, router]);
 
   useEffect(() => {
     void run();
@@ -213,10 +261,18 @@ export function PurchaseProcessingScreen({ plan, period }: PurchaseProcessingScr
     return () => clearTimeout(timer);
   }, []);
 
-  const backToPlans = () => router.replace(subscriptionRoutes.welcome);
+  const backToPlans = () => {
+    clearPendingIntent();
+    router.replace(subscriptionRoutes.welcome);
+  };
 
   const retry = () => {
-    // A deliberate retry clears the guard; nothing else does.
+    // A deliberate retry re-authorises. The previous intent was spent, so mint and immediately
+    // consume a fresh one rather than letting the screen run on a consumed authorisation.
+    if (offer !== undefined) {
+      const fresh = createPendingIntent(offer.productId, plan, period);
+      intent.current = consumePendingIntent(fresh.nonce);
+    }
     attempted.current = false;
     setOutcome(null);
     setMessage(null);
@@ -233,6 +289,12 @@ export function PurchaseProcessingScreen({ plan, period }: PurchaseProcessingScr
   const cancelled = outcome === 'cancelled';
   const pending = outcome === 'pending';
   const failed = outcome !== null && outcome !== 'purchased' && !cancelled && !pending;
+
+  // Arrived without confirming. Redirect rather than render a spinner that will never resolve —
+  // and, crucially, rather than purchase.
+  if (authorised === null) {
+    return <Redirect href={subscriptionRoutes.welcome} />;
+  }
 
   return (
     <SubscriptionScreenScaffold

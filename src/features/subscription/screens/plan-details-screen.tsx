@@ -64,7 +64,28 @@ export function PlanDetailsScreen({ plan, initialPeriod }: PlanDetailsScreenProp
   const { isMockMode } = useEntitlement();
   const offers = usePlanOffers();
 
-  const [period, setPeriod] = useState<PeriodParam>(initialPeriod);
+  /**
+   * The billing period, with the route parameter as the source of truth on entry.
+   *
+   * ── Why this is not plain `useState(initialPeriod)` ─────────────────────────
+   * It was, and that was a bug. `useState` reads its initial value once per *mount*, but navigating
+   * to this screen again with a different `period` reuses the mounted instance — so the parameter
+   * changed and the toggle did not. Two paths hit it: a deep link to
+   * `/subscription/single?period=monthly` while the yearly screen was open, and Manage's "Switch
+   * billing period", whose whole job is to arrive here with the other period. It surfaced as two
+   * byte-identical monthly/yearly screenshots.
+   *
+   * Derived rather than synchronised in an effect: the override records which parameter it belongs
+   * to, so a new parameter invalidates it automatically. No effect, no cascading render, and no
+   * setState-in-effect for the lint rules to reject.
+   */
+  const [override, setOverride] = useState<{
+    readonly period: PeriodParam;
+    readonly forParam: PeriodParam;
+  } | null>(null);
+  const period =
+    override !== null && override.forParam === initialPeriod ? override.period : initialPeriod;
+  const setPeriod = (next: PeriodParam) => setOverride({ period: next, forParam: initialPeriod });
 
   const isFamily = plan === 'premium_family';
   const copy = isFamily ? familyPlanCopy : singlePlanCopy;
@@ -117,15 +138,58 @@ export function PlanDetailsScreen({ plan, initialPeriod }: PlanDetailsScreenProp
         />
       ) : (
         <View style={{ rowGap: dp(subscriptionLayout.cardGap) }}>
-          <Image
-            source={getModulePictogram(isFamily ? 'family' : 'noor-ai')}
-            style={[styles.identity, { width: dp(72), height: dp(72) }]}
-            contentFit="contain"
-            accessible
-            accessibilityRole="image"
-            accessibilityLabel={isFamily ? 'Premium Family' : 'Premium Single'}
-            testID="plan-details-pictogram"
-          />
+          {/* Family gets 104 dp, Single 72. Same asset treatment — `contain`, no tint, no crop —
+              but the Family mark introduces a six-seat product and was reading as a list icon
+              stranded in whitespace at 72. Grouped with the seat row below rather than floating
+              above the toggle, so artwork and seats read as one block. */}
+          {isFamily ? (
+            <View style={[styles.familyIdentity, { rowGap: dp(6) }]}>
+              <Image
+                source={getModulePictogram('family')}
+                style={[
+                  styles.identity,
+                  {
+                    width: dp(subscriptionLayout.familyIdentityImage),
+                    height: dp(subscriptionLayout.familyIdentityImage),
+                  },
+                ]}
+                contentFit="contain"
+                accessible
+                accessibilityRole="image"
+                accessibilityLabel="Premium Family"
+                testID="plan-details-pictogram"
+              />
+              <FamilySeatRow
+                usage={{ used: 1, limit: 6, pendingInvitations: 0 }}
+                organizerName="You"
+                showPictogram={false}
+                testID="plan-details-seats"
+              />
+              <EntryAuthText
+                token="caption"
+                align="center"
+                color={subscriptionColors.textSecondary}
+              >
+                {familyWording.supporting}
+              </EntryAuthText>
+            </View>
+          ) : (
+            <Image
+              source={getModulePictogram('noor-ai')}
+              style={[
+                styles.identity,
+                {
+                  width: dp(subscriptionLayout.planIdentityImage),
+                  height: dp(subscriptionLayout.planIdentityImage),
+                },
+              ]}
+              contentFit="contain"
+              accessible
+              accessibilityRole="image"
+              accessibilityLabel="Premium Single"
+              testID="plan-details-pictogram"
+            />
+          )}
 
           <BillingPeriodToggle
             value={period}
@@ -173,16 +237,6 @@ export function PlanDetailsScreen({ plan, initialPeriod }: PlanDetailsScreenProp
 
           {isFamily ? (
             <View style={{ rowGap: dp(subscriptionLayout.cardGap) }}>
-              {/* The six seat positions: organizer plus five members. */}
-              <FamilySeatRow
-                usage={{ used: 1, limit: 6, pendingInvitations: 0 }}
-                organizerName="You"
-                testID="plan-details-seats"
-              />
-              <EntryAuthText token="caption" color={subscriptionColors.textSecondary}>
-                {familyWording.supporting}
-              </EntryAuthText>
-
               <ExplainerCard
                 heading={familyPlanCopy.sharedHeading}
                 body={familyPlanCopy.sharedBody}
@@ -284,5 +338,8 @@ const styles = StyleSheet.create({
   },
   identity: {
     alignSelf: 'center',
+  },
+  familyIdentity: {
+    alignItems: 'center',
   },
 });

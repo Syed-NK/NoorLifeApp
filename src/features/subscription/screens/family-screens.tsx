@@ -22,6 +22,7 @@ import { mockFamilyStore } from '../services/mock-family-store';
 import {
   familyFullCopy,
   familyInvitationsCopy,
+  familyPlanCopy,
   familyInviteCopy,
   familyMembersCopy,
   familySetupCopy,
@@ -342,7 +343,19 @@ export function FamilyInvitationsScreen() {
   );
 }
 
-/** Screen 14 — Manage Family Members. */
+/**
+ * Screen 14 — Manage Family Members.
+ *
+ * ── Why the screen carries sections rather than just a list ──────────────────
+ * A one-member family is the *normal* first state — the organizer has just bought the plan and
+ * invited nobody. Phase 5 rendered that as a single row above a pinned footer, leaving a blank band
+ * down most of the screen.
+ *
+ * The fix is real information, not decorative filler: seat usage with how many accounts remain, the
+ * roster, a pending-invitations section that states plainly when there are none, and the shared
+ * versus private summary — which is the thing a new organizer most needs to read before inviting
+ * anyone. Every element is content the screen owes the user at 1 of 6 as much as at 6 of 6.
+ */
 export function FamilyMembersScreen() {
   const router = useRouter();
   const { dp } = useEntryAuthMetrics();
@@ -356,6 +369,7 @@ export function FamilyMembersScreen() {
   }
 
   const usage = mockFamilyStore.getSeatUsage();
+  const pending = family.invitations.filter((invitation) => invitation.status === 'pending');
   // Only the organizer manages. A member sees the roster and the privacy explanation.
   const isOrganizer = entitlement.isFamilyOrganizer;
 
@@ -377,14 +391,14 @@ export function FamilyMembersScreen() {
         isOrganizer ? (
           <View style={{ rowGap: dp(8) }}>
             <PrimaryButton
-              label="Invite a member"
+              label={familyMembersCopy.invite}
               onPress={() =>
                 router.push(mockFamilyStore.isFull() ? familyRoutes.planFull : familyRoutes.invite)
               }
               testID="members-invite"
             />
             <SecondaryButton
-              label="Pending invitations"
+              label={familyMembersCopy.pendingSection}
               onPress={() => router.push(familyRoutes.invitations)}
               testID="members-invitations"
             />
@@ -394,8 +408,6 @@ export function FamilyMembersScreen() {
       testID="family-members"
     >
       <View style={{ rowGap: dp(subscriptionLayout.cardGap) }}>
-        <FamilySeatIndicator usage={usage} testID="members-seats" />
-
         {notice === null ? null : (
           <SubscriptionStateBanner tone="info" message={notice} testID="members-notice" />
         )}
@@ -408,7 +420,19 @@ export function FamilyMembersScreen() {
           />
         )}
 
-        <View>
+        {/* Seat usage, with the remaining count spelled out rather than left to be inferred
+            from six dots. */}
+        <Card testID="members-seat-card">
+          <FamilySeatIndicator usage={usage} testID="members-seats" />
+          <EntryAuthText token="caption" color={subscriptionColors.textSecondary}>
+            {familyMembersCopy.seatsFree(Math.max(0, usage.limit - usage.used))}
+          </EntryAuthText>
+        </Card>
+
+        <Card testID="members-roster">
+          <EntryAuthText token="label" color={subscriptionColors.textPrimary}>
+            {familyMembersCopy.membersSection}
+          </EntryAuthText>
           {family.members.map((member) => (
             <FamilyMemberRow
               key={member.id}
@@ -417,17 +441,73 @@ export function FamilyMembersScreen() {
               testID={`member-${member.id}`}
             />
           ))}
-        </View>
+        </Card>
 
-        <EntryAuthText
-          token="caption"
-          color={subscriptionColors.accent}
-          accessibilityRole="link"
-          onPress={() => router.push(subscriptionRoutes.family('yearly'))}
-          testID="members-privacy-link"
-        >
-          {familyMembersCopy.privacyLink}
-        </EntryAuthText>
+        {/* Present whether or not there is anything in it: "no invitations waiting" is the answer
+            to a question the organizer will otherwise go looking for. */}
+        <Card testID="members-pending">
+          <EntryAuthText token="label" color={subscriptionColors.textPrimary}>
+            {familyMembersCopy.pendingSection}
+          </EntryAuthText>
+          {pending.length === 0 ? (
+            <EntryAuthText
+              token="caption"
+              color={subscriptionColors.textSecondary}
+              testID="members-no-pending"
+            >
+              {familyMembersCopy.noPending}
+            </EntryAuthText>
+          ) : (
+            <>
+              <EntryAuthText
+                token="caption"
+                color={subscriptionColors.textSecondary}
+                testID="members-pending-count"
+              >
+                {familyMembersCopy.pendingCount(pending.length)}
+              </EntryAuthText>
+              {pending.map((invitation) => (
+                <InvitationRow
+                  key={invitation.id}
+                  invitation={invitation}
+                  onCancel={
+                    isOrganizer ? () => mockFamilyStore.revokeInvitation(invitation.id) : undefined
+                  }
+                  testID={`members-invitation-${invitation.id}`}
+                />
+              ))}
+            </>
+          )}
+        </Card>
+
+        {/* The shared-versus-private summary. The single most useful thing on this screen for an
+            organizer who is about to invite people into their account. */}
+        <Card testID="members-sharing">
+          <EntryAuthText token="label" color={subscriptionColors.textPrimary}>
+            {familyPlanCopy.sharedHeading}
+          </EntryAuthText>
+          <EntryAuthText token="caption" color={subscriptionColors.textSecondary}>
+            {familyPlanCopy.sharedBody}
+          </EntryAuthText>
+        </Card>
+
+        <Card testID="members-privacy">
+          <EntryAuthText token="label" color={subscriptionColors.textPrimary}>
+            {familyPlanCopy.privacyHeading}
+          </EntryAuthText>
+          <EntryAuthText token="caption" color={subscriptionColors.textSecondary}>
+            {familyPlanCopy.privacyBody}
+          </EntryAuthText>
+          <EntryAuthText
+            token="caption"
+            color={subscriptionColors.accent}
+            accessibilityRole="link"
+            onPress={() => router.push(subscriptionRoutes.family('yearly'))}
+            testID="members-privacy-link"
+          >
+            {familyMembersCopy.privacyLink}
+          </EntryAuthText>
+        </Card>
       </View>
     </SubscriptionScreenScaffold>
   );

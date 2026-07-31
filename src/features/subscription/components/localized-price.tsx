@@ -43,7 +43,9 @@ export function LocalizedPrice({
   return (
     <View style={{ rowGap: dp(2) }} testID={testID}>
       <View style={[styles.row, { columnGap: dp(4) }]} accessible accessibilityLabel={spoken}>
-        <EntryAuthText token="title" color={subscriptionColors.textPrimary}>
+        {/* 20 dp, down from 22. Still the largest thing on the card, now by a clear margin over
+            the 15 dp plan name rather than by 2 dp over a 20 dp one. */}
+        <EntryAuthText token="titleCompact" color={subscriptionColors.textPrimary}>
           {price.formatted}
         </EntryAuthText>
         <EntryAuthText token="label" color={subscriptionColors.textSecondary}>

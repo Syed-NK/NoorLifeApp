@@ -29,8 +29,16 @@ export const subscriptionRoutes = {
   /** The confirmation step carries both the plan and the period it is confirming. */
   confirm: (plan: 'premium_single' | 'premium_family', period: PeriodParam) =>
     `/subscription/confirm?plan=${plan}&period=${period}` as Href,
-  processing: (plan: 'premium_single' | 'premium_family', period: PeriodParam) =>
-    `/subscription/processing?plan=${plan}&period=${period}` as Href,
+  /**
+   * Processing requires the nonce minted by Confirmation.
+   *
+   * Optional in the signature only so no caller is tempted to invent one; a call without it
+   * produces a URL the screen rejects and redirects away from.
+   */
+  processing: (plan: 'premium_single' | 'premium_family', period: PeriodParam, nonce?: string) =>
+    (nonce === undefined
+      ? `/subscription/processing?plan=${plan}&period=${period}`
+      : `/subscription/processing?plan=${plan}&period=${period}&intent=${nonce}`) as Href,
   success: '/subscription/success' as Href,
   restore: '/subscription/restore' as Href,
   expired: '/subscription/expired' as Href,

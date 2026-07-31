@@ -56,6 +56,8 @@ export function SubscriptionScreenScaffold({
   const { dp } = useEntryAuthMetrics();
 
   const body = (
+    // 8 dp between the heading block and the content, down from 10 in Phase 5. The heading already
+    // carries its own 6 dp gap to its subtitle, so the two stacked gaps read as one larger one.
     <View style={{ gap: dp(subscriptionLayout.cardGap) }}>
       {/* The heading is the screen's first meaningful element, so focus lands on it after
           navigation rather than on a back button. */}
@@ -63,6 +65,9 @@ export function SubscriptionScreenScaffold({
         onBack={onBack}
         title={title}
         subtitle={subtitle}
+        // 20 dp rather than the auth flow's 22: these headings are sentences, not two-word form
+        // titles, and at 22 they wrapped and out-weighed the plan cards they introduce.
+        titleToken="titleCompact"
         testID={`${testID ?? 'subscription'}-header`}
       />
       {isMockMode ? <MockModeBadge testID={testID} /> : null}

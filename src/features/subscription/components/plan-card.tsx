@@ -76,7 +76,10 @@ export function PlanCard({
       <View style={[styles.headRow, { columnGap: dp(8) }]}>
         <View style={[styles.headText, { rowGap: dp(2) }]}>
           <View style={[styles.nameRow, { columnGap: dp(6) }]}>
-            <EntryAuthText token="titleCompact" color={subscriptionColors.textPrimary}>
+            {/* `button` (15 dp SemiBold), not `titleCompact` (20). The price is the number that
+                should dominate a plan card; at 20 dp the plan *name* was competing with it, and two
+                20 dp lines per card is what made three cards overflow the screen. */}
+            <EntryAuthText token="button" color={subscriptionColors.textPrimary}>
               {name}
             </EntryAuthText>
             {badge === undefined ? null : (
