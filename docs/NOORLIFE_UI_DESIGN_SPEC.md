@@ -579,16 +579,29 @@ Use a neutral background. Reserve gold for premium badges and the selected-plan 
 
 Do not hide renewal information.
 
-## 16. Premium Family of 4
+## 16. Premium Family
 
-- Four member profiles
-- Shared family features
+> **Superseded by Phase 5.** This section originally specified a four-seat plan ("Premium Family
+> of 4", four member profiles). The Phase 5 subscription brief defines the plan as **six accounts
+> total — one Family Organizer plus up to five additional members** — and forbids the
+> superseded four-seat wording anywhere in the product. Phase 5 is the newer and more specific
+> commercial instruction, so it governs. The conflict is recorded in
+> `docs/PHASE_5_SUBSCRIPTION_AUDIT.md` §2.1; if four seats was in fact the intended model, that
+> audit entry is the place to reverse this decision.
+
+- Six accounts in total: one organizer plus up to five additional members
+- Private personal profiles for every account
+- Shared family features: calendar, events and tasks, goals, check-ins, memories
 - Parent/guardian controls
-- Individual privacy
+- Individual privacy — Health, Finance, Goals and AI conversations are never shared by default
 - Family AI
-- Member invitation flow
+- Member invitation and management flow
 - Price and billing period
 - `Best Value` badge
+
+Approved customer-facing wording: "Share NoorLife with up to 5 family members."
+Supporting line: "One organizer and five additional members. Everyone gets their own private
+account."
 
 ## 17. Yearly Plan Comparison
 

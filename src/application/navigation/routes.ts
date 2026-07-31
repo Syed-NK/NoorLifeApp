@@ -63,10 +63,42 @@ export const moduleRoutes = {
   goals: { home: '/goals', ai: '/goals/ai' },
 } as const;
 
+/**
+ * §14 subscription routes, extended by Phase 5.
+ *
+ * `manage` moved from `/subscription/manage` to `/settings/subscription`, which is where the
+ * Phase 5 brief places it — managing a subscription is a settings task, and it sits beside the
+ * other account rows there.
+ *
+ * `yearly` is retained as a redirect to `compare`: Phase 5 replaced the yearly-only placeholder
+ * with a full three-plan comparison, and deleting a declared route is a contract change this
+ * phase was not asked to make.
+ *
+ * The parameterised forms — a plan at a billing period — live in
+ * `@features/subscription/subscription-routes`, since a query string does not fit this file's
+ * flat shape.
+ */
 export const subscriptionRoutes = {
   overview: '/subscription',
+  compare: '/subscription/compare',
   single: '/subscription/single',
   family: '/subscription/family',
+  confirm: '/subscription/confirm',
+  processing: '/subscription/processing',
+  success: '/subscription/success',
+  restore: '/subscription/restore',
+  expired: '/subscription/expired',
+  billingIssue: '/subscription/billing-issue',
+  /** Superseded by `compare`; kept as a redirect for existing links. */
   yearly: '/subscription/yearly',
-  manage: '/subscription/manage',
+  manage: '/settings/subscription',
+} as const;
+
+/** §5.11–§5.15 family membership. Distinct from the Family *module* routes in `moduleRoutes`. */
+export const familyMembershipRoutes = {
+  setup: '/family/setup',
+  invite: '/family/invite',
+  invitations: '/family/invitations',
+  members: '/family/members',
+  planFull: '/family/plan-full',
 } as const;

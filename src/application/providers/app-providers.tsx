@@ -1,5 +1,7 @@
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { EntitlementProvider } from '@features/subscription/services/entitlement-context';
+
 import { AuthProvider } from './auth-provider';
 import { DesignSystemProvider } from './design-system-provider';
 import { FontProvider } from './font-provider';
@@ -19,6 +21,10 @@ import { LocalizationProvider } from './localization-provider';
  *
  * Order matters: SafeArea must wrap anything measuring insets; DesignSystem must
  * wrap anything reading tokens; Auth is last so it can consume localization.
+ *
+ * Entitlement sits *inside* Auth, because what a user is entitled to depends on who they are: a
+ * sign-out must be able to drop the entitlement, not the other way round. It wraps the children
+ * rather than replacing Auth's position, so nothing above it changes.
  */
 export function AppProviders({ children }: { readonly children: React.ReactNode }) {
   return (
@@ -26,7 +32,9 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
       <DesignSystemProvider>
         <LocalizationProvider>
           <FontProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              <EntitlementProvider>{children}</EntitlementProvider>
+            </AuthProvider>
           </FontProvider>
         </LocalizationProvider>
       </DesignSystemProvider>
