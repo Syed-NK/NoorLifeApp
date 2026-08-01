@@ -93,9 +93,11 @@ describe('requesting an explanation', () => {
       }),
     );
 
-    // The user tapped a summary card, so the sheet names that, not "Family".
+    // The user tapped a summary card, so the sheet names that *and* the module it lives in. Naming
+    // only the feature was the first version, and it left "Add Task" with nowhere to belong; naming
+    // only the module was the version before that, and it dropped what the user touched.
     expect(upgradeBodyFor(state().request!)).toBe(
-      'Family Check-in is included with NoorLife Premium.',
+      'Family Check-in is available with Family in NoorLife Premium.',
     );
   });
 

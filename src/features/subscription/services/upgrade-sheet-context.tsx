@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import type { FrameworkModuleId } from '@features/modules/module-tokens';
 
 import { isPremiumModule } from '../domain/entitlement';
+import { lockedModuleCopy } from '../subscription-copy';
 import { subscriptionRoutes } from '../subscription-routes';
 
 /**
@@ -115,9 +116,17 @@ export function useUpgradeSheetActions(): UpgradeSheetActions {
   return value;
 }
 
-/** The body line, e.g. "Health is included with NoorLife Premium." */
+/**
+ * The body line for a request.
+ *
+ * Delegates to `lockedModuleCopy` rather than composing a sentence of its own. It used to build one
+ * here — "{featureTitle} is included with NoorLife Premium." — which dropped the module entirely, so
+ * "Add Task" never mentioned Planner. Commercial wording belongs in the copy file where it can be
+ * reviewed, and one implementation means the sheet and anything else describing a request cannot
+ * disagree.
+ */
 export function upgradeBodyFor(request: UpgradeRequest): string {
-  return `${request.featureTitle} is included with NoorLife Premium.`;
+  return lockedModuleCopy.body(request);
 }
 
-export const UPGRADE_SHEET_TITLE = 'Unlock this feature';
+export const UPGRADE_SHEET_TITLE = lockedModuleCopy.title;

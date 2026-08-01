@@ -46,8 +46,8 @@ import { mockRouter } from '../../../../jest.setup';
  *     single-sheet guarantee live. The screen mounts its own upgrade controller, so nothing here
  *     wraps one around it.
  *   • `renderSurface` mounts one component beside a probe on the same controller, which is the only
- *     way to read the exact `featureTitle` / `moduleId` / `source` a surface sends. The sheet shows
- *     the module; it does not show which feature or which surface asked.
+ *     way to read the exact `featureTitle` / `moduleId` / `source` a surface sends. The sheet names
+ *     the feature and its module, but not the surface that asked, and `source` is never shown at all.
  */
 
 function entitlement(plan: Entitlement['plan']): Entitlement {
@@ -154,14 +154,22 @@ async function renderSurface(node: React.ReactNode, adapter: PurchaseAdapter) {
 
 const freeAdapter = () => new MockPurchaseAdapter({ initialEntitlement: entitlement('free') });
 
-/**
- * The Noor AI insight card has no `renderSurface` harness of its own.
- *
- * It never raises an upgrade request — Noor AI is on the free plan — so there is no payload to read.
- * Everything about it is asserted through the real screen below, which is also the only place its
- * locked geometry is worth measuring.
+/*
+ * The Noor AI insight card has no `renderSurface` harness of its own: it never raises an upgrade
+ * request — Noor AI is on the free plan — so there is no payload to read. Everything about it is
+ * asserted through the real screen below, which is also the only place its locked geometry is worth
+ * measuring.
  */
-const sheetHeadingFor = (moduleName: string) => lockedModuleCopy.heading(moduleName);
+
+/**
+ * The sheet's contextual body, which is how an open upgrade explanation is recognised on screen.
+ *
+ * The title is one fixed line for every request, so the body is what identifies *which* request is
+ * showing — and it names the feature as well as the module, which is the correction the device pass
+ * asked for. Composed from the shared copy, so a wording change moves these assertions with it.
+ */
+const sheetBodyFor = (featureTitle: string, moduleName: string) =>
+  lockedModuleCopy.body({ featureTitle, moduleName });
 
 /** Every route these surfaces must not reach without an explicit confirmation. */
 const PROTECTED_ROUTES = ['/planner', '/health', '/family', '/goals', '/insights'];
@@ -194,7 +202,7 @@ describe("Today at a Glance's View All on a free plan", () => {
 
     await user.press(screen.getByTestId('main-home-timeline-view-all'));
 
-    expect(screen.getByText(sheetHeadingFor('Planner'))).toBeTruthy();
+    expect(screen.getByText(sheetBodyFor('Today at a Glance', 'Planner'))).toBeTruthy();
     expectNoProtectedRouteEntered();
   });
 
@@ -209,15 +217,26 @@ describe("Today at a Glance's View All on a free plan", () => {
     expect(mockRouter.push).not.toHaveBeenCalled();
   });
 
-  it('announces the restriction in its accessible name', async () => {
+  it('announces the restriction in its accessible name, naming the destination', async () => {
     await free();
-    expect(screen.getByLabelText("View all of today's schedule, Premium feature")).toBeTruthy();
+    // The approved name for the locked control. It says where "View All" would have gone, which the
+    // old wording ("today's schedule") did not.
+    expect(screen.getByLabelText('View all Planner activities, Premium feature')).toBeTruthy();
+    expect(screen.queryByLabelText("View all of today's schedule")).toBeNull();
+  });
+
+  it('shows a visible lock beside the label, in place of the forward chevron', async () => {
+    await free();
+
+    // The defect this replaces: a control that looked exactly like the paid one and only explained
+    // itself after being tapped. The lock is visible, and it is a shape rather than a colour.
+    expect(screen.getByTestId('main-home-timeline-view-all-lock')).toBeTruthy();
   });
 
   it('keeps the control visible and in place, still reading "View All"', async () => {
     await free();
-    // Nothing is removed or greyed: the heading row is unchanged, so the card's 22 dp heading and
-    // the four rows below it keep their exact positions.
+    // Nothing is removed: the heading row is unchanged, so the card's 22 dp heading and the four rows
+    // below it keep their exact positions.
     expect(screen.getByText('View All')).toBeTruthy();
     expect(flat('main-home-timeline')?.height).toBe(LOCKED.today.cardHeight);
   });
@@ -255,7 +274,7 @@ describe("Today at a Glance's View All before the entitlement resolves", () => {
 
     await user.press(screen.getByTestId('main-home-timeline-view-all'));
 
-    expect(screen.getByText(sheetHeadingFor('Planner'))).toBeTruthy();
+    expect(screen.getByText(sheetBodyFor('Today at a Glance', 'Planner'))).toBeTruthy();
     expect(mockRouter.push).not.toHaveBeenCalled();
   });
 });
@@ -271,10 +290,13 @@ describe("Today at a Glance's View All on a paid plan", () => {
     expect(screen.queryByTestId('main-home-upgrade-sheet')).toBeNull();
   });
 
-  it('announces it without a premium suffix', async () => {
+  it('announces it without a premium suffix, and carries no lock', async () => {
     await paid();
+
     expect(screen.getByLabelText("View all of today's schedule")).toBeTruthy();
-    expect(screen.queryByLabelText("View all of today's schedule, Premium feature")).toBeNull();
+    expect(screen.queryByLabelText('View all Planner activities, Premium feature')).toBeNull();
+    // The forward chevron is back, and there is nothing to badge.
+    expect(screen.queryByTestId('main-home-timeline-view-all-lock')).toBeNull();
   });
 });
 
@@ -422,13 +444,13 @@ describe('the quick actions on a free plan', () => {
 
   it.each(QUICK_ACTIONS)(
     'raises the $moduleName explanation from $label without entering the module',
-    async ({ key, moduleName }) => {
+    async ({ key, label, moduleName }) => {
       const user = userEvent.setup();
       await free();
 
       await user.press(screen.getByTestId(`quick-action-${key}`));
 
-      expect(screen.getByText(sheetHeadingFor(moduleName))).toBeTruthy();
+      expect(screen.getByText(sheetBodyFor(label, moduleName))).toBeTruthy();
       expectNoProtectedRouteEntered();
     },
   );
@@ -596,7 +618,7 @@ describe('the bottom navigation on a free plan', () => {
 
     await user.press(screen.getByTestId('main-home-nav-insights'));
 
-    expect(screen.getByText(sheetHeadingFor('Goals'))).toBeTruthy();
+    expect(screen.getByText(sheetBodyFor('Insights', 'Goals'))).toBeTruthy();
     expect(mockRouter.push).not.toHaveBeenCalled();
     expectNoProtectedRouteEntered();
   });
@@ -771,9 +793,9 @@ describe('every locked surface shares the one provider', () => {
 
     // Three surfaces writing to the same slot is what proves there is one provider instance and not
     // one per component: a second instance would leave an earlier request standing in its own.
-    expect(screen.getByText(sheetHeadingFor('Goals'))).toBeTruthy();
-    expect(screen.queryByText(sheetHeadingFor('Planner'))).toBeNull();
-    expect(screen.queryByText(sheetHeadingFor('Health'))).toBeNull();
+    expect(screen.getByText(sheetBodyFor('Insights', 'Goals'))).toBeTruthy();
+    expect(screen.queryByText(sheetBodyFor('Today at a Glance', 'Planner'))).toBeNull();
+    expect(screen.queryByText(sheetBodyFor('Log Wellness', 'Health'))).toBeNull();
   });
 
   it('renders exactly one sheet however many surfaces have asked', async () => {
@@ -862,7 +884,7 @@ describe('what this phase must not have changed', () => {
     await user.press(screen.getByTestId('module-card-faith'));
     await user.press(screen.getByTestId('timeline-row-dhuhr'));
     expect(screen.queryByTestId('main-home-upgrade-sheet')).toBeNull();
-    expect(screen.queryByText(sheetHeadingFor('Faith'))).toBeNull();
+    expect(screen.queryByText(sheetBodyFor('Faith', 'Faith'))).toBeNull();
   });
 
   it('never raises one for Noor AI either', async () => {

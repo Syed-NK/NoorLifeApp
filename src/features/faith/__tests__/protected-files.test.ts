@@ -70,8 +70,19 @@ const REOPENED_ON_REQUEST: readonly string[] = [
    * rendered by `getModulePictogram`, never swapped for a lock glyph. What was added is a scrim, a
    * badge and a branch on entitlement.
    *
-   * A geometry test in the Main Home suite asserts the tile count and layout are unchanged, which
-   * is the guarantee this entry gives up and that test takes over.
+   * The Pixel 8 pass then found two faults in that work, corrected under this same entry rather than
+   * a new one:
+   *
+   *   • The scrim was the *last* child, so it washed over the label as well as the tile and took it
+   *     from ~15:1 to 2.68:1. It is now drawn first. Same tint, same alpha, same geometry.
+   *   • A locked tap pushed the subscription chooser directly, skipping the contextual explanation
+   *     every other locked Main Home surface raises. It now calls the shared `requestUpgrade`
+   *     controller, and the badge grew to a recognisable 12 dp glyph.
+   *
+   * A geometry test in the Main Home suite asserts the tile count and layout are unchanged, and
+   * `main-home-lock-contrast.test.ts` measures the locked label and padlock against the colour the
+   * tile actually composites to. Those are the guarantees this entry gives up and those tests take
+   * over.
    */
   'src/features/home/components/module-grid.tsx',
   /**

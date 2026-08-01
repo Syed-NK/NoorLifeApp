@@ -12,7 +12,7 @@ import { AI_NAV_INDEX, type ModuleTheme, type NavItem } from '@shared/models/mod
 import { PREMIUM_NAV_MODULES, UPGRADE_SOURCES } from '../home-premium-surfaces';
 import { LOCKED } from '../main-home-metrics';
 import { useMetrics } from '../main-home-metrics-context';
-import { LOCKED_CONTENT_OPACITY } from '../module-lock-theme';
+import { LOCK_GLYPH } from '../module-lock-theme';
 import { HomeLockBadge } from './home-lock-badge';
 import { HomeText } from './home-text';
 import { RobotAsset } from './robot-asset';
@@ -159,11 +159,14 @@ type NavSlotProps = {
  * route gate bounce the user back would flash a screen they are not entitled to and leave it in the
  * back stack, which is both worse to use and a weaker guarantee than never going there.
  *
- * ── Only the icon is muted, never the label ─────────────────────────────────
- * The 9.5 dp label already sits at the inactive tint, and taking it further down would trade
- * legibility for atmosphere on the smallest type on the screen. The icon carries no text, so it mutes
- * freely — and the padlock, not the tint, is what actually announces the state. Colour is never the
- * only signal.
+ * ── Nothing in the slot is dimmed ───────────────────────────────────────────
+ * The icon was briefly rendered at half opacity, on the reasoning that an icon carries no text so it
+ * mutes freely. Measured, that put it at 1.79:1 against the bar — below the 3:1 a meaningful
+ * indicator needs, and the inactive tint only has 3.77:1 to start with. The label was never dimmed,
+ * because 9.5 dp is the smallest type on the screen and there was nothing to spare there either.
+ *
+ * So the locked tab renders in exactly the tint an unlocked one does, and the padlock is the whole
+ * signal. It is a shape, not a colour, which is the rule.
  */
 function NavSlot({ item, isActive, onNavigate, testID }: NavSlotProps) {
   const { dp } = useMetrics();
@@ -206,20 +209,15 @@ function NavSlot({ item, isActive, onNavigate, testID }: NavSlotProps) {
             rather than against the slot — whose width is a flexed fifth and therefore not a fixed
             offset to measure from. It adds no size of its own, so the bar's height is unchanged. */}
         <View style={styles.iconWrap}>
-          <AppIcon
-            name={item.icon}
-            size={dp(LOCKED.bottomNav.icon)}
-            color={tint}
-            style={{ opacity: isLocked ? LOCKED_CONTENT_OPACITY : 1 }}
-          />
+          <AppIcon name={item.icon} size={dp(LOCKED.bottomNav.icon)} color={tint} />
           {/* Additional to the approved icon, never a replacement for it. */}
           {isLocked ? (
             <View
-              style={[styles.lock, { top: -dp(1), right: -dp(5) }]}
+              style={[styles.lock, { top: -dp(2), right: -dp(6) }]}
               pointerEvents="none"
               testID={`${testID}-lock`}
             >
-              <HomeLockBadge size={dp(9)} testID={`${testID}-lock-badge`} />
+              <HomeLockBadge size={dp(LOCK_GLYPH)} testID={`${testID}-lock-badge`} />
             </View>
           ) : null}
         </View>

@@ -11,7 +11,7 @@ import { minimumHitSlop } from '@shared/utils/a11y';
 import { UPGRADE_SOURCES } from '../home-premium-surfaces';
 import { LOCKED } from '../main-home-metrics';
 import { useMetrics } from '../main-home-metrics-context';
-import { LOCKED_CONTENT_OPACITY } from '../module-lock-theme';
+import { LOCK_GLYPH } from '../module-lock-theme';
 import { HomeLockBadge } from './home-lock-badge';
 import { HomeText } from './home-text';
 
@@ -102,17 +102,12 @@ export function HomeSummaryRow({
         testID="family-check-in-card"
       >
         <View style={styles.headingRow}>
-          <AppIcon
-            name="family"
-            size={dp(16)}
-            color={familyTheme.primary}
-            style={{ opacity: isLocked ? LOCKED_CONTENT_OPACITY : 1 }}
-          />
+          <AppIcon name="family" size={dp(16)} color={familyTheme.primary} />
           <HomeText token="summaryTitle" numberOfLines={1} style={styles.headingTitle}>
             Family Check-in
           </HomeText>
           {isLocked ? (
-            <HomeLockBadge size={dp(13)} testID="family-check-in-lock" />
+            <HomeLockBadge size={dp(LOCK_GLYPH)} testID="family-check-in-lock" />
           ) : (
             <ViewAll onPress={onViewFamily} label="Family check-in" hitSize={dp(20)} />
           )}
@@ -177,7 +172,7 @@ export function HomeSummaryRow({
             Overall Progress
           </HomeText>
           {isLocked ? (
-            <HomeLockBadge size={dp(13)} testID="overall-progress-lock" />
+            <HomeLockBadge size={dp(LOCK_GLYPH)} testID="overall-progress-lock" />
           ) : (
             <ViewAll onPress={onViewProgress} label="Overall progress" hitSize={dp(20)} />
           )}

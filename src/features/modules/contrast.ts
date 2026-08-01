@@ -6,8 +6,12 @@
  * way could show a passing number for a combination the tests reject.
  *
  * Only the sRGB relative-luminance formula from WCAG 2.x is implemented; that is all the
- * app's flat colours need. Alpha is not handled, deliberately: a translucent foreground
- * has no single contrast ratio, so any colour passed here must be opaque.
+ * app's flat colours need. `contrastRatio` still refuses alpha, deliberately: a translucent
+ * foreground has no single contrast ratio. Where the app *does* layer a translucent fill —
+ * the locked module tile's scrim — `composite` resolves it to the opaque colour that is
+ * actually rendered, and that result is what gets measured. Measuring the intended colour
+ * rather than the rendered one is how a locked label passed review at 15:1 and shipped at
+ * 2.7:1.
  */
 
 /** WCAG AA for normal-size text. */
@@ -27,6 +31,31 @@ function channels(hex: string): readonly [number, number, number] {
     parseInt(hex.slice(3, 5), 16),
     parseInt(hex.slice(5, 7), 16),
   ] as const;
+}
+
+/** Formats 0–255 channels back to `#RRGGBB`. */
+function toHex(values: readonly [number, number, number]): string {
+  return `#${values.map((value) => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * The opaque colour produced by drawing `foreground` at `alpha` over `background`.
+ *
+ * Standard source-over compositing. Both inputs must be opaque `#RRGGBB`; the result is the
+ * colour a screen-reader-blind eye and a contrast meter both actually see, so it is what the
+ * ratio should be taken against.
+ */
+export function composite(foreground: string, alpha: number, background: string): string {
+  if (alpha < 0 || alpha > 1) {
+    throw new Error(`composite(): alpha must be between 0 and 1, received ${alpha}`);
+  }
+  const front = channels(foreground);
+  const back = channels(background);
+  return toHex([
+    front[0] * alpha + back[0] * (1 - alpha),
+    front[1] * alpha + back[1] * (1 - alpha),
+    front[2] * alpha + back[2] * (1 - alpha),
+  ]);
 }
 
 /** WCAG relative luminance. */

@@ -3,19 +3,19 @@ import { Image, StyleSheet, View } from 'react-native';
 import { PressableScale } from '@ds/components';
 import { neutralColors } from '@ds/tokens';
 import { mainHomeModules } from '@ds/modules/module-themes';
+import type { FrameworkModuleId } from '@features/modules/module-tokens';
+import { useUpgradeSheetActions } from '@features/subscription/services/upgrade-sheet-context';
 import type { ModuleTheme } from '@shared/models/module-theme';
 
-import { useModuleLock, useUpgradeNavigation } from '@features/subscription/use-module-lock';
+import { useModuleLock } from '@features/subscription/use-module-lock';
 
+import { UPGRADE_SOURCES } from '../home-premium-surfaces';
 import { LOCKED } from '../main-home-metrics';
 import { useMetrics } from '../main-home-metrics-context';
 import { getModulePictogram } from '../module-pictograms';
-import {
-  MODULE_LOCK_BADGE_SURFACE,
-  MODULE_LOCK_INK,
-  MODULE_LOCK_SCRIM,
-} from '../module-lock-theme';
+import { MODULE_LOCK_SCRIM, LOCK_GLYPH } from '../module-lock-theme';
 import { MODULE_TILE_TINT, moduleTileBorder } from '../module-tile-theme';
+import { HomeLockBadge } from './home-lock-badge';
 import { HomeText } from './home-text';
 
 export type ModuleGridProps = {
@@ -49,12 +49,24 @@ export type ModuleGridProps = {
  * ── Phase 6B: entitlement states inside the locked geometry ─────────────────
  * A locked tile keeps every measurement above — width, height, radius, border, the 48 dp
  * pictogram, the label. Only its *surface* changes: the module's own tint is desaturated toward
- * the page rather than swapped for grey, a light scrim sits over it, and a small lock badge
- * appears at the upper right. The approved PNG stays; it is never replaced by a lock glyph, which
- * would throw away the one thing that makes the tile recognisable at a glance.
+ * the page rather than swapped for grey, a scrim sits over it, and a lock badge appears at the
+ * upper right. The approved PNG stays; it is never replaced by a lock glyph, which would throw
+ * away the one thing that makes the tile recognisable at a glance.
  *
  * Lock state comes from `useModuleLock`, the same rules the module route gate applies, so a tile
  * and its destination cannot disagree.
+ *
+ * ── The scrim is beneath the content, not over it ────────────────────────────
+ * It was the last child until the device pass, so it washed over the label as well as the tile and
+ * took it to 2.68:1 — the "labels are slightly too faded" defect. Drawn first, the label keeps the
+ * ~15:1 it was always supposed to have and the desaturation still lands where it was aimed: the
+ * coloured surface. Same alpha, same tint, same everything else.
+ *
+ * ── A locked tap raises the shared sheet; it does not navigate ───────────────
+ * It used to push `/subscription` directly, which the device pass caught: tapping Health jumped
+ * straight to the plan chooser with no explanation of what had been asked for and no way back other
+ * than the back button. Now it raises the one contextual sheet every other locked Main Home surface
+ * uses, and "View Premium Plans" inside that sheet is the only thing that reaches the chooser.
  */
 export function ModuleGrid({ onSelectModule, testID }: ModuleGridProps) {
   const { dp, contentWidth } = useMetrics();
@@ -109,23 +121,36 @@ type ModuleTileProps = {
 function ModuleTile({ theme, tileWidth, tileHeight, pictogram, onSelectModule }: ModuleTileProps) {
   const { dp } = useMetrics();
   const { isLocked, accessibilityLabel } = useModuleLock(theme.id, theme.name);
-  const goToUpgrade = useUpgradeNavigation();
+  const { requestUpgrade } = useUpgradeSheetActions();
 
   return (
     <PressableScale
       onPress={() => {
-        // A locked tile goes straight to the upgrade screen. Pushing the module and letting
-        // its own gate bounce back would flash a screen the user is not entitled to and leave
-        // it in the back stack.
         if (isLocked) {
-          goToUpgrade();
+          // The shared controller, not `router.push(subscriptionRoutes.welcome)`. A locked tile
+          // still never enters the module — pushing it and letting its own gate bounce back would
+          // flash a screen the user is not entitled to and leave it in the back stack — but it no
+          // longer skips the explanation either. The tile *is* the whole module here, so the
+          // feature and the module are the same name, which the sheet renders as
+          // "Health is included with NoorLife Premium."
+          requestUpgrade({
+            featureTitle: theme.name,
+            // Locked implies premium, and `main` has no tile — so the narrowing is safe.
+            moduleId: theme.id as FrameworkModuleId,
+            moduleName: theme.name,
+            source: UPGRADE_SOURCES.moduleGrid,
+          });
           return;
         }
         onSelectModule(theme);
       }}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? theme.name}
-      accessibilityHint={isLocked ? 'Opens NoorLife plans' : `Opens the ${theme.name} module`}
+      accessibilityHint={
+        isLocked
+          ? 'Explains what NoorLife Premium includes'
+          : `Opens the ${theme.name} module`
+      }
       style={[
         styles.tile,
         {
@@ -138,6 +163,16 @@ function ModuleTile({ theme, tileWidth, tileHeight, pictogram, onSelectModule }:
       ]}
       testID={isLocked ? `module-card-${theme.id}-locked` : `module-card-${theme.id}`}
     >
+      {/* Drawn first, so it desaturates the coloured surface and nothing else. A scrim rather than
+          opacity on the tile: reducing the tile's own opacity would fade the label with it. */}
+      {isLocked ? (
+        <View
+          pointerEvents="none"
+          style={[styles.scrim, { borderRadius: dp(LOCKED.grid.tileRadius) }]}
+          testID={`module-scrim-${theme.id}`}
+        />
+      ) : null}
+
       <View style={styles.content}>
         <Image
           source={getModulePictogram(theme.id)}
@@ -161,63 +196,36 @@ function ModuleTile({ theme, tileWidth, tileHeight, pictogram, onSelectModule }:
         </HomeText>
       </View>
 
-      {isLocked ? (
-        <>
-          {/* A light scrim rather than opacity on the tile. Reducing the tile's own opacity
-                  would fade the label with it; a scrim desaturates the coloured surface while the
-                  label keeps its contrast. Sits under the badge, over the pictogram. */}
-          <View
-            pointerEvents="none"
-            style={[styles.scrim, { borderRadius: dp(LOCKED.grid.tileRadius) }]}
-            testID={`module-scrim-${theme.id}`}
-          />
-          <LockBadge testID={`module-lock-${theme.id}`} />
-        </>
-      ) : null}
+      {isLocked ? <LockBadge testID={`module-lock-${theme.id}`} /> : null}
     </PressableScale>
   );
 }
 
 /**
- * The lock badge — a padlock drawn from primitives, upper right.
+ * The tile's lock badge: the shared padlock, upper right.
  *
- * Drawn rather than imported: these screens forbid icon-font glyphs, and a padlock is a rectangle
- * and an arc. Small and consistent across all six locked tiles, and `pointerEvents="none"` so it
- * never intercepts the tap that opens the upgrade screen.
+ * ── Why there is no disc behind it ──────────────────────────────────────────
+ * There used to be a near-white one, for a tile whose tint the glyph had to survive. Two things
+ * removed the need. The scrim now sits beneath the content, so the ground under this badge is the
+ * *desaturated* tint, where the shared ink measures 4.55–4.66:1 — well past the 3:1 an indicator
+ * needs. And the disc could not be made to fit: the correction asks for an 18–20 dp container and
+ * for the badge not to cover the pictogram, and an 83.5 dp tile holding a centred 48 dp pictogram
+ * leaves a 17.75 dp margin — so any disc in that range overlaps the artwork's box. A bare 12 dp
+ * glyph is 9.8 dp wide and clears it by ~3.9 dp.
+ *
+ * The deviation from the recommended container is therefore deliberate: the hard requirement (do not
+ * cover the pictogram) wins over the recommendation, the contrast floor is still met by measurement,
+ * and the tile now carries the same bare padlock as every other locked surface on the screen rather
+ * than a treatment of its own.
+ *
+ * `pointerEvents="none"`, so it never intercepts the tap that raises the sheet.
  */
 function LockBadge({ testID }: { readonly testID: string }) {
   const { dp } = useMetrics();
-  const size = dp(13);
 
   return (
-    <View
-      pointerEvents="none"
-      style={[
-        styles.badge,
-        { width: size, height: size, borderRadius: size / 2, top: dp(5), right: dp(5) },
-      ]}
-      testID={testID}
-    >
-      {/* The shackle: a half-ring above the body. */}
-      <View
-        style={{
-          width: dp(5),
-          height: dp(3.5),
-          borderTopLeftRadius: dp(3),
-          borderTopRightRadius: dp(3),
-          borderWidth: dp(1.1),
-          borderBottomWidth: 0,
-          borderColor: MODULE_LOCK_INK,
-        }}
-      />
-      <View
-        style={{
-          width: dp(7),
-          height: dp(5),
-          borderRadius: dp(1.4),
-          backgroundColor: MODULE_LOCK_INK,
-        }}
-      />
+    <View style={[styles.badge, { top: dp(4), right: dp(4) }]} pointerEvents="none">
+      <HomeLockBadge size={dp(LOCK_GLYPH)} testID={testID} />
     </View>
   );
 }
@@ -237,9 +245,6 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: MODULE_LOCK_BADGE_SURFACE,
   },
   tile: {
     borderWidth: LOCKED.grid.tileBorderWidth,

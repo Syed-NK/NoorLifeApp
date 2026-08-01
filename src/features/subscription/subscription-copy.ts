@@ -234,6 +234,20 @@ export const expiredCopy = {
   manage: 'Manage subscription',
 } as const;
 
+/**
+ * The contextual upgrade explanation.
+ *
+ * ── One title for every request ─────────────────────────────────────────────
+ * The title used to be built from the module — "Planner is part of Premium" — which read as a
+ * statement about Planner rather than an answer to what the user just tapped, and duplicated the
+ * module name the body already carries. One fixed title, and the body does the explaining.
+ *
+ * ── The body names what was tapped *and* where it lives ─────────────────────
+ * A free user who taps "Add Task" is not asking about Planner; they are asking why Add Task did
+ * nothing. Telling them only about Planner drops the thing they touched — the device pass found
+ * exactly that. So the body states both, and which of the two sentences applies is decided by whether
+ * the feature *is* the module: a module tile has nothing extra to say, a feature inside one does.
+ */
 export const lockedModuleCopy = {
   /** One short, specific line per module. Never a generic "unlock premium". */
   valueStatements: {
@@ -244,8 +258,26 @@ export const lockedModuleCopy = {
     family: 'A shared calendar, goals and memories for up to six accounts.',
     goals: 'Set goals, track streaks and see honest progress reporting.',
   },
-  heading: (moduleName: string) => `${moduleName} is part of Premium`,
-  viewPlans: 'View plans',
+  /** The same for every request, whatever raised it. */
+  title: 'Unlock this feature',
+  /**
+   * The contextual line.
+   *
+   * `featureTitle === moduleName` is the module-tile case — "Health is included with NoorLife
+   * Premium." Anything else is a feature that lives inside a module, and naming both is what makes
+   * the sheet an answer: "Add Task is available with Planner in NoorLife Premium."
+   */
+  body: ({
+    featureTitle,
+    moduleName,
+  }: {
+    readonly featureTitle: string;
+    readonly moduleName: string;
+  }) =>
+    featureTitle === moduleName
+      ? `${moduleName} is included with NoorLife Premium.`
+      : `${featureTitle} is available with ${moduleName} in NoorLife Premium.`,
+  viewPlans: 'View Premium Plans',
   notNow: 'Not now',
   continueToFaith: 'Continue to Faith',
 } as const;

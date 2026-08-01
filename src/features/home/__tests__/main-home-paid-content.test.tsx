@@ -122,12 +122,16 @@ function expectNoProtectedRouteEntered() {
 }
 
 /**
- * The sheet's heading, which is how an open upgrade explanation is recognised on screen.
+ * The sheet's contextual body, which is how an open upgrade explanation is recognised on screen.
  *
- * Composed from the shared copy rather than restated, so a wording change moves these assertions
- * with it instead of quietly failing them.
+ * It used to be the heading, which was built from the module — "Planner is part of Premium". The
+ * title is now one fixed line for every request, so the *body* is the part that identifies which
+ * request is on screen, and it names the feature as well as the module. Composed from the shared copy
+ * rather than restated, so a wording change moves these assertions with it instead of quietly
+ * failing them.
  */
-const sheetHeadingFor = (moduleName: string) => lockedModuleCopy.heading(moduleName);
+const sheetBodyFor = (featureTitle: string, moduleName: string) =>
+  lockedModuleCopy.body({ featureTitle, moduleName });
 
 // ── The controller and its single sheet ─────────────────────────────────────
 
@@ -172,8 +176,8 @@ describe('the upgrade sheet on Main Home', () => {
     // A timeline row and a summary card writing to the same slot is what proves there is one
     // provider instance and not one per surface: a second instance would leave the Planner
     // request standing in its own controller.
-    expect(screen.getByText(sheetHeadingFor('Goals'))).toBeTruthy();
-    expect(screen.queryByText(sheetHeadingFor('Planner'))).toBeNull();
+    expect(screen.getByText(sheetBodyFor('Overall Progress', 'Goals'))).toBeTruthy();
+    expect(screen.queryByText(sheetBodyFor('School drop-off', 'Planner'))).toBeNull();
   });
 
   it('clears the request on dismissal, without navigating', async () => {
@@ -242,14 +246,14 @@ describe('the timeline on a free plan', () => {
 
   it.each(PROTECTED_ROWS)(
     'raises the upgrade sheet for $title, naming $module, without entering it',
-    async ({ id, module }) => {
+    async ({ id, title, module }) => {
       const user = userEvent.setup();
       await free();
 
       await user.press(screen.getByTestId(`timeline-row-${id}`));
 
-      // The sheet names the module that owns the feature the user tapped.
-      expect(screen.getByText(sheetHeadingFor(module))).toBeTruthy();
+      // The sheet names the row the user tapped *and* the module that owns it.
+      expect(screen.getByText(sheetBodyFor(title, module))).toBeTruthy();
       // And the module itself was never pushed — no flash, nothing in the back stack.
       expectNoProtectedRouteEntered();
     },
@@ -365,15 +369,15 @@ describe('the summary cards on a free plan', () => {
   });
 
   it.each([
-    ['family-check-in-card', 'Family'],
-    ['overall-progress-card', 'Goals'],
-  ])('raises the upgrade sheet from %s without entering the module', async (card, module) => {
+    ['family-check-in-card', 'Family Check-in', 'Family'],
+    ['overall-progress-card', 'Overall Progress', 'Goals'],
+  ])('raises the upgrade sheet from %s without entering the module', async (card, feature, module) => {
     const user = userEvent.setup();
     await free();
 
     await user.press(screen.getByTestId(card));
 
-    expect(screen.getByText(sheetHeadingFor(module))).toBeTruthy();
+    expect(screen.getByText(sheetBodyFor(feature, module))).toBeTruthy();
     expectNoProtectedRouteEntered();
   });
 });

@@ -35,6 +35,9 @@ export function UpgradeSheetHost({ testID }: UpgradeSheetHostProps) {
       visible={isVisible}
       moduleId={request.moduleId}
       moduleName={request.moduleName}
+      // The feature travels all the way through to the sheet: the controller records what was
+      // tapped, so the presentation has no reason to describe only the module.
+      featureTitle={request.featureTitle}
       // "Not now" and the scrim both dismiss without navigating; only "View plans" routes.
       onViewPlans={viewPlans}
       onNotNow={dismiss}

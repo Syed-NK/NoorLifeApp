@@ -175,7 +175,7 @@ describe('the locked module sheet', () => {
     await waitFor(() => expect(screen.queryByTestId('faith-sheet-panel')).toBeNull());
   });
 
-  it('offers View plans, Not now and Continue to Faith for a paid module', async () => {
+  it('offers View Premium Plans, Not now and Continue to Faith for a paid module', async () => {
     const onViewPlans = jest.fn();
     const onNotNow = jest.fn();
     const onFaith = jest.fn();
@@ -203,6 +203,132 @@ describe('the locked module sheet', () => {
 
     await user.press(screen.getByTestId('health-sheet-faith'));
     expect(onFaith).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The sheet's rendered copy.
+ *
+ * Every string here was wrong on the device. The title was built from the module — "Planner is part of
+ * Premium" — where the approved title is one fixed line; the primary action read "View plans" where
+ * the approved label is "View Premium Plans"; and the body described only the module, so a user who
+ * tapped "Add Task" was told about Planner and never saw what they had touched.
+ *
+ * These assert the exact strings rather than composing them from the copy module. The copy module is
+ * the single source of truth for the *app*, but a test that derives its expectation from the same
+ * function it is checking cannot catch a wrong sentence — only an inconsistent one.
+ */
+describe('the locked module sheet copy', () => {
+  async function renderSheet(props: {
+    readonly moduleId: 'health' | 'planner' | 'family' | 'goals';
+    readonly moduleName: string;
+    readonly featureTitle?: string;
+  }) {
+    await render(
+      <LockedModuleSheet
+        visible
+        moduleId={props.moduleId}
+        moduleName={props.moduleName}
+        {...(props.featureTitle === undefined ? {} : { featureTitle: props.featureTitle })}
+        onViewPlans={() => undefined}
+        onNotNow={() => undefined}
+        testID="sheet"
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId('sheet-pictogram')).toBeTruthy());
+  }
+
+  it('uses the approved title, whatever was tapped', async () => {
+    await renderSheet({ moduleId: 'planner', moduleName: 'Planner', featureTitle: 'Add Task' });
+
+    expect(screen.getByText('Unlock this feature')).toBeTruthy();
+    // The superseded module-shaped heading must not survive anywhere in the sheet.
+    expect(screen.queryByText('Planner is part of Premium')).toBeNull();
+  });
+
+  it('uses the approved action labels', async () => {
+    await renderSheet({ moduleId: 'health', moduleName: 'Health' });
+
+    expect(screen.getByText('View Premium Plans')).toBeTruthy();
+    expect(screen.getByText('Not now')).toBeTruthy();
+    expect(screen.queryByText('View plans')).toBeNull();
+  });
+
+  it('says a module tile is included, naming it once', async () => {
+    await renderSheet({ moduleId: 'health', moduleName: 'Health' });
+    expect(screen.getByText('Health is included with NoorLife Premium.')).toBeTruthy();
+  });
+
+  it('says a feature is available with its module, naming both', async () => {
+    await renderSheet({ moduleId: 'planner', moduleName: 'Planner', featureTitle: 'Add Task' });
+    expect(screen.getByText('Add Task is available with Planner in NoorLife Premium.')).toBeTruthy();
+  });
+
+  it.each([
+    ['Log Wellness', 'health', 'Health', 'Log Wellness is available with Health in NoorLife Premium.'],
+    [
+      'Family Check-in',
+      'family',
+      'Family',
+      'Family Check-in is available with Family in NoorLife Premium.',
+    ],
+    [
+      'School drop-off',
+      'planner',
+      'Planner',
+      'School drop-off is available with Planner in NoorLife Premium.',
+    ],
+    [
+      'Overall Progress',
+      'goals',
+      'Goals',
+      'Overall Progress is available with Goals in NoorLife Premium.',
+    ],
+    ['Insights', 'goals', 'Goals', 'Insights is available with Goals in NoorLife Premium.'],
+    [
+      'Today at a Glance',
+      'planner',
+      'Planner',
+      'Today at a Glance is available with Planner in NoorLife Premium.',
+    ],
+  ] as const)('renders the contextual line for %s', async (featureTitle, moduleId, moduleName, expected) => {
+    await renderSheet({ moduleId, moduleName, featureTitle });
+    expect(screen.getByText(expected)).toBeTruthy();
+  });
+
+  it('falls back to the module when no feature is named', async () => {
+    // The module-tile case, and the safe default for a caller that forgets: it can never produce a
+    // sentence about a feature that does not exist.
+    await renderSheet({ moduleId: 'goals', moduleName: 'Goals' });
+    expect(screen.getByText('Goals is included with NoorLife Premium.')).toBeTruthy();
+  });
+
+  it('keeps the module value statement as supporting copy, below the explanation', async () => {
+    await renderSheet({ moduleId: 'planner', moduleName: 'Planner', featureTitle: 'Add Task' });
+
+    // Kept because there is room, and demoted because it is a reason to want Planner rather than an
+    // answer to "why did nothing happen".
+    expect(
+      screen.getByText('Plan your day and week, with reminders that respect prayer times.'),
+    ).toBeTruthy();
+
+    const tree = JSON.stringify(screen.toJSON());
+    expect(tree.indexOf('Unlock this feature')).toBeLessThan(
+      tree.indexOf('Add Task is available with Planner'),
+    );
+    expect(tree.indexOf('Add Task is available with Planner')).toBeLessThan(
+      tree.indexOf('Plan your day and week'),
+    );
+  });
+
+  it('keeps the module pictogram and the modal semantics', async () => {
+    await renderSheet({ moduleId: 'family', moduleName: 'Family', featureTitle: 'Family Check-in' });
+
+    expect(screen.getByTestId('sheet-pictogram').props.source).toBeDefined();
+    expect(screen.getByTestId('sheet-panel').props.accessibilityViewIsModal).toBe(true);
+    // Android back and the scrim are both wired to the dismissal, never to a route.
+    expect(typeof screen.getByTestId('sheet').props.onRequestClose).toBe('function');
+    expect(screen.getByTestId('sheet-scrim').props.accessibilityLabel).toBe('Dismiss');
   });
 });
 

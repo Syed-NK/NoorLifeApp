@@ -12,7 +12,7 @@ import { minimumHitSlop } from '@shared/utils/a11y';
 import { UPGRADE_SOURCES } from '../home-premium-surfaces';
 import { LOCKED } from '../main-home-metrics';
 import { useMetrics } from '../main-home-metrics-context';
-import { LOCKED_CONTENT_OPACITY, LOCKED_LABEL_OPACITY } from '../module-lock-theme';
+import { LOCK_GLYPH } from '../module-lock-theme';
 import { HomeLockBadge } from './home-lock-badge';
 import { HomeText } from './home-text';
 
@@ -48,14 +48,24 @@ export type QuickActionsRowProps = {
  * ── Phase 6B: all three actions belong to premium modules ───────────────────
  * Add Task is Planner, Log Wellness is Health, Family Check-in is Family — every one of them is a
  * paid module, so on a free plan all three are locked. Each keeps its exact width, height, radius,
- * border, position and approved icon; the icon and label are muted, a small padlock appears at the
- * upper right, and the press raises the shared upgrade explanation instead of writing anything.
+ * border, position, approved icon *and* colours; a padlock appears at the upper right, and the press
+ * raises the shared upgrade explanation instead of writing anything.
  *
- * ── Why the padlock is absolutely positioned ────────────────────────────────
- * The tile is 42 dp tall with a 5 dp horizontal padding and a label that already shrinks to fit —
- * adding a fourth item to the row would take width from "Family Check-in" and visibly re-flow all
- * three. Out of flow, the badge costs the layout nothing, and the label renders at exactly the size
- * it does on a paid plan.
+ * ── Nothing is dimmed ───────────────────────────────────────────────────────
+ * The icon used to render at 0.5 and the label at 0.85. On white that put the icons at 1.6–2.1:1,
+ * under the 3:1 an indicator needs — and the approved module primaries have no headroom to give
+ * back, health measuring 2.90:1 and finance 2.64:1 even at full strength. The label at 0.85 measured
+ * 10.2:1, which passed, but it is the pair the device pass called "slightly too faded". Both are now
+ * at full strength: 16.27:1 for the label, and the icon exactly as a paid user sees it. The padlock
+ * carries the state, and it is a shape rather than a colour.
+ *
+ * ── Why the padlock is absolutely positioned, and at the top ────────────────
+ * The row is nearly full: three 115.67 dp tiles, and "Family Check-in" at its locked type size
+ * leaves only ~2 dp of slack either side of the icon-and-label pair. So an in-flow badge would take
+ * width from the label and visibly re-flow all three, and one at the trailing edge would sit on top
+ * of it. Out of flow at the tile's top edge it does neither: the content pair occupies the middle
+ * ~18 dp of the 42 dp tile, leaving the top 12 dp free, which is exactly the padlock's height.
+ * The label renders at precisely the size and position it does on a paid plan.
  *
  * ── Nothing runs before the user agrees ─────────────────────────────────────
  * A locked press never calls `onSelectAction`, so it neither navigates into the module nor starts an
@@ -135,26 +145,21 @@ function QuickActionTile({ action, onSelectAction }: QuickActionTileProps) {
       ]}
       testID={`quick-action-${action.key}`}
     >
-      <AppIcon
-        name={action.icon}
-        size={dp(LOCKED.quickAction.icon)}
-        color={sourceTheme.primary}
-        style={{ opacity: isLocked ? LOCKED_CONTENT_OPACITY : 1 }}
-      />
+      <AppIcon name={action.icon} size={dp(LOCKED.quickAction.icon)} color={sourceTheme.primary} />
       <HomeText
         token="quickActionLabel"
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={LOCKED.quickAction.minimumFontScale}
-        style={[styles.label, isLocked ? { opacity: LOCKED_LABEL_OPACITY } : null]}
+        style={styles.label}
       >
         {action.label}
       </HomeText>
-      {/* Out of flow, so the label keeps the width it has on a paid plan. Additional to the
-          approved icon, never a replacement for it. */}
+      {/* Out of flow and above the content band, so the label keeps the exact width and position it
+          has on a paid plan. Additional to the approved icon, never a replacement for it. */}
       {isLocked ? (
-        <View style={[styles.lock, { top: dp(3), right: dp(3) }]} pointerEvents="none">
-          <HomeLockBadge size={dp(9)} testID={`quick-action-lock-${action.key}`} />
+        <View style={[styles.lock, { top: dp(1), right: dp(2) }]} pointerEvents="none">
+          <HomeLockBadge size={dp(LOCK_GLYPH)} testID={`quick-action-lock-${action.key}`} />
         </View>
       ) : null}
     </PressableScale>

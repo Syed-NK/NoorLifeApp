@@ -39,6 +39,8 @@ export const PREMIUM_NAV_MODULES: Readonly<Partial<Record<string, FrameworkModul
  * call site, where a typo would be invisible.
  */
 export const UPGRADE_SOURCES = {
+  /** A locked tile in the eight-module grid. */
+  moduleGrid: 'module_grid',
   /** A locked row inside Today at a Glance. */
   todayTimeline: 'today_timeline',
   /** Today at a Glance's own "View All". */

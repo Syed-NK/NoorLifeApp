@@ -17,6 +17,14 @@ export type LockedModuleSheetProps = {
   readonly visible: boolean;
   readonly moduleId: FrameworkModuleId;
   readonly moduleName: string;
+  /**
+   * What the user actually tapped, e.g. "Add Task" or "School drop-off".
+   *
+   * Optional, and defaults to the module name — which is the module-tile case, where the feature and
+   * the module are the same thing. Every other caller should pass it: without it the sheet describes
+   * the module and silently loses the thing the user touched.
+   */
+  readonly featureTitle?: string;
   readonly onViewPlans: () => void;
   readonly onNotNow: () => void;
   /** Offered where it makes sense — never on Faith, which is never locked. */
@@ -25,23 +33,30 @@ export type LockedModuleSheetProps = {
 };
 
 /**
- * The sheet a free user meets when they open a paid module.
+ * The sheet a free user meets when they reach for something Premium.
  *
  * ── It refuses to render for Faith ──────────────────────────────────────────
  * `isPremiumModule` is checked here, not only by the caller. Faith must never be presented as a
  * paid feature, and a component that *cannot* show a Faith paywall is a stronger guarantee than a
  * convention that callers must remember. A test asserts nothing renders for Faith.
  *
+ * ── What it says, and in what order ─────────────────────────────────────────
+ * One fixed title, then the contextual line naming the feature and its module, then the module's own
+ * value statement as supporting copy. The value statement is deliberately *third*: it is the reason
+ * to want the module, not an answer to "why did nothing happen", and when it led it left the user to
+ * work out which of their taps it was about.
+ *
  * ── Not a dark pattern ──────────────────────────────────────────────────────
- * "Not now" is a full-width button of the same height as "View plans", the scrim is dismissible
- * by tapping outside, and the hardware back button closes it. Nothing here traps the user or
- * disguises the way out — and the module's real PNG identifies what was asked for, so the sheet
- * is honest about the context it interrupted.
+ * "Not now" is a full-width button of the same height as "View Premium Plans", the scrim is
+ * dismissible by tapping outside, and the hardware back button closes it. Nothing here traps the
+ * user or disguises the way out — and the module's real PNG identifies what was asked for, so the
+ * sheet is honest about the context it interrupted.
  */
 export function LockedModuleSheet({
   visible,
   moduleId,
   moduleName,
+  featureTitle,
   onViewPlans,
   onNotNow,
   onContinueToFaith,
@@ -112,9 +127,15 @@ export function LockedModuleSheet({
             accessibilityRole="header"
             color={subscriptionColors.textPrimary}
           >
-            {lockedModuleCopy.heading(moduleName)}
+            {lockedModuleCopy.title}
           </EntryAuthText>
 
+          <EntryAuthText token="body" align="center" color={subscriptionColors.textPrimary}>
+            {lockedModuleCopy.body({ featureTitle: featureTitle ?? moduleName, moduleName })}
+          </EntryAuthText>
+
+          {/* Supporting copy, not the explanation. Kept because there is room for it in a sheet this
+              size, and dropped from the announcement above so the contextual line leads. */}
           <EntryAuthText token="body" align="center" color={subscriptionColors.textSecondary}>
             {valueStatement}
           </EntryAuthText>

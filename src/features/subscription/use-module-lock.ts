@@ -1,12 +1,8 @@
-import { useCallback } from 'react';
-import { useRouter } from 'expo-router';
-
 import type { ModuleId } from '@ds/tokens';
 import type { FrameworkModuleId } from '@features/modules/module-tokens';
 
 import { canAccessModule, isPremiumModule } from './domain/entitlement';
 import { useEntitlement } from './services/entitlement-context';
-import { subscriptionRoutes } from './subscription-routes';
 
 /**
  * The one place presentation asks "is this locked?".
@@ -62,20 +58,17 @@ export function useModuleLock(moduleId: ModuleId, moduleName: string): ModuleLoc
   };
 }
 
-/**
- * Navigates a locked surface to the upgrade screen.
+/*
+ * ── There is deliberately no "navigate straight to the plans" hook here ─────
+ * `useUpgradeNavigation` used to live at this point in the file, and the module grid was its only
+ * caller. It pushed the subscription chooser directly, which the Pixel 8 pass caught: tapping Health
+ * jumped to a list of prices with no statement of what had been asked for. Every locked surface now
+ * raises the shared contextual sheet through `useUpgradeSheetActions`, and "View Premium Plans"
+ * inside that sheet is the only path to the chooser. Reintroducing a direct route would reintroduce
+ * the defect, so the hook is gone rather than left available.
  *
- * ── Never the protected route first ─────────────────────────────────────────
- * A locked tile routes *directly* to the subscription screen. Pushing the module and letting its
- * own gate bounce the user would flash a screen they are not entitled to and leave the module in
- * the back stack, which is both a worse experience and a weaker guarantee than not going there.
+ * A locked surface still never pushes the protected route itself — that part was always right.
  */
-export function useUpgradeNavigation(): () => void {
-  const router = useRouter();
-  return useCallback(() => {
-    router.push(subscriptionRoutes.welcome);
-  }, [router]);
-}
 
 /**
  * Whether any paid content should be presented as locked.

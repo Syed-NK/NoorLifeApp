@@ -14,7 +14,7 @@ import { forwardChevron } from '@shared/utils/rtl';
 import { UPGRADE_SOURCES } from '../home-premium-surfaces';
 import { LOCKED } from '../main-home-metrics';
 import { useMetrics } from '../main-home-metrics-context';
-import { LOCKED_CONTENT_OPACITY, LOCKED_LABEL_OPACITY } from '../module-lock-theme';
+import { LOCK_GLYPH, LOCK_GLYPH_COMPACT } from '../module-lock-theme';
 import { HomeLockBadge } from './home-lock-badge';
 import { HomeText } from './home-text';
 
@@ -61,10 +61,16 @@ export type TodayTimelineProps = {
  * ── "View All" is the whole section's destination, and it is Planner ─────────
  * The heading's `View All` opens Planner's full day. On a free plan it therefore behaves like a
  * locked row: it raises the shared upgrade explanation, naming Planner, and Planner is never pushed.
- * Its appearance is deliberately untouched — same 10/13 in the global primary, same chevron, same
- * position — because nothing about it is muted or scrimmed, so there is no colour-only signal to
- * back up; the restriction lives in the accessible name and in what the press does. Planner's own
- * route gate stays in place behind all of this as defence in depth.
+ * Planner's own route gate stays in place behind all of this as defence in depth.
+ *
+ * It says so visibly. The first attempt left it looking exactly like the paid control, on the
+ * argument that nothing was muted so nothing needed backing up — which the device pass rejected for
+ * the obvious reason: a control that looks like a live link and then explains why it is not is a
+ * small betrayal every time. Locked, the label steps from the global primary to secondary ink
+ * (4.97:1, comfortably readable) and the forward chevron is replaced by the padlock. The chevron is
+ * the right thing to give up: it promises forward navigation, which is precisely what this press does
+ * not do. Position, type token and touch target are unchanged, and swapping a 12 dp chevron for an
+ * 11 dp padlock keeps the heading's width where it was, so the title beside it cannot reflow.
  */
 export function TodayTimeline({
   entries,
@@ -118,7 +124,7 @@ export function TodayTimeline({
           accessibilityRole="button"
           accessibilityLabel={
             isPlannerLocked
-              ? "View all of today's schedule, Premium feature"
+              ? 'View all Planner activities, Premium feature'
               : "View all of today's schedule"
           }
           {...(isPlannerLocked
@@ -127,11 +133,23 @@ export function TodayTimeline({
           style={styles.viewAll}
           testID={`${testID ?? 'today'}-view-all`}
         >
-          {/* Lock §9: View All is the global primary, not a module colour. */}
-          <HomeText token="viewAll" color={semanticColors.primary} numberOfLines={1}>
+          {/* Lock §9: View All is the global primary, not a module colour — until it is locked, when
+              secondary ink says "not a live link" without dropping below 4.5:1. */}
+          <HomeText
+            token="viewAll"
+            color={isPlannerLocked ? neutralColors.textSecondary : semanticColors.primary}
+            numberOfLines={1}
+          >
             View All
           </HomeText>
-          <AppIcon name={forwardChevron()} size={dp(12)} color={semanticColors.primary} />
+          {isPlannerLocked ? (
+            <HomeLockBadge
+              size={dp(LOCK_GLYPH_COMPACT)}
+              testID={`${testID ?? 'today'}-view-all-lock`}
+            />
+          ) : (
+            <AppIcon name={forwardChevron()} size={dp(12)} color={semanticColors.primary} />
+          )}
         </PressableScale>
       </View>
 
@@ -198,6 +216,13 @@ type TimelineRowProps = {
  * A disabled control is unreachable by keyboard and touch exploration, and announces "dimmed" with
  * no way to find out why. A locked row stays a full, focusable button whose accessible name ends
  * "…, Premium feature" and whose press explains itself.
+ *
+ * ── And it is not dimmed either, any more ───────────────────────────────────
+ * The dot, the label and the trailing icon used to be multiplied by 0.5 and 0.85. Measured against
+ * the white card that put the dots at 1.6–2.1:1 and the finance-accented label at 2.26:1 — and the
+ * approved accents have no headroom to give, since finance already measures 2.64:1 at full strength.
+ * So the row now renders in exactly the colours its unlocked counterpart does, the semantic accent
+ * intact, and the padlock alone says "locked". The state was never safe to carry in a colour.
  */
 function TimelineRow({ entry, rowHeight, dotSize, onSelectEntry }: TimelineRowProps) {
   const { dp } = useMetrics();
@@ -241,7 +266,6 @@ function TimelineRow({ entry, rowHeight, dotSize, onSelectEntry }: TimelineRowPr
           height: dotSize,
           borderRadius: dotSize / 2,
           backgroundColor: entry.accent,
-          opacity: isLocked ? LOCKED_CONTENT_OPACITY : 1,
         }}
       />
       <HomeText
@@ -252,22 +276,14 @@ function TimelineRow({ entry, rowHeight, dotSize, onSelectEntry }: TimelineRowPr
       >
         {entry.time}
       </HomeText>
-      <HomeText
-        token="activity"
-        color={entry.accent}
-        numberOfLines={1}
-        style={[styles.activity, isLocked ? { opacity: LOCKED_LABEL_OPACITY } : null]}
-      >
+      <HomeText token="activity" color={entry.accent} numberOfLines={1} style={styles.activity}>
         {entry.title}
       </HomeText>
       {/* Additional to the trailing icon below, never a replacement for it. */}
-      {isLocked ? <HomeLockBadge size={dp(11)} testID={`timeline-lock-${entry.id}`} /> : null}
-      <AppIcon
-        name={entry.icon}
-        size={dp(LOCKED.today.trailingIcon)}
-        color={entry.accent}
-        style={{ opacity: isLocked ? LOCKED_CONTENT_OPACITY : 1 }}
-      />
+      {isLocked ? (
+        <HomeLockBadge size={dp(LOCK_GLYPH)} testID={`timeline-lock-${entry.id}`} />
+      ) : null}
+      <AppIcon name={entry.icon} size={dp(LOCKED.today.trailingIcon)} color={entry.accent} />
     </PressableScale>
   );
 }
