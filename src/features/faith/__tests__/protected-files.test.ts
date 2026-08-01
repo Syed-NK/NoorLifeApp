@@ -21,7 +21,6 @@ const BASE_REF = 'feature/core-module-framework';
 
 const PROTECTED_PATHS: readonly string[] = [
   // Main Home — design-locked.
-  'src/features/home/screens/main-home-screen.tsx',
   'src/features/home/components/home-header.tsx',
   'src/features/home/components/home-hero.tsx',
   'src/features/home/components/quick-actions-row.tsx',
@@ -102,6 +101,29 @@ const REOPENED_ON_REQUEST: readonly string[] = [
    */
   'src/features/home/components/today-timeline.tsx',
   'src/features/home/components/home-summary-row.tsx',
+  /**
+   * The Main Home screen itself — reopened for Phase 6B on an approved architecture decision.
+   *
+   * Reason recorded on request: **user-approved Free entitlement presentation and interaction.**
+   *
+   * Five surfaces on this screen raise contextual upgrade explanations, or will: the timeline
+   * rows, the two summary cards, the Noor AI insight, the quick actions and the bottom
+   * navigation. Their nearest common ancestor is this file, so it is the narrowest level at which
+   * one controller can serve all five and one sheet can be drawn. The alternatives were both
+   * rejected on the record: `AppProviders` would hold Main Home's state for every route in the
+   * app, and anything lower would give each row and card a modal of its own.
+   *
+   * The permitted change is exactly that and nothing else — one `UpgradeSheetProvider` and one
+   * `UpgradeSheetHost` in the screen's shell function. Both are layout-neutral: the provider
+   * renders context alone, and the host renders nothing until something asks for it and a `Modal`
+   * after that, which takes no part in the flex layout of the column. `MainHomeContent`, which
+   * holds the entire visual composition, is untouched — no padding, no wrapper view, no visible
+   * element, no reordered section, and `main-home-metrics.ts` is untouched and still locked above.
+   *
+   * A section-order test in the Main Home suite asserts all seven sections still render in the
+   * locked sequence, which is the guarantee this entry gives up and that test takes over.
+   */
+  'src/features/home/screens/main-home-screen.tsx',
 ];
 
 /**

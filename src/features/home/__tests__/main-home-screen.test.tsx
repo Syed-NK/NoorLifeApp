@@ -1,7 +1,7 @@
 import { render, screen, userEvent } from '@testing-library/react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
-import { MainHomeRoute } from '../screens/main-home-route';
+import { MainHomeScreen } from '../screens/main-home-screen';
 import { mockRouter } from '../../../../jest.setup';
 
 /**
@@ -11,10 +11,8 @@ import { mockRouter } from '../../../../jest.setup';
  * or the module theme registry is stubbed, so these assertions exercise the same
  * code path the device does.
  *
- * `MainHomeRoute` rather than `MainHomeScreen`: the route composition is what `/home`
- * renders, and it is where the upgrade-sheet controller is mounted above the timeline
- * and the summary cards. Rendering the screen alone would exercise a tree the app never
- * builds.
+ * The screen mounts its own upgrade-sheet controller, so this is the same tree `/home`
+ * builds — nothing about the paywall behaviour depends on a test-only wrapper.
  *
  * The default providers resolve a **free** entitlement, so the assertions here describe
  * the free presentation. Paid and unresolved entitlement need an injected adapter and
@@ -31,7 +29,7 @@ import { mockRouter } from '../../../../jest.setup';
 async function renderMainHome(props?: { readonly simulateFailure?: boolean }) {
   return render(
     <AppProviders>
-      <MainHomeRoute simulateFailure={props?.simulateFailure ?? false} />
+      <MainHomeScreen simulateFailure={props?.simulateFailure ?? false} />
     </AppProviders>,
   );
 }

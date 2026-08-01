@@ -13,7 +13,7 @@ import type { PurchaseAdapter } from '@features/subscription/services/purchase-a
 import { lockedModuleCopy } from '@features/subscription/subscription-copy';
 
 import { LOCKED } from '../main-home-metrics';
-import { MainHomeRoute } from '../screens/main-home-route';
+import { MainHomeScreen } from '../screens/main-home-screen';
 import { mockRouter } from '../../../../jest.setup';
 
 /**
@@ -29,8 +29,12 @@ import { mockRouter } from '../../../../jest.setup';
  *
  * The last one is the subtle one and the reason `UNKNOWN_ENTITLEMENT` exists: a screen that cannot
  * tell "no subscription" from "not loaded yet" shows one of the two the wrong thing on every cold
- * start. The rule chosen here is that protected content stays hidden until it is *known* to be
- * available, and Faith stays available throughout because it is never premium.
+ * start. The rule itself is not restated here — `canAccessModule` already answers "unknown" as
+ * "not entitled", and these tests only prove Main Home inherits that answer rather than inventing
+ * its own. Faith stays available throughout, because it is never premium.
+ *
+ * Every render below mounts `MainHomeScreen` with no upgrade-sheet provider around it, because the
+ * screen mounts its own — that is the architecture these tests hold in place.
  */
 
 function entitlement(plan: Entitlement['plan']): Entitlement {
@@ -79,7 +83,7 @@ async function renderMainHome(adapter: PurchaseAdapter) {
           <FontProvider>
             <AuthProvider>
               <EntitlementProvider adapter={adapter}>
-                <MainHomeRoute />
+                <MainHomeScreen />
               </EntitlementProvider>
             </AuthProvider>
           </FontProvider>
@@ -128,6 +132,17 @@ const sheetHeadingFor = (moduleName: string) => lockedModuleCopy.heading(moduleN
 // ── The controller and its single sheet ─────────────────────────────────────
 
 describe('the upgrade sheet on Main Home', () => {
+  it('is mounted by the screen itself, not by a wrapper around it', async () => {
+    const user = userEvent.setup();
+    await free();
+
+    // Nothing in `renderMainHome` mounts an UpgradeSheetProvider. If the screen did not mount
+    // its own, `useUpgradeSheetActions` would have thrown while rendering the first locked row,
+    // and this render would never have reached the hero.
+    await user.press(screen.getByTestId('timeline-row-school-drop-off'));
+    expect(screen.getByTestId('main-home-upgrade-sheet')).toBeTruthy();
+  });
+
   it('is not mounted until something asks for it', async () => {
     await free();
     expect(screen.queryByTestId('main-home-upgrade-sheet')).toBeNull();
@@ -154,6 +169,9 @@ describe('the upgrade sheet on Main Home', () => {
     await user.press(screen.getByTestId('timeline-row-school-drop-off'));
     await user.press(screen.getByTestId('overall-progress-card'));
 
+    // A timeline row and a summary card writing to the same slot is what proves there is one
+    // provider instance and not one per surface: a second instance would leave the Planner
+    // request standing in its own controller.
     expect(screen.getByText(sheetHeadingFor('Goals'))).toBeTruthy();
     expect(screen.queryByText(sheetHeadingFor('Planner'))).toBeNull();
   });
