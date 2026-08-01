@@ -3,7 +3,6 @@ import { Stack } from 'expo-router';
 import { View } from 'react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
-import { useAppStartup } from '@application/startup/use-app-startup';
 import { neutralColors } from '@ds/tokens';
 
 // Hold the native splash screen until fonts are registered and the session is

@@ -2,6 +2,7 @@ import { Redirect } from 'expo-router';
 import { View } from 'react-native';
 
 import { authRoutes, globalRoutes, onboardingRoutes } from '@application/navigation/routes';
+import { useNativeSplashHandoff } from '@application/startup/use-native-splash-handoff';
 import { useStartupRouting } from '@application/startup/use-startup-routing';
 import { SplashScreen } from '@features/entry-auth/screens/splash-screen';
 
@@ -23,7 +24,11 @@ import { SplashScreen } from '@features/entry-auth/screens/splash-screen';
  * Main Home, from onboarding or from authentication can never return to it.
  */
 export default function Index() {
-  const { destination, onSplashLayout } = useStartupRouting();
+  const { destination } = useStartupRouting();
+  // The native layer is dismissed on its own schedule — as soon as the branded splash can paint,
+  // never waiting for session, onboarding or the 1800 ms brand minimum. See the hook for why that
+  // separation is the fix rather than a tidy-up.
+  const { onBrandedSplashLayout } = useNativeSplashHandoff();
 
   if (destination === null) {
     // Still resolving, or holding the brand for its minimum.
@@ -32,7 +37,7 @@ export default function Index() {
     // file and takes no props. The wrapper's layout fires once the splash has actually painted,
     // which is the signal to hide the native splash — so the handoff has no blank frame in it.
     return (
-      <View style={{ flex: 1 }} onLayout={onSplashLayout} testID="startup-branded-splash">
+      <View style={{ flex: 1 }} onLayout={onBrandedSplashLayout} testID="startup-branded-splash">
         <SplashScreen />
       </View>
     );

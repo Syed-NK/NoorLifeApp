@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import * as ExpoSplashScreen from 'expo-splash-screen';
+import { useEffect, useRef, useState } from 'react';
 
 import { useAuth } from '@application/providers/auth-provider';
 import { useFontReadiness } from '@application/providers/font-provider';
@@ -22,8 +21,6 @@ export type StartupRouting = {
   readonly state: StartupState;
   /** The destination, once decided. Null while the splash is still showing. */
   readonly destination: StartupState | null;
-  /** Attach to the branded splash's `onLayout`; hides the native splash after first paint. */
-  readonly onSplashLayout: () => void;
   readonly isFirstLaunch: boolean;
 };
 
@@ -129,13 +126,6 @@ export function useStartupRouting(): StartupRouting {
     setDestination(state);
   }
 
-  const onSplashLayout = useCallback(() => {
-    // Hidden from the branded splash's own layout, not from a readiness flag. Hiding on `ready`
-    // reveals the frame before it has laid out, which is the flash the native splash exists to
-    // prevent — and hiding here is what guarantees the emblem is already painted underneath.
-    void ExpoSplashScreen.hideAsync().catch(() => undefined);
-  }, []);
-
   // The timeout path is the one that actually fires in practice; say so where it happens.
   useEffect(() => {
     if (state === 'authentication' && !fonts.ready && __DEV__) {
@@ -145,7 +135,10 @@ export function useStartupRouting(): StartupRouting {
     }
   }, [state, fonts.ready]);
 
-  return { state, destination, onSplashLayout, isFirstLaunch };
+  // Native-splash dismissal is deliberately *not* returned here. It belongs to
+  // `useNativeSplashHandoff`, which must not wait on anything this hook resolves — coupling the two
+  // is what let a stalled session hold the native splash up until the user touched the screen.
+  return { state, destination, isFirstLaunch };
 }
 
 /** Exposed for tests that need to simulate a hard failure. */
