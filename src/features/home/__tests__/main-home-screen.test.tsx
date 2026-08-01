@@ -298,21 +298,31 @@ describe('Main Home summary and insight cards', () => {
     expect(screen.queryByText("You're on track")).toBeNull();
   });
 
-  it('renders the Noor AI Insight card', async () => {
+  it('renders the Noor AI Insight card, in its application-guidance scope', async () => {
     await renderMainHome();
     await settleReady();
+
+    // The default providers resolve a free entitlement, and Noor AI is scope-limited rather than
+    // locked on it: the card is unchanged, keeps its title and stays tappable, but the personalized
+    // insight is replaced by what Noor AI can actually help a free user with. The paid
+    // "You have a free 30-minute window at 4 PM." presentation is asserted in
+    // `main-home-premium-actions.test.tsx`, which can supply a paid entitlement.
     expect(screen.getByTestId('main-home-ai-insight')).toBeTruthy();
     expect(screen.getByText('Noor AI Insight')).toBeTruthy();
-    expect(screen.getByText('You have a free 30-minute window at 4 PM.')).toBeTruthy();
+    expect(
+      screen.getByText('Ask Noor AI how to find features or manage your account.'),
+    ).toBeTruthy();
+    expect(screen.queryByText('You have a free 30-minute window at 4 PM.')).toBeNull();
   });
 
   it('carries the AI scope in the insight card accessibility label', async () => {
     await renderMainHome();
     await settleReady();
     // The reference shows no scope chip on Main Home, so scope is announced rather
-    // than drawn — but it must still travel with the insight.
+    // than drawn — but it must still travel with the insight. On the free plan the announced
+    // scope is the narrower one, because "NoorLife only" would overstate what Noor AI covers here.
     expect(screen.getByTestId('main-home-ai-insight').props.accessibilityLabel).toContain(
-      'Scope: NoorLife only',
+      'Scope: NoorLife app help only',
     );
   });
 });
@@ -379,13 +389,19 @@ describe('Main Home navigation actions', () => {
     expect(mockRouter.push).toHaveBeenCalledWith('/ai');
   });
 
-  it('navigates to the owning module from a quick action, never editing in place', async () => {
+  it('never edits in place from a quick action, and never enters a module it cannot open', async () => {
     const user = userEvent.setup();
     await renderMainHome();
     await settleReady();
 
+    // Health is premium and the default providers resolve a free entitlement, so this raises the
+    // upgrade explanation instead of navigating. What matters here is the half of the original
+    // assertion that still applies on every plan: Main Home opens no editor of its own, and it does
+    // not enter Health first. `main-home-premium-actions.test.tsx` asserts the `/health` push on a
+    // paid entitlement, which is where that expectation now belongs.
     await user.press(screen.getByTestId('quick-action-log-wellness'));
-    expect(mockRouter.push).toHaveBeenCalledWith('/health');
+    expect(mockRouter.push).not.toHaveBeenCalled();
+    expect(screen.getByTestId('main-home-upgrade-sheet')).toBeTruthy();
   });
 
   it('navigates to the source module from a timeline row', async () => {

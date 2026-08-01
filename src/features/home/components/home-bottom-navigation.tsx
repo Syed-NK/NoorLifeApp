@@ -2,12 +2,18 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, PressableScale } from '@ds/components';
+import { moduleThemes } from '@ds/modules/module-themes';
 import { navigationColors, neutralColors, semanticColors } from '@ds/tokens';
+import { useUpgradeSheetActions } from '@features/subscription/services/upgrade-sheet-context';
+import { useModuleLock } from '@features/subscription/use-module-lock';
 import { iconButtonA11y } from '@shared/utils/a11y';
 import { AI_NAV_INDEX, type ModuleTheme, type NavItem } from '@shared/models/module-theme';
 
+import { PREMIUM_NAV_MODULES, UPGRADE_SOURCES } from '../home-premium-surfaces';
 import { LOCKED } from '../main-home-metrics';
 import { useMetrics } from '../main-home-metrics-context';
+import { LOCKED_CONTENT_OPACITY } from '../module-lock-theme';
+import { HomeLockBadge } from './home-lock-badge';
 import { HomeText } from './home-text';
 import { RobotAsset } from './robot-asset';
 
@@ -49,6 +55,21 @@ export type HomeBottomNavigationProps = {
  *
  * The centre control keeps its accessible name via `accessibilityLabel`, so removing the
  * visible caption costs nothing for screen-reader users.
+ *
+ * ── Phase 6B: Insights is the one paid destination in the bar ───────────────
+ * Home, Modules and Profile are on every plan, and so is the centre Noor AI control — Noor AI is
+ * scope-limited on the free plan, not locked, so it keeps its approved PNG, its 58 dp ring, its
+ * 15 dp raise and no badge of any kind. Modules stays open deliberately: a user has to be able to
+ * see what NoorLife includes, both what they hold and what they do not.
+ *
+ * Insights is Goals-powered, so a free user's tap raises the shared upgrade explanation and stays on
+ * Main Home rather than entering a screen it cannot fill. Which destinations are paid is not decided
+ * here — `PREMIUM_NAV_MODULES` names the module and `useModuleLock` answers for it, so this file
+ * holds no knowledge of any plan.
+ *
+ * The bar's geometry is untouched in both states: the same 68 dp height, the same five `flex: 1`
+ * slots, the same 24 dp icons and 9.5/12 labels. The padlock is absolutely positioned against the
+ * icon, so it takes no part in the layout and cannot change the bar's height.
  */
 export function HomeBottomNavigation({
   theme,
@@ -71,7 +92,6 @@ export function HomeBottomNavigation({
       <View style={[styles.row, { height: barHeight }]}>
         {theme.navigation.map((item, index) => {
           const isActive = item.key === activeKey;
-          const tint = isActive ? semanticColors.primary : navigationColors.inactive;
 
           if (index === AI_NAV_INDEX) {
             return (
@@ -107,24 +127,106 @@ export function HomeBottomNavigation({
           }
 
           return (
-            <View key={item.key} style={styles.slot}>
-              <PressableScale
-                onPress={() => onNavigate(item)}
-                accessibilityRole="tab"
-                accessibilityLabel={item.accessibilityLabel ?? item.label}
-                accessibilityState={{ selected: isActive }}
-                style={styles.slotContent}
-                testID={`${testID ?? 'home-nav'}-${item.key}`}
-              >
-                <AppIcon name={item.icon} size={dp(LOCKED.bottomNav.icon)} color={tint} />
-                <HomeText token="navLabel" color={tint} numberOfLines={1} style={styles.label}>
-                  {item.label}
-                </HomeText>
-              </PressableScale>
-            </View>
+            <NavSlot
+              key={item.key}
+              item={item}
+              isActive={isActive}
+              onNavigate={onNavigate}
+              testID={`${testID ?? 'home-nav'}-${item.key}`}
+            />
           );
         })}
       </View>
+    </View>
+  );
+}
+
+type NavSlotProps = {
+  readonly item: NavItem;
+  readonly isActive: boolean;
+  readonly onNavigate: (item: NavItem) => void;
+  readonly testID: string;
+};
+
+/**
+ * One side slot, in its available or locked state.
+ *
+ * Extracted so a slot can consult the entitlement selector with its own module — hooks cannot run
+ * inside the `map` above.
+ *
+ * ── The locked tab never enters the destination ─────────────────────────────
+ * It raises the shared upgrade explanation and stays where it is. Pushing Insights and letting the
+ * route gate bounce the user back would flash a screen they are not entitled to and leave it in the
+ * back stack, which is both worse to use and a weaker guarantee than never going there.
+ *
+ * ── Only the icon is muted, never the label ─────────────────────────────────
+ * The 9.5 dp label already sits at the inactive tint, and taking it further down would trade
+ * legibility for atmosphere on the smallest type on the screen. The icon carries no text, so it mutes
+ * freely — and the padlock, not the tint, is what actually announces the state. Colour is never the
+ * only signal.
+ */
+function NavSlot({ item, isActive, onNavigate, testID }: NavSlotProps) {
+  const { dp } = useMetrics();
+  const premiumModule = PREMIUM_NAV_MODULES[item.key];
+  const moduleName = premiumModule === undefined ? item.label : moduleThemes[premiumModule].name;
+  // `main` is never locked, so an unmapped slot answers "unlocked" without a plan being consulted.
+  const { isLocked } = useModuleLock(premiumModule ?? 'main', moduleName);
+  const { requestUpgrade } = useUpgradeSheetActions();
+
+  const tint = isActive ? semanticColors.primary : navigationColors.inactive;
+  const label = item.accessibilityLabel ?? item.label;
+
+  return (
+    <View style={styles.slot}>
+      <PressableScale
+        onPress={() => {
+          if (isLocked && premiumModule !== undefined) {
+            requestUpgrade({
+              // The tab the user tapped, which is what the sheet has to explain — "Goals" alone
+              // would not answer "why can't I open Insights?".
+              featureTitle: item.label,
+              moduleId: premiumModule,
+              moduleName,
+              source: UPGRADE_SOURCES.bottomNavigation,
+            });
+            return;
+          }
+          onNavigate(item);
+        }}
+        accessibilityRole="tab"
+        // The restriction is part of the accessible name rather than a hint, so a screen reader
+        // announces it in the same breath as the destination — a hint is easily skipped.
+        accessibilityLabel={isLocked ? `${label}, Premium feature` : label}
+        accessibilityState={{ selected: isActive }}
+        {...(isLocked ? { accessibilityHint: 'Explains what NoorLife Premium includes' } : {})}
+        style={styles.slotContent}
+        testID={testID}
+      >
+        {/* Shrink-wraps the 24 dp icon exactly, so the badge can be positioned against the icon
+            rather than against the slot — whose width is a flexed fifth and therefore not a fixed
+            offset to measure from. It adds no size of its own, so the bar's height is unchanged. */}
+        <View style={styles.iconWrap}>
+          <AppIcon
+            name={item.icon}
+            size={dp(LOCKED.bottomNav.icon)}
+            color={tint}
+            style={{ opacity: isLocked ? LOCKED_CONTENT_OPACITY : 1 }}
+          />
+          {/* Additional to the approved icon, never a replacement for it. */}
+          {isLocked ? (
+            <View
+              style={[styles.lock, { top: -dp(1), right: -dp(5) }]}
+              pointerEvents="none"
+              testID={`${testID}-lock`}
+            >
+              <HomeLockBadge size={dp(9)} testID={`${testID}-lock-badge`} />
+            </View>
+          ) : null}
+        </View>
+        <HomeText token="navLabel" color={tint} numberOfLines={1} style={styles.label}>
+          {item.label}
+        </HomeText>
+      </PressableScale>
     </View>
   );
 }
@@ -165,6 +267,14 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /** Sized entirely by the icon inside it; exists only to anchor the padlock. */
+  iconWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lock: {
+    position: 'absolute',
   },
   aiButton: {
     backgroundColor: neutralColors.surface,

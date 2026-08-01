@@ -23,9 +23,6 @@ const PROTECTED_PATHS: readonly string[] = [
   // Main Home — design-locked.
   'src/features/home/components/home-header.tsx',
   'src/features/home/components/home-hero.tsx',
-  'src/features/home/components/quick-actions-row.tsx',
-  'src/features/home/components/ai-insight-card.tsx',
-  'src/features/home/components/home-bottom-navigation.tsx',
   'src/features/home/components/robot-asset.tsx',
   'src/features/home/main-home-metrics.ts',
   'src/features/home/module-pictograms.ts',
@@ -124,6 +121,45 @@ const REOPENED_ON_REQUEST: readonly string[] = [
    * locked sequence, which is the guarantee this entry gives up and that test takes over.
    */
   'src/features/home/screens/main-home-screen.tsx',
+  /**
+   * The Noor AI insight card, the quick-action row and the bottom navigation — reopened for
+   * Phase 6B.
+   *
+   * Reason recorded on request: **user-approved Free entitlement presentation and interaction.**
+   *
+   * These are the three remaining Main Home surfaces that offer a free user something the free plan
+   * does not include, and each is wrong in a different way:
+   *
+   *   • The insight card states "You have a free 30-minute window at 4 PM", which is a claim about a
+   *     Planner schedule the user does not have. Noor AI itself is *not* locked — it is on the free
+   *     plan — so the correction is a scope, not a padlock: the card says what Noor AI can actually
+   *     help with and announces the narrower scope it works in.
+   *   • All three quick actions belong to premium modules (Planner, Health, Family), and each one
+   *     currently walks straight into that module to start an edit.
+   *   • The Insights tab opens a Goals-powered screen the free plan does not include.
+   *
+   * None of that can be corrected without editing the file that draws the card, the file that draws
+   * the tiles and the file that draws the bar, so their byte-for-byte lock was lifted on request
+   * rather than the entries being quietly deleted.
+   *
+   * What did not change is the geometry. Every measurement still comes from `LOCKED.aiInsight`,
+   * `LOCKED.quickAction` and `LOCKED.bottomNav` — the 68 dp card and its 44 dp robot and chevron, the
+   * 42 dp tiles at 11 dp radius with their 7 dp gap, the 68 dp bar with five `flex: 1` slots, 24 dp
+   * icons and the 58 dp centre ring holding the 50 dp robot PNG — and `main-home-metrics.ts` is
+   * untouched and still locked above. The approved PNG assets are still rendered by `RobotAsset`,
+   * never swapped for a lock glyph, and the centre control carries no badge at all. Both padlocks
+   * added here are absolutely positioned, so neither takes part in the layout: the quick-action label
+   * keeps the width it has on a paid plan, and the bar keeps its height.
+   *
+   * A geometry suite in `main-home-premium-actions.test.tsx` measures all three surfaces in both the
+   * free and the paid state, against the same numbers. That is the guarantee this entry gives up and
+   * that test takes over.
+   *
+   * Anything beyond entitlement state in these three files still needs the design owner's sign-off.
+   */
+  'src/features/home/components/ai-insight-card.tsx',
+  'src/features/home/components/quick-actions-row.tsx',
+  'src/features/home/components/home-bottom-navigation.tsx',
 ];
 
 /**

@@ -8,6 +8,7 @@ import { usePaidContentLock } from '@features/subscription/use-module-lock';
 import type { FamilyCheckInSummary, OverallProgressSummary } from '@shared/models/dashboard';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
+import { UPGRADE_SOURCES } from '../home-premium-surfaces';
 import { LOCKED } from '../main-home-metrics';
 import { useMetrics } from '../main-home-metrics-context';
 import { LOCKED_CONTENT_OPACITY } from '../module-lock-theme';
@@ -95,7 +96,7 @@ export function HomeSummaryRow({
             featureTitle: 'Family Check-in',
             moduleId: 'family',
             moduleName: 'Family',
-            source: 'home_summary',
+            source: UPGRADE_SOURCES.homeSummary,
           })
         }
         testID="family-check-in-card"
@@ -166,7 +167,7 @@ export function HomeSummaryRow({
             featureTitle: 'Overall Progress',
             moduleId: 'goals',
             moduleName: 'Goals',
-            source: 'home_summary',
+            source: UPGRADE_SOURCES.homeSummary,
           })
         }
         testID="overall-progress-card"

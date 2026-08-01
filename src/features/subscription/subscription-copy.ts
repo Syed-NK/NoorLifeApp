@@ -250,6 +250,33 @@ export const lockedModuleCopy = {
   continueToFaith: 'Continue to Faith',
 } as const;
 
+/**
+ * Noor AI in its free, application-guidance mode.
+ *
+ * Noor AI is never locked — it is included on the free plan, at the scope `freePlanCopy` describes
+ * as "Basic Noor AI navigation help". These are the words that state that scope where a free user
+ * meets it, and they replace the paid personalized insight rather than sitting beside it: a free
+ * user has no Planner, so "You have a free 30-minute window at 4 PM" is a claim about a schedule
+ * they do not have.
+ *
+ * The wording invites rather than refuses. Nothing here says "upgrade" — Noor AI works, and what
+ * this describes is what it works on.
+ */
+export const noorAIFreeCopy = {
+  /** Replaces the personalized insight on Main Home. */
+  insightBody: 'Ask Noor AI how to find features or manage your account.',
+  /**
+   * Announced with the insight, in place of the paid "NoorLife only".
+   *
+   * The scope has to be *narrower* than "NoorLife only" to be true on the free plan, which covers
+   * the application and the account rather than the modules' contents.
+   */
+  scopeLabel: 'NoorLife app help only',
+  /** Said when a free user asks Noor AI to do a paid module's work. */
+  outOfPlan: (moduleName: string) =>
+    `${moduleName} is part of Premium, so I can't work with it yet. I can explain what it includes, or help you find your way around NoorLife.`,
+} as const;
+
 export const familySetupCopy = {
   heading: 'Create your family',
   body: 'Name your family and invite up to five members. You stay the organizer.',

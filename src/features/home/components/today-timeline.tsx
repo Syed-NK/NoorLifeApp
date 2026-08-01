@@ -11,6 +11,7 @@ import type { ModuleTheme } from '@shared/models/module-theme';
 import { minimumHitSlop } from '@shared/utils/a11y';
 import { forwardChevron } from '@shared/utils/rtl';
 
+import { UPGRADE_SOURCES } from '../home-premium-surfaces';
 import { LOCKED } from '../main-home-metrics';
 import { useMetrics } from '../main-home-metrics-context';
 import { LOCKED_CONTENT_OPACITY, LOCKED_LABEL_OPACITY } from '../module-lock-theme';
@@ -56,6 +57,14 @@ export type TodayTimelineProps = {
  * Which rows those are is not written here. `useModuleLock` answers per entry from the entry's own
  * `sourceModule`, through the same `canAccessModule` rule the route gate applies — so Dhuhr stays
  * open because Faith is never premium, not because this file knows it is a prayer.
+ *
+ * ── "View All" is the whole section's destination, and it is Planner ─────────
+ * The heading's `View All` opens Planner's full day. On a free plan it therefore behaves like a
+ * locked row: it raises the shared upgrade explanation, naming Planner, and Planner is never pushed.
+ * Its appearance is deliberately untouched — same 10/13 in the global primary, same chevron, same
+ * position — because nothing about it is muted or scrimmed, so there is no colour-only signal to
+ * back up; the restriction lives in the accessible name and in what the press does. Planner's own
+ * route gate stays in place behind all of this as defence in depth.
  */
 export function TodayTimeline({
   entries,
@@ -65,6 +74,9 @@ export function TodayTimeline({
   testID,
 }: TodayTimelineProps) {
   const { dp } = useMetrics();
+  const plannerName = moduleThemes.planner.name;
+  const { isLocked: isPlannerLocked } = useModuleLock('planner', plannerName);
+  const { requestUpgrade } = useUpgradeSheetActions();
 
   const rowHeight = dp(LOCKED.today.rowHeight);
   const dotSize = dp(LOCKED.today.dot);
@@ -88,10 +100,30 @@ export function TodayTimeline({
           Today at a Glance
         </HomeText>
         <PressableScale
-          onPress={onViewAll}
+          onPress={() => {
+            if (isPlannerLocked) {
+              requestUpgrade({
+                // The section the user was looking at, not the module — the sheet has to answer
+                // "why can't I see all of today?".
+                featureTitle: 'Today at a Glance',
+                moduleId: 'planner',
+                moduleName: plannerName,
+                source: UPGRADE_SOURCES.todayTimelineViewAll,
+              });
+              return;
+            }
+            onViewAll();
+          }}
           hitSlop={minimumHitSlop(dp(LOCKED.today.headingHeight))}
           accessibilityRole="button"
-          accessibilityLabel="View all of today's schedule"
+          accessibilityLabel={
+            isPlannerLocked
+              ? "View all of today's schedule, Premium feature"
+              : "View all of today's schedule"
+          }
+          {...(isPlannerLocked
+            ? { accessibilityHint: 'Explains what NoorLife Premium includes' }
+            : {})}
           style={styles.viewAll}
           testID={`${testID ?? 'today'}-view-all`}
         >
@@ -190,7 +222,7 @@ function TimelineRow({ entry, rowHeight, dotSize, onSelectEntry }: TimelineRowPr
             // Locked implies premium, and `main` is never premium — so the narrowing is safe.
             moduleId: entry.sourceModule as FrameworkModuleId,
             moduleName,
-            source: 'today_timeline',
+            source: UPGRADE_SOURCES.todayTimeline,
           });
           return;
         }
