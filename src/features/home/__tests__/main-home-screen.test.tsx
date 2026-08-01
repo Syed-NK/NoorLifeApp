@@ -1,7 +1,7 @@
-import { render, screen, userEvent, within } from '@testing-library/react-native';
+import { render, screen, userEvent } from '@testing-library/react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
-import { MainHomeScreen } from '../screens/main-home-screen';
+import { MainHomeRoute } from '../screens/main-home-route';
 import { mockRouter } from '../../../../jest.setup';
 
 /**
@@ -10,6 +10,15 @@ import { mockRouter } from '../../../../jest.setup';
  * Renders the real screen inside the real providers — nothing in the design system
  * or the module theme registry is stubbed, so these assertions exercise the same
  * code path the device does.
+ *
+ * `MainHomeRoute` rather than `MainHomeScreen`: the route composition is what `/home`
+ * renders, and it is where the upgrade-sheet controller is mounted above the timeline
+ * and the summary cards. Rendering the screen alone would exercise a tree the app never
+ * builds.
+ *
+ * The default providers resolve a **free** entitlement, so the assertions here describe
+ * the free presentation. Paid and unresolved entitlement need an injected adapter and
+ * live in `main-home-paid-content.test.tsx`.
  *
  * The dashboard hook resolves on a short timer. Real timers are used with RNTL's
  * `findBy*` queries rather than fake timers: the async settle is what the screen
@@ -22,7 +31,7 @@ import { mockRouter } from '../../../../jest.setup';
 async function renderMainHome(props?: { readonly simulateFailure?: boolean }) {
   return render(
     <AppProviders>
-      <MainHomeScreen simulateFailure={props?.simulateFailure ?? false} />
+      <MainHomeRoute simulateFailure={props?.simulateFailure ?? false} />
     </AppProviders>,
   );
 }
@@ -250,17 +259,23 @@ describe('Main Home timeline', () => {
 });
 
 describe('Main Home summary and insight cards', () => {
-  it('renders the Family Check-in card with its value as text', async () => {
+  it('renders the Family Check-in card, stating Premium rather than a figure', async () => {
     await renderMainHome();
     await settleReady();
 
-    // "Family Check-in" is deliberately present twice on this screen — as this
-    // card's heading and as a quick action — so the assertion is scoped to the
-    // card rather than made ambiguous across the screen.
-    const card = within(screen.getByTestId('family-check-in-card'));
-    expect(card.getByText('Family Check-in')).toBeTruthy();
-    expect(card.getByText('4 of 5')).toBeTruthy();
-    expect(card.getByText('complete')).toBeTruthy();
+    // The default providers resolve a free entitlement, so the card is locked. It keeps its
+    // heading and its place; what it must not do is report a completion figure for a user
+    // who has no family check-in. `main-home-paid-content.test.tsx` covers "4 of 5 complete"
+    // on a paid entitlement.
+    //
+    // Queried from the screen rather than scoped with `within`: a locked card is a
+    // `PressableScale`, which carries the testID on its touch overlay rather than on the box
+    // holding the content. None of these strings appears anywhere else on Main Home.
+    expect(screen.getByTestId('family-check-in-card')).toBeTruthy();
+    expect(screen.getByText('Premium')).toBeTruthy();
+    expect(screen.getByText('Unlock family connection')).toBeTruthy();
+    expect(screen.queryByText('4 of 5')).toBeNull();
+    expect(screen.queryByText('complete')).toBeNull();
   });
 
   it('renders "Family Check-in" both as a summary card and as a quick action', async () => {
@@ -270,13 +285,19 @@ describe('Main Home summary and insight cards', () => {
     expect(screen.getByTestId('quick-action-family-check-in')).toBeTruthy();
   });
 
-  it('renders the Overall Progress card with a labelled progress ring', async () => {
+  it('renders the Overall Progress card with a neutral ring rather than a percentage', async () => {
     await renderMainHome();
     await settleReady();
+
+    // Free entitlement: the ring is a placeholder at the same diameter, and no figure is
+    // claimed. The 68% presentation is asserted against a paid entitlement elsewhere.
     expect(screen.getByTestId('overall-progress-card')).toBeTruthy();
     expect(screen.getByText('Overall Progress')).toBeTruthy();
-    expect(screen.getByText('68%')).toBeTruthy();
-    expect(screen.getByLabelText("Overall progress 68 percent, You're on track")).toBeTruthy();
+    expect(screen.getByText('Unlock progress')).toBeTruthy();
+    expect(screen.getByText('Included with Premium')).toBeTruthy();
+    expect(screen.getByTestId('overall-progress-locked-ring')).toBeTruthy();
+    expect(screen.queryByText('68%')).toBeNull();
+    expect(screen.queryByText("You're on track")).toBeNull();
   });
 
   it('renders the Noor AI Insight card', async () => {

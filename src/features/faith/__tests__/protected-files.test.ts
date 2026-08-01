@@ -24,8 +24,6 @@ const PROTECTED_PATHS: readonly string[] = [
   'src/features/home/screens/main-home-screen.tsx',
   'src/features/home/components/home-header.tsx',
   'src/features/home/components/home-hero.tsx',
-  'src/features/home/components/today-timeline.tsx',
-  'src/features/home/components/home-summary-row.tsx',
   'src/features/home/components/quick-actions-row.tsx',
   'src/features/home/components/ai-insight-card.tsx',
   'src/features/home/components/home-bottom-navigation.tsx',
@@ -80,6 +78,30 @@ const REOPENED_ON_REQUEST: readonly string[] = [
    * is the guarantee this entry gives up and that test takes over.
    */
   'src/features/home/components/module-grid.tsx',
+  /**
+   * "Today at a Glance" and the two summary cards — reopened for Phase 6B.
+   *
+   * Reason recorded on request: **user-approved Free entitlement presentation and interaction.**
+   *
+   * Three of the four timeline rows and both summary figures are paid content. A free user
+   * currently sees School drop-off, Work focus time and Family dinner as ordinary rows that walk
+   * into Planner and Family, and is shown "4 of 5 complete" and "68% — You're on track", which are
+   * statements about a week they do not have. Neither can be corrected without editing the file
+   * that draws the row and the file that draws the card, so their byte-for-byte lock was lifted on
+   * request rather than the entries being quietly deleted.
+   *
+   * What did not change is the geometry. Every measurement still comes from `LOCKED.today` and
+   * `LOCKED.summary` — the 126 dp card, the 23 dp rows, the 7 dp dot, the 62 dp time column, the
+   * 90 dp summary cards, the 46 dp ring and its 6 dp stroke — and `main-home-metrics.ts` is
+   * untouched and still locked above. Section order, card positions, spacing and the type ramp are
+   * as they were; the locked states are drawn *inside* that geometry. The Main Home suite asserts
+   * those dimensions directly, which is the guarantee these two entries give up and that test
+   * takes over.
+   *
+   * Anything beyond entitlement state in these two files still needs the design owner's sign-off.
+   */
+  'src/features/home/components/today-timeline.tsx',
+  'src/features/home/components/home-summary-row.tsx',
 ];
 
 /**
