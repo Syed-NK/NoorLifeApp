@@ -24,7 +24,6 @@ const PROTECTED_PATHS: readonly string[] = [
   'src/features/home/screens/main-home-screen.tsx',
   'src/features/home/components/home-header.tsx',
   'src/features/home/components/home-hero.tsx',
-  'src/features/home/components/module-grid.tsx',
   'src/features/home/components/today-timeline.tsx',
   'src/features/home/components/home-summary-row.tsx',
   'src/features/home/components/quick-actions-row.tsx',
@@ -64,6 +63,23 @@ const REOPENED_ON_REQUEST: readonly string[] = [
   'src/features/entry-auth/screens/welcome-screen.tsx',
   'src/features/entry-auth/screens/login-screen.tsx',
   'src/features/entry-auth/screens/sign-up-screen.tsx',
+  /**
+   * Main Home's module grid — reopened for Phase 6B.
+   *
+   * Free users must see the six paid modules as locked, and there is no way to render a lock state
+   * on a tile without editing the file that draws the tile. The phase brief authorises exactly
+   * this: entitlement-aware states *within* the existing geometry.
+   *
+   * What did not change is the geometry itself. Every locked measurement still comes from
+   * `LOCKED.grid` — four columns, 7 dp gaps, 71 dp tiles, 13 dp radius, 48 dp pictograms — and
+   * `main-home-metrics.ts` is untouched and still locked above. The approved PNGs are still
+   * rendered by `getModulePictogram`, never swapped for a lock glyph. What was added is a scrim, a
+   * badge and a branch on entitlement.
+   *
+   * A geometry test in the Main Home suite asserts the tile count and layout are unchanged, which
+   * is the guarantee this entry gives up and that test takes over.
+   */
+  'src/features/home/components/module-grid.tsx',
 ];
 
 /**

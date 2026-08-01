@@ -182,14 +182,51 @@ describe('Main Home module grid', () => {
     },
   );
 
-  it.each(['noor-ai', 'faith', 'health', 'planner', 'finance', 'learning', 'family', 'goals'])(
-    'renders a tappable card for %s',
+  it.each(['noor-ai', 'faith'])('renders an unlocked, tappable card for %s', async (id) => {
+    await renderMainHome();
+    await settleReady();
+
+    // Faith and Noor AI are free on every plan. Faith must never carry a lock, and Noor AI is
+    // scope-limited rather than locked.
+    expect(screen.getByTestId(`module-card-${id}`)).toBeTruthy();
+    expect(screen.queryByTestId(`module-card-${id}-locked`)).toBeNull();
+    expect(screen.queryByTestId(`module-lock-${id}`)).toBeNull();
+  });
+
+  it.each(['health', 'planner', 'finance', 'learning', 'family', 'goals'])(
+    'renders a locked card for %s on the free plan',
     async (id) => {
       await renderMainHome();
       await settleReady();
-      expect(screen.getByTestId(`module-card-${id}`)).toBeTruthy();
+
+      // Still a tile in the same position with the same pictogram — locked, not removed.
+      expect(screen.getByTestId(`module-card-${id}-locked`)).toBeTruthy();
+      expect(screen.getByTestId(`module-pictogram-${id}`)).toBeTruthy();
+      expect(screen.getByTestId(`module-lock-${id}`)).toBeTruthy();
+      expect(screen.getByTestId(`module-scrim-${id}`)).toBeTruthy();
     },
   );
+
+  it('announces a locked module as a premium feature', async () => {
+    await renderMainHome();
+    await settleReady();
+
+    // The restriction is part of the accessible name, not a hint, so it cannot be skipped.
+    expect(screen.getByLabelText('Health, Premium feature')).toBeTruthy();
+    expect(screen.getByLabelText('Faith')).toBeTruthy();
+  });
+
+  it('keeps every tile in the grid, locked or not', async () => {
+    await renderMainHome();
+    await settleReady();
+
+    // Geometry is unchanged: eight tiles, same order. Locking changes the surface, not the grid.
+    const tiles = ['noor-ai', 'faith'].map((id) => screen.getByTestId(`module-card-${id}`));
+    const locked = ['health', 'planner', 'finance', 'learning', 'family', 'goals'].map((id) =>
+      screen.getByTestId(`module-card-${id}-locked`),
+    );
+    expect([...tiles, ...locked]).toHaveLength(8);
+  });
 });
 
 describe('Main Home timeline', () => {
