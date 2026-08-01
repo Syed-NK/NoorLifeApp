@@ -1,433 +1,238 @@
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { globalRoutes, moduleRoutes } from '@application/navigation/routes';
+import { authRoutes, globalRoutes } from '@application/navigation/routes';
 import { useAuth, useAuthActions } from '@application/providers/auth-provider';
-import { EntryAuthText } from '@features/entry-auth/components/entry-auth-text';
+import { AuthScaffold } from '@features/entry-auth/components/auth-scaffold';
 import { useEntryAuthMetrics } from '@features/entry-auth/use-entry-auth-metrics';
-import { profileAvatar } from '@features/home/module-pictograms';
-import { PlanBadge } from '@features/subscription/components/plan-badge';
-import { formatRenewalDate } from '@features/subscription/domain/pricing';
 import { canUseSharedFamily } from '@features/subscription/domain/entitlement';
-import { statusGrantsPaidAccess } from '@features/subscription/domain/subscription';
 import {
   useEntitlement,
   useEntitlementActions,
 } from '@features/subscription/services/entitlement-context';
-import { familyWording, planNames, statusLabels } from '@features/subscription/subscription-copy';
-import { familyRoutes, subscriptionRoutes } from '@features/subscription/subscription-routes';
-import { subscriptionColors, subscriptionLayout } from '@features/subscription/subscription-tokens';
+import { planNames } from '@features/subscription/subscription-copy';
+import { subscriptionColors } from '@features/subscription/subscription-tokens';
+import { subscriptionRoutes } from '@features/subscription/subscription-routes';
 
+import { ComingLaterSheet } from '../components/coming-later-sheet';
+import { ProfileHeader } from '../components/profile-header';
+import { ProfileIdentityCard } from '../components/profile-identity-card';
+import { ProfileLogoutRow } from '../components/profile-logout-row';
+import { ProfileMembershipCard } from '../components/profile-membership-card';
+import { ProfileMenuCard } from '../components/profile-menu-card';
+import { useLoadTimeout } from '../hooks/use-load-timeout';
+import { useProfileRecord } from '../hooks/use-profile-record';
 import { profileCopy } from '../profile-copy';
-import { ProfileRow, ProfileSection } from '../components/profile-row';
+import { membershipPresentation } from '../profile-membership';
+import { PROFILE_LAYOUT, shouldEnableScroll } from '../profile-metrics';
+import { PROFILE_EDIT_ROUTE, PROFILE_HELP_ROUTE, type ProfileMenuItem } from '../profile-routes';
+import { ComingLaterProvider, useComingLaterActions } from '../services/coming-later-context';
 
 /**
- * The Profile home.
+ * How long an unresolved entitlement is treated as "loading" before it is treated as "failed".
  *
- * Replaces the Phase 1 placeholder. Built from the entry/auth visual language rather than a new
- * one — soft mint page, white cards, hairline borders, navy text — because Profile is reached from
- * the same shell and a second palette here would read as a different app.
+ * The entitlement provider reports no error — a failed refresh simply leaves the plan at `unknown`
+ * — so time is the only signal available. Six seconds is deliberately generous: offering a retry
+ * at two would fire on any slow connection, and a skeleton that resolves on its own is a better
+ * outcome than a retry button the user did not need.
+ */
+const ENTITLEMENT_GRACE_MS = 6000;
+
+/**
+ * Profile Home — the compact account summary.
  *
- * ── Every row goes somewhere, or says it does not ───────────────────────────
- * The brief forbids nonfunctional toggles. Rows that open a working screen are plain rows; rows
- * whose destination does not exist yet carry a visible "Coming later" marker **and are shown in
- * development only**, so a production build never presents a setting that does nothing. That rule
- * lives in `ProfileRow` rather than at each call site, so it cannot be forgotten one row at a time.
+ * ── What this replaced ──────────────────────────────────────────────────────
+ * Twenty-six rows across seven titled sections, roughly two and a half Pixel 8 viewports of
+ * scrolling to reach Log Out. The individual settings were not deleted; they move to the five
+ * detail screens this menu points at. What is here now is the summary a user actually opens
+ * Profile for: who is signed in, what plan they are on, five ways further in, and a way out.
+ *
+ * ── Why it fits without scrolling ───────────────────────────────────────────
+ * Every height is declared in `profile-metrics.ts` and asserted against the Pixel 8 budget in
+ * `__tests__/profile-metrics.test.ts` — 598 dp of content against 840 dp of usable height. Nothing
+ * is achieved by shrinking type: the type ramp is the entry/auth lock's, unchanged, and the saving
+ * comes entirely from cutting content that belongs on other screens.
+ *
+ * ── Why it still has a ScrollView ───────────────────────────────────────────
+ * A larger OS text size, a shorter device or a longer name must all be able to expand the page
+ * rather than clip it. Scrolling is therefore *enabled by measurement*: the screen compares what
+ * the content actually laid out to against the viewport it actually has, and turns scrolling on
+ * only when there is something to scroll to. At the reference metrics that comparison is false, so
+ * nothing scrolls and nothing hides.
+ *
+ * ── The provider lives here ─────────────────────────────────────────────────
+ * `ComingLaterProvider` wraps the body so the three unbuilt menu rows share one dialog mounted once
+ * beside the page, rather than three modals mounted inside three rows.
  */
 export function ProfileHomeScreen() {
+  return (
+    <ComingLaterProvider>
+      <ProfileHomeBody />
+      <ComingLaterSheet />
+    </ComingLaterProvider>
+  );
+}
+
+function ProfileHomeBody() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { dp } = useEntryAuthMetrics();
-  const { user } = useAuth();
+
+  const { status, user } = useAuth();
   const { signOut } = useAuthActions();
-  const { entitlement, seatUsage, isMockMode } = useEntitlement();
-  const { refreshSeatUsage } = useEntitlementActions();
+  const { entitlement, isResolved, seatUsage, isMockMode } = useEntitlement();
+  const { refresh, refreshSeatUsage } = useEntitlementActions();
+  const { showComingLater } = useComingLaterActions();
 
-  const isPaid = entitlement.plan !== 'free';
-  const isFamily = entitlement.plan === 'premium_family';
-  const hasFamily = canUseSharedFamily(entitlement);
-  const periodEnd = formatRenewalDate(entitlement.currentPeriodEnd);
+  const record = useProfileRecord(user?.id ?? null);
+  // An entitlement that has not resolved after the grace period is treated as a failed load.
+  const entitlementUnavailable = useLoadTimeout(!isResolved, ENTITLEMENT_GRACE_MS);
 
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+
+  /**
+   * Signed out — leave, without drawing anything.
+   *
+   * `dismissAll` before `replace` is what makes Back unable to return: replacing alone would swap
+   * Profile for Authentication while leaving Main Home beneath it in the stack.
+   */
   useEffect(() => {
-    if (hasFamily) {
-      void refreshSeatUsage();
+    if (status !== 'signed-out') {
+      return;
     }
+    if (router.canDismiss()) {
+      router.dismissAll();
+    }
+    router.replace(authRoutes.welcome);
+  }, [router, status]);
+
+  const hasFamily = canUseSharedFamily(entitlement);
+  useEffect(() => {
+    if (!hasFamily) {
+      return;
+    }
+    // A failed read leaves `seatUsage` null, which the membership card renders as *no* seat line
+    // rather than as a guessed one.
+    void refreshSeatUsage().catch(() => undefined);
   }, [hasFamily, refreshSeatUsage]);
 
-  const displayName = user?.fullName ?? profileCopy.unknownName;
-  const initials = displayName
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('');
+  const openComingLater = useCallback(
+    (feature: string, intendedRoute: string) => {
+      showComingLater({ feature, intendedRoute });
+    },
+    [showComingLater],
+  );
+
+  const openMenuItem = useCallback(
+    (item: ProfileMenuItem) => {
+      if (item.available === null) {
+        openComingLater(item.label, item.intended);
+        return;
+      }
+      router.push(item.available);
+    },
+    [openComingLater, router],
+  );
+
+  const openEdit = useCallback(() => {
+    if (PROFILE_EDIT_ROUTE === null) {
+      openComingLater(profileCopy.menu.personalInformation, '/profile/edit');
+      return;
+    }
+    router.push(PROFILE_EDIT_ROUTE);
+  }, [openComingLater, router]);
+
+  const openHelp = useCallback(() => {
+    if (PROFILE_HELP_ROUTE === null) {
+      openComingLater(profileCopy.menu.helpSupport, '/profile/help');
+      return;
+    }
+    router.push(PROFILE_HELP_ROUTE);
+  }, [openComingLater, router]);
+
+  const handleSignOut = useCallback(async () => {
+    // The real service, through the auth provider. Navigation happens only after it resolves.
+    await signOut();
+    if (router.canDismiss()) {
+      router.dismissAll();
+    }
+    router.replace(authRoutes.welcome);
+  }, [router, signOut]);
+
+  if (status === 'signed-out') {
+    // The effect above is already navigating. Rendering nothing is the point: there is no honest
+    // Profile to draw for a user who is not signed in, and a placeholder one would be a fake.
+    return <View style={styles.blank} testID="profile-signed-out" />;
+  }
+
+  /**
+   * The name, from the durable record where possible and the session's cached copy otherwise.
+   *
+   * Neither is a guess: `profiles.full_name` is the record, and `user.fullName` is the session's
+   * own copy of it. The fallback is what keeps the card populated while offline.
+   */
+  const displayName = record.fullName ?? user?.fullName ?? null;
+  const identityLoading =
+    status !== 'signed-in' || (record.status === 'loading' && displayName === null);
 
   return (
-    <View style={styles.page} testID="profile-home">
+    <AuthScaffold testID="profile-home">
       <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: dp(subscriptionLayout.pagePadding),
-          paddingBottom: dp(28),
-          rowGap: dp(subscriptionLayout.cardGap),
-        }}
+        // Measured, not predicted — see the note on `shouldEnableScroll`.
+        scrollEnabled={shouldEnableScroll(contentHeight, viewportHeight)}
+        onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}
+        onContentSizeChange={(_width, height) => setContentHeight(height)}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          rowGap: dp(PROFILE_LAYOUT.sectionGap),
+          // The inset is added to a fixed margin rather than replacing it, so the logout row never
+          // sits flush against the gesture bar.
+          paddingBottom: insets.bottom + dp(PROFILE_LAYOUT.bottomPadding),
+        }}
+        testID="profile-home-scroll"
       >
-        <View style={[styles.header, { minHeight: dp(subscriptionLayout.minTouchTarget) }]}>
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            hitSlop={10}
-            style={{
-              width: dp(subscriptionLayout.minTouchTarget),
-              height: dp(subscriptionLayout.minTouchTarget),
-              justifyContent: 'center',
-            }}
-            testID="profile-back"
-          >
-            <View
-              style={{
-                width: dp(10),
-                height: dp(10),
-                borderLeftWidth: 2,
-                borderBottomWidth: 2,
-                borderColor: subscriptionColors.textPrimary,
-                transform: [{ rotate: '45deg' }],
-              }}
-            />
-          </Pressable>
-          <EntryAuthText
-            token="titleCompact"
-            accessibilityRole="header"
-            color={subscriptionColors.textPrimary}
-          >
-            {profileCopy.title}
-          </EntryAuthText>
-          <View style={{ width: dp(subscriptionLayout.minTouchTarget) }} />
-        </View>
+        <ProfileHeader onBack={() => router.dismissTo(globalRoutes.home)} onHelp={openHelp} />
 
-        {/* Identity. The plan badge is read from live entitlement, never assumed. */}
-        <View
-          style={[
-            styles.card,
-            {
-              padding: dp(subscriptionLayout.cardPadding),
-              borderRadius: dp(subscriptionLayout.cardRadius),
-              rowGap: dp(subscriptionLayout.rowGap),
-            },
-          ]}
-          testID="profile-identity"
-        >
-          <View style={[styles.identityRow, { columnGap: dp(12) }]}>
-            {profileAvatar === undefined ? (
-              <View
-                style={[
-                  styles.avatarFallback,
-                  { width: dp(56), height: dp(56), borderRadius: dp(28) },
-                ]}
-              >
-                <EntryAuthText token="titleCompact" color={subscriptionColors.accent}>
-                  {initials}
-                </EntryAuthText>
-              </View>
-            ) : (
-              <Image
-                source={profileAvatar}
-                style={{ width: dp(56), height: dp(56), borderRadius: dp(28) }}
-                contentFit="cover"
-                accessible
-                accessibilityRole="image"
-                accessibilityLabel={`${displayName}'s profile picture`}
-                testID="profile-avatar"
-              />
-            )}
+        <ProfileIdentityCard
+          fullName={displayName}
+          email={user?.email ?? null}
+          // Null until entitlement resolves. Never defaulted to Free.
+          planName={isResolved ? planNames[entitlement.plan] : null}
+          isPaidPlan={isResolved && entitlement.plan !== 'free'}
+          isLoading={identityLoading}
+          {...(record.status === 'unavailable' ? { onRetry: record.retry } : {})}
+          onEdit={openEdit}
+        />
 
-            <View style={[styles.identityText, { rowGap: dp(3) }]}>
-              <EntryAuthText token="button" color={subscriptionColors.textPrimary}>
-                {displayName}
-              </EntryAuthText>
-              <EntryAuthText token="caption" color={subscriptionColors.textSecondary}>
-                {user?.email ?? profileCopy.unknownEmail}
-              </EntryAuthText>
-              <PlanBadge
-                label={planNames[entitlement.plan]}
-                tone={isPaid ? 'accent' : 'neutral'}
-                testID="profile-plan-badge"
-              />
-            </View>
-          </View>
+        <ProfileMembershipCard
+          presentation={isResolved ? membershipPresentation(entitlement, seatUsage) : null}
+          isUnavailable={!isResolved && entitlementUnavailable}
+          showDevelopmentBadge={isMockMode}
+          onPrimary={() =>
+            router.push(
+              entitlement.plan === 'free' ? subscriptionRoutes.welcome : subscriptionRoutes.manage,
+            )
+          }
+          // The existing restore flow, which runs the real handler and reports its own result.
+          // Nothing here invents a success.
+          onRestore={() => router.push(subscriptionRoutes.restore)}
+          onRetry={() => void refresh().catch(() => undefined)}
+        />
 
-          <Pressable
-            onPress={() => router.push('/profile/edit')}
-            accessibilityRole="button"
-            style={[
-              styles.editButton,
-              {
-                minHeight: dp(subscriptionLayout.minTouchTarget),
-                borderRadius: dp(subscriptionLayout.buttonRadius),
-              },
-            ]}
-            testID="profile-edit"
-          >
-            <EntryAuthText token="label" color={subscriptionColors.accent}>
-              {profileCopy.editProfile}
-            </EntryAuthText>
-          </Pressable>
-        </View>
+        <ProfileMenuCard onSelect={openMenuItem} />
 
-        {/* A — Account */}
-        <ProfileSection title={profileCopy.sections.account} testID="profile-section-account">
-          <ProfileRow
-            label={profileCopy.rows.personalInfo}
-            onPress={() => router.push('/profile/edit')}
-            testID="row-personal"
-          />
-          <ProfileRow label={profileCopy.rows.emailAddress} comingLater testID="row-email" />
-          <ProfileRow label={profileCopy.rows.passwordSecurity} comingLater testID="row-security" />
-        </ProfileSection>
-
-        {/* B — Subscription. Renewal dates come from entitlement or are omitted; never invented. */}
-        <ProfileSection
-          title={profileCopy.sections.subscription}
-          testID="profile-section-subscription"
-        >
-          <ProfileRow
-            label={profileCopy.rows.currentPlan}
-            value={planNames[entitlement.plan]}
-            testID="row-current-plan"
-          />
-          {isPaid ? (
-            <>
-              <ProfileRow
-                label={profileCopy.rows.status}
-                value={statusLabels[entitlement.status]}
-                testID="row-status"
-              />
-              <ProfileRow
-                label={profileCopy.rows.billingPeriod}
-                value={
-                  entitlement.billingPeriod === 'yearly' ? profileCopy.yearly : profileCopy.monthly
-                }
-                testID="row-billing-period"
-              />
-              {periodEnd === null ? null : (
-                <ProfileRow
-                  label={
-                    statusGrantsPaidAccess(entitlement.status)
-                      ? profileCopy.rows.renews
-                      : profileCopy.rows.expires
-                  }
-                  value={periodEnd}
-                  testID="row-renewal"
-                />
-              )}
-              <ProfileRow
-                label={profileCopy.rows.manageSubscription}
-                onPress={() => router.push(subscriptionRoutes.manage)}
-                testID="row-manage-subscription"
-              />
-            </>
-          ) : (
-            <>
-              <ProfileRow label={profileCopy.faithAlwaysFree} testID="row-faith-free" />
-              <ProfileRow
-                label={profileCopy.rows.viewPremium}
-                onPress={() => router.push(subscriptionRoutes.welcome)}
-                testID="row-view-premium"
-              />
-            </>
-          )}
-          <ProfileRow
-            label={profileCopy.rows.restorePurchases}
-            onPress={() => router.push(subscriptionRoutes.restore)}
-            testID="row-restore"
-          />
-          {isMockMode ? (
-            <ProfileRow label={profileCopy.mockNotice} testID="row-mock-notice" />
-          ) : null}
-        </ProfileSection>
-
-        {/* C — Family. Three different presentations; no invented members in any of them. */}
-        <ProfileSection title={profileCopy.sections.family} testID="profile-section-family">
-          {hasFamily && isFamily ? (
-            <>
-              <ProfileRow
-                label={profileCopy.rows.seats}
-                value={
-                  seatUsage === null
-                    ? profileCopy.loading
-                    : `${seatUsage.used} of ${seatUsage.limit}`
-                }
-                testID="row-seats"
-              />
-              {entitlement.isFamilyOrganizer ? (
-                <>
-                  <ProfileRow
-                    label={profileCopy.rows.manageFamily}
-                    onPress={() => router.push(familyRoutes.members)}
-                    testID="row-manage-family"
-                  />
-                  <ProfileRow
-                    label={profileCopy.rows.inviteMember}
-                    onPress={() => router.push(familyRoutes.invite)}
-                    testID="row-invite"
-                  />
-                  <ProfileRow
-                    label={profileCopy.rows.pendingInvitations}
-                    onPress={() => router.push(familyRoutes.invitations)}
-                    testID="row-pending"
-                  />
-                </>
-              ) : (
-                <>
-                  <ProfileRow label={profileCopy.memberNotice} testID="row-member-notice" />
-                  <ProfileRow
-                    label={profileCopy.rows.familyPrivacy}
-                    onPress={() => router.push(familyRoutes.members)}
-                    testID="row-family-privacy"
-                  />
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <ProfileRow label={familyWording.headline} testID="row-family-pitch" />
-              <ProfileRow
-                label={profileCopy.rows.viewFamilyPlan}
-                onPress={() => router.push(subscriptionRoutes.family('yearly'))}
-                testID="row-view-family"
-              />
-            </>
-          )}
-        </ProfileSection>
-
-        {/* D — Preferences. Each opens a real settings screen. */}
-        <ProfileSection
-          title={profileCopy.sections.preferences}
-          testID="profile-section-preferences"
-        >
-          <ProfileRow
-            label={profileCopy.rows.notifications}
-            onPress={() => router.push('/settings/notifications')}
-            testID="row-notifications"
-          />
-          <ProfileRow
-            label={profileCopy.rows.language}
-            onPress={() => router.push('/settings/language')}
-            testID="row-language"
-          />
-          <ProfileRow
-            label={profileCopy.rows.appearance}
-            onPress={() => router.push('/settings/appearance')}
-            testID="row-appearance"
-          />
-          <ProfileRow
-            label={profileCopy.rows.accessibility}
-            onPress={() => router.push('/settings/accessibility')}
-            testID="row-accessibility"
-          />
-        </ProfileSection>
-
-        {/* E — Privacy and data */}
-        <ProfileSection title={profileCopy.sections.privacy} testID="profile-section-privacy">
-          <ProfileRow
-            label={profileCopy.rows.privacyControls}
-            onPress={() => router.push('/settings/privacy')}
-            testID="row-privacy"
-          />
-          <ProfileRow
-            label={profileCopy.rows.aiPermissions}
-            onPress={() => router.push('/settings/ai-permissions')}
-            testID="row-ai-permissions"
-          />
-          <ProfileRow label={profileCopy.rows.downloadData} comingLater testID="row-download" />
-          <ProfileRow
-            label={profileCopy.rows.deleteAccount}
-            comingLater
-            destructive
-            testID="row-delete-account"
-          />
-        </ProfileSection>
-
-        {/* F — Help */}
-        <ProfileSection title={profileCopy.sections.help} testID="profile-section-help">
-          <ProfileRow
-            label={profileCopy.rows.helpCenter}
-            onPress={() => router.push('/settings/help')}
-            testID="row-help"
-          />
-          <ProfileRow label={profileCopy.rows.contactSupport} comingLater testID="row-support" />
-          <ProfileRow label={profileCopy.rows.reportProblem} comingLater testID="row-report" />
-          <ProfileRow label={profileCopy.rows.terms} comingLater testID="row-terms" />
-          <ProfileRow
-            label={profileCopy.rows.privacyPolicy}
-            comingLater
-            testID="row-privacy-policy"
-          />
-          <ProfileRow label={profileCopy.rows.about} comingLater testID="row-about" />
-        </ProfileSection>
-
-        {/* G — Session */}
-        <ProfileSection title={profileCopy.sections.session} testID="profile-section-session">
-          <ProfileRow
-            label={profileCopy.rows.logOut}
-            destructive
-            onPress={() => {
-              // Replace, so Back cannot return into an authenticated screen after signing out.
-              void signOut().finally(() => router.replace(globalRoutes.splash));
-            }}
-            testID="row-log-out"
-          />
-        </ProfileSection>
-
-        <Pressable
-          onPress={() => router.push(moduleRoutes.faith.home)}
-          accessibilityRole="button"
-          style={{ minHeight: dp(subscriptionLayout.minTouchTarget), justifyContent: 'center' }}
-          testID="profile-faith"
-        >
-          <EntryAuthText token="caption" align="center" color={subscriptionColors.textSecondary}>
-            {profileCopy.faithAlwaysFree}
-          </EntryAuthText>
-        </Pressable>
+        <ProfileLogoutRow onConfirm={handleSignOut} />
       </ScrollView>
-    </View>
+    </AuthScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  page: {
+  blank: {
     flex: 1,
     backgroundColor: subscriptionColors.pageBackground,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  card: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: subscriptionColors.border,
-    backgroundColor: subscriptionColors.surface,
-  },
-  identityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  identityText: {
-    flex: 1,
-    alignItems: 'flex-start',
-  },
-  avatarFallback: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: subscriptionColors.accentSurface,
-  },
-  editButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: subscriptionColors.accent,
   },
 });
