@@ -86,6 +86,9 @@ function toProfile(user: AuthUser): UserProfile {
     fullName: full,
     givenName: given,
     ...(user.avatarUrl === null ? {} : { avatarUri: user.avatarUrl }),
+    // Spread rather than assigned, so a provider with no address leaves the field absent instead
+    // of setting it to an empty string the Profile card would then render as a blank line.
+    ...(user.email === null || user.email === undefined ? {} : { email: user.email }),
     subscriptionTier: 'free',
     greeting: 'Assalamu Alaikum,',
   };

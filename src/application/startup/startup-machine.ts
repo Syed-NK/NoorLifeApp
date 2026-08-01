@@ -20,6 +20,8 @@ export type StartupState =
   | 'resolving'
   | 'onboarding'
   | 'authentication'
+  /** Signed in, but the account still owes its initial plan choice. */
+  | 'subscription_choice'
   | 'authenticated_home'
   | 'startup_error';
 
@@ -59,6 +61,17 @@ export type StartupInput = {
   readonly isSignedIn: boolean | null;
   /** Onboarding completed at the current version. Null while still unknown. */
   readonly hasCompletedOnboarding: boolean | null;
+  /**
+   * Whether the signed-in account has finished the post-signup plan introduction.
+   *
+   * Null means not yet known — including the case where the migration adding the column has not
+   * been applied. Null must **not** be read as completed: doing so is what sends a brand-new
+   * account straight past the subscription introduction into Main Home, which is the defect this
+   * field exists to fix. Only `true` lets a signed-in user through to Home.
+   *
+   * Irrelevant while signed out, where it is never consulted.
+   */
+  readonly hasCompletedPlanSelection: boolean | null;
   /** True when a startup dependency reported a hard failure. */
   readonly failed: boolean;
   /**
@@ -70,9 +83,17 @@ export type StartupInput = {
   readonly isFirstLaunch: boolean;
 };
 
-/** Everything the machine has been asked for has an answer. */
+/**
+ * Everything the machine has been asked for has an answer.
+ *
+ * The plan-selection answer is required only when signed in — a signed-out user has no account for
+ * it to describe, and waiting on it would hold the splash up for no reason.
+ */
 export function isResolved(input: StartupInput): boolean {
-  return input.fontsReady && input.isSignedIn !== null && input.hasCompletedOnboarding !== null;
+  if (!input.fontsReady || input.isSignedIn === null || input.hasCompletedOnboarding === null) {
+    return false;
+  }
+  return input.isSignedIn ? input.hasCompletedPlanSelection !== null : true;
 }
 
 /** The minimum branded-splash duration that applies to this launch. */
@@ -107,7 +128,18 @@ export function nextStartupState(input: StartupInput): StartupState {
   }
 
   if (input.isSignedIn === true) {
-    return 'authenticated_home';
+    /**
+     * The one authoritative post-auth decision.
+     *
+     * A live Supabase session is not sufficient to reach Main Home. Signing up produces a session
+     * immediately, and treating that as "done" is precisely what skipped Account Success and the
+     * subscription introduction. The account must also have recorded a plan choice.
+     *
+     * Strictly `=== true`: an unknown answer sends the user to the plan chooser, which is
+     * recoverable — Continue with Free is one tap — whereas wrongly skipping it leaves the account
+     * permanently past a step it never took.
+     */
+    return input.hasCompletedPlanSelection === true ? 'authenticated_home' : 'subscription_choice';
   }
   return input.hasCompletedOnboarding === true ? 'authentication' : 'onboarding';
 }
@@ -117,6 +149,7 @@ export function isDestination(state: StartupState): boolean {
   return (
     state === 'onboarding' ||
     state === 'authentication' ||
+    state === 'subscription_choice' ||
     state === 'authenticated_home' ||
     state === 'startup_error'
   );

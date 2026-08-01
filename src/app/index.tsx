@@ -2,6 +2,7 @@ import { Redirect } from 'expo-router';
 import { View } from 'react-native';
 
 import { authRoutes, globalRoutes, onboardingRoutes } from '@application/navigation/routes';
+import { subscriptionRoutes } from '@features/subscription/subscription-routes';
 import { useNativeSplashHandoff } from '@application/startup/use-native-splash-handoff';
 import { useStartupRouting } from '@application/startup/use-startup-routing';
 import { SplashScreen } from '@features/entry-auth/screens/splash-screen';
@@ -58,6 +59,10 @@ function hrefFor(destination: string): Parameters<typeof Redirect>[0]['href'] {
   switch (destination) {
     case 'authenticated_home':
       return globalRoutes.home as Parameters<typeof Redirect>[0]['href'];
+    case 'subscription_choice':
+      // Signed in, but the account has not chosen a plan. It resumes here rather than at Main Home,
+      // so an interrupted signup picks up where it left off on the next launch.
+      return subscriptionRoutes.welcome;
     case 'onboarding':
       return onboardingRoutes.one as Parameters<typeof Redirect>[0]['href'];
     default:

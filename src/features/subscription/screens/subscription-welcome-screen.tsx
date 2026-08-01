@@ -17,10 +17,14 @@ import { SubscriptionScreenScaffold } from '../components/subscription-screen-sc
 import {
   SubscriptionErrorState,
   SubscriptionLoadingState,
+  SubscriptionStateBanner,
 } from '../components/subscription-states';
 import { yearlyPerMonth } from '../domain/pricing';
 import type { SubscriptionPlan } from '../domain/subscription';
-import { useEntitlement } from '../services/entitlement-context';
+import { useAuth } from '@application/providers/auth-provider';
+import { completeAccountJourney } from '@services/account/account-journey';
+
+import { useEntitlement, useEntitlementActions } from '../services/entitlement-context';
 import {
   billingCopy,
   familyPlanCopy,
@@ -50,7 +54,11 @@ export function SubscriptionWelcomeScreen() {
   const router = useRouter();
   const { dp } = useEntryAuthMetrics();
   const { isMockMode } = useEntitlement();
+  const { refresh } = useEntitlementActions();
+  const { user } = useAuth();
   const offers = usePlanOffers();
+  const [freeError, setFreeError] = useState<string | null>(null);
+  const [isChoosingFree, setIsChoosingFree] = useState(false);
 
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly');
   const [selected, setSelected] = useState<SubscriptionPlan | null>(null);
@@ -58,10 +66,51 @@ export function SubscriptionWelcomeScreen() {
   const single = offers.offerFor('premium_single', period);
   const family = offers.offerFor('premium_family', period);
 
+  /**
+   * Continue with Free.
+   *
+   * ── Why this writes to the server before routing ────────────────────────────
+   * The plan choice is a property of the account, not the device. Routing to Home without
+   * recording it would send the user back to this screen on their next launch — and on every other
+   * device they sign in on.
+   *
+   * A write failure does not trap the user. The brief requires Continue with Free to always work,
+   * so the route proceeds and the failure is surfaced rather than swallowed; the cost is being
+   * asked once more, which is the right way to be wrong here.
+   */
   const continueFree = () => {
-    // Replaces rather than pushes: choosing Free ends the subscription flow, and Back from Main
-    // Home must not return to a paywall the user has already declined.
-    router.replace(globalRoutes.home);
+    if (isChoosingFree) {
+      return;
+    }
+    setIsChoosingFree(true);
+    setFreeError(null);
+
+    const finish = () => {
+      // Replaces rather than pushes: choosing Free ends the subscription flow, and Back from Main
+      // Home must not return to a paywall the user has already declined.
+      router.replace(globalRoutes.home);
+    };
+
+    if (user === null) {
+      finish();
+      return;
+    }
+
+    void completeAccountJourney(user.id, 'free')
+      .then(async (result) => {
+        if (!result.ok) {
+          if (__DEV__) {
+            console.warn(`[journey] could not record the free plan choice: ${result.reason}`);
+          }
+          setFreeError(result.reason);
+        }
+        // Refreshed either way, so entitlement state matches what the app is about to show.
+        await refresh();
+      })
+      .finally(() => {
+        setIsChoosingFree(false);
+        finish();
+      });
   };
 
   const openSelectedPlan = () => {
@@ -85,6 +134,7 @@ export function SubscriptionWelcomeScreen() {
       <SecondaryButton
         label={welcomeCopy.continueFree}
         onPress={continueFree}
+        disabled={isChoosingFree}
         testID="subscription-welcome-free"
       />
       <RestorePurchasesButton
@@ -117,6 +167,14 @@ export function SubscriptionWelcomeScreen() {
         />
       ) : (
         <View style={{ rowGap: dp(subscriptionLayout.cardGap) }}>
+          {freeError === null ? null : (
+            <SubscriptionStateBanner
+              tone="warning"
+              message={`Your plan choice could not be saved: ${freeError}`}
+              testID="subscription-welcome-journey-error"
+            />
+          )}
+
           <BillingPeriodToggle
             value={period}
             onChange={setPeriod}

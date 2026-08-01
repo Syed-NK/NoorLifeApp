@@ -13,6 +13,13 @@ export type UserProfile = {
   readonly fullName: string;
   /** Short name used in greetings, e.g. "Ahmed". */
   readonly givenName: string;
+  /**
+   * Sign-in address. Absent when the provider does not supply one.
+   *
+   * Added for the Profile identity card, which must show the real address rather than a
+   * placeholder — extended per feature, as this model's contract describes.
+   */
+  readonly email?: string;
   /** Avatar URI. Absent means the UI falls back to an initial. */
   readonly avatarUri?: string;
   readonly subscriptionTier: SubscriptionTier;

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@application/providers/auth-provider';
 import { useFontReadiness } from '@application/providers/font-provider';
 import { readOnboardingState } from '@services/onboarding/onboarding-preferences';
+import { readAccountJourney } from '@services/account/account-journey';
 
 import { STARTUP_TIMEOUT_MS, nextStartupState, type StartupState } from './startup-machine';
 
@@ -34,6 +35,7 @@ export function useStartupRouting(): StartupRouting {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [isFirstLaunch, setIsFirstLaunch] = useState(true);
+  const [planSelected, setPlanSelected] = useState<boolean | null>(null);
 
   /**
    * The moment the branded splash mounted.
@@ -98,11 +100,53 @@ export function useStartupRouting(): StartupRouting {
     }
   }, [fonts.error]);
 
+  /**
+   * Journey state for a signed-in account, read alongside everything else.
+   *
+   * Only attempted once the session resolves, because it needs a user id. `unconfigured` maps to
+   * **false**, not true: the migration adding these columns is not applied yet, and treating "we
+   * cannot tell" as "already chose a plan" is precisely the bug that sends a new account straight
+   * to Main Home. False sends them to the plan chooser, which costs one tap to leave.
+   */
+  useEffect(() => {
+    if (auth.status === 'unknown') {
+      return;
+    }
+    if (auth.status === 'signed-out' || auth.user === null) {
+      // Nothing to set: the machine input below substitutes `false` whenever the user is not
+      // signed in, so writing state here would only be a synchronous setState inside an effect —
+      // a cascading render for a value that is already known.
+      return;
+    }
+
+    let cancelled = false;
+    readAccountJourney(auth.user.id).then(
+      (journey) => {
+        if (cancelled) {
+          return;
+        }
+        if (journey.status === 'unconfigured' && __DEV__) {
+          console.warn(`[startup] account journey unavailable: ${journey.reason}`);
+        }
+        setPlanSelected(journey.status === 'completed');
+      },
+      () => {
+        if (!cancelled) {
+          setPlanSelected(false);
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.status, auth.user]);
+
   const state = nextStartupState({
     elapsedMs,
     fontsReady: fonts.ready,
     isSignedIn: auth.status === 'unknown' ? null : auth.status === 'signed-in',
     hasCompletedOnboarding: onboardingCompleted,
+    hasCompletedPlanSelection: auth.status === 'signed-in' ? planSelected : false,
     /**
      * No input can currently set this.
      *

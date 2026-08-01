@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
-import { globalRoutes } from '@application/navigation/routes';
+import { subscriptionRoutes } from '@features/subscription/subscription-routes';
 
 import { AuthIllustration } from '../components/auth-illustration';
 import { AuthScaffold } from '../components/auth-scaffold';
@@ -70,7 +70,11 @@ export function AccountReadyScreen() {
 
         <PrimaryButton
           label={accountReadyCopy.submit}
-          onPress={() => router.replace(globalRoutes.home)}
+          // To the plan chooser, not Main Home. Routing straight to Home from here is what
+          // bypassed the subscription introduction entirely — the screen existed and simply handed
+          // the user past the step it was meant to introduce. `replace`, so Back cannot reopen the
+          // signup form behind a created account.
+          onPress={() => router.replace(subscriptionRoutes.welcome)}
           testID="account-ready-submit"
         />
       </View>
