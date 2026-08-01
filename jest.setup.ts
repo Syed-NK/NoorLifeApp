@@ -104,6 +104,30 @@ process.env.EXPO_PUBLIC_SUPABASE_URL = 'http://localhost:54321';
 process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'test-publishable-key';
 
 /**
+ * The `public.profiles` row the double serves, and the values it is restored to.
+ *
+ * Held outside the `jest.mock` factory so `beforeEach` can reset it. A write through the double
+ * *mutates* this row — see the note on `from` below — which means a test that saves a new name and a
+ * later test that expects the original one would otherwise interfere.
+ *
+ * The `mock` name prefix is required: `jest.mock` factories are hoisted above variable declarations,
+ * and Jest only permits a factory to close over an out-of-scope variable when its name starts with
+ * `mock`.
+ */
+const mockProfileRow: {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  onboarding_completed: boolean;
+} = {
+  id: 'test-user-id',
+  full_name: 'Ahmed Al-Rashid',
+  avatar_url: null,
+  onboarding_completed: true,
+};
+const MOCK_PROFILE_DEFAULTS = { ...mockProfileRow };
+
+/**
  * Supabase client double.
  *
  * Resolves a confirmed session for a demo user, which is the realistic precondition for any screen
@@ -121,13 +145,16 @@ jest.mock('@supabase/supabase-js', () => {
       email: 'ahmed@example.com',
       email_confirmed_at: '2026-01-01T00:00:00Z',
       user_metadata: { full_name: 'Ahmed Al-Rashid' },
+      /**
+       * Where Supabase records the sign-in method.
+       *
+       * Deliberately *not* updated by a profile write, because the real backend does not update it
+       * either: `user_metadata.full_name` is the copy taken at signup, and `public.profiles` is the
+       * record from then on. Keeping the two able to disagree is what lets a test prove the app
+       * prefers the durable row.
+       */
+      app_metadata: { provider: 'email' },
     },
-  };
-  const profile = {
-    id: 'test-user-id',
-    full_name: 'Ahmed Al-Rashid',
-    avatar_url: null,
-    onboarding_completed: true,
   };
   return {
     createClient: () => ({
@@ -145,12 +172,32 @@ jest.mock('@supabase/supabase-js', () => {
         signInWithOAuth: () => Promise.resolve({ data: { url: null }, error: null }),
         signInWithIdToken: () => Promise.resolve({ data: { session }, error: null }),
       },
+      /**
+       * The query builder, as supabase-js actually shapes it.
+       *
+       * Every method returns the builder and the builder itself is thenable, which is what makes
+       * `.from(t).update(v).eq('id', x)` awaitable — the real client works this way, and a double
+       * whose `update` returned a bare promise made `.eq` a type error at runtime that only
+       * survived because its one caller swallowed failures.
+       *
+       * ── Why a write actually writes ─────────────────────────────────────────
+       * `update` applies the patch to the stored row, so a subsequent read returns what was
+       * written. A double that accepted writes and then kept serving the old value would make
+       * "Profile Home shows the new name without a restart" pass or fail for reasons that have
+       * nothing to do with the app — the read would be stale no matter what the app did.
+       */
       from: () => {
         const chain = {
           select: () => chain,
           eq: () => chain,
-          update: () => Promise.resolve({ error: null }),
-          maybeSingle: () => Promise.resolve({ data: profile, error: null }),
+          update: (patch: Record<string, unknown>) => {
+            Object.assign(mockProfileRow, patch);
+            return chain;
+          },
+          // A copy, so a caller holding the result cannot mutate the stored row by accident.
+          maybeSingle: () => Promise.resolve({ data: { ...mockProfileRow }, error: null }),
+          then: (resolve: (value: { data: null; error: null }) => unknown) =>
+            Promise.resolve(resolve({ data: null, error: null })),
         };
         return chain;
       },
@@ -195,4 +242,6 @@ beforeEach(() => {
   for (const value of Object.values(mockRouterInstance)) {
     value.mockClear();
   }
+  // The profile row is writable, so it is restored between tests.
+  Object.assign(mockProfileRow, MOCK_PROFILE_DEFAULTS);
 });

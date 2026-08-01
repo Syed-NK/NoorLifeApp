@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import * as authService from '@services/auth/auth.service';
+import * as profileService from '@services/profile/profile.service';
 
 /**
  * The durable profile row behind the identity card.
@@ -82,6 +83,19 @@ export function useProfileRecord(userId: string | null): ProfileRecordState {
       cancelled = true;
     };
   }, [userId, attempt]);
+
+  /**
+   * A successful write anywhere re-reads the row here.
+   *
+   * Profile Home stays mounted underneath Personal Information, so without this it would still be
+   * holding the name it read before the edit. Re-reading rather than adopting the writer's string
+   * keeps the card showing what the database holds. The last known name stays on screen throughout,
+   * so the refresh is invisible rather than a blank-then-refill.
+   */
+  useEffect(
+    () => profileService.subscribeToProfileChanges(() => setAttempt((value) => value + 1)),
+    [],
+  );
 
   const retry = useCallback(() => {
     setAttempt((value) => value + 1);

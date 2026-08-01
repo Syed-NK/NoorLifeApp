@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Profile Home does not reach into Main Home.
+ * Profile does not reach into Main Home, and Profile's presentation does not reach into Supabase.
  *
  * ── What this guards, and what it does not ──────────────────────────────────
  * Main Home's entitlement work is complete and out of scope for this phase. That the files are
@@ -59,5 +59,42 @@ describe('the Profile feature', () => {
       }
     }
     expect([...homeImports].sort()).toEqual(['module-pictograms']);
+  });
+});
+
+/**
+ * Presentation never imports the Supabase client.
+ *
+ * ── Why the whole feature is checked, not just the screens ──────────────────
+ * A screen that imports a component that imports the client is exactly as coupled as a screen that
+ * imports it directly, and rather harder to notice. The rule is therefore stated over every source
+ * file in the feature: screens, components and hooks all go through the service layer, which owns
+ * the client and the error mapping.
+ *
+ * The hooks and screens *are* allowed to import from `@services/…`. That is the boundary working as
+ * intended — the point is that nothing here knows what is behind it.
+ */
+describe('the Profile presentation layer', () => {
+  const files = sourceFiles(PROFILE_ROOT);
+
+  it.each(['@/lib/supabase', '@supabase/supabase-js', 'createClient('])(
+    'never references %s',
+    (forbidden) => {
+      const offenders = files
+        .filter((file) => readFileSync(file, 'utf8').includes(forbidden))
+        .map((file) => file.replace(PROFILE_ROOT, ''));
+      expect(offenders).toEqual([]);
+    },
+  );
+
+  it('reaches the backend only through the service and provider layers', () => {
+    const serviceImports = new Set<string>();
+    for (const file of files) {
+      for (const match of readFileSync(file, 'utf8').matchAll(/@services\/([\w/.-]+)/g)) {
+        serviceImports.add(match[1] as string);
+      }
+    }
+    // The read path and the write path. Nothing else — and in particular no client.
+    expect([...serviceImports].sort()).toEqual(['auth/auth.service', 'profile/profile.service']);
   });
 });

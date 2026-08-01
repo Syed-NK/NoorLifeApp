@@ -104,6 +104,15 @@ describe('the five menu rows', () => {
     expect(mockRouter.push).toHaveBeenCalledWith('/profile/edit');
   });
 
+  it('opens the membership detail screen from Family & Membership', async () => {
+    await renderProfile();
+    await fireEvent.press(screen.getByTestId('profile-menu-family-membership'));
+
+    // Built in Phase 6C-2A. The centralized note is gone from this row because the screen exists.
+    expect(mockRouter.push).toHaveBeenCalledWith('/profile/family-membership');
+    expect(screen.queryByTestId('profile-coming-later-panel')).toBeNull();
+  });
+
   it('opens the existing help destination from Help & Support', async () => {
     await renderProfile();
     await fireEvent.press(screen.getByTestId('profile-menu-help-support'));
@@ -112,7 +121,6 @@ describe('the five menu rows', () => {
   });
 
   it.each([
-    ['profile-menu-family-membership', 'Family & Membership'],
     ['profile-menu-preferences', 'Preferences'],
     ['profile-menu-privacy-security', 'Privacy & Security'],
   ])('explains %s honestly instead of navigating nowhere', async (testID, label) => {

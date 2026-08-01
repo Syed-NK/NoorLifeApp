@@ -10,7 +10,17 @@ import { PROFILE_LAYOUT } from '../profile-metrics';
 
 export type ProfileHeaderProps = {
   readonly onBack: () => void;
-  readonly onHelp: () => void;
+  /**
+   * Omitted on a detail screen with no useful help destination.
+   *
+   * The right slot then holds an equally sized empty box rather than collapsing, so the centred
+   * title stays on the screen's true centre whether or not Help is offered.
+   */
+  readonly onHelp?: () => void;
+  /** Defaults to "Profile". Detail screens pass their own. */
+  readonly title?: string;
+  /** Overrides the Back control's spoken label — "Back to Profile" on a detail screen. */
+  readonly backLabel?: string;
   readonly testID?: string;
 };
 
@@ -33,28 +43,63 @@ export type ProfileHeaderProps = {
  * ── No portrait here ────────────────────────────────────────────────────────
  * The module header carries a profile avatar on the right because it is a way *into* this screen.
  * On Profile itself the portrait belongs to the identity card, so the right slot is Help alone.
+ *
+ * ── One header for Profile and its detail screens ───────────────────────────
+ * Phase 6C-2A added `title`, `backLabel` and an optional `onHelp` rather than a second header
+ * component. Personal Information and Family & Membership therefore carry the same 54 dp bar, the
+ * same 36 dp discs and the same absolutely-centred title as Profile Home — because it is literally
+ * the same component, not a second one drawn to match.
  */
-export function ProfileHeader({ onBack, onHelp, testID = 'profile-header' }: ProfileHeaderProps) {
+export function ProfileHeader({
+  onBack,
+  onHelp,
+  title = profileCopy.title,
+  backLabel = profileCopy.header.back,
+  testID = 'profile-header',
+}: ProfileHeaderProps) {
   const { dp } = useEntryAuthMetrics();
 
   const target = dp(PROFILE_LAYOUT.minTouchTarget);
   const disc = dp(PROFILE_LAYOUT.header.control);
   const glyph = dp(PROFILE_LAYOUT.header.icon);
 
+  /**
+   * How far the title layer stops short of each edge.
+   *
+   * The outer edge of the control disc: the 44 dp target starts at the header edge and the 36 dp
+   * disc is centred inside it, so the disc ends 40 dp in. The title still *centres* on the header's
+   * true middle — both insets are equal — it simply cannot reach the discs.
+   *
+   * Without this the layer spanned the full header, and at OS font scale 1.5 a long title such as
+   * "Family & Membership" ran straight under the Back arrow. The device pass caught it.
+   */
+  const titleInset = (target + disc) / 2;
+
   return (
     <View style={[styles.root, { height: dp(PROFILE_LAYOUT.header.height) }]} testID={testID}>
-      <View style={styles.titleLayer} pointerEvents="none">
+      <View
+        style={[styles.titleLayer, { left: titleInset, right: titleInset }]}
+        pointerEvents="none"
+        testID={`${testID}-title-layer`}
+      >
         <EntryAuthText
           token="titleCompact"
           align="center"
           numberOfLines={1}
-          // Capped so a large OS text size cannot push the title under the controls beside it.
-          maxFontSizeMultiplier={1.3}
+          /**
+           * Capped so a large OS text size cannot outgrow the space between the two controls.
+           *
+           * 1.2 rather than 1.3: at 1.3 the longest title this header carries measures ~288 dp
+           * against the ~281 dp the insets leave, so it ellipsised. An abbreviated screen title is
+           * a worse outcome than one rendered a step smaller, and every other element on these
+           * screens still scales without a cap.
+           */
+          maxFontSizeMultiplier={1.2}
           accessibilityRole="header"
           color={subscriptionColors.textPrimary}
           testID={`${testID}-title`}
         >
-          {profileCopy.title}
+          {title}
         </EntryAuthText>
       </View>
 
@@ -62,7 +107,7 @@ export function ProfileHeader({ onBack, onHelp, testID = 'profile-header' }: Pro
         onPress={onBack}
         accessible
         accessibilityRole="button"
-        accessibilityLabel={profileCopy.header.back}
+        accessibilityLabel={backLabel}
         style={[styles.control, { width: target, height: target }]}
         testID={`${testID}-back`}
       >
@@ -74,22 +119,27 @@ export function ProfileHeader({ onBack, onHelp, testID = 'profile-header' }: Pro
         </View>
       </Pressable>
 
-      <Pressable
-        onPress={onHelp}
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel={profileCopy.header.help}
-        accessibilityHint={profileCopy.header.helpHint}
-        style={[styles.control, { width: target, height: target }]}
-        testID={`${testID}-help`}
-      >
-        <View
-          style={[styles.disc, { width: disc, height: disc, borderRadius: disc / 2 }]}
-          pointerEvents="none"
+      {onHelp === undefined ? (
+        // The slot, without the control. Removing it entirely would slide the centred title left.
+        <View style={{ width: target, height: target }} testID={`${testID}-help-spacer`} />
+      ) : (
+        <Pressable
+          onPress={onHelp}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={profileCopy.header.help}
+          accessibilityHint={profileCopy.header.helpHint}
+          style={[styles.control, { width: target, height: target }]}
+          testID={`${testID}-help`}
         >
-          <AppIcon name="help" size={glyph} color={subscriptionColors.accent} />
-        </View>
-      </Pressable>
+          <View
+            style={[styles.disc, { width: disc, height: disc, borderRadius: disc / 2 }]}
+            pointerEvents="none"
+          >
+            <AppIcon name="help" size={glyph} color={subscriptionColors.accent} />
+          </View>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -102,8 +152,7 @@ const styles = StyleSheet.create({
   },
   titleLayer: {
     position: 'absolute',
-    left: 0,
-    right: 0,
+    // `left` and `right` are supplied by the component — see `titleInset`.
     top: 0,
     bottom: 0,
     alignItems: 'center',

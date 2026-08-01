@@ -108,6 +108,32 @@ export const PROFILE_LAYOUT = {
     paddingHorizontal: 12,
     chevron: 16,
   },
+
+  /**
+   * The Phase 6C-2A detail screens.
+   *
+   * ── Why these are bands rather than a budget ────────────────────────────────
+   * Compact Profile Home has a hard vertical budget because "the whole summary fits one viewport"
+   * is its defining claim. A detail screen makes no such claim — it is content-led and scrolls when
+   * it needs to. What still has to be fixed is the *grid*: the same page padding, the same card
+   * radius and hairline, the same 44 dp minimum, so a detail screen is recognisably the same app.
+   */
+  detail: {
+    /** Card padding. 12 rather than the summary cards' 10 — see `ProfileDetailCard`. */
+    cardPadding: 12,
+    /** The portrait on Personal Information, inside the brief's 72–88 dp band. */
+    avatar: 80,
+    /** Gap between stacked form fields. */
+    fieldGap: 12,
+    /**
+     * Height reserved for the name field, error line included.
+     *
+     * 17 label + 6 gap + 48 input + 6 gap + 16 error = 93. Reserved unconditionally, which is what
+     * makes a validation message appear *in* the field's box rather than pushing the email row,
+     * the provider row and the Save button down the page — the geometry change the brief forbids.
+     */
+    nameFieldHeight: 93,
+  },
 } as const;
 
 /**

@@ -13,9 +13,10 @@ import {
   SubscriptionLoadingState,
   SubscriptionStateBanner,
 } from '../components/subscription-states';
+import { describeRestoreOutcome } from '../domain/restore-outcome';
 import type { RestoreOutcome } from '../services/purchase-adapter';
 import { useEntitlement, useEntitlementActions } from '../services/entitlement-context';
-import { planNames, restoreCopy } from '../subscription-copy';
+import { restoreCopy } from '../subscription-copy';
 import { subscriptionColors } from '../subscription-tokens';
 
 /**
@@ -47,7 +48,8 @@ export function RestorePurchasesScreen() {
     }
   };
 
-  const presentation = describeOutcome(outcome, entitlement.plan);
+  // Shared with Family & Membership, which runs the same service inline — see `restore-outcome`.
+  const presentation = describeRestoreOutcome(outcome, entitlement.plan);
 
   return (
     <SubscriptionScreenScaffold
@@ -105,41 +107,3 @@ export function RestorePurchasesScreen() {
   );
 }
 
-type Presentation = {
-  readonly tone: 'success' | 'info' | 'warning' | 'error';
-  readonly title: string;
-  readonly body: string;
-};
-
-function describeOutcome(
-  outcome: RestoreOutcome | null,
-  plan: keyof typeof planNames,
-): Presentation | null {
-  switch (outcome) {
-    case null:
-      return null;
-    case 'restored':
-      return {
-        tone: 'success',
-        title: restoreCopy.restored(planNames[plan]),
-        body: 'Your plan is active on this device again.',
-      };
-    case 'nothing_to_restore':
-      // Informational, not an error — nothing has failed.
-      return {
-        tone: 'info',
-        title: restoreCopy.nothingFound,
-        body: restoreCopy.nothingFoundBody,
-      };
-    case 'store_unavailable':
-      return {
-        tone: 'warning',
-        title: restoreCopy.storeUnavailable,
-        body: restoreCopy.storeUnavailableBody,
-      };
-    case 'offline':
-      return { tone: 'warning', title: restoreCopy.offline, body: restoreCopy.offlineBody };
-    case 'error':
-      return { tone: 'error', title: restoreCopy.error, body: restoreCopy.errorBody };
-  }
-}

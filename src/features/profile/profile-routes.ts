@@ -16,14 +16,15 @@ import { profileCopy } from './profile-copy';
  * re-measured. It also keeps the contract visible — a reader can see what is promised and what is
  * shipped without diffing two sessions of work.
  *
- * ── Why two rows already point somewhere ────────────────────────────────────
- * `/profile/edit` and `/settings/help` are declared routes that render today. Sending a user to a
- * screen that exists is better than telling them it does not, and the brief says as much for the
- * header's Help control ("route to the existing help destination if available"). The same rule is
- * applied to the menu rows rather than a different one — but only where the existing screen is
- * unambiguously the same destination. `/family/members` is *not* substituted for
- * `/profile/family-membership`: it is the family-plan seat manager, which is not what a Free
- * account's "Family & Membership" row promises.
+ * ── Why three rows point somewhere ──────────────────────────────────────────
+ * `/profile/edit` and `/profile/family-membership` are the two detail screens Phase 6C-2A built;
+ * `/settings/help` is the existing help destination, reused because sending a user to a screen that
+ * exists is better than telling them it does not. `/family/members` was never substituted for
+ * `/profile/family-membership` — it is the family-plan seat manager over a development fixture,
+ * which is not what this row promises.
+ *
+ * Preferences and Privacy & Security remain deferred and keep the centralized note. Undoing that is
+ * still one line each, and Profile Home is still not touched to do it.
  */
 export type ProfileMenuItem = {
   readonly key: string;
@@ -50,7 +51,8 @@ export const PROFILE_MENU: readonly ProfileMenuItem[] = [
     label: profileCopy.menu.familyMembership,
     icon: 'family',
     intended: '/profile/family-membership',
-    available: null,
+    // Built in Phase 6C-2A. One line changed from `null` — Profile Home itself was not touched.
+    available: '/profile/family-membership' as Href,
     testID: 'profile-menu-family-membership',
   },
   {

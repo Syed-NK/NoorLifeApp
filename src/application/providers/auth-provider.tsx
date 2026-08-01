@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import * as authService from '@services/auth/auth.service';
 import type { AuthUser } from '@services/auth/auth.service';
 import { AuthError, type SignUpInput } from '@services/auth/auth-service.contract';
+import * as profileService from '@services/profile/profile.service';
 import {
   hasCompletedOnboarding as readOnboardingFlag,
   setOnboardingCompleted as persistOnboardingFlag,
@@ -64,6 +65,14 @@ export type AuthActions = {
   signInWithProvider(provider: 'google' | 'apple'): Promise<void>;
   signOut(): Promise<void>;
   completeOnboarding(): Promise<void>;
+  /**
+   * Writes a new display name to the durable profile row and adopts it into shared state.
+   *
+   * Lives here rather than on the editing screen because `state.user` is what Main Home's greeting
+   * and Profile Home's identity card render. Updating it in place is what makes a saved name
+   * visible everywhere immediately, with no relaunch and no second read.
+   */
+  updateFullName(fullName: string): Promise<void>;
 };
 
 const UNRESOLVED: AuthState = {
@@ -77,10 +86,22 @@ const UNRESOLVED: AuthState = {
 const AuthContext = createContext<AuthState>(UNRESOLVED);
 const AuthActionsContext = createContext<AuthActions | null>(null);
 
-/** Maps the service's user onto the profile shape the rest of the app already consumes. */
-function toProfile(user: AuthUser): UserProfile {
-  const full = user.fullName ?? user.email ?? 'Friend';
-  const given = full.trim().split(/\s+/)[0] ?? 'Friend';
+/** The first word of a name, for the Main Home greeting. Never empty. */
+function givenNameOf(full: string): string {
+  return full.trim().split(/\s+/)[0] ?? 'Friend';
+}
+
+/**
+ * Maps the service's user onto the profile shape the rest of the app already consumes.
+ *
+ * `durableFullName` is `public.profiles.full_name` and wins when it is present. The session's own
+ * `user_metadata.full_name` is only ever a copy taken at signup, so once the profile row has been
+ * edited the two disagree — and the row is the record. Passing null (no row, or a row with no
+ * name) falls back to the session copy, which is still a real value rather than a guess.
+ */
+function toProfile(user: AuthUser, durableFullName: string | null = null): UserProfile {
+  const full = durableFullName ?? user.fullName ?? user.email ?? 'Friend';
+  const given = givenNameOf(full);
   return {
     id: user.id,
     fullName: full,
@@ -128,7 +149,7 @@ export function AuthProvider({ children }: { readonly children: React.ReactNode 
     const localFlag = await readOnboardingFlag();
     setState({
       status: 'signed-in',
-      user: toProfile(user),
+      user: toProfile(user, profile?.full_name ?? null),
       hasCompletedOnboarding: profile?.onboarding_completed ?? localFlag,
       pendingVerificationEmail: null,
       isBackendConfigured: isSupabaseConfigured,
@@ -222,6 +243,27 @@ export function AuthProvider({ children }: { readonly children: React.ReactNode 
           await authService.setOnboardingCompleted(id).catch(() => undefined);
         }
         setState((previous) => ({ ...previous, hasCompletedOnboarding: true }));
+      },
+      async updateFullName(fullName) {
+        const id = state.user?.id;
+        if (id === undefined) {
+          throw new AuthError('session-expired', 'No signed-in user to update.');
+        }
+        // Rejects on failure, so the caller keeps the user's edits on screen. Nothing below runs
+        // unless the row was actually written.
+        const saved = await profileService.updateFullName(id, fullName);
+        setState((previous) =>
+          previous.user === null
+            ? previous
+            : {
+                ...previous,
+                user: {
+                  ...previous.user,
+                  fullName: saved.fullName,
+                  givenName: givenNameOf(saved.fullName),
+                },
+              },
+        );
       },
     }),
     [adopt, pendingVerificationEmail, state.user?.id],

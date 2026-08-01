@@ -1,11 +1,6 @@
-import { SimplePlaceholderScreen } from '@features/placeholder/simple-placeholder-screen';
+import { PersonalInformationScreen } from '@features/profile/screens/personal-information-screen';
 
+/** Personal Information (workflow §14). */
 export default function Screen() {
-  return (
-    <SimplePlaceholderScreen
-      title="Edit Profile"
-      description="Editable profile fields with save and validation."
-      specReference="Workflow §14"
-    />
-  );
+  return <PersonalInformationScreen />;
 }

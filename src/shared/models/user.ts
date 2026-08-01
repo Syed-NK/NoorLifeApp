@@ -7,6 +7,16 @@
  */
 export type SubscriptionTier = 'free' | 'premium-single' | 'premium-family';
 
+/**
+ * How a session was established, as the identity provider itself reports it.
+ *
+ * A closed union rather than a free string, and always nullable at its source: Personal Information
+ * shows this only when it is known, because guessing "Email" for a Google account is an invented
+ * fact about the user's own credentials. Resolved by `services/profile`, not held on `UserProfile` —
+ * exactly one screen displays it, and this model is extended per feature rather than speculatively.
+ */
+export type AuthProviderId = 'email' | 'google' | 'apple';
+
 export type UserProfile = {
   readonly id: string;
   /** Full name as entered by the user. */
