@@ -76,7 +76,7 @@ describe('entry-auth layout scale', () => {
   });
 
   it('scales down proportionally on a narrower handset', () => {
-    expect(entryAuthScale(360)).toBeCloseTo(0.9160, 4);
+    expect(entryAuthScale(360)).toBeCloseTo(0.916, 4);
     expect(entryAuthScale(320)).toBeCloseTo(0.8142, 4);
   });
 

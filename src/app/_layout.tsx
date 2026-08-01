@@ -26,14 +26,21 @@ export default function RootLayout() {
  * flash of unstyled text.
  */
 function RootNavigator() {
-  const { ready, onLayoutRootView } = useAppStartup();
-
-  if (!ready) {
-    return <View style={{ flex: 1, backgroundColor: neutralColors.canvas }} />;
-  }
-
   return (
-    <View style={{ flex: 1, backgroundColor: neutralColors.canvas }} onLayout={onLayoutRootView}>
+    /**
+     * The navigator mounts immediately.
+     *
+     * It used to be gated behind a readiness flag, rendering a blank canvas-coloured view until
+     * fonts and session resolved. Measured on a Pixel 8 that blank lasted about two seconds and sat
+     * *between* the native splash and the branded one — so the brand appeared at ~3.7 s, after the
+     * user had already been staring at nothing, which is what made it feel skipped.
+     *
+     * The entry gate at `index.tsx` now renders the branded splash as the first React screen and
+     * holds it for its minimum, so there is nothing left for a placeholder to protect against.
+     * Hiding the native splash moved there too: it fires on the splash's own layout, which is the
+     * only moment that guarantees something correct is already painted underneath.
+     */
+    <View style={{ flex: 1, backgroundColor: neutralColors.canvas }}>
       <Stack
         screenOptions={{
           headerShown: false,

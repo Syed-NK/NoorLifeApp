@@ -1,4 +1,11 @@
-import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { entryAuthColors, entryAuthLayout } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
@@ -62,7 +69,10 @@ export function PrimaryButton({
       testID={testID}
     >
       {loading ? (
-        <ActivityIndicator color={entryAuthColors.onPrimary} testID={`${testID ?? 'primary'}-spinner`} />
+        <ActivityIndicator
+          color={entryAuthColors.onPrimary}
+          testID={`${testID ?? 'primary'}-spinner`}
+        />
       ) : (
         <View style={styles.labelWrap}>
           <EntryAuthText

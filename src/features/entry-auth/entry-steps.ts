@@ -1,48 +1,53 @@
 import { useRouter } from 'expo-router';
 import { useCallback } from 'react';
 
-import { authRoutes, onboardingRoutes } from '@application/navigation/routes';
+import { onboardingRoutes } from '@application/navigation/routes';
 
 /**
- * The entry sequence as a single row of dots.
+ * The onboarding sequence as a row of dots.
  *
- * ── Why five and not six ────────────────────────────────────────────────────
- * Splash has no dot. It carries no controls, and the entry gate renders it *without* a history
- * entry so Back cannot land on it (see src/app/index.tsx). A dot pointing at it would return the
- * user to a screen that resolves the session and immediately pushes them forward again — a dot
- * that undoes itself.
+ * ── Why three, not five ─────────────────────────────────────────────────────
+ * This was five: three onboarding panels plus Welcome plus a shared dot for Sign In and Sign Up.
+ * The approved product flow is **three onboarding pages**, and the indicator has to describe that
+ * flow rather than the wider entry journey.
  *
- * Sign In and Sign Up share the last dot. They are alternatives reached from Welcome, not
- * consecutive steps: the two screens even swap places with `replace` rather than stacking. Giving
- * them separate dots would draw an order the flow does not have and imply Sign Up follows Sign In.
+ * Extending the indicator across authentication was wrong on its own terms too. A progress
+ * indicator promises a finite sequence the user is working through, and authentication is not
+ * that — a user can sit on Welcome indefinitely, or bounce between Sign In and Sign Up, neither of
+ * which is progress toward anything. Two of the five dots were describing a journey that does not
+ * exist, and the fifth stood for two alternative screens at once.
+ *
+ * So the indicator now covers exactly the three panels it can honestly describe, and the
+ * authentication screens carry none.
  *
  * ── Backward only ───────────────────────────────────────────────────────────
- * A dot never navigates forward. Skipping ahead to Welcome would bypass onboarding without
- * recording that it was completed, and there is no honest forward target for the shared final dot.
+ * A dot never navigates forward. Skipping ahead would bypass panels without recording that
+ * onboarding was completed.
  */
-export const ENTRY_STEP_COUNT = 5;
+export const ENTRY_STEP_COUNT = 3;
 
-/** Which dot each entry screen lights up. */
+/**
+ * Which dot each onboarding panel lights up.
+ *
+ * Welcome and the credentials screens are absent: they are no longer part of the indicated
+ * sequence. See the note above for why the count dropped from five to three.
+ */
 export const entryStepIndex = {
   onboardingOne: 0,
   onboardingTwo: 1,
   onboardingThree: 2,
-  welcome: 3,
-  /** Sign In and Sign Up both sit here — see the note above. */
-  credentials: 4,
 } as const;
 
 /**
  * Where each dot leads when tapped.
  *
- * Four entries for five dots: the final step is the end of the sequence, so nothing ever
- * navigates *to* it. `goToStep` refuses an index this array does not cover.
+ * One route per dot. Every onboarding panel is a real destination, unlike the previous model whose
+ * final dot covered two sibling screens and could not be navigated to.
  */
 const entryStepRoutes = [
   onboardingRoutes.one,
   onboardingRoutes.two,
   onboardingRoutes.three,
-  authRoutes.welcome,
 ] as const;
 
 export type EntryStepNavigation = {

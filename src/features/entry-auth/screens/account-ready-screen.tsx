@@ -39,10 +39,7 @@ export function AccountReadyScreen() {
         </View>
 
         <View
-          style={[
-            styles.check,
-            { width: ring, height: ring, borderRadius: ring / 2 },
-          ]}
+          style={[styles.check, { width: ring, height: ring, borderRadius: ring / 2 }]}
           accessible
           accessibilityRole="image"
           accessibilityLabel="Success"

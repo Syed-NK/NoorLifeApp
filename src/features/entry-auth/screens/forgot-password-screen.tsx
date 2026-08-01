@@ -42,11 +42,13 @@ export function ForgotPasswordScreen() {
       return;
     }
     setEmailError(undefined);
-    void submit.run(() => requestPasswordReset(trimmed)).then((ok) => {
-      if (ok) {
-        router.push({ pathname: authRoutes.resetLinkSent, params: { email: trimmed } });
-      }
-    });
+    void submit
+      .run(() => requestPasswordReset(trimmed))
+      .then((ok) => {
+        if (ok) {
+          router.push({ pathname: authRoutes.resetLinkSent, params: { email: trimmed } });
+        }
+      });
   };
 
   return (

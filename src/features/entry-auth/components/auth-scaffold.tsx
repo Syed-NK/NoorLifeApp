@@ -45,11 +45,7 @@ export function AuthScaffold({
       <StatusBar style="dark" />
       <View style={[styles.column, { paddingTop: insets.top }]}>
         <View
-          style={[
-            styles.content,
-            padded ? { paddingHorizontal: pagePadding } : null,
-            contentStyle,
-          ]}
+          style={[styles.content, padded ? { paddingHorizontal: pagePadding } : null, contentStyle]}
         >
           {children}
         </View>

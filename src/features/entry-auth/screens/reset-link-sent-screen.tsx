@@ -95,7 +95,9 @@ export function ResetLinkSentScreen() {
       />
 
       <SecondaryButton
-        label={resend.ready ? resetLinkSentCopy.resend : `${resetLinkSentCopy.resend} (${resend.label})`}
+        label={
+          resend.ready ? resetLinkSentCopy.resend : `${resetLinkSentCopy.resend} (${resend.label})`
+        }
         disabled={!resend.ready || submit.loading}
         onPress={() => {
           resend.restart();

@@ -58,11 +58,13 @@ export function NewPasswordScreen() {
     if (next.password !== undefined || next.confirm !== undefined) {
       return;
     }
-    void submit.run(() => resetPassword(password)).then((ok) => {
-      if (ok) {
-        router.replace(authRoutes.signIn);
-      }
-    });
+    void submit
+      .run(() => resetPassword(password))
+      .then((ok) => {
+        if (ok) {
+          router.replace(authRoutes.signIn);
+        }
+      });
   };
 
   return (
@@ -90,7 +92,11 @@ export function NewPasswordScreen() {
         />
       )}
       {submit.error === null ? null : (
-        <AuthStatusBanner tone="error" message={submit.error.message} testID="new-password-banner" />
+        <AuthStatusBanner
+          tone="error"
+          message={submit.error.message}
+          testID="new-password-banner"
+        />
       )}
 
       <View style={{ gap: dp(8) }}>

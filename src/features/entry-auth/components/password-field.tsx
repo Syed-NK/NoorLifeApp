@@ -76,7 +76,10 @@ export function PasswordField({
           accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
           // The control is inside a 48 dp field, so its own box is the full field height; the
           // horizontal padding brings it to the 44 dp minimum without changing the field.
-          style={[styles.reveal, { height: dp(entryAuthLayout.inputHeight), paddingHorizontal: dp(10) }]}
+          style={[
+            styles.reveal,
+            { height: dp(entryAuthLayout.inputHeight), paddingHorizontal: dp(10) },
+          ]}
           testID={`${testID ?? 'password'}-reveal`}
         >
           <EntryAuthText token="label" color={entryAuthColors.primary}>

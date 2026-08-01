@@ -34,16 +34,41 @@ export const FULL_RING: readonly RingPosition[] = [
 ];
 
 /**
- * Screen 04 — six modules, the "selected module pictograms" its requirement asks for.
+ * Six modules, omitting Health.
  *
- * The reference drops Health here and leaves both the top and bottom positions free, which is what
- * gives the robot's head and feet clear space. Measured angles were 223°, 319°, 354°, 25°, 158°
- * and 189°, again within a few degrees of the same eight-position clock.
+ * ── No longer used by onboarding panel 3 ────────────────────────────────────
+ * This matched an early reference that dropped Health to give the robot's head and feet clear
+ * space. The approved product requirement is **seven** surrounding modules with Health present, so
+ * panel 3 now uses `FULL_RING`. Kept because the geometry is measured and may suit a future screen
+ * that genuinely wants a lighter ring; a test asserts onboarding does not use it.
  */
 export const SELECTED_RING: readonly RingPosition[] = [
   { id: 'planner', angle: 315 },
   { id: 'goals', angle: 0 },
   { id: 'family', angle: 45 },
+  { id: 'learning', angle: 135 },
+  { id: 'finance', angle: 180 },
+  { id: 'faith', angle: 225 },
+];
+
+/**
+ * All eight product identities as equals — onboarding panel 2.
+ *
+ * ── Why Noor AI is a medallion here and the centre is empty ─────────────────
+ * Panel 2 is about the whole product, so its eight identities carry equal weight, evenly spaced on
+ * one clock. Panel 3 is about the assistant, so it puts the robot at the centre with the modules
+ * around it. Same asset set, two different statements — and that difference is what stops the two
+ * panels reading as the same picture twice.
+ *
+ * It is also why this is a ring rather than a grid: a four-column grid of these pictograms is the
+ * Main Home module grid, which onboarding must not imitate.
+ */
+export const ORBIT_RING: readonly RingPosition[] = [
+  { id: 'noorAI', angle: 270 },
+  { id: 'planner', angle: 315 },
+  { id: 'goals', angle: 0 },
+  { id: 'family', angle: 45 },
+  { id: 'health', angle: 90 },
   { id: 'learning', angle: 135 },
   { id: 'finance', angle: 180 },
   { id: 'faith', angle: 225 },
@@ -66,8 +91,13 @@ export type MedallionRingProps = {
   readonly size: number;
   /** Medallion diameter, in baseline dp. */
   readonly medallion?: number;
-  /** Centre artwork. Defaults to the Noor AI robot. */
-  readonly centre?: ImageSourcePropType;
+  /**
+   * Centre artwork. Defaults to the Noor AI robot; `null` leaves the centre empty.
+   *
+   * Empty on panel 2, where Noor AI is one of eight equals on the ring rather than the subject at
+   * the middle. Rendering the robot there as well would show it twice in one composition.
+   */
+  readonly centre?: ImageSourcePropType | null;
   /** Centre artwork height, in baseline dp. */
   readonly centreHeight?: number;
   /** Which medallions sit where. Defaults to all seven. */
@@ -135,13 +165,15 @@ export function MedallionRing({
         );
       })}
 
-      <Image
-        source={centre}
-        style={{ width: dp(centreHeight) * 0.62, height: dp(centreHeight) }}
-        contentFit="contain"
-        accessible={false}
-        testID={`${testID ?? 'medallion-ring'}-centre`}
-      />
+      {centre === null ? null : (
+        <Image
+          source={centre}
+          style={{ width: dp(centreHeight) * 0.62, height: dp(centreHeight) }}
+          contentFit="contain"
+          accessible={false}
+          testID={`${testID ?? 'medallion-ring'}-centre`}
+        />
+      )}
 
       {/* Positioned against the centre artwork's lower left, as the reference draws it. Absolute so
           it overlaps the robot rather than displacing it — the ring geometry stays untouched. */}

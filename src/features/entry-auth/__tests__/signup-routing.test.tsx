@@ -44,9 +44,14 @@ describe('signup routing', () => {
   it('goes to Account Ready when the project auto-confirms and no email is sent', async () => {
     // Supabase returns a session immediately: nothing to verify.
     client.auth.signUp = jest.fn(() =>
-      Promise.resolve({ data: { session: confirmedSession, user: confirmedSession.user }, error: null }),
+      Promise.resolve({
+        data: { session: confirmedSession, user: confirmedSession.user },
+        error: null,
+      }),
     );
-    client.auth.getSession = jest.fn(() => Promise.resolve({ data: { session: confirmedSession }, error: null }));
+    client.auth.getSession = jest.fn(() =>
+      Promise.resolve({ data: { session: confirmedSession }, error: null }),
+    );
 
     await render(
       <AuthProvider>

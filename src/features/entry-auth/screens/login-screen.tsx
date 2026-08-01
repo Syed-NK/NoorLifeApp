@@ -19,13 +19,10 @@ import { AuthScaffold } from '../components/auth-scaffold';
 import { AuthStatusBanner } from '../components/auth-status-banner';
 import { AuthTextField } from '../components/auth-text-field';
 import { EntryAuthText } from '../components/entry-auth-text';
-import { EntryStepDots } from '../components/entry-step-dots';
-import { EntrySwipeBack } from '../components/entry-swipe-back';
 import { PasswordField } from '../components/password-field';
 import { PrimaryButton } from '../components/primary-button';
 import { AppleSignInButton } from '../components/apple-sign-in-button';
 import { SocialAuthButton } from '../components/social-auth-button';
-import { entryStepIndex } from '../entry-steps';
 import { authErrorCopy, loginCopy, welcomeCopy } from '../entry-auth-copy';
 import { entryAuthColors } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
@@ -95,153 +92,153 @@ export function LoginScreen() {
       });
   };
 
+  // No step indicator, and no swipe-back. The indicator describes the three onboarding panels, and
+  // a user on Sign In is not progressing through a finite sequence — they may sit here, or move
+  // between Sign In and Sign Up, neither of which is progress. The swipe went with it: Welcome is
+  // reached by `replace`, so there is usually nothing behind this screen, and the header's own Back
+  // control covers the case where there is.
   return (
-    <EntrySwipeBack activeIndex={entryStepIndex.credentials} testID="login-swipe">
-      <AuthScaffold
-        testID="login-screen"
-        footer={<EntryStepDots activeIndex={entryStepIndex.credentials} testID="login-dots" />}
+    <AuthScaffold testID="login-screen">
+      <KeyboardAvoidingView
+        style={styles.fill}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <KeyboardAvoidingView
+        <ScrollView
           style={styles.fill}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          contentContainerStyle={{ paddingBottom: dp(24), gap: dp(16) }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <ScrollView
-            style={styles.fill}
-            contentContainerStyle={{ paddingBottom: dp(24), gap: dp(16) }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <AuthHeader
-              onBack={() => router.back()}
-              title={loginCopy.title}
-              subtitle={loginCopy.subtitle}
-              testID="login-header"
+          <AuthHeader
+            onBack={() => router.back()}
+            title={loginCopy.title}
+            subtitle={loginCopy.subtitle}
+            testID="login-header"
+          />
+
+          {submit.error === null ? null : (
+            <AuthStatusBanner tone="error" message={submit.error.message} testID="login-banner" />
+          )}
+
+          <View style={{ gap: dp(14) }}>
+            <AuthTextField
+              label={loginCopy.email}
+              placeholder={loginCopy.emailPlaceholder}
+              value={email}
+              onChangeText={setEmail}
+              error={emailError}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="next"
+              testID="login-email"
             />
-
-            {submit.error === null ? null : (
-              <AuthStatusBanner tone="error" message={submit.error.message} testID="login-banner" />
-            )}
-
-            <View style={{ gap: dp(14) }}>
-              <AuthTextField
-                label={loginCopy.email}
-                placeholder={loginCopy.emailPlaceholder}
-                value={email}
-                onChangeText={setEmail}
-                error={emailError}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                textContentType="emailAddress"
-                returnKeyType="next"
-                testID="login-email"
-              />
-              <PasswordField
-                label={loginCopy.password}
-                placeholder="••••••••"
-                value={password}
-                onChangeText={setPassword}
-                error={passwordError}
-                returnKeyType="go"
-                onSubmitEditing={onSubmit}
-                testID="login-password"
-              />
-            </View>
-
-            <View style={styles.row}>
-              <Pressable
-                onPress={() => setRemember((v) => !v)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: remember }}
-                accessibilityLabel={loginCopy.rememberMe}
-                hitSlop={8}
-                style={[styles.remember, { columnGap: dp(8), minHeight: dp(44) }]}
-                testID="login-remember"
-              >
-                <View
-                  style={{
-                    width: dp(18),
-                    height: dp(18),
-                    borderRadius: dp(4),
-                    borderWidth: 1.5,
-                    borderColor: remember ? entryAuthColors.primary : entryAuthColors.border,
-                    backgroundColor: remember ? entryAuthColors.primary : entryAuthColors.surface,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {remember ? (
-                    // A tick drawn from two borders — no icon font on these screens.
-                    <View
-                      style={{
-                        width: dp(9),
-                        height: dp(5),
-                        borderLeftWidth: 2,
-                        borderBottomWidth: 2,
-                        borderColor: entryAuthColors.onPrimary,
-                        transform: [{ rotate: '-45deg' }, { translateY: -dp(1) }],
-                      }}
-                    />
-                  ) : null}
-                </View>
-                <EntryAuthText token="label">{loginCopy.rememberMe}</EntryAuthText>
-              </Pressable>
-
-              <EntryAuthText
-                token="label"
-                color={entryAuthColors.primary}
-                onPress={() => router.push(authRoutes.forgotPassword)}
-                accessibilityRole="link"
-                testID="login-forgot"
-              >
-                {loginCopy.forgotPassword}
-              </EntryAuthText>
-            </View>
-
-            <PrimaryButton
-              label={loginCopy.submit}
-              onPress={onSubmit}
-              loading={submit.loading}
-              testID="login-submit"
+            <PasswordField
+              label={loginCopy.password}
+              placeholder="••••••••"
+              value={password}
+              onChangeText={setPassword}
+              error={passwordError}
+              returnKeyType="go"
+              onSubmitEditing={onSubmit}
+              testID="login-password"
             />
+          </View>
 
-            <View style={[styles.dividerRow, { columnGap: dp(10) }]}>
-              <View style={styles.rule} />
-              <EntryAuthText token="caption">{loginCopy.divider}</EntryAuthText>
-              <View style={styles.rule} />
-            </View>
-
-            <View style={{ gap: dp(10) }}>
-              <SocialAuthButton
-                provider="google"
-                label={welcomeCopy.continueWithGoogle}
-                loading={submit.loading}
-                onPress={() => void submit.run(() => signInWithProvider('google'))}
-                testID="login-google"
-              />
-              <AppleSignInButton
-                onPress={() => void submit.run(() => signInWithProvider('apple'))}
-                testID="login-apple"
-              />
-            </View>
-
-            <EntryAuthText token="caption" align="center">
-              {loginCopy.signUpPrompt}
-              <EntryAuthText
-                token="caption"
-                color={entryAuthColors.primary}
-                onPress={() => router.replace(authRoutes.signUp)}
-                accessibilityRole="link"
-                testID="login-signup"
+          <View style={styles.row}>
+            <Pressable
+              onPress={() => setRemember((v) => !v)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: remember }}
+              accessibilityLabel={loginCopy.rememberMe}
+              hitSlop={8}
+              style={[styles.remember, { columnGap: dp(8), minHeight: dp(44) }]}
+              testID="login-remember"
+            >
+              <View
+                style={{
+                  width: dp(18),
+                  height: dp(18),
+                  borderRadius: dp(4),
+                  borderWidth: 1.5,
+                  borderColor: remember ? entryAuthColors.primary : entryAuthColors.border,
+                  backgroundColor: remember ? entryAuthColors.primary : entryAuthColors.surface,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
-                {loginCopy.signUpAction}
-              </EntryAuthText>
+                {remember ? (
+                  // A tick drawn from two borders — no icon font on these screens.
+                  <View
+                    style={{
+                      width: dp(9),
+                      height: dp(5),
+                      borderLeftWidth: 2,
+                      borderBottomWidth: 2,
+                      borderColor: entryAuthColors.onPrimary,
+                      transform: [{ rotate: '-45deg' }, { translateY: -dp(1) }],
+                    }}
+                  />
+                ) : null}
+              </View>
+              <EntryAuthText token="label">{loginCopy.rememberMe}</EntryAuthText>
+            </Pressable>
+
+            <EntryAuthText
+              token="label"
+              color={entryAuthColors.primary}
+              onPress={() => router.push(authRoutes.forgotPassword)}
+              accessibilityRole="link"
+              testID="login-forgot"
+            >
+              {loginCopy.forgotPassword}
             </EntryAuthText>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </AuthScaffold>
-    </EntrySwipeBack>
+          </View>
+
+          <PrimaryButton
+            label={loginCopy.submit}
+            onPress={onSubmit}
+            loading={submit.loading}
+            testID="login-submit"
+          />
+
+          <View style={[styles.dividerRow, { columnGap: dp(10) }]}>
+            <View style={styles.rule} />
+            <EntryAuthText token="caption">{loginCopy.divider}</EntryAuthText>
+            <View style={styles.rule} />
+          </View>
+
+          <View style={{ gap: dp(10) }}>
+            <SocialAuthButton
+              provider="google"
+              label={welcomeCopy.continueWithGoogle}
+              loading={submit.loading}
+              onPress={() => void submit.run(() => signInWithProvider('google'))}
+              testID="login-google"
+            />
+            <AppleSignInButton
+              onPress={() => void submit.run(() => signInWithProvider('apple'))}
+              testID="login-apple"
+            />
+          </View>
+
+          <EntryAuthText token="caption" align="center">
+            {loginCopy.signUpPrompt}
+            <EntryAuthText
+              token="caption"
+              color={entryAuthColors.primary}
+              onPress={() => router.replace(authRoutes.signUp)}
+              accessibilityRole="link"
+              testID="login-signup"
+            >
+              {loginCopy.signUpAction}
+            </EntryAuthText>
+          </EntryAuthText>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </AuthScaffold>
   );
 }
 

@@ -1,5 +1,11 @@
 import { Image } from 'expo-image';
-import { StyleSheet, View, type ImageSourcePropType, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  type ImageSourcePropType,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 export type AuthIllustrationProps = {
   readonly source: ImageSourcePropType;
