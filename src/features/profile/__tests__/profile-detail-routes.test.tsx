@@ -5,12 +5,14 @@ import { render, screen } from '@testing-library/react-native';
 
 import EditRoute from '@app/profile/edit';
 import FamilyMembershipRoute from '@app/profile/family-membership';
+import HelpRoute from '@app/profile/help';
+import PreferencesRoute from '@app/profile/preferences';
 import { AppProviders } from '@application/providers/app-providers';
 
-import { PROFILE_EDIT_ROUTE, PROFILE_MENU } from '../profile-routes';
+import { PROFILE_EDIT_ROUTE, PROFILE_HELP_ROUTE, PROFILE_MENU } from '../profile-routes';
 
 /**
- * The route contract for the two detail screens.
+ * The route contract for the four detail screens.
  *
  * ── Why the route files are rendered rather than inspected ──────────────────
  * A declared route that exports a placeholder is indistinguishable from a working one until it is
@@ -49,12 +51,29 @@ describe('the declared routes', () => {
     );
   });
 
-  it.each(['edit.tsx', 'family-membership.tsx'])('leaves no placeholder behind at %s', (file) => {
-    const source = readFileSync(join(APP_PROFILE, file), 'utf8');
-    // The placeholder is what a "declared but dead" route looks like in this codebase.
-    expect(source).not.toContain('SimplePlaceholderScreen');
-    expect(source).not.toContain('specReference');
+  it('mounts Preferences at /profile/preferences', async () => {
+    await renderRoute(PreferencesRoute);
+
+    expect(await screen.findByTestId('preferences')).toBeTruthy();
+    expect(screen.getByTestId('preferences-header-title')).toHaveTextContent('Preferences');
   });
+
+  it('mounts Help & Support at /profile/help', async () => {
+    await renderRoute(HelpRoute);
+
+    expect(await screen.findByTestId('help-support')).toBeTruthy();
+    expect(screen.getByTestId('help-support-header-title')).toHaveTextContent('Help & Support');
+  });
+
+  it.each(['edit.tsx', 'family-membership.tsx', 'preferences.tsx', 'help.tsx'])(
+    'leaves no placeholder behind at %s',
+    (file) => {
+      const source = readFileSync(join(APP_PROFILE, file), 'utf8');
+      // The placeholder is what a "declared but dead" route looks like in this codebase.
+      expect(source).not.toContain('SimplePlaceholderScreen');
+      expect(source).not.toContain('specReference');
+    },
+  );
 });
 
 describe('the Profile Home menu contract', () => {
@@ -71,16 +90,27 @@ describe('the Profile Home menu contract', () => {
     expect(row?.available).not.toBe('/family/members');
   });
 
-  it('keeps Preferences and Privacy & Security on the centralized note', () => {
-    for (const key of ['preferences', 'privacy-security']) {
-      const row = PROFILE_MENU.find((item) => item.key === key);
-      expect(row?.available).toBeNull();
-    }
+  it('sends Preferences to its own new route', () => {
+    const row = PROFILE_MENU.find((item) => item.key === 'preferences');
+    expect(row?.available).toBe('/profile/preferences');
   });
 
-  it('keeps Help & Support on the existing help route', () => {
+  it('moves Help & Support off the shared module help placeholder', () => {
     const row = PROFILE_MENU.find((item) => item.key === 'help-support');
-    expect(row?.available).toBe('/settings/help');
+    expect(row?.available).toBe('/profile/help');
+    // `/settings/help` is still every module's help destination. It was not repurposed, and the
+    // account's help screen is not it.
+    expect(row?.available).not.toBe('/settings/help');
+    expect(PROFILE_HELP_ROUTE).toBe('/profile/help');
+  });
+
+  it('keeps Privacy & Security on the centralized note', () => {
+    const row = PROFILE_MENU.find((item) => item.key === 'privacy-security');
+    expect(row?.available).toBeNull();
+  });
+
+  it('leaves exactly one row deferred', () => {
+    expect(PROFILE_MENU.filter((item) => item.available === null)).toHaveLength(1);
   });
 
   it('leaves no row without either a destination or an honest explanation', () => {

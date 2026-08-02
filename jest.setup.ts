@@ -63,6 +63,46 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 
 /**
+ * Application metadata: the values a real install reports.
+ *
+ * `expo-application` reads the installed package — `versionName` and `versionCode` on Android.
+ * There is no installed package under Jest, so the module is stood in with the values the current
+ * Android build actually declares. That makes the Help & Support suite a test of *what the screen
+ * does with the numbers it is given*, which is the part this project owns; that the numbers are
+ * real on a device is the responsibility of the library, and is verified on the device pass.
+ */
+jest.mock('expo-application', () => ({
+  nativeApplicationVersion: '1.0.0',
+  nativeBuildVersion: '1',
+}));
+
+/**
+ * Device: only the operating-system release, which is the one field the diagnostics allow-list
+ * takes from this module. The model, brand and manufacturer are deliberately left undefined, so a
+ * test would fail rather than quietly pass if one of them were ever read.
+ */
+jest.mock('expo-device', () => ({
+  osVersion: '17',
+}));
+
+/**
+ * Clipboard: an in-memory stand-in, so a test can read back what a screen copied.
+ *
+ * Which matters more here than usual — "the copied diagnostics contain no token and no email
+ * address" is only a real assertion if the test can inspect the string that was actually written.
+ */
+jest.mock('expo-clipboard', () => {
+  let contents = '';
+  return {
+    setStringAsync: (text: string) => {
+      contents = text;
+      return Promise.resolve(true);
+    },
+    getStringAsync: () => Promise.resolve(contents),
+  };
+});
+
+/**
  * Secure store: an in-memory stand-in for the Keystore.
  *
  * `isAvailableAsync` resolves true so the token-writing path is exercised rather than skipped —

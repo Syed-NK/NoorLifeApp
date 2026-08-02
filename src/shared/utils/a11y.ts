@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, type AccessibilityRole } from 'react-native';
 
+import { useMotionPreferenceContext } from '@shared/accessibility/motion-preference';
 import { touchTarget } from '@ds/tokens';
 
 /**
@@ -59,14 +60,34 @@ export function statusLabel(subject: string, status: string): string {
 }
 
 /**
- * Tracks the OS "reduce motion" setting (§7: "Respect reduced-motion system
- * settings").
+ * Whether motion should be reduced — the single value every animation in NoorLife reads.
+ *
+ * ── Two inputs, one answer ──────────────────────────────────────────────────
+ * The operating system's setting (§7: "Respect reduced-motion system settings") and, since Phase
+ * 6C-2B, the user's own NoorLife preference from `/profile/preferences`.
+ *
+ * The system setting takes precedence: when it is on, this is true no matter what the in-app
+ * preference says, because a user who reduced motion for their whole phone has already answered
+ * this question and an application switch does not get to overrule them. The in-app preference can
+ * only add. Writing that rule here rather than at each animation is what stops one transition
+ * getting the precedence backwards.
+ *
+ * A change to either input re-renders every consumer, so a preference switched on
+ * `/profile/preferences` takes effect immediately — no restart, and no screen has to reload.
+ */
+export function useReducedMotion(): boolean {
+  const preference = useMotionPreferenceContext();
+  return useSystemReducedMotion() || (preference?.preferReduceMotion ?? false);
+}
+
+/**
+ * The operating system's setting alone.
  *
  * The subscription is an external-system subscription, so the initial value is
  * fetched in the same effect that subscribes — there is no synchronous setState
  * in a render path.
  */
-export function useReducedMotion(): boolean {
+export function useSystemReducedMotion(): boolean {
   const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {

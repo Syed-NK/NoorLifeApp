@@ -77,24 +77,44 @@ describe('the Profile feature', () => {
 describe('the Profile presentation layer', () => {
   const files = sourceFiles(PROFILE_ROOT);
 
-  it.each(['@/lib/supabase', '@supabase/supabase-js', 'createClient('])(
-    'never references %s',
-    (forbidden) => {
-      const offenders = files
-        .filter((file) => readFileSync(file, 'utf8').includes(forbidden))
-        .map((file) => file.replace(PROFILE_ROOT, ''));
-      expect(offenders).toEqual([]);
-    },
-  );
+  it.each([
+    '@/lib/supabase',
+    '@supabase/supabase-js',
+    'createClient(',
+    // Device storage has a typed service; a screen reaching the library directly would bypass the
+    // key namespace, the failure-as-a-value contract and the "no secrets here" type constraint.
+    '@react-native-async-storage/async-storage',
+    // Permissions and application metadata likewise go through their service wrappers, so a
+    // capability check cannot be re-decided differently by one screen.
+    'expo-application',
+    'PermissionsAndroid',
+  ])('never references %s', (forbidden) => {
+    const offenders = files
+      .filter((file) => readFileSync(file, 'utf8').includes(forbidden))
+      .map((file) => file.replace(PROFILE_ROOT, ''));
+    expect(offenders).toEqual([]);
+  });
 
-  it('reaches the backend only through the service and provider layers', () => {
+  it('reaches the backend and the device only through the service layer', () => {
     const serviceImports = new Set<string>();
     for (const file of files) {
       for (const match of readFileSync(file, 'utf8').matchAll(/@services\/([\w/.-]+)/g)) {
         serviceImports.add(match[1] as string);
       }
     }
-    // The read path and the write path. Nothing else — and in particular no client.
-    expect([...serviceImports].sort()).toEqual(['auth/auth.service', 'profile/profile.service']);
+    // Every boundary the feature is allowed, named. No client, no storage library, no native
+    // permission module — each of those sits behind exactly one of these.
+    //
+    // `preferences/device-preferences` is deliberately absent: the Reduce Motion preference is
+    // read and written by `AccessibilityProvider`, so Profile reaches storage one layer further
+    // back than the service it would otherwise import. That is what lets the same preference apply
+    // to animations in features that have never heard of Profile.
+    expect([...serviceImports].sort()).toEqual([
+      'auth/auth.service',
+      'diagnostics/app-diagnostics.service',
+      'links/external-link.service',
+      'notifications/notification-permission.service',
+      'profile/profile.service',
+    ]);
   });
 });

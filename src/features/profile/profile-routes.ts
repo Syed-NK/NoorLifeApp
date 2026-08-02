@@ -16,15 +16,19 @@ import { profileCopy } from './profile-copy';
  * re-measured. It also keeps the contract visible — a reader can see what is promised and what is
  * shipped without diffing two sessions of work.
  *
- * ── Why three rows point somewhere ──────────────────────────────────────────
- * `/profile/edit` and `/profile/family-membership` are the two detail screens Phase 6C-2A built;
- * `/settings/help` is the existing help destination, reused because sending a user to a screen that
- * exists is better than telling them it does not. `/family/members` was never substituted for
- * `/profile/family-membership` — it is the family-plan seat manager over a development fixture,
- * which is not what this row promises.
+ * ── Why four rows point somewhere ───────────────────────────────────────────
+ * `/profile/edit` and `/profile/family-membership` are Phase 6C-2A's two detail screens;
+ * `/profile/preferences` and `/profile/help` are Phase 6C-2B's. `/family/members` was never
+ * substituted for `/profile/family-membership` — it is the family-plan seat manager over a
+ * development fixture, which is not what that row promises.
  *
- * Preferences and Privacy & Security remain deferred and keep the centralized note. Undoing that is
- * still one line each, and Profile Home is still not touched to do it.
+ * Help & Support left `/settings/help` in Phase 6C-2B. That route is the *module* help placeholder
+ * — every module registry entry still points at it — so it was not deleted, and it was not
+ * upgraded either: a module's help and an account's help are different destinations that happened
+ * to share a placeholder while neither existed.
+ *
+ * Privacy & Security remains deferred and keeps the centralized note. Undoing that is still one
+ * line, and Profile Home is still not touched to do it.
  */
 export type ProfileMenuItem = {
   readonly key: string;
@@ -60,7 +64,8 @@ export const PROFILE_MENU: readonly ProfileMenuItem[] = [
     label: profileCopy.menu.preferences,
     icon: 'settings',
     intended: '/profile/preferences',
-    available: null,
+    // Built in Phase 6C-2B. One line changed from `null` — Profile Home itself was not touched.
+    available: '/profile/preferences' as Href,
     testID: 'profile-menu-preferences',
   },
   {
@@ -76,7 +81,8 @@ export const PROFILE_MENU: readonly ProfileMenuItem[] = [
     label: profileCopy.menu.helpSupport,
     icon: 'help',
     intended: '/profile/help',
-    available: '/settings/help' as Href,
+    // Phase 6C-2B. Moved off the shared `/settings/help` placeholder onto Profile's own screen.
+    available: '/profile/help' as Href,
     testID: 'profile-menu-help-support',
   },
 ];
@@ -84,5 +90,12 @@ export const PROFILE_MENU: readonly ProfileMenuItem[] = [
 /** The Edit control on the identity card shares Personal Information's destination. */
 export const PROFILE_EDIT_ROUTE = PROFILE_MENU[0]?.available ?? null;
 
-/** Where the header's Help control goes. Null would mean the honest note instead. */
-export const PROFILE_HELP_ROUTE: Href | null = '/settings/help' as Href;
+/**
+ * Where the header's Help control goes. Null would mean the honest note instead.
+ *
+ * The same destination as the Help & Support row, because there is one help screen and two ways to
+ * ask for it. The loop that would create is closed on the screen itself: `/profile/help` does not
+ * pass `onHelp` to the shared scaffold, so the control is absent there rather than pointing at the
+ * page the user is already reading.
+ */
+export const PROFILE_HELP_ROUTE: Href | null = '/profile/help' as Href;

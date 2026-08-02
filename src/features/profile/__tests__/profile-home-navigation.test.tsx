@@ -63,11 +63,13 @@ describe('the header', () => {
     expect(mockRouter.dismissTo).toHaveBeenCalledWith('/home');
   });
 
-  it('opens the existing help destination rather than a dead tap', async () => {
+  it('opens Profile’s own help screen rather than a dead tap', async () => {
     await renderProfile();
     await fireEvent.press(screen.getByTestId('profile-header-help'));
 
-    expect(mockRouter.push).toHaveBeenCalledWith('/settings/help');
+    // The same destination as the Help & Support row: one help screen, two ways to ask for it.
+    // The loop is closed on `/profile/help` itself, which renders no Help control.
+    expect(mockRouter.push).toHaveBeenCalledWith('/profile/help');
   });
 });
 
@@ -113,29 +115,35 @@ describe('the five menu rows', () => {
     expect(screen.queryByTestId('profile-coming-later-panel')).toBeNull();
   });
 
-  it('opens the existing help destination from Help & Support', async () => {
+  it('opens the preferences screen from Preferences', async () => {
+    await renderProfile();
+    await fireEvent.press(screen.getByTestId('profile-menu-preferences'));
+
+    // Built in Phase 6C-2B. The centralized note is gone from this row because the screen exists.
+    expect(mockRouter.push).toHaveBeenCalledWith('/profile/preferences');
+    expect(screen.queryByTestId('profile-coming-later-panel')).toBeNull();
+  });
+
+  it('opens Profile’s own help screen from Help & Support', async () => {
     await renderProfile();
     await fireEvent.press(screen.getByTestId('profile-menu-help-support'));
 
-    expect(mockRouter.push).toHaveBeenCalledWith('/settings/help');
+    expect(mockRouter.push).toHaveBeenCalledWith('/profile/help');
   });
 
-  it.each([
-    ['profile-menu-preferences', 'Preferences'],
-    ['profile-menu-privacy-security', 'Privacy & Security'],
-  ])('explains %s honestly instead of navigating nowhere', async (testID, label) => {
+  it('explains Privacy & Security honestly instead of navigating nowhere', async () => {
     await renderProfile();
-    await fireEvent.press(screen.getByTestId(testID));
+    await fireEvent.press(screen.getByTestId('profile-menu-privacy-security'));
 
     expect(await screen.findByTestId('profile-coming-later-panel')).toBeTruthy();
-    expect(screen.getByText(`${label} is coming later`)).toBeTruthy();
+    expect(screen.getByText('Privacy & Security is coming later')).toBeTruthy();
     // Nothing was pushed: a blank route is exactly what this replaces.
     expect(mockRouter.push).not.toHaveBeenCalled();
   });
 
   it('dismisses the note without navigating', async () => {
     await renderProfile();
-    await fireEvent.press(screen.getByTestId('profile-menu-preferences'));
+    await fireEvent.press(screen.getByTestId('profile-menu-privacy-security'));
     await fireEvent.press(await screen.findByTestId('profile-coming-later-dismiss'));
 
     await waitFor(() => expect(screen.queryByTestId('profile-coming-later-panel')).toBeNull());

@@ -2,6 +2,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { EntitlementProvider } from '@features/subscription/services/entitlement-context';
 
+import { AccessibilityProvider } from './accessibility-provider';
 import { AuthProvider } from './auth-provider';
 import { DesignSystemProvider } from './design-system-provider';
 import { FontProvider } from './font-provider';
@@ -25,19 +26,27 @@ import { LocalizationProvider } from './localization-provider';
  * Entitlement sits *inside* Auth, because what a user is entitled to depends on who they are: a
  * sign-out must be able to drop the entitlement, not the other way round. It wraps the children
  * rather than replacing Auth's position, so nothing above it changes.
+ *
+ * Accessibility sits *outside* everything that draws, and outside Auth in particular: whether
+ * motion is reduced is a property of the device and its owner, not of a session, so it must not be
+ * dropped or reloaded when somebody signs out. It is above Design System for the same reason a
+ * future dark theme would be — a preference that changes how things render has to be readable by
+ * the layer that renders them.
  */
 export function AppProviders({ children }: { readonly children: React.ReactNode }) {
   return (
     <SafeAreaProvider>
-      <DesignSystemProvider>
-        <LocalizationProvider>
-          <FontProvider>
-            <AuthProvider>
-              <EntitlementProvider>{children}</EntitlementProvider>
-            </AuthProvider>
-          </FontProvider>
-        </LocalizationProvider>
-      </DesignSystemProvider>
+      <AccessibilityProvider>
+        <DesignSystemProvider>
+          <LocalizationProvider>
+            <FontProvider>
+              <AuthProvider>
+                <EntitlementProvider>{children}</EntitlementProvider>
+              </AuthProvider>
+            </FontProvider>
+          </LocalizationProvider>
+        </DesignSystemProvider>
+      </AccessibilityProvider>
     </SafeAreaProvider>
   );
 }
