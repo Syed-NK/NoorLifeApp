@@ -7,8 +7,12 @@ import EditRoute from '@app/profile/edit';
 import FamilyMembershipRoute from '@app/profile/family-membership';
 import HelpRoute from '@app/profile/help';
 import PreferencesRoute from '@app/profile/preferences';
+import ChangeEmailRoute from '@app/profile/privacy-security/change-email';
+import ChangePasswordRoute from '@app/profile/privacy-security/change-password';
+import PrivacySecurityRoute from '@app/profile/privacy-security/index';
 import { AppProviders } from '@application/providers/app-providers';
 
+import { PRIVACY_SECURITY_ROUTE_PATHS } from '../privacy-routes';
 import { PROFILE_EDIT_ROUTE, PROFILE_HELP_ROUTE, PROFILE_MENU } from '../profile-routes';
 
 /**
@@ -65,7 +69,40 @@ describe('the declared routes', () => {
     expect(screen.getByTestId('help-support-header-title')).toHaveTextContent('Help & Support');
   });
 
-  it.each(['edit.tsx', 'family-membership.tsx', 'preferences.tsx', 'help.tsx'])(
+  it('mounts Privacy & Security at /profile/privacy-security', async () => {
+    await renderRoute(PrivacySecurityRoute);
+
+    expect(await screen.findByTestId('privacy-security')).toBeTruthy();
+    expect(screen.getByTestId('privacy-security-header-title')).toHaveTextContent(
+      'Privacy & Security',
+    );
+  });
+
+  it('mounts Change Password at its nested route', async () => {
+    await renderRoute(ChangePasswordRoute);
+
+    expect(await screen.findByTestId('change-password')).toBeTruthy();
+    expect(screen.getByTestId('change-password-header-title')).toHaveTextContent(
+      'Change Password',
+    );
+  });
+
+  it('mounts Change Email at its nested route', async () => {
+    await renderRoute(ChangeEmailRoute);
+
+    expect(await screen.findByTestId('change-email')).toBeTruthy();
+    expect(screen.getByTestId('change-email-header-title')).toHaveTextContent('Change Email');
+  });
+
+  it.each([
+    'edit.tsx',
+    'family-membership.tsx',
+    'preferences.tsx',
+    'help.tsx',
+    join('privacy-security', 'index.tsx'),
+    join('privacy-security', 'change-password.tsx'),
+    join('privacy-security', 'change-email.tsx'),
+  ])(
     'leaves no placeholder behind at %s',
     (file) => {
       const source = readFileSync(join(APP_PROFILE, file), 'utf8');
@@ -104,13 +141,29 @@ describe('the Profile Home menu contract', () => {
     expect(PROFILE_HELP_ROUTE).toBe('/profile/help');
   });
 
-  it('keeps Privacy & Security on the centralized note', () => {
+  it('sends Privacy & Security to its own new route', () => {
     const row = PROFILE_MENU.find((item) => item.key === 'privacy-security');
-    expect(row?.available).toBeNull();
+    expect(row?.available).toBe('/profile/privacy-security');
+    // `/settings/privacy` is still the settings-tree placeholder. It was not repurposed, and the
+    // account's privacy screen is not it.
+    expect(row?.available).not.toBe('/settings/privacy');
   });
 
-  it('leaves exactly one row deferred', () => {
-    expect(PROFILE_MENU.filter((item) => item.available === null)).toHaveLength(1);
+  it('leaves no row deferred, now that the fifth destination exists', () => {
+    expect(PROFILE_MENU.filter((item) => item.available === null)).toHaveLength(0);
+  });
+
+  it('nests the two account-security children under Privacy & Security', () => {
+    // The URL states the relationship the navigation already has: Back from either child returns
+    // to Privacy & Security, not to Profile Home.
+    expect([...PRIVACY_SECURITY_ROUTE_PATHS]).toEqual([
+      '/profile/privacy-security',
+      '/profile/privacy-security/change-password',
+      '/profile/privacy-security/change-email',
+    ]);
+    for (const path of PRIVACY_SECURITY_ROUTE_PATHS.slice(1)) {
+      expect(path.startsWith(`${PRIVACY_SECURITY_ROUTE_PATHS[0]}/`)).toBe(true);
+    }
   });
 
   it('leaves no row without either a destination or an honest explanation', () => {

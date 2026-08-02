@@ -16,19 +16,22 @@ import { profileCopy } from './profile-copy';
  * re-measured. It also keeps the contract visible — a reader can see what is promised and what is
  * shipped without diffing two sessions of work.
  *
- * ── Why four rows point somewhere ───────────────────────────────────────────
+ * ── Why every row now points somewhere ──────────────────────────────────────
  * `/profile/edit` and `/profile/family-membership` are Phase 6C-2A's two detail screens;
- * `/profile/preferences` and `/profile/help` are Phase 6C-2B's. `/family/members` was never
- * substituted for `/profile/family-membership` — it is the family-plan seat manager over a
- * development fixture, which is not what that row promises.
+ * `/profile/preferences` and `/profile/help` are Phase 6C-2B's; `/profile/privacy-security` is
+ * Phase 6C-3A's. `/family/members` was never substituted for `/profile/family-membership` — it is
+ * the family-plan seat manager over a development fixture, which is not what that row promises.
  *
  * Help & Support left `/settings/help` in Phase 6C-2B. That route is the *module* help placeholder
  * — every module registry entry still points at it — so it was not deleted, and it was not
  * upgraded either: a module's help and an account's help are different destinations that happened
- * to share a placeholder while neither existed.
+ * to share a placeholder while neither existed. Privacy & Security did the same to
+ * `/settings/privacy`, which is still the settings-tree placeholder and was not repurposed.
  *
- * Privacy & Security remains deferred and keeps the centralized note. Undoing that is still one
- * line, and Profile Home is still not touched to do it.
+ * `available: null` now appears nowhere, and the `ComingLater` controller is unreachable from this
+ * menu. It is deliberately kept rather than deleted: the Edit control and the header's Help both
+ * still branch on a null route, and the next deferred destination should reuse the mechanism
+ * instead of reintroducing it.
  */
 export type ProfileMenuItem = {
   readonly key: string;
@@ -73,7 +76,8 @@ export const PROFILE_MENU: readonly ProfileMenuItem[] = [
     label: profileCopy.menu.privacySecurity,
     icon: 'shield',
     intended: '/profile/privacy-security',
-    available: null,
+    // Built in Phase 6C-3A. One line changed from `null` — Profile Home itself was not touched.
+    available: '/profile/privacy-security' as Href,
     testID: 'profile-menu-privacy-security',
   },
   {

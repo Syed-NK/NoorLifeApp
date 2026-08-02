@@ -6,6 +6,25 @@
  */
 
 /**
+ * The whole-run per-test budget.
+ *
+ * ── Why this is set once here rather than per suite ─────────────────────────
+ * Jest's five-second default is a *machine* assumption, not a correctness one. Several suites in
+ * this project mount the full provider stack and drive it with `userEvent`, and those pass
+ * comfortably when run alone and time out when eighty-odd suites share the same cores. The
+ * failures move between runs and between files, which is the signature of saturation rather than
+ * of a hang.
+ *
+ * Individual Profile suites already carried `jest.setTimeout(30000)` with exactly this reasoning.
+ * Phase 6C-3A added enough suites to cross the line for Main Home and Faith as well, so the budget
+ * moved here instead of being copied into a seventh and eighth file — one statement of the fact,
+ * rather than a growing list of files that each rediscovered it.
+ *
+ * A genuinely hung test still fails; it now takes thirty seconds to say so.
+ */
+jest.setTimeout(30000);
+
+/**
  * The shared router double.
  *
  * The `mock` name prefix is required: `jest.mock` factories are hoisted above

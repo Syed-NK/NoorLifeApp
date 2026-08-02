@@ -109,8 +109,21 @@ describe('the Profile presentation layer', () => {
     // read and written by `AccessibilityProvider`, so Profile reaches storage one layer further
     // back than the service it would otherwise import. That is what lets the same preference apply
     // to animations in features that have never heard of Profile.
+    //
+    // `account/account-security.*` is Phase 6C-3A's boundary. It owns the password change, the
+    // email change and the two scoped sign-outs, and it exists separately from `auth.service`
+    // because that file is design-locked — adding those calls to it would have been exactly the
+    // edit `protected-files.test.ts` guards against.
+    //
+    // `auth/mock-auth-service` is the home of `scorePassword` and `isValidEmail`, which the
+    // approved Sign Up and New Password screens already validate with. Privacy & Security uses the
+    // same two functions rather than a second copy of the policy: two password rules that can
+    // disagree is a worse outcome than one import with an unfortunate filename.
     expect([...serviceImports].sort()).toEqual([
+      'account/account-security.contract',
+      'account/account-security.service',
       'auth/auth.service',
+      'auth/mock-auth-service',
       'diagnostics/app-diagnostics.service',
       'links/external-link.service',
       'notifications/notification-permission.service',

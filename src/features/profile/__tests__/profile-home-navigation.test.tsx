@@ -131,23 +131,25 @@ describe('the five menu rows', () => {
     expect(mockRouter.push).toHaveBeenCalledWith('/profile/help');
   });
 
-  it('explains Privacy & Security honestly instead of navigating nowhere', async () => {
+  it('opens the privacy and security screen from Privacy & Security', async () => {
     await renderProfile();
     await fireEvent.press(screen.getByTestId('profile-menu-privacy-security'));
 
-    expect(await screen.findByTestId('profile-coming-later-panel')).toBeTruthy();
-    expect(screen.getByText('Privacy & Security is coming later')).toBeTruthy();
-    // Nothing was pushed: a blank route is exactly what this replaces.
-    expect(mockRouter.push).not.toHaveBeenCalled();
+    // Built in Phase 6C-3A. The centralized note is gone from this row because the screen exists.
+    expect(mockRouter.push).toHaveBeenCalledWith('/profile/privacy-security');
+    expect(screen.queryByTestId('profile-coming-later-panel')).toBeNull();
   });
 
-  it('dismisses the note without navigating', async () => {
+  it('leaves no row on the centralized note, now that all five destinations exist', async () => {
     await renderProfile();
-    await fireEvent.press(screen.getByTestId('profile-menu-privacy-security'));
-    await fireEvent.press(await screen.findByTestId('profile-coming-later-dismiss'));
 
-    await waitFor(() => expect(screen.queryByTestId('profile-coming-later-panel')).toBeNull());
-    expect(mockRouter.push).not.toHaveBeenCalled();
+    for (const row of PROFILE_MENU) {
+      await fireEvent.press(screen.getByTestId(row.testID));
+      // The note is the honest answer for a destination that does not exist. None remain, so it
+      // must never appear — and the mechanism is kept rather than deleted, for the next deferral.
+      expect(screen.queryByTestId('profile-coming-later-panel')).toBeNull();
+    }
+    expect(mockRouter.push).toHaveBeenCalledTimes(PROFILE_MENU.length);
   });
 
   it('records the future destination for every row, so the placeholder is swappable', () => {
