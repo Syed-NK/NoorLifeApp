@@ -89,10 +89,40 @@ export const privacySecurityCopy = {
       none: '',
     },
     accountDataHeading: 'Held on your account',
+    /**
+     * Deliberately not "this is the complete list".
+     *
+     * That sentence is a claim about every future build as well as this one, and nothing in the
+     * application can keep it true — the next feature that adds a column makes yesterday's screen
+     * a false statement, silently. Scoping it to the current version says the same useful thing
+     * and stays true when the list grows. It is kept honest by `privacy-capabilities.test.ts`,
+     * which checks the declared list against what the code actually stores.
+     */
     accountDataSupporting:
-      'This is the complete list. It is kept so you can sign in on another device and keep your name and progress.',
+      'In the current version of NoorLife, the following account information is stored so you can sign in on another device and keep your name and progress:',
     storageHeading: 'Stored on this device',
-    storageSupporting: 'Removing NoorLife removes everything under these.',
+    /**
+     * Deliberately not "removing NoorLife removes everything under these".
+     *
+     * Uninstalling is not under this application's control, and on both supported platforms it
+     * demonstrably does not guarantee deletion:
+     *
+     *   • Android — `AndroidManifest.xml` declares `android:allowBackup="true"`, and the rules
+     *     `expo-secure-store` supplies (`secure_store_backup_rules.xml`,
+     *     `secure_store_data_extraction_rules.xml`) include the whole `sharedpref` domain in both
+     *     cloud backup and device transfer, excluding only the `SecureStore` file. So preferences
+     *     can be copied off the device by Android Auto Backup and restored onto a reinstall or a
+     *     new phone.
+     *   • iOS — `expo-secure-store` defaults to `kSecAttrAccessibleWhenUnlocked`, which is *not* a
+     *     `ThisDeviceOnly` class, so a Keychain item can be carried into an encrypted device
+     *     backup and restored elsewhere. Keychain items are also not guaranteed to be removed when
+     *     an app is deleted.
+     *
+     * Neither is a defect — they are the platform behaviours this app opted into by using the
+     * standard secure store. What would be a defect is a privacy screen promising the opposite.
+     */
+    storageSupporting:
+      'Most device-local NoorLife data is removed when the app is uninstalled. Your operating system or backup service may retain or restore some settings.',
     encryptionNote:
       'Your data is encrypted in transit and at rest by our hosting provider. It is not end-to-end encrypted, so we do not claim that it is.',
     diagnosticsExclusion:
@@ -142,10 +172,19 @@ export const privacySecurityCopy = {
     crossModule:
       'A module assistant never answers about another module on its own. It says so and offers to hand you to Noor AI, which you have to accept.',
 
-    /** The audited answer, not a placeholder. Verbatim — asserted by test. */
-    noHistory: 'No saved AI conversation history is currently stored by NoorLife.',
+    /**
+     * The audited answer, scoped to the build that renders it. Verbatim — asserted by test.
+     *
+     * "NoorLife does not store AI conversation history" reads as a policy. It is not one; it is a
+     * fact about what this version happens to do, and the day a feature saves a transcript the
+     * sentence becomes false without anybody editing it. Naming the version is what makes the
+     * claim maintainable, and the supporting line says plainly that it would change with the
+     * behaviour rather than outliving it.
+     */
+    noHistory:
+      'In the current version of NoorLife, no AI conversation history is saved on this device or on your account.',
     noHistorySupporting:
-      'There is nothing to delete, so this screen does not offer a delete control it could not honour.',
+      'There is nothing to delete today, so this screen does not offer a delete control it could not honour. If a future version starts saving conversations, this line changes with it.',
 
     /** No grant store exists yet, so editing is deferred rather than faked. */
     editingDeferred: 'Choosing permissions in advance is coming later.',
@@ -172,20 +211,41 @@ export const privacySecurityCopy = {
     allSessions: 'Sign Out All Sessions',
     allSessionsHint: 'Asks you to confirm before signing out everywhere.',
     allSessionsTitle: 'Sign out everywhere?',
-    /** Verbatim warning — asserted by test. */
-    allSessionsWarning: 'This will sign you out on this and other devices.',
+    /**
+     * What a global sign-out actually achieves. Verbatim — asserted by test.
+     *
+     * ── Audited against `@supabase/auth-js` 2.111.0, not against expectation ──
+     * `signOut({ scope: 'global' })` posts to `/logout?scope=global` through the admin `signOut`
+     * helper in `@supabase/auth-js`, which revokes the **refresh** tokens for every session the
+     * account holds. It does not and cannot revoke access tokens that have already been issued:
+     * those are self-contained JWTs, and the SDK says so in its own doc comment — "the access
+     * token JWT will be valid until it's expired … This does not revoke the JWT."
+     *
+     * So another device stops being able to *renew*, and remains able to act until the token it is
+     * already holding expires. "This will sign you out on this and other devices" describes an
+     * instant effect that the protocol does not provide, and on a security screen that is the
+     * difference between a user who waits a minute before handing their old phone over and one who
+     * does not.
+     *
+     * The wording avoids "token", "JWT" and "refresh" — those are the mechanism, and the user needs
+     * the consequence. "Renewing their sessions" and "may remain active briefly" are the same fact
+     * in words that do not require knowing what a bearer token is.
+     */
+    allSessionsWarning:
+      'This signs out this device and prevents other devices from renewing their sessions. Another device may remain active briefly.',
     allSessionsBody:
-      'This will sign you out on this and other devices. Nothing is deleted — your account and your data are untouched.',
+      'This signs out this device and prevents your other devices from renewing their sessions. A device that is already open may stay active for a short time before it is signed out. Nothing is deleted — your account and your data are untouched.',
     allSessionsConfirm: 'Sign Out Everywhere',
     cancel: 'Cancel',
 
     /**
      * The third outcome. `supabase-js` clears the local session even when the global request
-     * fails, so this is the only honest thing to say in that case.
+     * fails — `_signOut` calls `removeCurrentSession()` before returning the error for every scope
+     * except `others` — so this is the only honest thing to say in that case.
      */
     localOnlyTitle: 'Signed out here only',
     localOnlyBody:
-      'You are signed out on this device, but NoorLife could not confirm your other devices were signed out. Try again from any device once you are back online.',
+      'You are signed out on this device, but NoorLife could not confirm that your other devices were stopped from renewing their sessions. Try again from any device once you are back online.',
     localOnlyDismiss: 'OK',
   },
 
@@ -272,6 +332,14 @@ export const privacySecurityCopy = {
       'Changing your sign-in address needs to be confirmed. We will email both your current address and the new one, and your sign-in stays on the current address until both are confirmed.',
     submit: 'Send Confirmation',
     submitHint: 'Emails a confirmation to your current and new addresses.',
+    /**
+     * Read out in place of `submitHint` while the control is disabled.
+     *
+     * A greyed button with the enabled hint tells a screen-reader user what pressing it would do,
+     * which is the one thing that will not happen. This says what would enable it instead.
+     */
+    submitDisabledHint:
+      'Unavailable until you enter a valid email address that is different from your current one.',
     saving: 'Requesting your email change',
 
     pendingTitle: 'Confirmation sent',

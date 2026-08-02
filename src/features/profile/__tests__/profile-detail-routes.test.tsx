@@ -11,9 +11,15 @@ import ChangeEmailRoute from '@app/profile/privacy-security/change-email';
 import ChangePasswordRoute from '@app/profile/privacy-security/change-password';
 import PrivacySecurityRoute from '@app/profile/privacy-security/index';
 import { AppProviders } from '@application/providers/app-providers';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { PRIVACY_SECURITY_ROUTE_PATHS } from '../privacy-routes';
 import { PROFILE_EDIT_ROUTE, PROFILE_HELP_ROUTE, PROFILE_MENU } from '../profile-routes';
+
+// Two costs this removes: the simulated latency the mock data sources sleep through on every
+// mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
+// individual test is charged for it.
+installMockLatencyTimers(() => renderRoute(EditRoute));
 
 /**
  * The route contract for the four detail screens.

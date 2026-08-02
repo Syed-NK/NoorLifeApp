@@ -191,41 +191,86 @@ describe('credential persistence', () => {
   });
 });
 
+/**
+ * The fixture harness, after Phase 6C-3B removed it from the route tree.
+ *
+ * ── The claim that was wrong ────────────────────────────────────────────────
+ * 6C-3A shipped the harness as a real Expo Router route guarded by `if (!__DEV__)`. The guard
+ * stops it *rendering*; it does not stop Metro compiling it, because the route file's import is
+ * unconditional. So the fixture screen, its five state names and its fixture address were all in
+ * the release bundle, and the report that said `__DEV__` removed them was disproved by a grep of
+ * the bundle it described.
+ *
+ * The route and the screen are deleted. The states survive as data under `src/test-support/`,
+ * which Expo Router does not scan and which nothing in `src/app` or `src/features` may import —
+ * both asserted below, so the fix cannot be undone by a later import.
+ */
 describe('the fixture harness', () => {
-  it('is guarded by __DEV__, so it cannot render in a release build', () => {
-    const route = readFileSync(
-      join(SRC_ROOT, 'app', 'profile', 'privacy-security', 'fixtures.tsx'),
-      'utf8',
-    );
-    // The same guard `module-gallery` and `hero-audit` already use — a redirect, so a stale
-    // development link lands on Main Home rather than on the not-found screen.
-    expect(route).toContain('if (!__DEV__)');
-    expect(route).toContain('<Redirect href={globalRoutes.home} />');
+  it('has no route in the production route tree', () => {
+    const routes = sourceFiles(join(SRC_ROOT, 'app')).map(relative);
+    expect(routes.filter((file) => /fixture/i.test(file))).toEqual([]);
+  });
+
+  it('leaves no fixture screen in the feature', () => {
+    const screens = sourceFiles(join(SRC_ROOT, 'features')).map(relative);
+    expect(screens.filter((file) => /fixture/i.test(file))).toEqual([]);
+  });
+
+  it('is not importable from any production module', () => {
+    // The whole point of the move. A single `@/test-support/…` import from `app` or `features`
+    // would put the states straight back into the bundle, and would do it silently.
+    const offenders = PRESENTATION_SOURCE.filter((file) =>
+      readFileSync(file, 'utf8').includes('test-support'),
+    ).map(relative);
+
+    expect(offenders).toEqual([]);
   });
 
   it('performs no network call in any fixture', () => {
     const harness = readFileSync(
-      join(SRC_ROOT, 'features', 'profile', 'screens', 'privacy-security-fixtures-screen.tsx'),
+      join(SRC_ROOT, 'test-support', 'account-security-fixtures.ts'),
       'utf8',
     );
-    // Every port method resolves or rejects locally. A capture run must not be able to change an
+    // Every port method resolves or rejects in memory. A capture run must not be able to change an
     // account, which is exactly what the brief forbids.
     expect(harness).not.toContain('accountSecurityPort');
     expect(harness).not.toContain('fetch(');
     expect(harness).not.toContain('@/lib/supabase');
   });
 
-  it('is the only place in the feature that constructs a port', () => {
-    // Prose mentioning "fixture" is fine — several older screens explain why they have none. What
-    // must stay unique is an *implementation* of the seam, which is what a `readSummary:` property
-    // is. A second one would be a second set of states nobody is checking.
+  it('carries no credential and no address that could receive mail', () => {
+    const harness = readFileSync(
+      join(SRC_ROOT, 'test-support', 'account-security-fixtures.ts'),
+      'utf8',
+    );
+    // RFC 2606 reserves example.com precisely so a fixture address cannot reach a real mailbox.
+    for (const address of harness.matchAll(/[\w.+-]+@[\w.-]+/g)) {
+      expect(address[0]).toMatch(/@example\.com$/);
+    }
+    expect(harness).not.toMatch(/password\s*[:=]\s*['"]/i);
+  });
+
+  it('constructs a port nowhere inside the Profile feature', () => {
+    // Prose mentioning "fixture" is fine — several screens explain why they have none. What must
+    // not exist under `features` is an *implementation* of the seam, which is what a `readSummary:`
+    // property is: that is production code carrying a fake account.
     const offenders = sourceFiles(join(SRC_ROOT, 'features', 'profile'))
       .filter((file) => /readSummary\s*:/.test(readFileSync(file, 'utf8')))
       .map(relative);
 
-    expect(offenders).toEqual([
-      `${sep}features${sep}profile${sep}screens${sep}privacy-security-fixtures-screen.tsx`,
-    ]);
+    expect(offenders).toEqual([]);
+  });
+
+  it('records the routes that still have the pattern rather than quietly leaving them', () => {
+    // `module-gallery` and `hero-audit` are `__DEV__`-guarded routes from earlier phases with the
+    // same inclusion problem. They are out of scope for this session by instruction, so they are
+    // written down instead — a backlog entry a test keeps honest, not a comment nobody re-reads.
+    const backlog = readFileSync(join(SRC_ROOT, '..', 'docs', 'DEV_ROUTE_BACKLOG.md'), 'utf8');
+    for (const route of ['module-gallery', 'hero-audit']) {
+      expect(backlog).toContain(route);
+      // The route must still exist for the entry to be about anything.
+      expect(sourceFiles(join(SRC_ROOT, 'app')).map(relative).join('\n')).toContain(route);
+    }
   });
 });
 

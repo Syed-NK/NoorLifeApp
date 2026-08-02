@@ -139,8 +139,33 @@ describe('what does not exist yet', () => {
 
   it('uses the exact sentence the brief permits only if the audit confirms it', () => {
     expect(privacySecurityCopy.ai.noHistory).toBe(
-      'No saved AI conversation history is currently stored by NoorLife.',
+      'In the current version of NoorLife, no AI conversation history is saved on this device or on your account.',
     );
+  });
+
+  /**
+   * The claim is scoped to this build, and stays scoped.
+   *
+   * `AI_CONVERSATION_STORAGE_EXISTS` is a fact about the code today. A sentence that reads as a
+   * policy — "NoorLife does not store AI conversations" — outlives the fact it was derived from,
+   * and becomes false the first time a feature saves a transcript without anybody editing copy.
+   */
+  it('qualifies the claim to the current version rather than stating a policy', () => {
+    expect(privacySecurityCopy.ai.noHistory).toContain('In the current version of NoorLife');
+  });
+
+  it.each([
+    'NoorLife does not store',
+    'NoorLife never stores',
+    'will never be stored',
+    'is never saved',
+    'we do not store',
+  ])('does not promise %s for all time', (phrase) => {
+    expect(privacySecurityCopy.ai.noHistory.toLowerCase()).not.toContain(phrase.toLowerCase());
+  });
+
+  it('says the line changes if the behaviour does', () => {
+    expect(privacySecurityCopy.ai.noHistorySupporting).toContain('future version');
   });
 
   it('records that grant editing is deferred rather than faked', () => {

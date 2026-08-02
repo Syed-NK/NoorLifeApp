@@ -96,7 +96,12 @@ export function ProfileDialog({
           >
             {title}
           </EntryAuthText>
-          <EntryAuthText token="body" align="center" color={subscriptionColors.textSecondary}>
+          <EntryAuthText
+            token="body"
+            align="center"
+            color={subscriptionColors.textSecondary}
+            testID={`${testID}-body`}
+          >
             {body}
           </EntryAuthText>
           <View style={{ rowGap: dp(8), marginTop: dp(4) }}>{children}</View>

@@ -1,8 +1,14 @@
 import { render, screen, userEvent } from '@testing-library/react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+
 import { MainHomeScreen } from '../screens/main-home-screen';
 import { mockRouter } from '../../../../jest.setup';
+
+// Two costs this removes: the 450 ms the mock dashboard sleeps on every mount, and the one-off
+// compile cost of the first mount, which is warmed up in `beforeAll` so no test is charged for it.
+installMockLatencyTimers(() => renderMainHome());
 
 /**
  * Main Home proof-screen tests.

@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { ModuleProvider } from '../module-context';
 import { moduleRegistry } from '../module-registry';
@@ -15,6 +16,10 @@ import {
   ModuleOfflineState,
   ModulePermissionState,
 } from '../components';
+
+// Mounts screens backed by simulated-latency mocks. Advancing those timers rather than
+// sleeping through them is what keeps this suite inside Jest's default per-test budget.
+installMockLatencyTimers(() => render(<ModuleHomeScreen moduleId="planner" />));
 
 /**
  * The framework, rendered.

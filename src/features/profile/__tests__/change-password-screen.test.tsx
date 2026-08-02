@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+
 import {
   AccountSecurityError,
   type AccountSecurityPort,
@@ -11,6 +13,11 @@ import { mockRouter } from '../../../../jest.setup';
 import { privacySecurityCopy } from '../privacy-security-copy';
 import { ChangePasswordScreen } from '../screens/change-password-screen';
 
+// Two costs this removes: the simulated latency the mock data sources sleep through on every
+// mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
+// individual test is charged for it.
+installMockLatencyTimers(() => renderScreen(fakePort()));
+
 /**
  * Change Password — validation, single submission, the backend's reauthentication flow, and what
  * never leaves the screen.
@@ -20,8 +27,6 @@ import { ChangePasswordScreen } from '../screens/change-password-screen';
  * reauthentication path is unreachable without a session more than 24 hours old. Both constraints
  * point the same way: drive the port, assert the screen.
  */
-
-jest.setTimeout(30000);
 
 const EMAIL_SUMMARY: AccountSecuritySummary = {
   provider: 'email',
@@ -72,12 +77,12 @@ function fakePort(options: {
 }
 
 async function renderScreen(port: AccountSecurityPort, testID = 'change-password-form') {
-  const view = render(
+  const view = await render(
     <AppProviders>
       <ChangePasswordScreen port={port} />
     </AppProviders>,
   );
-  await waitFor(() => expect(screen.getByTestId(testID)).toBeTruthy(), { timeout: 15000 });
+  await waitFor(() => expect(screen.getByTestId(testID)).toBeTruthy());
   return view;
 }
 

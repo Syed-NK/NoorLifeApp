@@ -9,6 +9,7 @@ import { healthHomeFixture } from '../health/health-view-model';
 import { moduleAIPolicies } from '../module-ai-policy';
 import { getModulePictogram } from '@features/home/module-pictograms';
 import { noorLifeAssets } from '@shared/assets/noorlife-assets';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 /**
  * Faith and Health against their approved individual-core-screen references.
@@ -17,7 +18,11 @@ import { noorLifeAssets } from '@shared/assets/noorlife-assets';
  * what labels — because that is what the references fix and what the generic framework got
  * wrong. They cannot prove visual equivalence; the screenshots do that. What they can do is
  * stop a later refactor from quietly reintroducing the generic layout or dropping a section.
+ *
+ * Mounts whole module homes, whose repository sleeps 350 ms per read, and pays a first-mount
+ * compile cost of several seconds on a loaded machine. Both are taken out of the tests themselves.
  */
+installMockLatencyTimers(() => render(<ModuleHomeScreen moduleId="planner" />));
 
 describe('the architecture correction holds', () => {
   it('composes Noor AI, Faith and Health to their references', () => {

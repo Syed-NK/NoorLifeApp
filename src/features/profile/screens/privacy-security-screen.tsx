@@ -303,10 +303,12 @@ function PrivacyControlsSection() {
         />
       ))}
 
+      {/* The qualifier leads, so the list is read as "what this version stores" rather than as a
+          closed inventory that a later feature would quietly falsify. */}
       <ProfileStatusRow
         label={copy.accountDataHeading}
-        supporting={`${ACCOUNT_HELD_DATA.join('. ')}. ${copy.accountDataSupporting}`}
-        accessibilityLabel={`${copy.accountDataHeading}. ${ACCOUNT_HELD_DATA.join('. ')}`}
+        supporting={`${copy.accountDataSupporting} ${ACCOUNT_HELD_DATA.join('. ')}.`}
+        accessibilityLabel={`${copy.accountDataHeading}. ${copy.accountDataSupporting} ${ACCOUNT_HELD_DATA.join('. ')}`}
         testID="privacy-security-account-data"
       />
 
@@ -486,7 +488,11 @@ function AIPermissionsSection() {
           is nothing to offer a delete control for — and offering one would be a fake. */}
       {AI_CONVERSATION_STORAGE_EXISTS ? null : (
         <View style={{ rowGap: dp(4) }} testID="privacy-security-ai-no-history">
-          <EntryAuthText token="body" color={subscriptionColors.textPrimary}>
+          <EntryAuthText
+            token="body"
+            color={subscriptionColors.textPrimary}
+            testID="privacy-security-ai-no-history-claim"
+          >
             {copy.noHistory}
           </EntryAuthText>
           <EntryAuthText token="caption" color={subscriptionColors.textSecondary}>

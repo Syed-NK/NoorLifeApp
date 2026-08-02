@@ -4,6 +4,7 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 
 import { legalConfig, supportConfig } from '@shared/config/app-config';
+import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 
 import { mockRouter } from '../../../../jest.setup';
 import { helpCopy } from '../help-copy';
@@ -18,7 +19,11 @@ import { HelpSupportScreen } from '../screens/help-support-screen';
  * exactly what a test cannot let run. Everything above them — which URL is formed, what goes in a
  * mail body, what happens when there is no mail app — is this project's own code and runs for
  * real.
+ *
+ * Real timers, with only the first mount warmed: this screen resolves through promise chains rather
+ * than timers, and `waitFor` under fake timers exhausts its simulated budget before they settle.
  */
+warmUpFirstMount(() => renderHelp());
 
 jest.mock('expo-linking', () => ({
   canOpenURL: jest.fn(() => Promise.resolve(true)),
@@ -37,7 +42,7 @@ const openBrowserAsync = WebBrowser.openBrowserAsync as jest.MockedFunction<
 >;
 
 async function renderHelp() {
-  render(<HelpSupportScreen />);
+  await render(<HelpSupportScreen />);
   await waitFor(() => expect(screen.getByTestId('help-support')).toBeTruthy());
 }
 

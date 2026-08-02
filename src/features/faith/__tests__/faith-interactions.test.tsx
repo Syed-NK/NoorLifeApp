@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { render, fireEvent, screen } from '@testing-library/react-native';
 import React, { type ReactElement } from 'react';
 
+import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
+
 import type { FaithRepositories } from '../data';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { FaithAiScreen } from '../screens/faith-ai-screen';
@@ -22,9 +24,15 @@ import { WorshipScreen } from '../screens/worship-screen';
  * loops, and the inner one exhausts the outer one's budget before it can succeed — which
  * looks exactly like a broken screen and cost an hour to diagnose. Every assertion below
  * uses `findBy*` on its own.
+ *
+ * ── Real timers, and a warmed first mount ───────────────────────────────────
+ * The sibling suites advance fake timers to skip the 280 ms every Faith mock repository sleeps.
+ * This one cannot: its screens become ready through promise chains rather than through a timer, and
+ * `waitFor` under fake timers exhausts its simulated budget in microseconds before those chains
+ * settle. What it can take is the other half — the first mount, which measured 3.4 s against 200 ms
+ * for the ones after it, paid for in `beforeAll` instead of by whichever test happens to run first.
  */
-
-jest.setTimeout(30000);
+warmUpFirstMount(() => withRepositories(<SearchScreen />));
 
 beforeEach(async () => {
   // Tasbih and worship genuinely persist, so a count left by one case would otherwise be

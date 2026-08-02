@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { render, screen } from '@testing-library/react-native';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+
 import React, { type ReactElement } from 'react';
 
 import type { FaithRepositories } from '../data';
@@ -20,6 +22,11 @@ import { CalendarScreen, EventsScreen } from '../screens/calendar-screens';
 import { DailyAyahScreen } from '../screens/daily-ayah-screen';
 import { ReaderScreen } from '../screens/reader-screen';
 import { PreferencesScreen } from '../screens/preferences-screen';
+
+// Two costs this removes: the 280 ms every Faith mock repository sleeps on each read, and the
+// one-off compile cost of the first mount, warmed up in `beforeAll` so no test is charged for it.
+// Quran is the warm-up because it is the heaviest of the seventeen.
+installMockLatencyTimers(() => withRepositories(<QuranScreen key="warm-up" />));
 
 /**
  * Every Faith screen renders, and the injected repository is the one it reads.

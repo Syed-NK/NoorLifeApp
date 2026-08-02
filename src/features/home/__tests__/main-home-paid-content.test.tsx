@@ -11,10 +11,15 @@ import { EntitlementProvider } from '@features/subscription/services/entitlement
 import { MockPurchaseAdapter } from '@features/subscription/services/mock-purchase-adapter';
 import type { PurchaseAdapter } from '@features/subscription/services/purchase-adapter';
 import { lockedModuleCopy } from '@features/subscription/subscription-copy';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { LOCKED } from '../main-home-metrics';
 import { MainHomeScreen } from '../screens/main-home-screen';
 import { mockRouter } from '../../../../jest.setup';
+
+// Two costs this removes: the 450 ms the mock dashboard sleeps on every mount, and the one-off
+// compile cost of the first mount, which is warmed up in `beforeAll` so no test is charged for it.
+installMockLatencyTimers(() => free());
 
 /**
  * Paid content on Main Home: the timeline rows and the two summary cards.

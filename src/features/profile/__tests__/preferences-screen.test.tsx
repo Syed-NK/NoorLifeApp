@@ -10,10 +10,16 @@ import type {
 } from '@services/notifications/notification-permission.service';
 import { preferenceStorageKey } from '@services/preferences/device-preferences';
 import { useReducedMotion } from '@shared/utils/a11y';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { mockRouter } from '../../../../jest.setup';
 import { preferencesCopy } from '../preferences-copy';
 import { PreferencesScreen } from '../screens/preferences-screen';
+
+// Two costs this removes: the simulated latency the mock data sources sleep through on every
+// mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
+// individual test is charged for it.
+installMockLatencyTimers(renderPreferences);
 
 /**
  * Preferences — what it shows, what it refuses to fake, and the one control that is real.
@@ -68,27 +74,14 @@ function fakePort(options: {
   };
 }
 
-/**
- * The whole-suite budget.
- *
- * Jest's five-second default is not enough for the first mount of this screen when the runner is
- * saturated — four provider layers, the metrics hook and two asynchronous resolutions, on a worker
- * sharing a core with seventy-eight other suites. It timed out under parallel load and passed
- * serially, which is the signature of a budget rather than a bug. The sibling Profile suites make
- * the same allowance for the same reason.
- */
-jest.setTimeout(30000);
-
 async function renderPreferences(port?: NotificationPermissionPort) {
-  const view = render(
+  const view = await render(
     <AccessibilityProvider>
       <PreferencesScreen {...(port === undefined ? {} : { notificationPort: port })} />
     </AccessibilityProvider>,
   );
   // The stored Reduce Motion value and the first permission read both resolve asynchronously.
-  await waitFor(() => expect(screen.getByTestId('preferences-notifications-status')).toBeTruthy(), {
-    timeout: 15000,
-  });
+  await waitFor(() => expect(screen.getByTestId('preferences-notifications-status')).toBeTruthy());
   return view;
 }
 
@@ -377,7 +370,7 @@ describe('accessibility', () => {
       return <Text testID="motion-probe">{useReducedMotion() ? 'reduced' : 'full'}</Text>;
     }
 
-    render(
+    await render(
       <AccessibilityProvider>
         <PreferencesScreen />
         <MotionProbe />

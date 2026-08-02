@@ -6,23 +6,33 @@
  */
 
 /**
- * The whole-run per-test budget.
+ * ── There is deliberately no global `jest.setTimeout` here ──────────────────
+ * 6C-3A raised the whole run to thirty seconds because provider-heavy suites were timing out under
+ * parallel load. That diagnosis was wrong in an expensive way: the suites were not starved of CPU,
+ * they were *sleeping*. Four mock data sources simulate latency with a real `setTimeout` —
+ * `use-main-home-dashboard` 450 ms, `mock-module-repository` 350 ms, Faith's `mock-support` 280 ms,
+ * `mock-auth-service` 650 ms — and every mount of every screen paid it in wall-clock time. Main
+ * Home's four suites mount the screen 246 times between them, which is roughly 110 seconds of the
+ * run spent waiting for timers that exist so a human can see a skeleton.
  *
- * ── Why this is set once here rather than per suite ─────────────────────────
- * Jest's five-second default is a *machine* assumption, not a correctness one. Several suites in
- * this project mount the full provider stack and drive it with `userEvent`, and those pass
- * comfortably when run alone and time out when eighty-odd suites share the same cores. The
- * failures move between runs and between files, which is the signature of saturation rather than
- * of a hang.
+ * Raising the budget hid that, and it hid something worse: a genuinely hung unit test took thirty
+ * seconds to say so, and every suite in the project — including the pure ones that finish in
+ * milliseconds — lost its ability to fail fast.
  *
- * Individual Profile suites already carried `jest.setTimeout(30000)` with exactly this reasoning.
- * Phase 6C-3A added enough suites to cross the line for Main Home and Faith as well, so the budget
- * moved here instead of being copied into a seventh and eighth file — one statement of the fact,
- * rather than a growing list of files that each rediscovered it.
+ * The fix is `installMockLatencyTimers()` from `@/test-support/mock-latency-timers`, which the
+ * affected suites opt into: it advances the mock clock instead of sleeping on it, and warms the
+ * first mount in `beforeAll` so the opening test of a heavy suite is not charged for compiling a
+ * provider stack. Neither changes a single assertion.
  *
- * A genuinely hung test still fails; it now takes thirty seconds to say so.
+ * The second half of the fix is `maxWorkers: "60%"` in `package.json`. Jest's default of
+ * `cores - 1` had thirteen workers competing for fourteen cores, which inflated the slowest mount
+ * from 2.6 s to 4.7 s and occasionally past five. Leaving 40% of the machine free made the whole
+ * run *faster* — 70.8 s against 74.6 s — because the time was being lost to contention, not spent
+ * on work.
+ *
+ * Jest's five-second default now applies to every test in the project, which is what makes a hang
+ * look like a hang: no `jest.setTimeout` survives anywhere in `src`.
  */
-jest.setTimeout(30000);
 
 /**
  * The shared router double.
@@ -199,6 +209,14 @@ const MOCK_PROFILE_DEFAULTS = { ...mockProfileRow };
  */
 jest.mock('@supabase/supabase-js', () => {
   const session = {
+    /**
+     * A session carries an access token, because the real one does and because one code path now
+     * depends on it: `signOutEverywhere` reads the session before asking for a global sign-out,
+     * since `supabase-js` skips the network entirely — and still answers `{ error: null }` — when
+     * there is no token to present. A double without one would make that path look like the normal
+     * case.
+     */
+    access_token: 'jest-session-access-token',
     user: {
       id: 'test-user-id',
       email: 'ahmed@example.com',

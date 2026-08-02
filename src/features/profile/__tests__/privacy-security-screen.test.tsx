@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
 import type {
@@ -7,11 +7,16 @@ import type {
 } from '@services/account/account-security.contract';
 import { ACCOUNT_SECURITY_SUMMARY_FIELDS } from '@services/account/account-security.contract';
 import { supportConfig } from '@shared/config/app-config';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { mockRouter } from '../../../../jest.setup';
 import { PRIVACY_CAPABILITIES } from '../privacy/privacy-capabilities';
 import { privacySecurityCopy } from '../privacy-security-copy';
 import { PrivacySecurityScreen } from '../screens/privacy-security-screen';
+
+// Two costs this removes: the 450 ms the mock dashboard sleeps on every mount, and the one-off
+// compile cost of the first mount, which is warmed up in `beforeAll` so no test is charged for it.
+installMockLatencyTimers(() => renderScreen());
 
 /**
  * Privacy & Security — what it shows, what it refuses to show, and what it never calls.
@@ -27,8 +32,6 @@ import { PrivacySecurityScreen } from '../screens/privacy-security-screen';
  * One suite below deliberately uses no injected port at all, so the real service path is exercised
  * against the Supabase double and the wiring is proved rather than assumed.
  */
-
-jest.setTimeout(30000);
 
 const EMAIL_SUMMARY: AccountSecuritySummary = {
   provider: 'email',
@@ -61,14 +64,12 @@ function fakePort(
 }
 
 async function renderScreen(port?: AccountSecurityPort) {
-  const view = render(
+  const view = await render(
     <AppProviders>
       <PrivacySecurityScreen {...(port === undefined ? {} : { port })} />
     </AppProviders>,
   );
-  await waitFor(() => expect(screen.getByTestId('privacy-security-provider')).toBeTruthy(), {
-    timeout: 15000,
-  });
+  await waitFor(() => expect(screen.getByTestId('privacy-security-provider')).toBeTruthy());
   return view;
 }
 
@@ -277,6 +278,100 @@ describe('privacy controls', () => {
     }
   });
 
+  /**
+   * The two absolute claims 6C-3A shipped, and why neither may come back.
+   *
+   * "This is the complete list" is a statement about every future build, and the next migration
+   * that adds a column falsifies it without anybody editing copy. "Removing NoorLife removes
+   * everything under these" is a statement about the operating system, which this application does
+   * not control and which demonstrably does the opposite: `AndroidManifest.xml` declares
+   * `android:allowBackup="true"`, and `expo-secure-store`'s own backup rules include the whole
+   * `sharedpref` domain in cloud backup and device transfer, excluding only its own file. On iOS
+   * the store defaults to `kSecAttrAccessibleWhenUnlocked`, which is not a `ThisDeviceOnly` class,
+   * so an item can be restored onto another device from an encrypted backup.
+   *
+   * These are exact-string tests on purpose. A reworded near-miss of the same promise is the
+   * failure mode, so the phrases are checked as substrings of the whole section rather than as
+   * equality against one field.
+   */
+  describe('the wording that may not return', () => {
+    const allPrivacyCopy = [
+      privacySecurityCopy.privacy.accountDataSupporting,
+      privacySecurityCopy.privacy.storageSupporting,
+      privacySecurityCopy.privacy.intro,
+      privacySecurityCopy.privacy.encryptionNote,
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    it.each([
+      'this is the complete list',
+      'the complete list',
+      'removing noorlife removes everything',
+      'uninstalling removes everything',
+      'deleting the app deletes',
+      'everything is removed when you uninstall',
+      'nothing is left on your device',
+    ])('never says "%s"', (phrase) => {
+      expect(allPrivacyCopy).not.toContain(phrase);
+    });
+
+    it('scopes the account-data list to the current version', () => {
+      expect(privacySecurityCopy.privacy.accountDataSupporting).toBe(
+        'In the current version of NoorLife, the following account information is stored so you can sign in on another device and keep your name and progress:',
+      );
+    });
+
+    it('uses the platform-safe uninstall wording, verbatim', () => {
+      expect(privacySecurityCopy.privacy.storageSupporting).toBe(
+        'Most device-local NoorLife data is removed when the app is uninstalled. Your operating system or backup service may retain or restore some settings.',
+      );
+    });
+
+    it('names the operating system and backup service as the reason it cannot promise more', () => {
+      const supporting = privacySecurityCopy.privacy.storageSupporting.toLowerCase();
+      expect(supporting).toContain('operating system');
+      expect(supporting).toContain('backup service');
+      expect(supporting).toContain('retain or restore');
+    });
+
+    it('renders both on the screen, not just in the copy object', async () => {
+      await renderScreen(fakePort());
+
+      expect(screen.getByTestId('privacy-security-account-data-supporting')).toHaveTextContent(
+        /In the current version of NoorLife/,
+      );
+      expect(screen.getByTestId('privacy-security-device-storage-supporting')).toHaveTextContent(
+        /may retain or restore some settings/,
+      );
+    });
+
+    it('leads the account list with the qualifier rather than trailing it', async () => {
+      // Order matters: a list followed by "in the current version" reads as an afterthought, and
+      // the sentence has to govern the list it introduces.
+      await renderScreen(fakePort());
+
+      const supporting = String(
+        screen.getByTestId('privacy-security-account-data-supporting').props.children,
+      );
+      expect(supporting.indexOf('In the current version')).toBeLessThan(
+        supporting.indexOf('Your name and profile record'),
+      );
+    });
+
+    it('still states plainly that diagnostics exclude sensitive data and credentials', () => {
+      // Qualifying the two overstatements must not soften this one. It is a claim about what this
+      // application's own code does, which it can keep.
+      const exclusion = privacySecurityCopy.privacy.diagnosticsExclusion;
+      expect(exclusion).toContain('never includes');
+      for (const subject of ['Faith', 'health', 'finance', 'family', 'AI conversations', 'password', 'sign-in tokens']) {
+        expect(exclusion).toContain(subject);
+      }
+      expect(exclusion.toLowerCase()).not.toContain('may include');
+      expect(exclusion.toLowerCase()).not.toContain('generally');
+    });
+  });
+
   it('does not claim end-to-end encryption', async () => {
     await renderScreen(fakePort());
 
@@ -344,8 +439,21 @@ describe('AI data and permissions', () => {
 
     expect(screen.getByTestId('privacy-security-ai-no-history')).toBeTruthy();
     expect(screen.getByText(privacySecurityCopy.ai.noHistory)).toBeTruthy();
-    // No control that would appear to delete something that does not exist.
-    expect(screen.queryByText(/delete.*conversation/i)).toBeNull();
+    // No control that would appear to delete something that does not exist. Asserted over the
+    // section's own subtree and over *controls*, not over prose — the supporting sentence has to be
+    // free to explain why there is no delete button without tripping the check for one.
+    const ai = screen.getByTestId('privacy-security-ai');
+    expect(within(ai).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('qualifies the no-history claim to this version rather than stating a policy', async () => {
+    await renderScreen(fakePort());
+
+    const claim = String(
+      screen.getByTestId('privacy-security-ai-no-history-claim').props.children,
+    );
+    expect(claim).toContain('In the current version of NoorLife');
+    expect(claim.toLowerCase()).not.toContain('never');
   });
 
   it('defers grant editing in words instead of drawing switches over a store that does not exist', async () => {
@@ -368,8 +476,74 @@ describe('sessions', () => {
     await renderScreen(fakePort());
 
     expect(screen.getByTestId('privacy-security-sign-out-all-warning')).toHaveTextContent(
-      'This will sign you out on this and other devices.',
+      privacySecurityCopy.sessions.allSessionsWarning,
     );
+  });
+
+  /**
+   * The warning has to match `@supabase/auth-js` 2.111.0, not the intuition of what a global
+   * sign-out does.
+   *
+   * `signOut({ scope: 'global' })` revokes refresh tokens. Access tokens already issued are
+   * self-contained JWTs and stay valid until they expire — the SDK says so in its own doc comment.
+   * "You will be signed out on all devices" describes an instant effect the protocol does not
+   * provide, and on this screen that is the difference between a user who waits before handing an
+   * old phone over and one who does not.
+   */
+  describe('the global sign-out warning', () => {
+    const warning = privacySecurityCopy.sessions.allSessionsWarning;
+    const body = privacySecurityCopy.sessions.allSessionsBody;
+
+    it('keeps the control labelled "Sign Out All Sessions"', () => {
+      expect(privacySecurityCopy.sessions.allSessions).toBe('Sign Out All Sessions');
+    });
+
+    it('says the other devices lose the ability to renew, not that they are closed now', () => {
+      expect(warning).toContain('renewing their sessions');
+      expect(body).toContain('renewing their sessions');
+    });
+
+    it('says another device may remain active briefly', () => {
+      expect(warning.toLowerCase()).toContain('may remain active briefly');
+      expect(body.toLowerCase()).toContain('short time');
+    });
+
+    it('says this device is signed out', () => {
+      expect(warning.toLowerCase()).toContain('signs out this device');
+    });
+
+    it('says no account data is deleted', () => {
+      expect(body).toContain('Nothing is deleted');
+    });
+
+    it.each([
+      'signed out on all devices',
+      'signs you out everywhere immediately',
+      'immediately signs out',
+      'all your devices are signed out',
+      'will sign you out on this and other devices',
+    ])('never claims %s', (phrase) => {
+      expect(`${warning} ${body}`.toLowerCase()).not.toContain(phrase.toLowerCase());
+    });
+
+    it('does not require the user to know what a token is', () => {
+      // The mechanism is refresh-token revocation. The consequence is what the user needs, and the
+      // consequence can be said without the vocabulary.
+      for (const jargon of ['token', 'jwt', 'refresh token', 'bearer']) {
+        expect(`${warning} ${body}`.toLowerCase()).not.toContain(jargon);
+      }
+    });
+
+    it('is what the confirmation dialog actually shows', async () => {
+      await renderScreen(fakePort());
+
+      await fireEvent.press(screen.getByTestId('privacy-security-sign-out-all'));
+
+      // A substring match: the dialog also carries its title and its two button labels.
+      expect(
+        String(screen.getByTestId('privacy-security-sign-out-all-confirm-body').props.children),
+      ).toBe(body);
+    });
   });
 
   it('asks before signing out this device, and does nothing on cancel', async () => {

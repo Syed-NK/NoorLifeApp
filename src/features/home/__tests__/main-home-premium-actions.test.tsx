@@ -21,6 +21,7 @@ import {
 } from '@features/subscription/services/upgrade-sheet-context';
 import { lockedModuleCopy } from '@features/subscription/subscription-copy';
 import { mockMainHomeDashboard } from '@mocks/main-home';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { HomeBottomNavigation } from '../components/home-bottom-navigation';
 import { QuickActionsRow } from '../components/quick-actions-row';
@@ -30,6 +31,10 @@ import { LOCKED } from '../main-home-metrics';
 import { MainHomeMetricsProvider } from '../main-home-metrics-context';
 import { MainHomeScreen } from '../screens/main-home-screen';
 import { mockRouter } from '../../../../jest.setup';
+
+// Two costs this removes: the 450 ms the mock dashboard sleeps on every mount, and the one-off
+// compile cost of the first mount, which is warmed up in `beforeAll` so no test is charged for it.
+installMockLatencyTimers(() => free());
 
 /**
  * The remaining premium interactions on Main Home: Today's "View All", the Noor AI insight, the

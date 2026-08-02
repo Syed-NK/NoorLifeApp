@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { StyleSheet, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+
 import {
   AccountSecurityError,
   type AccountSecurityPort,
@@ -14,16 +17,23 @@ import { mockRouter } from '../../../../jest.setup';
 import { privacySecurityCopy } from '../privacy-security-copy';
 import { ChangeEmailScreen } from '../screens/change-email-screen';
 
-/**
- * Change Email — and the single failure this suite exists to prevent.
- *
- * A screen that shows the new address as the account's address after a *request* has told the user
- * something that has not happened. With Secure Email Change enabled the session's address does not
- * move until both mailboxes confirm, so the visible authenticated email must come from the session
- * on every render and never from the field.
- */
+// Mounts screens backed by simulated-latency mocks, and warms the first mount so no test is
+// charged for compiling the provider stack.
+installMockLatencyTimers(() => renderScreen(fakePort()));
 
-jest.setTimeout(30000);
+/**
+ * Change Email — and the two failures this suite exists to prevent.
+ *
+ * The first is a screen that shows the new address as the account's address after a *request*: with
+ * Secure Email Change enabled the session's address does not move until both mailboxes confirm, so
+ * the visible authenticated email must come from the session on every render and never from the
+ * field.
+ *
+ * The second is the one the device pass found. Send Confirmation was enabled over an empty field —
+ * the control invited a press, took it, and answered with a validation message. For an action that
+ * emails two mailboxes that is the wrong order, so the button's `disabled` state and the handler's
+ * refusal are now the same function's answer, and both are asserted below.
+ */
 
 const SUMMARY: AccountSecuritySummary = {
   provider: 'email',
@@ -69,12 +79,12 @@ function fakePort(options: {
 }
 
 async function renderScreen(port: AccountSecurityPort, testID = 'change-email-form') {
-  const view = render(
+  const view = await render(
     <AppProviders>
       <ChangeEmailScreen port={port} />
     </AppProviders>,
   );
-  await waitFor(() => expect(screen.getByTestId(testID)).toBeTruthy(), { timeout: 15000 });
+  await waitFor(() => expect(screen.getByTestId(testID)).toBeTruthy());
   return view;
 }
 
@@ -109,43 +119,180 @@ describe('the form', () => {
   });
 });
 
-describe('validation', () => {
-  it('rejects an empty address without calling the service', async () => {
-    const port = fakePort();
-    await renderScreen(port);
+/**
+ * The submit gate.
+ *
+ * ── Why every case asserts three things ─────────────────────────────────────
+ * A control can be refused in three independent places, and shipping two of them is how the device
+ * defect happened: the button *looked* pressable, the press *was* accepted, and only the handler
+ * said no. Each case below therefore checks the accessibility state a screen reader reads, the
+ * press a finger makes, and the service call that must not have happened. Any one of them passing
+ * alone would not have caught the original bug.
+ */
+describe('the submit gate', () => {
+  const submit = () => screen.getByTestId('change-email-submit');
+  const field = () => screen.getByTestId('change-email-new');
 
-    await fireEvent.press(screen.getByTestId('change-email-submit'));
-
-    expect(screen.getByTestId('change-email-new-error')).toHaveTextContent(
-      privacySecurityCopy.email.errors.empty,
-    );
-    expect(port.requests).not.toHaveBeenCalled();
-  });
-
-  it('rejects an invalid address', async () => {
-    const port = fakePort();
-    await renderScreen(port);
-
-    await fireEvent.changeText(screen.getByTestId('change-email-new'), 'not-an-address');
-    await fireEvent.press(screen.getByTestId('change-email-submit'));
-
-    expect(screen.getByTestId('change-email-new-error')).toHaveTextContent(
-      privacySecurityCopy.email.errors.invalid,
-    );
-    expect(port.requests).not.toHaveBeenCalled();
-  });
-
-  it('rejects the unchanged address, including a differently-cased or padded form', async () => {
-    const port = fakePort();
-    await renderScreen(port);
-
-    await fireEvent.changeText(screen.getByTestId('change-email-new'), '  Ahmed@Example.COM ');
-    await fireEvent.press(screen.getByTestId('change-email-submit'));
-
-    expect(screen.getByTestId('change-email-new-error')).toHaveTextContent(
+  /** Every disabled case, as the user would produce it. */
+  const REFUSED = [
+    ['an empty field', '', privacySecurityCopy.email.errors.empty],
+    ['whitespace only', '   ', privacySecurityCopy.email.errors.empty],
+    ['a tab and spaces', ' \t ', privacySecurityCopy.email.errors.empty],
+    ['no @ at all', 'not-an-address', privacySecurityCopy.email.errors.invalid],
+    ['no domain', 'someone@', privacySecurityCopy.email.errors.invalid],
+    ['no local part', '@example.com', privacySecurityCopy.email.errors.invalid],
+    ['an internal space', 'some one@example.com', privacySecurityCopy.email.errors.invalid],
+    ['the current address', 'ahmed@example.com', privacySecurityCopy.email.errors.unchanged],
+    ['the current address in another case', 'AHMED@Example.COM', privacySecurityCopy.email.errors.unchanged],
+    ['the current address padded', '  ahmed@example.com  ', privacySecurityCopy.email.errors.unchanged],
+    [
+      'the current address padded and re-cased',
+      '  Ahmed@Example.COM ',
       privacySecurityCopy.email.errors.unchanged,
-    );
+    ],
+  ] as const;
+
+  it('starts disabled, before anything has been typed', async () => {
+    await renderScreen(fakePort());
+
+    expect(submit().props.accessibilityState.disabled).toBe(true);
+  });
+
+  it.each(REFUSED)('is disabled for %s', async (_label, text) => {
+    const port = fakePort();
+    await renderScreen(port);
+
+    await fireEvent.changeText(field(), text);
+
+    expect(submit().props.accessibilityState.disabled).toBe(true);
+  });
+
+  it.each(REFUSED)('calls no service when pressed with %s', async (_label, text) => {
+    const port = fakePort();
+    await renderScreen(port);
+
+    await fireEvent.changeText(field(), text);
+    await fireEvent.press(submit());
+
     expect(port.requests).not.toHaveBeenCalled();
+  });
+
+  it.each(REFUSED)('calls no service on keyboard Submit with %s', async (_label, text) => {
+    // The keyboard's own Done key reaches `submit` directly, bypassing the button's `disabled`
+    // prop entirely. It has to be refused by the handler, or the gate has a hole in it.
+    const port = fakePort();
+    await renderScreen(port);
+
+    await fireEvent.changeText(field(), text);
+    await fireEvent(field(), 'submitEditing');
+
+    expect(port.requests).not.toHaveBeenCalled();
+  });
+
+  it.each(REFUSED)('explains %s once the field has been left', async (_label, text, message) => {
+    await renderScreen(fakePort());
+
+    await fireEvent.changeText(field(), text);
+    await fireEvent(field(), 'blur');
+
+    expect(screen.getByTestId('change-email-new-error')).toHaveTextContent(message);
+  });
+
+  it('says nothing about an untouched field', async () => {
+    // Opening the screen must not greet the user with a validation error over a field they have
+    // not reached yet.
+    await renderScreen(fakePort());
+
+    expect(screen.queryByTestId('change-email-new-error')).toBeNull();
+  });
+
+  it('enables for a valid address that differs from the current one', async () => {
+    await renderScreen(fakePort());
+
+    await fireEvent.changeText(field(), 'new@example.com');
+
+    expect(submit().props.accessibilityState.disabled).toBe(false);
+    expect(screen.queryByTestId('change-email-new-error')).toBeNull();
+  });
+
+  it('enables for a valid address that only needs trimming', async () => {
+    await renderScreen(fakePort());
+
+    await fireEvent.changeText(field(), '  New@Example.com  ');
+
+    expect(submit().props.accessibilityState.disabled).toBe(false);
+  });
+
+  it('re-disables when a valid address is edited back into an invalid one', async () => {
+    await renderScreen(fakePort());
+
+    await fireEvent.changeText(field(), 'new@example.com');
+    expect(submit().props.accessibilityState.disabled).toBe(false);
+
+    await fireEvent.changeText(field(), 'new@');
+    expect(submit().props.accessibilityState.disabled).toBe(true);
+  });
+
+  it('never rewrites the address the account actually has', async () => {
+    // Normalization is applied to the draft for comparison and for sending. The current address is
+    // read from the session and rendered as the session reports it.
+    const port = fakePort({ summary: { email: 'Ahmed@Example.com' } });
+    await renderScreen(port);
+
+    await fireEvent.changeText(field(), '  AHMED@example.COM ');
+
+    expect(screen.getByTestId('change-email-current-value')).toHaveTextContent(
+      'Ahmed@Example.com',
+    );
+    expect(submit().props.accessibilityState.disabled).toBe(true);
+  });
+
+  it('reads as disabled to a screen reader, and says what would enable it', async () => {
+    await renderScreen(fakePort());
+
+    expect(submit().props.accessibilityState.disabled).toBe(true);
+    expect(submit().props.accessibilityHint).toBe(
+      privacySecurityCopy.email.submitDisabledHint,
+    );
+  });
+
+  it('swaps to the action hint once it is enabled', async () => {
+    await renderScreen(fakePort());
+
+    await fireEvent.changeText(field(), 'new@example.com');
+
+    expect(submit().props.accessibilityHint).toBe(privacySecurityCopy.email.submitHint);
+  });
+
+  it('keeps a 44 dp target and the same geometry in both states', async () => {
+    // A disabled control that shrinks is a disabled control the user cannot reliably hit when it
+    // comes back. The fill changes; nothing else does.
+    await renderScreen(fakePort());
+
+    const disabledStyle = StyleSheet.flatten(
+      submit().props.style as StyleProp<ViewStyle>,
+    );
+    await fireEvent.changeText(field(), 'new@example.com');
+    const enabledStyle = StyleSheet.flatten(
+      submit().props.style as StyleProp<ViewStyle>,
+    );
+
+    expect(disabledStyle.height).toBeGreaterThanOrEqual(44);
+    expect(enabledStyle.height).toBe(disabledStyle.height);
+    expect(enabledStyle.borderRadius).toBe(disabledStyle.borderRadius);
+    // And the fill really does change, so "obviously disabled" is not just a claim.
+    expect(enabledStyle.backgroundColor).not.toBe(disabledStyle.backgroundColor);
+  });
+
+  it('reads its disabled label against the disabled fill, not white on grey', async () => {
+    await renderScreen(fakePort());
+
+    const disabledLabel = within(submit()).getByText(privacySecurityCopy.email.submit);
+    const style = StyleSheet.flatten(
+      disabledLabel.props.style as StyleProp<TextStyle>,
+    );
+    // #FFFFFF on the #C8CED8 disabled fill measures 1.9:1. Anything but white is the assertion.
+    expect(String(style.color).toUpperCase()).not.toBe('#FFFFFF');
   });
 });
 
@@ -166,6 +313,34 @@ describe('requesting the change', () => {
 
     await waitFor(() => expect(port.requests).toHaveBeenCalledTimes(1));
     expect(port.requests).toHaveBeenCalledWith('new@example.com');
+  });
+
+  it('swallows a keyboard Submit fired while the first request is still running', async () => {
+    // The other way in. A press and a Done key in the same frame both reach `submit`, and only the
+    // in-flight ref is written soon enough to stop the second.
+    const port = fakePort();
+    await renderScreen(port);
+
+    await fireEvent.changeText(screen.getByTestId('change-email-new'), 'new@example.com');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('change-email-submit'));
+      fireEvent(screen.getByTestId('change-email-new'), 'submitEditing');
+    });
+
+    await waitFor(() => expect(port.requests).toHaveBeenCalledTimes(1));
+  });
+
+  it('disables the control again once the field is cleared by a successful request', async () => {
+    const port = fakePort({ afterRequest: { pendingEmail: 'new@example.com' } });
+    await renderScreen(port);
+
+    await fireEvent.changeText(screen.getByTestId('change-email-new'), 'new@example.com');
+    await fireEvent.press(screen.getByTestId('change-email-submit'));
+    await waitFor(() => expect(screen.getByTestId('change-email-pending')).toBeTruthy());
+
+    // The field is empty again, so a second confirmation cannot be sent by pressing twice slowly.
+    expect(screen.getByTestId('change-email-submit').props.accessibilityState.disabled).toBe(true);
+    expect(screen.queryByTestId('change-email-new-error')).toBeNull();
   });
 
   it('shows a pending-confirmation state rather than a success', async () => {

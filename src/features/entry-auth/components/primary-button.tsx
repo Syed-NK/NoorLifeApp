@@ -32,6 +32,13 @@ export type PrimaryButtonProps = {
  * A loading press is swallowed rather than the button being disabled, so the label stays put
  * and the control does not change size mid-request. The spinner replaces the label in place;
  * `accessibilityState.busy` is what conveys the change to a screen reader.
+ *
+ * ── The disabled label is not white ─────────────────────────────────────────
+ * `onPrimary` on the `#C8CED8` disabled fill measures 1.9:1, which is unreadable — a disabled
+ * control still has to say what it is, or the user cannot tell a refused action from a missing one.
+ * The label switches to `textPrimary` instead, which is 9.0:1 on that fill and reads unmistakably
+ * as inactive beside the `#1677FF` enabled state. Both come from the locked token set; no colour
+ * was added. Geometry is identical in both states, so the 48 dp target never shrinks.
  */
 export function PrimaryButton({
   label,
@@ -77,7 +84,7 @@ export function PrimaryButton({
         <View style={styles.labelWrap}>
           <EntryAuthText
             token="button"
-            color={entryAuthColors.onPrimary}
+            color={disabled ? entryAuthColors.textPrimary : entryAuthColors.onPrimary}
             numberOfLines={1}
             // The button is a fixed 48 dp, so the label is capped rather than allowed to grow
             // past the control. Scaling still applies up to this point.

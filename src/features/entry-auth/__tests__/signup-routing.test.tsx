@@ -2,6 +2,7 @@ import { render, screen, userEvent, waitFor } from '@testing-library/react-nativ
 
 import { AuthProvider } from '@application/providers/auth-provider';
 import { supabase } from '@/lib/supabase';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { SignUpScreen } from '../screens/sign-up-screen';
 import { VerifyEmailScreen } from '../screens/verify-email-screen';
@@ -16,6 +17,17 @@ import { mockRouter } from '../../../../jest.setup';
  * sends no email at all, so that screen sat there asking for a six-digit code that did not exist and
  * never would. These lock the branch.
  */
+
+// `userEvent.type` drives fifty-four keystrokes through the full Sign Up screen, and each one is a
+// press-in, a press-out and a re-render. Advancing the clock rather than sleeping through it, and
+// warming the first mount, is what keeps these four inside Jest's default per-test budget.
+installMockLatencyTimers(() =>
+  render(
+    <AuthProvider>
+      <SignUpScreen />
+    </AuthProvider>,
+  ),
+);
 
 const client = supabase as unknown as {
   auth: { signUp: jest.Mock; getSession: jest.Mock };

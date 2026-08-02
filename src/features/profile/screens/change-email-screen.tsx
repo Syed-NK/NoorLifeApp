@@ -16,12 +16,12 @@ import {
   type AccountSecurityPort,
   type SecurityErrorCode,
 } from '@services/account/account-security.contract';
-import { accountSecurityPort, normalizeEmail } from '@services/account/account-security.service';
-import { isValidEmail } from '@services/auth/mock-auth-service';
+import { accountSecurityPort } from '@services/account/account-security.service';
 
 import { ProfileDetailCard, ProfileDetailRow } from '../components/profile-detail-card';
 import { ProfileDetailScaffold } from '../components/profile-detail-scaffold';
 import { ProfileStatusRow } from '../components/profile-status-row';
+import { evaluateEmailDraft } from '../email-change-validation';
 import { useAccountSecurity } from '../hooks/use-account-security';
 import { privacySecurityCopy } from '../privacy-security-copy';
 import { PRIVACY_SECURITY_ROUTE } from '../privacy-routes';
@@ -51,6 +51,17 @@ import { PRIVACY_SECURITY_ROUTE } from '../privacy-routes';
  * says so plainly and without exposing any configuration detail. Claiming reliable delivery would
  * leave a user waiting for a message that is not coming, and Secure Email Change is not turned off
  * to make the flow look smoother.
+ *
+ * ── One guard, read twice ───────────────────────────────────────────────────
+ * The device pass found Send Confirmation enabled over an empty field: the button had no `disabled`
+ * prop at all, and the only refusal lived inside the handler. So the control invited a press,
+ * accepted it, and answered with a validation message — which is the wrong order for an action that
+ * emails two mailboxes.
+ *
+ * Both readings now come from `evaluateEmailDraft`. The button is disabled unless the draft is a
+ * syntactically valid address that differs from the authenticated one, and `submit` re-evaluates
+ * before it calls anything — so a keyboard Submit, a stale closure and a double press are all
+ * refused by the same function rather than by three approximations of it.
  */
 export function ChangeEmailScreen({
   port = accountSecurityPort,
@@ -64,7 +75,15 @@ export function ChangeEmailScreen({
   const copy = privacySecurityCopy.email;
 
   const [draft, setDraft] = useState('');
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  /**
+   * Whether the field has been interacted with.
+   *
+   * Inline validation is silent until it is true, so a screen that has only just opened does not
+   * greet the user with "Enter your new email address." above an untouched field. It is set on blur
+   * and on a submit attempt, and never cleared — after the first blur the message tracks what is
+   * actually typed, which is what makes the disabled button explain itself.
+   */
+  const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   /**
    * The double-submit guard.
@@ -97,35 +116,45 @@ export function ChangeEmailScreen({
   const currentEmail = summary?.email ?? null;
   const { reload } = security;
 
+  /**
+   * Whether a request could be sent at all, independent of what is typed.
+   *
+   * A summary that has not loaded, a session that reports no address, or an authentication state
+   * that is not signed-in all mean the "is this different from my current address?" question has no
+   * answer — and a change requested against an unknown current address is the one that ends with a
+   * user locked out. The control stays disabled rather than guessing.
+   */
+  const sessionReady = status === 'signed-in' && summary !== null && currentEmail !== null;
+
+  const evaluation = evaluateEmailDraft(draft, currentEmail);
+  /** Content alone. `busy` is deliberately excluded so the button keeps its fill while it spins. */
+  const submittable = sessionReady && evaluation.canSubmit;
+  const fieldMessage =
+    touched && evaluation.state !== 'valid' ? copy.errors[evaluation.state] : null;
+
   const submit = useCallback(async () => {
+    // A submit attempt counts as interaction, so a refusal is explained rather than silent.
+    setTouched(true);
     if (inFlight.current) {
       return;
     }
 
-    const candidate = normalizeEmail(draft);
-    if (candidate.length === 0) {
-      setFieldError(copy.errors.empty);
-      return;
-    }
-    if (!isValidEmail(candidate)) {
-      setFieldError(copy.errors.invalid);
-      return;
-    }
-    // Compared after normalization, so "Ahmed@Example.com " is recognised as the current address
-    // rather than sent as a change that would confirm to the same mailbox.
-    if (currentEmail !== null && candidate === normalizeEmail(currentEmail)) {
-      setFieldError(copy.errors.unchanged);
+    // Re-evaluated here rather than read from the render that drew the button. A keyboard Submit,
+    // a queued press and a programmatic call all arrive at this line, and the service must not be
+    // reachable from any of them while the answer is anything but `valid`.
+    const check = evaluateEmailDraft(draft, currentEmail);
+    if (status !== 'signed-in' || summary === null || currentEmail === null || !check.canSubmit) {
       return;
     }
 
     inFlight.current = true;
     setBusy(true);
-    setFieldError(null);
     setErrorCode(null);
     try {
-      const outcome = await port.requestEmailChange(candidate);
+      const outcome = await port.requestEmailChange(check.normalized);
       setRequested(outcome.requestedEmail);
       setDraft('');
+      setTouched(false);
       // Re-read the session so the pending row reflects Supabase's `new_email` rather than this
       // screen's belief about what it just asked for.
       await reload();
@@ -135,7 +164,7 @@ export function ChangeEmailScreen({
       inFlight.current = false;
       setBusy(false);
     }
-  }, [copy.errors, currentEmail, draft, port, reload]);
+  }, [currentEmail, draft, port, reload, status, summary]);
 
   if (status === 'signed-out') {
     return <View style={styles.blank} testID="change-email-signed-out" />;
@@ -208,16 +237,21 @@ export function ChangeEmailScreen({
               value={draft}
               onChangeText={(next) => {
                 setDraft(next);
-                setFieldError(null);
                 setErrorCode(null);
               }}
+              // Validation is announced when the user leaves the field, not while they are still
+              // half-way through typing an address.
+              onBlur={() => setTouched(true)}
+              // The keyboard's own Submit takes the same route as the button, so "Done" cannot send
+              // a request the button is refusing to send.
+              onSubmitEditing={() => void submit()}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="email"
               textContentType="emailAddress"
               returnKeyType="done"
-              {...(fieldError === null ? {} : { error: fieldError })}
+              {...(fieldMessage === null ? {} : { error: fieldMessage })}
               testID="change-email-new"
             />
 
@@ -229,11 +263,15 @@ export function ChangeEmailScreen({
               {copy.deliveryNote}
             </EntryAuthText>
 
+            {/* Disabled until the field holds a valid address that is not the current one. The
+                hint changes with the state, so a screen reader reaching a greyed control is told
+                what would enable it rather than what it would do. */}
             <PrimaryButton
               label={copy.submit}
               onPress={() => void submit()}
+              disabled={!submittable}
               loading={busy}
-              accessibilityHint={copy.submitHint}
+              accessibilityHint={submittable ? copy.submitHint : copy.submitDisabledHint}
               testID="change-email-submit"
             />
           </ProfileDetailCard>

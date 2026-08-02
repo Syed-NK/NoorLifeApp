@@ -2,10 +2,15 @@ import { render, screen } from '@testing-library/react-native';
 
 import { getModulePictogram } from '@features/home/module-pictograms';
 import { noorLifeAssets } from '@shared/assets/noorlife-assets';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { moduleRegistry } from '../module-registry';
 import { FRAMEWORK_MODULE_IDS } from '../module-tokens';
 import { ModuleHomeScreen } from '../screens/module-home-screen';
+
+// Mounts screens backed by simulated-latency mocks. Advancing those timers rather than
+// sleeping through them is what keeps this suite inside Jest's default per-test budget.
+installMockLatencyTimers();
 
 /**
  * The Phase 4B corrections, asserted.

@@ -207,3 +207,58 @@ describe('the encryption claim', () => {
     expect(mentions).toBe(1);
   });
 });
+
+/**
+ * The absolute claims, checked over *every* string this screen can render.
+ *
+ * The 6C-3B device pass is the reason this scan exists rather than a check on one field.
+ * `privacySecurityCopy.privacy.storageSupporting` was corrected, the emulator was opened, and two
+ * paragraphs above the corrected sentence the Local application data row still read "Removing
+ * NoorLife removes them." — the same promise, in a string that lives in this file rather than the
+ * copy file, which the first audit did not reach.
+ *
+ * So the assertion is over the union of both sources. A third home for a privacy sentence would
+ * have to be added to `ALL_RENDERED_PRIVACY_TEXT` to escape it, which is a visible edit rather than
+ * an oversight.
+ */
+describe('claims the screen may not make', () => {
+  const ALL_RENDERED_PRIVACY_TEXT = [
+    JSON.stringify(privacySecurityCopy.privacy),
+    JSON.stringify(privacySecurityCopy.ai),
+    ...PRIVACY_CAPABILITIES.map((capability) => `${capability.label} ${capability.detail}`),
+    ...ACCOUNT_HELD_DATA,
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  it.each([
+    // Uninstall is the operating system's behaviour, not this application's. Android declares
+    // `allowBackup="true"`, and iOS keeps Keychain items in a restorable class.
+    'removing noorlife removes them',
+    'removing noorlife removes everything',
+    'uninstalling removes everything',
+    'uninstalling deletes everything',
+    'deleting the app deletes everything',
+    'nothing is left on your device',
+    'is completely removed',
+    // Completeness is a claim about builds that do not exist yet.
+    'this is the complete list',
+    'the complete list',
+    'the full list of everything',
+  ])('never says "%s"', (phrase) => {
+    expect(ALL_RENDERED_PRIVACY_TEXT).not.toContain(phrase);
+  });
+
+  it('qualifies every uninstall sentence it does make', () => {
+    const uninstallSentences = [
+      privacySecurityCopy.privacy.storageSupporting,
+      ...PRIVACY_CAPABILITIES.map((capability) => capability.detail),
+    ].filter((text) => /uninstall|removing noorlife/i.test(text));
+
+    // At least one such sentence exists — otherwise this test would pass by saying nothing.
+    expect(uninstallSentences.length).toBeGreaterThan(0);
+    for (const sentence of uninstallSentences) {
+      expect(sentence.toLowerCase()).toMatch(/operating system|backup service/);
+    }
+  });
+});

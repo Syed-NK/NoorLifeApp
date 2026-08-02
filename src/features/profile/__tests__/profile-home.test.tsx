@@ -4,10 +4,15 @@ import { AuthProvider } from '@application/providers/auth-provider';
 import { PLAN_CAPABILITIES, type Entitlement } from '@features/subscription/domain/entitlement';
 import { EntitlementProvider } from '@features/subscription/services/entitlement-context';
 import { MockPurchaseAdapter } from '@features/subscription/services/mock-purchase-adapter';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { PROFILE_LAYOUT } from '../profile-metrics';
 import { PROFILE_MENU } from '../profile-routes';
 import { ProfileHomeScreen } from '../screens/profile-home-screen';
+
+// Mounts screens backed by simulated-latency mocks. Advancing those timers rather than
+// sleeping through them is what keeps this suite inside Jest's default per-test budget.
+installMockLatencyTimers();
 
 /**
  * Compact Profile Home — layout and data.

@@ -72,34 +72,47 @@ adb shell screencap -p /sdcard/_shot.png && adb pull /sdcard/_shot.png <file>.pn
 | `17-large-font-change-password.png` | Font scale 1.5 — the password form |
 | `18-large-font-change-email.png` | Font scale 1.5 — the email form |
 
-### Debug build, injected fixtures, font scale 1.0
+### Debug build, injected fixtures, font scale 1.0 — **historical, superseded in 6C-3B**
 
-Five states cannot be reached from a real account without damaging it or waiting a day, and the
-phase brief forbids changing the test account's email or password to obtain a screenshot. They are
-supplied through `AccountSecurityPort` by the harness at
-`src/features/profile/screens/privacy-security-fixtures-screen.tsx`, reached at
-`/profile/privacy-security/fixtures`.
+> **These five images are fixtures, not recordings of a real account.** Every value visible in
+> them — the address, the provider, the pending confirmation, the failure — was supplied to the
+> screen through `AccountSecurityPort` by a test harness. None of it came from a Supabase project,
+> and no account was read or changed to produce them. They are kept as historical evidence of what
+> the screens rendered on 2 August 2026, and nothing in them should be read as account data.
 
-**Every fixture is local.** No fixture method contacts a server: `updatePassword` and
-`requestEmailChange` resolve or reject in memory, and `signOutEverywhere` returns an outcome
-without asking anything. `privacy-security-source-scan.test.ts` asserts that the harness references
-neither the real port nor the Supabase client.
+**The harness they were captured from no longer exists.** 6C-3B deleted the route
+(`src/app/profile/privacy-security/fixtures.tsx`) and the screen
+(`src/features/profile/screens/privacy-security-fixtures-screen.tsx`).
 
-**The harness is unreachable in release, and it is still in the bundle.** The route guards on
-`__DEV__` and redirects to Main Home otherwise, exactly as `module-gallery` and `hero-audit`
-already do — which is why these five shots are from a **debug** build and every other shot is from
-the release APK. The guard prevents rendering, not inclusion: the route imports the harness
-unconditionally, so it is compiled in. Grepping the built bundle shows both, and the same grep
-finds the existing gallery for the same reason:
+The reason is the paragraph this section used to carry, which was correct about the problem and
+wrong about the remedy. The route guarded on `__DEV__`, so the harness could not *render* in a
+release build — but the route's `import` was unconditional, so Metro compiled it in regardless, and
+the harness, its five state names and its fixture address were all present in
+`index.android.bundle`. A guard against rendering is not a guard against inclusion, and calling it
+one put a fake account in a shipped artifact.
+
+What replaced it:
+
+- the five states now live as data in `src/test-support/account-security-fixtures.ts`, outside
+  `src/app` and `src/features`, where Expo Router cannot route to them;
+- `privacy-security-source-scan.test.ts` asserts that no file under `src/app` or `src/features`
+  imports that directory, so the fix cannot be silently undone;
+- `account-security-fixture-states.test.tsx` renders each state and asserts it, which is strictly
+  more than the harness gave — a harness let somebody look, a test checks on every run;
+- the fixture address is an `example.com` one, which RFC 2606 reserves and which cannot receive
+  mail;
+- `module-gallery` and `hero-audit` have the same inclusion problem and were out of scope for
+  6C-3B. They are recorded in `docs/DEV_ROUTE_BACKLOG.md`.
+
+The 6C-3B bundle scan, run against the freshly built release bundle:
 
 ```bash
-grep -c "privacy-security-fixture" android/app/build/generated/assets/react/release/index.android.bundle   # 1+
-grep -c "Module Gallery"           android/app/build/generated/assets/react/release/index.android.bundle   # 1+
-grep -c "service_role"             android/app/build/generated/assets/react/release/index.android.bundle   # 0
+grep -c "privacy-security-fixture"    index.android.bundle   # 0
+grep -c "fixture.user@example.com"    index.android.bundle   # 0
+grep -c "PrivacySecurityFixtures"     index.android.bundle   # 0
+grep -c "service_role"                index.android.bundle   # 0
+grep -c "Module Gallery"              index.android.bundle   # 1+  (open, see the backlog)
 ```
-
-What makes that acceptable is the harness itself rather than its absence: every port it constructs
-resolves locally, so even if it were reached it could not read or change an account.
 
 | File | What it shows | Fixture |
 |---|---|---|

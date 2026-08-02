@@ -6,11 +6,16 @@ import { AuthError } from '@services/auth/auth-service.contract';
 import * as authService from '@services/auth/auth.service';
 import type { AuthUser } from '@services/auth/auth.service';
 import * as profileService from '@services/profile/profile.service';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { mockRouter } from '../../../../jest.setup';
 import { PROFILE_LAYOUT } from '../profile-metrics';
 import { PROFILE_NAME_MAX_LENGTH } from '../profile-name';
 import { PersonalInformationScreen } from '../screens/personal-information-screen';
+
+// Mounts screens backed by simulated-latency mocks. Advancing those timers rather than
+// sleeping through them is what keeps this suite inside Jest's default per-test budget.
+installMockLatencyTimers();
 
 /**
  * Personal Information — the one editable field in Profile.

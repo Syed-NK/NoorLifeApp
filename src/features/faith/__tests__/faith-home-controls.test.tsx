@@ -2,9 +2,16 @@ import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import { ModuleHomeScreen } from '@features/modules/screens/module-home-screen';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+
 import { mockRouter } from '../../../../jest.setup';
 
 import { faithRoutes } from '../faith-routes';
+
+// Two costs this removes: the simulated latency the mock data sources sleep through on every
+// mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
+// individual test is charged for it.
+installMockLatencyTimers(renderFaithHome);
 
 /**
  * Every visible Faith Home control reaches its intended destination.

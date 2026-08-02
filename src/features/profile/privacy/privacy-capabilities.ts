@@ -103,8 +103,21 @@ export const PRIVACY_CAPABILITIES: readonly PrivacyCapability[] = [
     label: 'Local application data',
     status: 'stored',
     scope: 'device',
+    /**
+     * The second copy of the uninstall claim, found on the 6C-3B device pass.
+     *
+     * `privacySecurityCopy.privacy.storageSupporting` was corrected first, and this row still said
+     * "Removing NoorLife removes them." two paragraphs above it — the same absolute promise about
+     * an operating system this application does not control, in a string the copy-file audit did
+     * not reach. It is qualified here in the same terms and for the same reasons: Android declares
+     * `allowBackup="true"` with `expo-secure-store`'s rules including the whole `sharedpref`
+     * domain, and iOS keeps Keychain items in a class that survives a device restore.
+     *
+     * `privacy-capabilities.test.ts` now scans every `detail` on this list for the phrases, so a
+     * third copy cannot appear somewhere else either.
+     */
     detail:
-      'Your Faith activity — reading position, bookmarks, tasbih and worship records — plus your onboarding and Reduce Motion preferences are stored on this device only. Removing NoorLife removes them.',
+      'Your Faith activity — reading position, bookmarks, tasbih and worship records — plus your onboarding and Reduce Motion preferences are stored on this device only. Uninstalling removes most of it; your operating system or backup service may retain or restore some settings.',
     testID: 'privacy-capability-local-data',
   },
 ];

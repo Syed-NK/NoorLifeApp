@@ -348,6 +348,22 @@ export async function signOutThisDevice(): Promise<void> {
 /**
  * Ends every session the account holds, on this device and elsewhere.
  *
+ * ── What the SDK actually does, audited at 2.111.0 ──────────────────────────
+ * `signOut({ scope: 'global' })` reaches `GoTrueClient._signOut`, which reads the current session
+ * and — *only if it holds an access token* — posts to `/logout?scope=global` through the admin
+ * `signOut` helper in `@supabase/auth-js`. GoTrue revokes the refresh tokens for every session on
+ * the account.
+ * Access tokens already issued are self-contained JWTs and are not revoked by this or any other
+ * client call; the SDK states that in its own doc comment. So the achievable promise is "no other
+ * device can renew", not "every other device is closed now", and the copy says exactly that.
+ *
+ * ── Why the session is read first ───────────────────────────────────────────
+ * `_signOut` skips the network entirely when the session carries no access token, and still returns
+ * `{ error: null }`. Handing that straight back would have this function report a *global* sign-out
+ * that no server was ever asked about — the precise failure the outcome type exists to prevent. So
+ * the token is checked here, and its absence resolves to `local-only`: the local session is cleared,
+ * and nothing is claimed about the other devices, because nothing was asked.
+ *
  * ── Why the result is an outcome rather than a resolve-or-throw ─────────────
  * `supabase-js` removes the local session on the failure path too: `_signOut` calls
  * `removeCurrentSession()` before returning the error for every scope except `others`. So when the
@@ -362,6 +378,23 @@ export async function signOutThisDevice(): Promise<void> {
  */
 export async function signOutEverywhere(): Promise<GlobalSignOutOutcome> {
   const client = requireClient();
+
+  const { data, error: sessionError } = await client.auth.getSession();
+  const accessToken = data?.session?.access_token;
+  const remoteCallIsPossible =
+    sessionError === null && typeof accessToken === 'string' && accessToken.length > 0;
+
+  if (!remoteCallIsPossible) {
+    // End what can be ended here, then say only that. `local` is passed explicitly so this cannot
+    // become a global claim by way of the SDK's default scope.
+    await client.auth.signOut({ scope: 'local' });
+    await clearAccessToken();
+    return {
+      status: 'local-only',
+      code: sessionError === null ? 'session-expired' : toSecurityErrorCode(sessionError),
+    };
+  }
+
   const { error } = await client.auth.signOut({ scope: 'global' });
 
   // The Keystore copy is ours rather than the SDK's, so it is cleared on both paths — the local

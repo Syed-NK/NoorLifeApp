@@ -4,6 +4,7 @@ import { StyleSheet, type ImageStyle } from 'react-native';
 
 import { ModuleHomeScreen } from '@features/modules/screens/module-home-screen';
 import { moduleLayout } from '@features/modules/module-tokens';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { mockRouter } from '../../../../jest.setup';
 
@@ -16,6 +17,11 @@ import { MosquesScreen, QiblaScreen } from '../screens/location-screens';
 import { PrayerTimesScreen } from '../screens/prayer-times-screen';
 import { QuranScreen } from '../screens/quran-screen';
 import { TasbihScreen } from '../screens/tasbih-screen';
+
+// Two costs this removes: the simulated latency the mock data sources sleep through on every
+// mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
+// individual test is charged for it.
+installMockLatencyTimers(() => renderIn(<ModuleHomeScreen moduleId="faith" />));
 
 /**
  * Faith feature identities are approved PNGs; functional controls stay vectors.

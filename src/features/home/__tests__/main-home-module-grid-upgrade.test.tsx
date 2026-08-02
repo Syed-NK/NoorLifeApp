@@ -18,6 +18,7 @@ import {
 } from '@features/subscription/services/upgrade-sheet-context';
 import { lockedModuleCopy } from '@features/subscription/subscription-copy';
 import { subscriptionRoutes } from '@features/subscription/subscription-routes';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { ModuleGrid } from '../components/module-grid';
 import { UPGRADE_SOURCES } from '../home-premium-surfaces';
@@ -38,6 +39,10 @@ import { mockRouter } from '../../../../jest.setup';
  * The tests below therefore assert the *absence* of that route as hard as they assert the presence of
  * the sheet: a tile that opens the sheet and also pushes the chooser would be just as wrong.
  */
+
+// Two costs this removes: the 450 ms the mock dashboard sleeps on every mount, and the one-off
+// compile cost of the first mount, which is warmed up in `beforeAll` so no test is charged for it.
+installMockLatencyTimers(() => free());
 
 function entitlement(plan: Entitlement['plan']): Entitlement {
   return {

@@ -1,4 +1,6 @@
 import { render, screen, userEvent, waitFor } from '@testing-library/react-native';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+
 import { Text } from 'react-native';
 
 import { PLAN_CAPABILITIES, type Entitlement } from '../domain/entitlement';
@@ -11,6 +13,10 @@ import { MockPurchaseAdapter } from '../services/mock-purchase-adapter';
 import { SubscriptionWelcomeScreen } from '../screens/subscription-welcome-screen';
 import { SubscriptionExpiredScreen } from '../screens/subscription-problem-screens';
 import { mockRouter } from '../../../../jest.setup';
+
+// Mounts screens backed by simulated-latency mocks. Advancing those timers rather than
+// sleeping through them is what keeps this suite inside Jest's default per-test budget.
+installMockLatencyTimers();
 
 /**
  * The rendered behaviour: the gate, the paywall sheet, and the routes out of a paywall.

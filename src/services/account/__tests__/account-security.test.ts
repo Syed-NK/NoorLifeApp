@@ -34,8 +34,16 @@ jest.mock('@/lib/supabase', () => ({
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const service = require('../account-security.service') as typeof import('../account-security.service');
 
+/**
+ * A session, with the access token a real one carries.
+ *
+ * The token matters to more than realism now. `signOutEverywhere` reads the session before asking
+ * for a global sign-out, because `supabase-js` skips the network entirely — and still answers
+ * `{ error: null }` — when the session holds no token. A double without one would make that
+ * short-circuit look like the ordinary success path.
+ */
 function session(user: Record<string, unknown>) {
-  return { data: { session: { user } }, error: null };
+  return { data: { session: { access_token: 'test-access-token', user } }, error: null };
 }
 
 beforeEach(() => {
@@ -208,6 +216,15 @@ describe('scoped sign-out', () => {
     expect(outcome).toEqual({ status: 'signed-out-everywhere' });
   });
 
+  it('asks the server before it reports anything', async () => {
+    // The ordering matters more than the result. A success returned without a request having gone
+    // out is the failure this outcome type exists to make impossible.
+    await service.signOutEverywhere();
+
+    expect(mockAuth.getSession).toHaveBeenCalled();
+    expect(mockAuth.signOut).toHaveBeenCalledWith({ scope: 'global' });
+  });
+
   it('reports local-only when the server half failed, and never claims otherwise', async () => {
     // supabase-js removes the local session on this path too, so "you are still signed in" would
     // be false and "signed out everywhere" would be false. The third answer is the true one.
@@ -217,6 +234,54 @@ describe('scoped sign-out', () => {
 
     const outcome = await service.signOutEverywhere();
     expect(outcome).toEqual({ status: 'local-only', code: 'offline' });
+  });
+
+  it('reports local-only when offline, rather than a global sign-out nobody performed', async () => {
+    mockAuth.signOut.mockResolvedValue({ error: { message: 'Failed to fetch' } });
+
+    expect(await service.signOutEverywhere()).toEqual({ status: 'local-only', code: 'offline' });
+  });
+
+  /**
+   * The short-circuit inside `supabase-js`.
+   *
+   * `_signOut` reads the current session and only posts to `/logout` when it finds an access token.
+   * With no token it removes the local session and returns `{ error: null }` — a success with no
+   * network call behind it. Passing that straight through would have this service claim every
+   * device was signed out on the strength of a request that was never sent.
+   */
+  it('never claims a global sign-out when there is no token to present', async () => {
+    mockAuth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+
+    const outcome = await service.signOutEverywhere();
+
+    expect(outcome).toEqual({ status: 'local-only', code: 'session-expired' });
+    // And the local session is still ended, because that part is genuinely achievable here.
+    expect(mockAuth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(mockAuth.signOut).not.toHaveBeenCalledWith({ scope: 'global' });
+  });
+
+  it('treats a session it cannot read the same way, and says why', async () => {
+    mockAuth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: { message: 'Network request failed' },
+    });
+
+    expect(await service.signOutEverywhere()).toEqual({ status: 'local-only', code: 'offline' });
+    expect(mockAuth.signOut).not.toHaveBeenCalledWith({ scope: 'global' });
+  });
+
+  it('treats an empty access token as no token at all', async () => {
+    mockAuth.getSession.mockResolvedValue({
+      data: { session: { access_token: '', user: { id: 'u', app_metadata: {} } } },
+      error: null,
+    });
+
+    expect(await service.signOutEverywhere()).toEqual({
+      status: 'local-only',
+      code: 'session-expired',
+    });
+    expect(mockAuth.signOut).not.toHaveBeenCalledWith({ scope: 'global' });
   });
 
   it('rejects a failed device sign-out, because that session really is still live', async () => {
