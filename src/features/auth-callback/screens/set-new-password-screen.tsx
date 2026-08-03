@@ -28,7 +28,7 @@ import {
   type SecurityErrorCode,
 } from '@services/account/account-security.contract';
 import { accountSecurityPort } from '@services/account/account-security.service';
-import { clearRecoveryPending } from '@services/auth/recovery-pending';
+import { clearRecoveryPending, readRecoveryPending } from '@services/auth/recovery-pending';
 import { privacySecurityCopy } from '@features/profile/privacy-security-copy';
 
 import { authCallbackCopy } from '../auth-callback-copy';
@@ -234,21 +234,39 @@ export function SetNewPasswordScreen({
    *
    * So abandonment destroys all three: the session, the in-memory grant, and the marker.
    *
+   * ── But only when there is a recovery to abandon ────────────────────────────
+   * This route is reachable by deep link, and reaching it with an ordinary session and no recovery
+   * in progress is not an abandonment — it is somebody who navigated somewhere they cannot use. The
+   * screen already refuses them a form; signing them out as well would end a session that has
+   * nothing to do with a reset, which is a harsher answer than the situation calls for and is not
+   * what the containment rule asks for. The rule is about a *recovery-created* session.
+   *
+   * So the sign-out is conditional on evidence that one exists: a live grant, or a marker in
+   * storage. Both are checked, because either can be present without the other — the grant alone
+   * after an in-process exchange whose marker has since been cleared, the marker alone after a cold
+   * launch that has not yet reconstructed the grant.
+   *
    * ── Order ───────────────────────────────────────────────────────────────────
-   * Marker first, for the reason in `use-recovery-containment.ts`: `signOut` re-renders every
-   * consumer, and a marker still present at that moment describes a session that no longer exists.
-   * Navigation last, so nothing routes while the session is mid-flip.
+   * Read first, then clear, then sign out. Marker before session for the reason in
+   * `use-recovery-containment.ts`: `signOut` re-renders every consumer, and a marker still present
+   * at that moment describes a session that no longer exists. Navigation last, so nothing routes
+   * while the session is mid-flip.
    */
   const abandonRecovery = useCallback(async () => {
+    const stored = await readRecoveryPending();
+    const wasRecovering = recovery !== null || stored.status !== 'none';
+
     await clearRecoveryPending();
     clearRecovery();
-    await signOut().catch(() => {
-      // Already gone, or the revocation call failed. The local session is dropped either way, and
-      // the marker is cleared, so the destination below is correct regardless.
-    });
+    if (wasRecovering) {
+      await signOut().catch(() => {
+        // Already gone, or the revocation call failed. The local session is dropped either way, and
+        // the marker is cleared, so the destination below is correct regardless.
+      });
+    }
     // `replace`, so Back cannot return to an abandoned recovery.
     router.replace(authRoutes.signIn);
-  }, [clearRecovery, router, signOut]);
+  }, [clearRecovery, recovery, router, signOut]);
 
   /**
    * Where a *completed* recovery goes.
@@ -276,14 +294,21 @@ export function SetNewPasswordScreen({
    */
   const requestNewLink = useCallback(() => {
     void (async () => {
+      // The same conditional as `abandonRecovery`, for the same reason: only a recovery-created
+      // session is ended here.
+      const stored = await readRecoveryPending();
+      const wasRecovering = recovery !== null || stored.status !== 'none';
+
       await clearRecoveryPending();
       clearRecovery();
-      await signOut().catch(() => {
-        // See `abandonRecovery`.
-      });
+      if (wasRecovering) {
+        await signOut().catch(() => {
+          // See `abandonRecovery`.
+        });
+      }
       router.replace(authRoutes.forgotPassword);
     })();
-  }, [clearRecovery, router, signOut]);
+  }, [clearRecovery, recovery, router, signOut]);
 
   /**
    * Android's hardware Back is the same abandonment as the header arrow.

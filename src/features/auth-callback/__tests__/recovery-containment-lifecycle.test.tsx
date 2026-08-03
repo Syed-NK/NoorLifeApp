@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import { useEffect } from 'react';
 import { BackHandler } from 'react-native';
 
+import * as authService from '@services/auth/auth.service';
+
 import { AppProviders } from '@application/providers/app-providers';
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 import { useAuthCallbackActions } from '@application/providers/auth-callback-provider';
@@ -38,6 +40,14 @@ const STRONG = 'NoorLife2026!';
 /** Registered `hardwareBackPress` handlers, captured through a spy on the real module. */
 let backHandlers: (() => boolean)[] = [];
 let backSpy: jest.SpyInstance | null = null;
+/**
+ * The provider's sign-out, watched at the service boundary.
+ *
+ * Spied rather than asserted through the session, because whether the session *ends* is the same
+ * observable for "signed out" and "was never signed in" — and the distinction between those two is
+ * exactly what the conditional below is about.
+ */
+let signOutSpy: jest.SpyInstance;
 
 beforeEach(async () => {
   await clearRecoveryPending();
@@ -51,6 +61,7 @@ beforeEach(async () => {
   backSpy = jest
     .spyOn(BackHandler, 'addEventListener')
     .mockImplementation(capture as unknown as typeof BackHandler.addEventListener);
+  signOutSpy = jest.spyOn(authService, 'signOut').mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -58,6 +69,7 @@ afterEach(() => {
   // installs, which is what made these cases pass alone and fail in sequence.
   backSpy?.mockRestore();
   backSpy = null;
+  signOutSpy.mockRestore();
 });
 
 function fakeSecurityPort(options: { readonly onUpdate?: () => void } = {}): AccountSecurityPort {
@@ -211,6 +223,41 @@ describe('abandoning the recovery is safe', () => {
 
     await waitFor(async () => expect(await readRecoveryPending()).toEqual({ status: 'none' }));
     expect(mockRouter.replace).toHaveBeenCalledWith('/sign-in');
+  });
+
+  it('does not sign out when there was no recovery to abandon', async () => {
+    /**
+     * The route is reachable by deep link. Arriving with an ordinary session and no recovery in
+     * progress is not an abandonment — it is somebody who navigated somewhere they cannot use, and
+     * ending their session would be a harsher answer than the situation calls for. The containment
+     * rule is about a *recovery-created* session.
+     *
+     * No marker is written and no grant is minted, so there is nothing to abandon.
+     */
+    await renderPasswordScreen({ grant: false });
+    await waitFor(() => expect(screen.getByTestId('set-new-password-no-grant')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('set-new-password-header-back'));
+
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/sign-in'));
+    expect(signOutSpy).not.toHaveBeenCalled();
+  });
+
+  it('does sign out when only a marker survives, with no grant yet', async () => {
+    /**
+     * The cold-launch shape: the process died after the exchange, so storage still holds the marker
+     * while the in-memory grant has not been reconstructed. Backing out here is a real abandonment
+     * and must end the recovery session, even though `recovery` is null.
+     */
+    await writeRecoveryPending(SESSION_USER_ID);
+
+    await renderPasswordScreen({ grant: false });
+    await waitFor(() => expect(screen.getByTestId('set-new-password-no-grant')).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId('set-new-password-header-back'));
+
+    await waitFor(() => expect(signOutSpy).toHaveBeenCalled());
+    expect(await readRecoveryPending()).toEqual({ status: 'none' });
   });
 
   it('clears the marker when the user asks for a new link instead', async () => {
