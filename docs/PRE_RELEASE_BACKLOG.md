@@ -4,11 +4,12 @@ Everything that must be finished, configured or reviewed before NoorLife can be
 released publicly. Each item says what the current state actually is, what has to
 happen, and what it depends on.
 
-Nothing in this list is a defect in the current code. They are deliberately deferred
+Most of this list is not a defect in the current code: they are deliberately deferred
 items, most of them blocked on an external account, a DNS record, a paid service or a
-review that is not mine to sign off. **Check the current state before acting on any of
-them** — several are one dashboard toggle away from being done, and a few would break
-the working flow if enabled in the wrong order.
+review that is not mine to sign off. The exceptions are marked **(defect)** in their
+heading — currently 2.3a. **Check the current state before acting on any of them** —
+several are one dashboard toggle away from being done, and a few would break the working
+flow if enabled in the wrong order.
 
 Status key: **Blocked** (needs something external) · **Ready** (can be done now) ·
 **Needs review** (needs a human decision or approval).
@@ -19,9 +20,18 @@ Status key: **Blocked** (needs something external) · **Ready** (can be done now
 
 ### 1.1 Custom SMTP via Resend — **Blocked**
 
-Supabase's built-in email sender is rate-limited to a handful of messages per hour and
-is not for production use. We exhausted that quota during Phase 2 testing, which is
-what forced item 1.3.
+**Production custom SMTP remains unconfigured, and is still required before release.**
+What is *not* true — and what this item said before 2026-08-03 — is that email delivery
+is blocked outright. On 2026-08-03 **Supabase's built-in development SMTP successfully
+delivered a password-recovery email to the authorized test account**, and the link was
+received and used on a device (see 1.4).
+
+So the distinction this item now turns on is suitability, not delivery. The built-in
+sender is a development facility: it is rate-limited to a handful of messages per hour
+and **is not suitable for production use**. We exhausted that quota during Phase 2
+testing, which is what forced item 1.3. Custom SMTP is what makes delivery
+rate-appropriate, domain-aligned and ours; until it is configured, no release claim about
+email may rest on the built-in sender.
 
 - Create a Resend account and verify the sending domain.
 - Add the SMTP credentials to the Supabase project (Authentication → SMTP Settings).
@@ -65,11 +75,24 @@ re-enabling is configuration only:
 
 *Order matters:* enabling this before SMTP works would break signup for real users.
 
-### 1.4 Password-recovery email — **Blocked**
+### 1.4 Password-recovery email — **Verified on the emulator** (2026-08-03)
 
-Forgot Password and Reset Link Sent are built, and the service calls Supabase
-correctly. The email itself cannot be verified until 1.1 is done. Do not claim password
-recovery works until a real reset link has been received and used.
+A real reset link has now been received and used. On a **release** build installed fresh
+(`pm clear`, genuine first run) on the Pixel 8 emulator, a recovery email requested from
+Forgot Password was delivered by Supabase's built-in development SMTP to the authorized
+test account, and tapping the link took the app automatically to Set New Password. The
+password was then set by the account owner, and the resulting state was checked: the
+update succeeded, the recovery grant was consumed, a replay of the same link was refused,
+and the session survived a cold restart. Full evidence in
+`design-reference/phase-6c-3c-auth-callbacks/README.md`.
+
+Two things this does **not** settle:
+
+- **Production delivery.** This used the development sender, which is not suitable for
+  production — 1.1 is still required before release.
+- **The physical phone.** The Honor device was unreachable over wireless adb throughout
+  the session, so this is verified on **one** target. See 4.x below; do not describe
+  password recovery as both-target verified.
 
 ### 1.5 OTP length — **Resolved and pinned** (2026-07-30)
 
@@ -122,7 +145,7 @@ those globals at call time.
 and `s256` after, and the value is captured on device — see
 `design-reference/phase-6c-3c-auth-callbacks/README.md`.
 
-### 2.1a Supabase redirect allow-list for the application callback — **Ready**
+### 2.1a Supabase redirect allow-list for the application callback — **Done, confirmed live** (2026-08-03)
 
 Phase 6C-3C introduced `noorlifeapp://auth/callback` as the single destination for the
 signup confirmation, password recovery and email-change links. **Authentication → URL
@@ -133,7 +156,9 @@ noorlifeapp://auth/callback
 noorlifeapp://auth/callback?**
 ```
 
-The second is not redundant: `supabase-js` appends `sb_flow_id=<id>` to the redirect it
+The second is not redundant: every NoorLife redirect carries `nl_rid`, and `supabase-js` appends
+`sb_flow_id=<id>` on top of it (only when `experimental.appendPkceFlowIdToRedirects` is enabled — it
+is **not** a default, contrary to what this file said before 2026-08-03) to the redirect it
 sends for a PKCE password recovery, Supabase matches redirect URLs by glob, and a bare
 entry does not match a URL carrying a query string.
 
@@ -143,19 +168,35 @@ strings are exported as `REQUIRED_SUPABASE_REDIRECT_URLS` from
 `src/services/auth/auth-callback.config.ts`, and
 `docs/PHASE_6C_3C_AUTH_CALLBACK_CONTRACT.md` §7 records why each is needed.
 
+**Both entries are confirmed present, by evidence rather than by report.** The recovery
+link received on 2026-08-03 (1.4) carried `sb_flow_id`, because
+`experimental.appendPkceFlowIdToRedirects` was enabled in the build under test. With a
+query string present, a bare allow-list entry would have stopped matching, GoTrue would
+have substituted the Site URL, and the link could not have reached the application at all
+— but it did. So the wildcard entry is live, not merely configured-in-principle.
+
+*(That flag is part of the `nl_rid`/`sb_flow_id` hardening, which lands separately from the
+callback-navigation commit that carries this note.)*
+
 *Depends on:* nothing in the code. *Blocks:* any end-to-end test of 1.3 and 2.3.
 
-### 2.1b Callback flows not yet exercised by a real email — **Blocked**
+### 2.1b Callback flows not yet exercised by a real email — **Partly resolved** (2026-08-03)
 
-The recovery-ready, email-change-pending and email-change-confirmed states are reachable
-only with a PKCE code GoTrue issued against a verifier this device stored, which needs a
-delivered email. With 1.1 deferred, they are covered by the injected-port suites
+**Recovery is done.** The recovery-ready state and the Set New Password form were reached
+on a device with a real emailed link, on a release build, and the whole outcome set was
+checked — see 1.4. The claim in earlier revisions of this item and of the phase README,
+that this state was unreachable because no link could arrive, no longer holds.
+
+**Email-change-pending and email-change-confirmed are still not device-verified.** They
+need a real confirmation link, and Secure Email Change would email the live test account,
+which the phase brief forbids. They remain covered by the injected-port suites
 (`auth-callback-screen.test.tsx`, `set-new-password-screen.test.tsx`,
 `auth-callback-service.test.ts`) and are **not** claimed as device-verified. No fixture
 route was added to reach them on a device — 6C-3B removed the last one, for the reason
-recorded there. See the phase README's "What is blocked, and why".
+recorded there.
 
-*Depends on:* 1.1 (SMTP) and 2.1a (the allow-list).
+*Depends on:* a decision on how to exercise email change without touching the live test
+account. No longer depends on 1.1 for delivery, though production delivery still does.
 
 ### 2.2 Google sign-in — **Blocked**
 
@@ -181,6 +222,43 @@ account, a Service ID, a private key (`.p8`) and the provider enabled in Supabas
 
 - The `.p8` key is never committed. `*.p8` is already in `.gitignore`.
 - Apple Sign in is **mandatory** for App Store review if any other social login ships.
+
+### 2.3a "Open Email App" cannot see an installed mail app — **Ready (defect)**
+
+Found on the emulator during the 1.4 recovery pass, and **not fixed there**: it is a native
+manifest issue with nothing to do with the callback, so it was deliberately left out of that
+commit.
+
+On Check Your Inbox, **Open Email App** renders the error *"No email app is available on
+this device. Open your mail in a browser instead."* — on a device where Gmail is installed
+and working. The same intent resolves fine from outside the app:
+
+```bash
+adb shell am start -a android.intent.action.MAIN -c android.intent.category.APP_EMAIL
+# Starting: Intent { act=android.intent.action.MAIN cat=[android.intent.category.APP_EMAIL] }
+```
+
+**Likely cause: Android 11 package visibility.** Since API 30, an app cannot see which
+other packages can handle an intent unless it declares them. `Linking.canOpenURL('mailto:')`
+and any `queryIntentActivities` probe therefore return nothing, and the honest-failure
+branch fires even though the mail app is there. The fix is a `<queries>` element in the
+manifest declaring the email intent, which under Expo means a config plugin or an
+`android.manifest` merge rather than hand-editing `AndroidManifest.xml`:
+
+```xml
+<queries>
+  <intent>
+    <action android:name="android.intent.action.SENDTO" />
+    <data android:scheme="mailto" />
+  </intent>
+</queries>
+```
+
+Worth confirming the real probe in the Reset Link Sent screen before changing anything —
+the cause above is inferred from the symptom, not yet read off the code.
+
+*Note:* the user is not stranded. The message is accurate about the remedy, and the link in
+the email works when opened from the mail app directly. This is a papercut, not a blocker.
 
 ### 2.4 Account deletion — **Blocked (needs review)**
 
@@ -298,6 +376,23 @@ stored outside the repository, with Play App Signing enrolled.
 Nothing is installed. Worth deciding before release, and worth deciding carefully: a
 reporter that captures screen contents would capture health and family data.
 
+### 5.4 Physical-phone verification of the recovery callback — **Outstanding**
+
+The 2026-08-03 recovery pass (1.4) is verified on the **Pixel 8 emulator only**. The Honor
+ALT-LX2 was **not reachable** for the whole session: `adb devices` listed the emulator
+alone, `adb mdns services` discovered nothing, and `adb connect 192.168.0.238:5555` timed
+out. The standing rule is that a visible change is verified on both targets, so this one is
+verified on one, and **must not be described as both-target verified**.
+
+The APK built for that pass already carries both ABIs
+(`-PreactNativeArchitectures=arm64-v8a,x86_64`), so nothing needs rebuilding — the phone
+pass needs wireless debugging re-enabled and the device re-paired, then
+`node scripts/deploy-both.js --no-build --clear` and a repeat of the 1.4 sequence. The
+phone is 720×1600 at a lower density than the emulator's 1080×2400, so the Set New Password
+layout and the callback status copy are both worth looking at rather than assuming.
+
+*Depends on:* physical access to the device and its current wireless-debugging port.
+
 ---
 
 ## Domain and URL set
@@ -325,5 +420,6 @@ Several items will break the working app if done out of order:
 2. **2.1 PKCE S256** before **2.2 Google**. *(2.1 done in Phase 6C-3C.)*
 2a. **2.1a redirect allow-list** before **1.3 confirmation on**. With confirmation enabled
    and no allow-listed callback, every new account is sent to a web page it cannot use.
+   *(2.1a confirmed live 2026-08-03, so this ordering constraint is satisfied.)*
 3. **4.1 schema review** before any module table exists.
 4. **3.1 / 3.2 published** before the store listings are submitted.

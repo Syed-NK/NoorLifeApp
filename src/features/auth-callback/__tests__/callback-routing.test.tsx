@@ -1,8 +1,10 @@
 import { act, render, screen, waitFor } from '@testing-library/react-native';
+import { Text } from 'react-native';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { AppProviders } from '@application/providers/app-providers';
+import { useAuthCallback } from '@application/providers/auth-callback-provider';
 import { useCallbackNavigation } from '@application/startup/use-callback-navigation';
 import { AUTH_CALLBACK_URL } from '@services/auth/auth-callback.config';
 
@@ -47,11 +49,36 @@ const PAST_SPLASH_MINIMUM_MS = 2500;
  */
 
 const CODE = '34e770dd-9ff9-416c-87fa-43b31d7ef225';
+/**
+ * A well-formed `nl_rid`.
+ *
+ * Every link this application asks for carries one — see `pending-auth-flow.ts` — so a URL used to
+ * stand in for a real callback has to carry one too, or the parser refuses it before any of the
+ * behaviour these suites are about can happen.
+ */
+const RID = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
 /** The warm navigator, mounted the way the root layout mounts it. */
 function WarmNavigator() {
   useCallbackNavigation();
   return null;
+}
+
+/**
+ * A probe that renders what the provider is holding.
+ *
+ * Needed because the warm path no longer navigates, so `mockRouter` can no longer be used to observe
+ * that a link was received. Capture is still a real obligation — the screen Expo Router mounts has to
+ * find something to claim — so it is asserted directly rather than inferred from a side effect.
+ */
+function PendingProbe() {
+  const { pending } = useAuthCallback();
+  return (
+    <>
+      <Text testID="pending-callback-key">{pending === null ? 'none' : pending.key}</Text>
+      <Text testID="pending-callback-origin">{pending === null ? 'none' : pending.origin}</Text>
+    </>
+  );
 }
 
 async function renderGate(options: { readonly url?: string; readonly settle?: boolean } = {}) {
@@ -61,6 +88,7 @@ async function renderGate(options: { readonly url?: string; readonly settle?: bo
   const view = await render(
     <AppProviders>
       <WarmNavigator />
+      <PendingProbe />
       <Index />
     </AppProviders>,
   );
@@ -107,7 +135,7 @@ describe('the two routes exist', () => {
 
 describe('cold start', () => {
   it('routes a launch callback to the callback screen instead of the startup destination', async () => {
-    await renderGate({ url: `${AUTH_CALLBACK_URL}?code=${CODE}` });
+    await renderGate({ url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}` });
 
     /**
      * The whole rule, in one assertion. The gate resolves to `/auth/callback` *instead of* Main Home or
@@ -122,7 +150,7 @@ describe('cold start', () => {
   });
 
   it('does not push as well as redirect, so the callback is entered once', async () => {
-    await renderGate({ url: `${AUTH_CALLBACK_URL}?code=${CODE}` });
+    await renderGate({ url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}` });
     await waitFor(() => expect(screen.getByTestId('router-redirect')).toBeTruthy());
 
     // The warm navigator must ignore a cold callback. Both acting would enter the screen twice, and the
@@ -131,7 +159,7 @@ describe('cold start', () => {
   });
 
   it('holds the branded splash for its minimum rather than truncating it for a link', async () => {
-    await renderGate({ url: `${AUTH_CALLBACK_URL}?code=${CODE}`, settle: false });
+    await renderGate({ url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`, settle: false });
 
     /**
      * Before the minimum elapses the splash is still up and nothing has been routed anywhere.
@@ -179,55 +207,70 @@ describe('cold start', () => {
 });
 
 describe('warm start', () => {
-  it('navigates to the callback screen when a link arrives while running', async () => {
-    await renderGate();
-    expect(mockRouter.push).not.toHaveBeenCalled();
-
-    await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
-    });
-
-    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/auth/callback'));
-  });
-
-  it('navigates once for a duplicated delivery', async () => {
-    await renderGate();
-
-    await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
-    });
-
-    // `launchMode="singleTask"` re-delivers an intent to the running task. One navigation, one exchange.
-    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledTimes(1));
-  });
-
-  it('pushes rather than replaces, so an invalid callback leaves the current screen intact', async () => {
+  /**
+   * ── The defect these cases replaced ─────────────────────────────────────────
+   * This block used to assert that a warm callback produced `router.push('/auth/callback')`. That
+   * behaviour was the bug: Expo Router already navigates there on its own, because `app.json`
+   * declares `"scheme": "noorlifeapp"` and `src/app/auth/callback.tsx` is a real route. The extra push
+   * mounted a *second* callback screen, `claim()` is single-shot so only one of them received the
+   * callback, and the other rendered `invalid-link` — "Link not valid" — on top of a recovery that had
+   * actually succeeded underneath.
+   *
+   * So the assertions are inverted on purpose: the contract is now that this layer captures and
+   * deduplicates, and navigates nothing.
+   */
+  it('captures a warm link without navigating, leaving Expo Router the one owner of the route', async () => {
     await renderGate();
 
     await act(async () => {
-      mockLinking.emit(`exp+noorlifeapp://auth/callback?code=${CODE}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     });
 
-    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/auth/callback'));
-    // `replace` would consume the screen the user was on for a link that turned out to be refused.
+    // Neither, and that is the whole fix. A push here is a second callback screen.
+    expect(mockRouter.push).not.toHaveBeenCalledWith('/auth/callback');
     expect(mockRouter.replace).not.toHaveBeenCalledWith('/auth/callback');
   });
 
-  it('navigates again for a genuinely new link', async () => {
+  it('still captures the callback, so the screen has something to claim', async () => {
     await renderGate();
 
     await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     });
-    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledTimes(1));
 
-    // A user who requests two reset emails and opens the newer one. A one-shot guard would ignore it.
+    // Not navigating must not mean not capturing: the screen Expo Router mounts reads this.
+    await waitFor(() => expect(screen.getByTestId('pending-callback-key').props.children).toBe(
+      `code:${CODE}`,
+    ));
+  });
+
+  it('collapses a duplicated delivery to one pending callback', async () => {
+    await renderGate();
+
     await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE.replace('34e770dd', '99e770dd')}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     });
-    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledTimes(2));
+
+    // `launchMode="singleTask"` re-delivers an intent to the running task. Three deliveries, one item.
+    await waitFor(() =>
+      expect(screen.getByTestId('pending-callback-key').props.children).toBe(`code:${CODE}`),
+    );
+    // One pending item, held once — the provider's `seenRef` collapses the re-deliveries.
+    expect(screen.getByTestId('pending-callback-origin').props.children).toBe('warm');
+    expect(mockRouter.push).not.toHaveBeenCalledWith('/auth/callback');
+  });
+
+  it('never navigates for a link on an untrusted scheme either', async () => {
+    await renderGate();
+
+    await act(async () => {
+      mockLinking.emit(`exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`);
+    });
+
+    expect(mockRouter.push).not.toHaveBeenCalledWith('/auth/callback');
+    expect(mockRouter.replace).not.toHaveBeenCalledWith('/auth/callback');
   });
 
   it('does nothing for an unrelated URL', async () => {

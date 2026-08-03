@@ -1,55 +1,39 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
-
-import { useAuthCallback } from '@application/providers/auth-callback-provider';
-import { AUTH_CALLBACK_ROUTE } from '@features/auth-callback/auth-callback-routes';
-
 /**
- * Routes a **warm-start** callback to the callback screen, once.
+ * Warm-start callback navigation — deliberately nothing.
  *
- * ── Why warm and cold are handled in two different places ───────────────────
- * They arrive at different moments in the app's life and the right response differs.
+ * ── The defect this file used to be ─────────────────────────────────────────
+ * It called `router.push(AUTH_CALLBACK_ROUTE)` whenever a warm callback was captured. That produced
+ * **two** `/auth/callback` screens for every warm link, because Expo Router had already navigated to
+ * the same route on its own: `app.json` declares `"scheme": "noorlifeapp"` and `src/app/auth/callback.tsx`
+ * is a real route, so Expo Router's linking maps `noorlifeapp://auth/callback` straight onto it.
  *
- * A **cold** link launched the process. Nothing is mounted, the startup machine has not resolved, and
- * the correct behaviour is for the entry gate to resolve to `/auth/callback` *instead of* its usual
- * destination — see `index.tsx`. Pushing from here would race the gate's own `Redirect` and could land
- * the user on Main Home first, which is exactly the "no redirect to Home before the callback is
- * processed" rule.
+ * The consequence was not two identical screens. `AuthCallbackProvider.claim()` is ref-backed and
+ * single-shot, so exactly one instance received the callback and ran the exchange; the other received
+ * `null`, took the "nothing to claim" branch in `auth-callback-screen.tsx`, and rendered
+ * `invalid-link` — "Link not valid". The loser rendered on top, so a password recovery that had in
+ * fact succeeded underneath was reported to the user as a broken link.
  *
- * A **warm** link arrives while the app is running and showing something. There is no gate to reroute;
- * something has to navigate. `MainActivity` is `launchMode="singleTask"`, so this is the only path a
- * second link can take, and it is not an edge case — a user who requests two reset emails and opens the
- * newer one takes it every time.
+ * Measured on a Pixel 8 emulator against the real project with a release build: the same
+ * `?code=<uuid>` reported "Link already used" (the exchange was reached) when delivered cold, and
+ * "Link not valid" when delivered warm — and pressing Back on the warm failure revealed the second
+ * callback screen underneath, still showing the real outcome.
  *
- * So the provider tags each captured callback with its origin and this hook handles exactly one of
- * them. Neither can act on the other's, which is what stops a double navigation.
+ * ── Why the fix is removal rather than a guard ──────────────────────────────
+ * A "only push if we are not already there" check reads as safer and is not: Expo Router's own
+ * navigation and this effect are scheduled independently, so the pathname this hook could observe is
+ * whatever won a race. There is no ordering to test against. Expo Router is the one owner of
+ * navigation to `/auth/callback` for **both** cold and warm delivery, and the provider's job is
+ * narrowed to capturing and deduplicating the URL — which it still does.
  *
- * ── Why the guard is a key and not a boolean ────────────────────────────────
- * A boolean would make this a one-shot for the life of the process, so a user who completed one
- * recovery and then opened a second link would get no navigation at all. Remembering *which* callback
- * was routed lets a genuinely new one through while a re-render of the same one is ignored.
+ * The cold path is unchanged and was never affected: the entry gate resolves *to* the callback route
+ * instead of its usual destination (`index.tsx`), which replaces rather than stacks, so a cold link
+ * has only ever mounted one screen.
+ *
+ * ── Why the hook still exists ───────────────────────────────────────────────
+ * As a named place for this reasoning, and so `_layout.tsx` keeps one obvious anchor for anyone who
+ * goes looking for where a warm callback is routed. It is called for its documentation, not its
+ * behaviour; `callback-routing.test.tsx` asserts that it performs no navigation.
  */
 export function useCallbackNavigation(): void {
-  const router = useRouter();
-  const { pending } = useAuthCallback();
-  const routedKey = useRef<string | null>(null);
-
-  useEffect(() => {
-    // A cold callback is the entry gate's, not this hook's. See the note above.
-    if (pending === null || pending.origin === 'cold') {
-      return;
-    }
-    if (routedKey.current === pending.key) {
-      return;
-    }
-    routedKey.current = pending.key;
-    /**
-     * `push`, not `replace`.
-     *
-     * A warm callback interrupts a screen the user was using, and an invalid one must leave that screen
-     * intact underneath — `replace` would consume it. The callback screen's own onward navigations are
-     * all `replace`, so a *completed* callback still leaves no history entry behind it.
-     */
-    router.push(AUTH_CALLBACK_ROUTE);
-  }, [pending, router]);
+  // Intentionally empty. See the note above: Expo Router owns navigation to `/auth/callback`.
 }

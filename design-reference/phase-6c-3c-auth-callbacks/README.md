@@ -180,14 +180,16 @@ Three states in the phase brief's capture list are **not** captured here, and ar
 
 | State | Why it is unreachable on a device today |
 |---|---|
-| Recovery-ready, and the Set New Password form | Needs a PKCE code GoTrue issued against a verifier *this device* stored — i.e. a delivered email. Production SMTP is deferred (backlog 1.1), so no link arrives. `08` captures the refusal side of the same gate, which is the security-relevant half. |
-| Email-change pending | Same: requires a real confirmation link, and Secure Email Change would email the live test account, which the brief forbids. |
+| ~~Recovery-ready, and the Set New Password form~~ | **No longer blocked — verified on the emulator 2026-08-03.** This row claimed no link could arrive because production SMTP is deferred. That conflated two things: production SMTP is indeed still unconfigured, but Supabase's built-in *development* sender delivers, and a real recovery link was received and used. See `RECOVERY_DEVICE_VERIFICATION.md`. |
+| Email-change pending | Requires a real confirmation link, and Secure Email Change would email the live test account, which the brief forbids. |
 | Email-change confirmed | Same. |
 
-They are covered by `auth-callback-screen.test.tsx`, `set-new-password-screen.test.tsx` and
-`auth-callback-service.test.ts`, which drive the outcomes through the injected port. **No fixture
-route was added to reach them on a device** — 6C-3B removed the last one after finding that a
-`__DEV__` guard did not keep it out of the release bundle, and re-adding one would undo that.
+The two remaining rows are covered by `auth-callback-screen.test.tsx`,
+`set-new-password-screen.test.tsx` and `auth-callback-service.test.ts`, which drive the outcomes
+through the injected port. **No fixture route was added to reach them on a device** — 6C-3B removed
+the last one after finding that a `__DEV__` guard did not keep it out of the release bundle, and
+re-adding one would undo that. The recovery row needed no fixture in the end: a real emailed link
+reached it.
 
 One further state was **not photographed rather than blocked**: the transient *Processing* view. At
 healthy latency the exchange resolves in under 250 ms, inside the router's own push animation, so
@@ -205,7 +207,9 @@ noorlifeapp://auth/callback
 noorlifeapp://auth/callback?**
 ```
 
-The second is not redundant: `supabase-js` appends `sb_flow_id=<id>` to the redirect it sends for a
+The second is not redundant: every NoorLife redirect carries `nl_rid`, and `supabase-js` appends
+`sb_flow_id=<id>` on top of it (only when `experimental.appendPkceFlowIdToRedirects` is enabled — it
+is **not** a default, contrary to what this file said before 2026-08-03) to the redirect it sends for a
 PKCE password recovery, Supabase matches redirect URLs by glob, and a bare entry does not match a URL
 carrying a query string. Until both exist, GoTrue substitutes the project's Site URL and an emailed
 link never reaches the application.
@@ -214,9 +218,18 @@ Tracked as backlog item **2.1a**. The exact strings are exported as
 `REQUIRED_SUPABASE_REDIRECT_URLS` from `src/services/auth/auth-callback.config.ts`, and
 `docs/PHASE_6C_3C_AUTH_CALLBACK_CONTRACT.md` §7 records why each is needed.
 
-Production SMTP remains **deferred** (backlog 1.1). Until it is configured a confirmation or recovery
-message may simply not arrive, which is why the affected screens say so and why this pass used shaped
-links rather than live email.
+**Both entries are now confirmed present** (2026-08-03), by evidence rather than by report: the
+recovery link received that day carried `sb_flow_id`, and with a query string present a bare entry
+would not have matched, so the link could not have reached the app at all. It did. (The flag that puts
+`sb_flow_id` on the redirect belongs to the `nl_rid` hardening, which lands separately — see
+`RECOVERY_DEVICE_VERIFICATION.md`, "Which tree was tested".)
+
+**Production custom SMTP remains unconfigured** (backlog 1.1) and is still required before release.
+That is a separate matter from whether mail is deliverable at all: Supabase's built-in **development**
+sender does deliver, and on 2026-08-03 it delivered a real recovery email to the authorized test
+account. The built-in sender is rate-limited and **not suitable for production**, so no release claim
+may rest on it. This pass used shaped links rather than live email because it predates that
+verification, not because delivery was impossible.
 
 ## Release-bundle scan
 
