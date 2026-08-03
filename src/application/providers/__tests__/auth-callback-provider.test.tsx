@@ -28,6 +28,14 @@ import {
  */
 
 const CODE = '34e770dd-9ff9-416c-87fa-43b31d7ef225';
+/**
+ * A well-formed `nl_rid`.
+ *
+ * Every link this application asks for carries one — see `pending-auth-flow.ts` — so a URL used to
+ * stand in for a real callback has to carry one too, or the parser refuses it before any of the
+ * behaviour these suites are about can happen.
+ */
+const RID = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
 let captured: { state: AuthCallbackState; actions: AuthCallbackActions } | null = null;
 
@@ -92,7 +100,7 @@ beforeEach(() => {
 
 describe('cold start', () => {
   it('captures the URL the app was launched with', async () => {
-    mockLinking.getInitialURL.mockResolvedValue(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+    mockLinking.getInitialURL.mockResolvedValue(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
 
     await renderProvider();
 
@@ -106,7 +114,7 @@ describe('cold start', () => {
   });
 
   it('captures a rejected callback too, so the screen can refuse it visibly', async () => {
-    mockLinking.getInitialURL.mockResolvedValue(`exp+noorlifeapp://auth/callback?code=${CODE}`);
+    mockLinking.getInitialURL.mockResolvedValue(`exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`);
 
     await renderProvider();
 
@@ -140,7 +148,7 @@ describe('warm start', () => {
     expect(state().pending).toBeNull();
 
     await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     });
 
     await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('warm:callback'));
@@ -150,9 +158,9 @@ describe('warm start', () => {
     await renderProvider();
 
     await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     });
 
     // `launchMode="singleTask"` re-delivers an intent to the running task, and a mounted screen can see
@@ -166,12 +174,12 @@ describe('warm start', () => {
     await renderProvider();
 
     await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     });
     expect(actions().claim()).not.toBeNull();
 
     await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     });
 
     expect(state().pending).toBeNull();
@@ -181,13 +189,13 @@ describe('warm start', () => {
     await renderProvider();
 
     await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     });
     actions().claim();
 
     const other = CODE.replace('34e770dd', '99e770dd');
     await act(async () => {
-      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${other}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${other}&nl_rid=${RID}`);
     });
 
     expect(state().pending?.parsed).toMatchObject({ code: other });
@@ -207,7 +215,7 @@ describe('warm start', () => {
 
 describe('claiming', () => {
   it('hands the callback out exactly once', async () => {
-    mockLinking.getInitialURL.mockResolvedValue(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+    mockLinking.getInitialURL.mockResolvedValue(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     await renderProvider();
 
     const first = actions().claim();
@@ -223,7 +231,7 @@ describe('claiming', () => {
   });
 
   it('reports nothing pending after a claim', async () => {
-    mockLinking.getInitialURL.mockResolvedValue(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+    mockLinking.getInitialURL.mockResolvedValue(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     await renderProvider();
 
     await act(async () => {
@@ -331,10 +339,10 @@ describe('what the provider never does', () => {
       jest.spyOn(console, level).mockImplementation(() => undefined),
     );
 
-    mockLinking.getInitialURL.mockResolvedValue(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+    mockLinking.getInitialURL.mockResolvedValue(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     await renderProvider();
     await act(async () => {
-      mockLinking.emit(`exp+noorlifeapp://auth/callback?code=${CODE}`);
+      mockLinking.emit(`exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`);
       mockLinking.emit(`${AUTH_CALLBACK_URL}#access_token=leaked-token`);
       actions().rememberDestination('https://elsewhere.example.com');
     });

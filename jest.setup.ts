@@ -132,6 +132,31 @@ jest.mock('expo-clipboard', () => {
 });
 
 /**
+ * `expo-crypto`, which is a native module and has no JS implementation under Jest.
+ *
+ * Only `getRandomValues` is needed here: `pending-auth-flow.ts` uses it to mint `nl_rid`. The values
+ * are deliberately *not* cryptographic in tests — they only have to be distinct, so that a suite can
+ * tell two pending requests apart. Nothing under test depends on their unpredictability.
+ */
+jest.mock('expo-crypto', () => {
+  let calls = 0;
+  // Spread the real module first: `web-crypto.ts` also uses `digest` and `CryptoDigestAlgorithm`, and
+  // replacing the whole module would take those away from every suite that exercises PKCE hashing.
+  return {
+    ...jest.requireActual('expo-crypto'),
+    getRandomValues: (array: Uint8Array) => {
+      calls += 1;
+      // The call number is written across the leading bytes, so every id this returns is distinct
+      // for the life of the process rather than distinct only until a byte pattern wraps.
+      for (let index = 0; index < array.length; index += 1) {
+        array[index] = index < 4 ? (calls >>> (index * 8)) & 0xff : (calls + index * 17) & 0xff;
+      }
+      return array;
+    },
+  };
+});
+
+/**
  * Secure store: an in-memory stand-in for the Keystore.
  *
  * `isAvailableAsync` resolves true so the token-writing path is exercised rather than skipped —
@@ -147,7 +172,18 @@ jest.mock('expo-clipboard', () => {
  * Entry-flow tests that need the signed-out path clear this key first.
  */
 jest.mock('expo-secure-store', () => {
-  const store = new Map<string, string>([['noorlife.auth.accessToken', 'jest-seeded-token']]);
+  /**
+   * The backing map is hung off `globalThis` rather than closed over.
+   *
+   * `jest.resetModules()` re-evaluates mock factories, so a closed-over Map would be replaced — and a
+   * suite that simulates a process restart that way would silently lose the very storage it is
+   * checking survived. Real secure storage outlives a process; this double now does too.
+   */
+  const globals = globalThis as { __noorlifeSecureStore?: Map<string, string> };
+  globals.__noorlifeSecureStore ??= new Map<string, string>([
+    ['noorlife.auth.accessToken', 'jest-seeded-token'],
+  ]);
+  const store = globals.__noorlifeSecureStore;
   return {
     isAvailableAsync: () => Promise.resolve(true),
     getItemAsync: (key: string) => Promise.resolve(store.get(key) ?? null),

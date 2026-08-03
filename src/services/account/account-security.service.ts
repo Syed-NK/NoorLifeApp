@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { authCallbackRedirectUrl } from '@services/auth/auth-callback.config';
+import { rememberPendingFlow } from '@services/auth/pending-auth-flow';
 import { clearAccessToken } from '@services/auth/session-storage';
 
 import {
@@ -323,7 +324,7 @@ export async function requestEmailChange(newEmail: string): Promise<EmailChangeO
      * the current and the new address and still requires both to be actioned; this only decides where
      * each link lands.
      */
-    { emailRedirectTo: authCallbackRedirectUrl() },
+    { emailRedirectTo: authCallbackRedirectUrl(await rememberPendingFlow('email-change')) },
   );
   if (error !== null) {
     fail(error);

@@ -1,4 +1,30 @@
 import type { TrustedAuthCallback } from '../auth-callback.contract';
+import type { PendingFlowName } from '../pending-auth-flow';
+
+/**
+ * The pending-flow record, replaced by an in-memory map.
+ *
+ * The real module's storage behaviour — persistence across a restart, TTL, one-time consumption — is
+ * exercised against real storage in `pending-auth-flow.test.ts`. Here it would only add setup to
+ * every case in a suite that is about the *exchange*, so the lookup is answered from a map keyed by
+ * the same `nl_rid` the callback carries.
+ */
+const mockPendingFlows = new Map<string, PendingFlowName>();
+let mockDefaultPendingFlow: PendingFlowName = 'signup';
+
+jest.mock('../pending-auth-flow', () => ({
+  NL_RID_PATTERN: /^[0-9a-f]{32}$/,
+  claimPendingFlow: jest.fn(async (id: unknown) => {
+    const flow = typeof id === 'string' ? mockPendingFlows.get(id) : undefined;
+    if (flow === undefined) {
+      return { status: 'unknown' };
+    }
+    // Claiming deletes, exactly as the real module does — so a replay in this suite is refused for
+    // the same reason it is on a device rather than by a different mechanism.
+    mockPendingFlows.delete(id as string);
+    return { status: 'ok', flow };
+  }),
+}));
 
 /**
  * The exchange, its replay guards, and what it reports.
@@ -62,15 +88,33 @@ import * as service from '../auth-callback.service';
 
 const SESSION = { access_token: 'token', user: { id: 'user-1', email: 'ahmed@example.com' } };
 
-function callbackFor(overrides: Partial<TrustedAuthCallback> = {}): TrustedAuthCallback {
+function callbackFor(
+  overrides: Partial<TrustedAuthCallback> & { readonly pendingFlow?: PendingFlowName } = {},
+): TrustedAuthCallback {
+  const { pendingFlow, ...rest } = overrides;
+  /**
+   * A fresh `nl_rid` per callback, registered as a pending request before it is used.
+   *
+   * The recorded flow defaults to whatever the link declares, so a case that sets `declaredFlow`
+   * keeps testing what it always tested — the link's claim against the exchange's answer — rather
+   * than tripping over a record that disagreed with both.
+   */
+  const requestId = Array.from({ length: 32 }, () =>
+    Math.floor(Math.random() * 16).toString(16),
+  ).join('');
+  mockPendingFlows.set(
+    requestId,
+    pendingFlow ?? (rest.declaredFlow as PendingFlowName | null) ?? mockDefaultPendingFlow,
+  );
   return {
     kind: 'callback',
+    requestId,
     // A distinct code per call by default, because the service's guard is keyed on it and a shared
     // code would make the second test in a file see the first one's mark.
     code: `code-${Math.random().toString(36).slice(2)}-abcdefghijklmnop`,
     flowId: null,
     declaredFlow: null,
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -174,6 +218,15 @@ describe('a signup confirmation', () => {
 });
 
 describe('a password recovery', () => {
+  // Every case below is a recovery, so the recorded request is one too. Without this the record
+  // would say `signup` and the service would correctly refuse the recovery as a conflict.
+  beforeEach(() => {
+    mockDefaultPendingFlow = 'recovery';
+  });
+  afterEach(() => {
+    mockDefaultPendingFlow = 'signup';
+  });
+
   it('is recognised from the documented PASSWORD_RECOVERY event', async () => {
     resolveExchange({ recovery: true });
 

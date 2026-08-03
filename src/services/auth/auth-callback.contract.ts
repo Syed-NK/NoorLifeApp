@@ -34,6 +34,16 @@ export type AuthCallbackErrorCode =
   | 'malformed-code'
   /** A declared `type` this application does not handle, or one that is declared but disabled. */
   | 'unsupported-flow'
+  /** No `nl_rid` on the callback, or one that is malformed or repeated with conflicting values. */
+  | 'missing-request-id'
+  /**
+   * `nl_rid` did not match a pending request on this device.
+   *
+   * Covers every way that can happen and deliberately does not distinguish them: never issued here,
+   * already consumed (a replay), past its TTL, or lost because the app's data was cleared. All four
+   * mean "this callback cannot be tied to a request we made", and the remedy is the same.
+   */
+  | 'unknown-request'
   /** The URL claims one flow and the authoritative exchange reports another. */
   | 'conflicting-flow'
   /** GoTrue says the link is past its lifetime. */
@@ -64,8 +74,22 @@ export type AuthCallbackErrorCode =
 export type TrustedAuthCallback = {
   readonly kind: 'callback';
   readonly code: string;
-  /** Supabase's PKCE flow id, when the redirect carried one. */
+  /**
+   * Supabase's PKCE flow id.
+   *
+   * Non-null for every link this application now sends, because
+   * `experimental.appendPkceFlowIdToRedirects` is enabled. Nullable still, because a link issued
+   * before that flag was turned on carries none and must degrade to the SDK's legacy verifier key
+   * rather than being refused.
+   */
   readonly flowId: string | null;
+  /**
+   * NoorLife's own request id, proven well-formed and unique by the parser.
+   *
+   * Whether it matches a *record* is the service's question, not the parser's — that needs storage,
+   * and this layer is pure.
+   */
+  readonly requestId: string;
   /**
    * The flow the URL claimed.
    *

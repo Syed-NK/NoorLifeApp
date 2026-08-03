@@ -13,6 +13,7 @@ import {
   type AuthCallbackPort,
   type TrustedAuthCallback,
 } from './auth-callback.contract';
+import { claimPendingFlow } from './pending-auth-flow';
 
 /**
  * Turning a trusted callback into a session, exactly once.
@@ -254,6 +255,32 @@ async function exchange(callback: TrustedAuthCallback): Promise<AuthCallbackOutc
   }
 
   /**
+   * The request record is claimed **before** the code is exchanged, and claiming deletes it.
+   *
+   * Order matters in both directions. Claiming first means a link this device never asked for — or
+   * already used — is refused without a network call and without touching the PKCE verifier, so a
+   * replayed callback cannot consume anything. Deleting on claim rather than on success means a
+   * failed exchange does not leave the record re-usable: the code is single-use at the server, so a
+   * retry could only fail again while looking to the user like a fresh attempt.
+   */
+  const pending = await claimPendingFlow(callback.requestId);
+  if (pending.status !== 'ok') {
+    return failure('unknown-request');
+  }
+
+  /**
+   * What the record says against what the link claims.
+   *
+   * The record is the stronger of the two — this device wrote it, and it is not on the URL. A link
+   * whose `type` contradicts it was edited, so it is refused here rather than being resolved in
+   * favour of either side. The exchange's own answer is cross-checked separately further down; this
+   * is the cheap check that runs first.
+   */
+  if (callback.declaredFlow !== null && callback.declaredFlow !== pending.flow) {
+    return failure('conflicting-flow');
+  }
+
+  /**
    * Marked before the request, not after.
    *
    * If it were marked on success, a failed exchange would leave the code re-submittable — and the
@@ -324,7 +351,14 @@ async function exchange(callback: TrustedAuthCallback): Promise<AuthCallbackOutc
    * below refuses the callback outright.
    */
   const isRecovery = observed === 'PASSWORD_RECOVERY' || redirectType === 'recovery';
-  if (conflicts(callback.declaredFlow, isRecovery)) {
+  /**
+   * Cross-checked against the *record*, not the link.
+   *
+   * `pending.flow` is what this device wrote when it asked for the email; the link's `type` has
+   * already been checked against it above. So this compares the exchange's own answer with our own
+   * record rather than with anything an attacker could edit.
+   */
+  if (conflicts(pending.flow, isRecovery)) {
     return failure('conflicting-flow');
   }
 

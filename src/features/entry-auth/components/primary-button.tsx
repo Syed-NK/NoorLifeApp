@@ -86,6 +86,22 @@ export function PrimaryButton({
             token="button"
             color={disabled ? entryAuthColors.textPrimary : entryAuthColors.onPrimary}
             numberOfLines={1}
+            /**
+             * Shrink to fit, never ellipsize.
+             *
+             * The longest authentication label — "Request a New Reset Link" — does not fit one 48 dp
+             * line at the larger Android font scales, and `numberOfLines={1}` alone answered that by
+             * cutting the label to "Request a New Reset…". An action the user cannot fully read is
+             * not an action, and it is the one control on a failed-link screen that says what to do
+             * next.
+             *
+             * `adjustsFontSizeToFit` trades a little type size for the whole string, which keeps the
+             * established button geometry exactly as designed. `minimumFontScale` bounds the trade so
+             * the label can never shrink to something unreadable — past that bound the type stays put
+             * and the layout, not the text, is what would have to change.
+             */
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
             // The button is a fixed 48 dp, so the label is capped rather than allowed to grow
             // past the control. Scaling still applies up to this point.
             maxFontSizeMultiplier={1.3}

@@ -195,8 +195,10 @@ describe('the email change', () => {
     expect(mockAuth.updateUser).toHaveBeenCalledWith(
       { email: 'new@example.com' },
       // Phase 6C-3C: both confirmation links now return to the application's callback rather than to
-      // the project's Site URL, which is what GoTrue substituted when no redirect was supplied.
-      { emailRedirectTo: AUTH_CALLBACK_URL },
+      // the project's Site URL, which is what GoTrue substituted when no redirect was supplied. The
+      // redirect carries an `nl_rid` per request, so it is matched by shape rather than by literal —
+      // the exact value is asserted in the case below.
+      { emailRedirectTo: expect.stringMatching(/^noorlifeapp:\/\/auth\/callback\?nl_rid=[0-9a-f]{32}$/) },
     );
     expect(outcome).toEqual({ status: 'pending', requestedEmail: 'new@example.com' });
   });
@@ -205,7 +207,12 @@ describe('the email change', () => {
     await service.requestEmailChange('new@example.com');
 
     const options = mockAuth.updateUser.mock.calls[0]?.[1] as { emailRedirectTo?: string };
-    expect(options.emailRedirectTo).toBe(AUTH_CALLBACK_URL);
+    // The path is still the one centrally declared value; what follows it is the `nl_rid` that ties
+    // this link back to a request recorded on this device. See `pending-auth-flow.ts`.
+    const redirect = options.emailRedirectTo ?? '';
+    const [base, query] = redirect.split('?');
+    expect(base).toBe(AUTH_CALLBACK_URL);
+    expect(query).toMatch(/^nl_rid=[0-9a-f]{32}$/);
     // Supplying a redirect does not weaken Secure Email Change: GoTrue still emails the current
     // address as well as the new one and still needs both actioned. This only decides where each
     // link lands, and the service still cannot report anything but `pending`.

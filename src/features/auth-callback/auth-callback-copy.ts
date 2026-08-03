@@ -71,7 +71,7 @@ export const authCallbackCopy = {
       'Your link was confirmed. NoorLife could not read your account details just now — nothing about your account has changed.',
 
     continue: 'Continue',
-    requestNewLink: 'Request a New Link',
+    requestNewLink: 'Request a New Reset Link',
     backToSignIn: 'Back to Sign In',
     retry: 'Try Again',
 
@@ -92,6 +92,10 @@ export const authCallbackCopy = {
       'malformed-code': 'That link is not valid. Request a new one and open it from the email.',
       'unsupported-flow':
         'NoorLife cannot complete that kind of link yet. Please sign in with your email and password.',
+      'missing-request-id':
+        'That link is missing the reference NoorLife uses to match it to your request, so it was not used. Request a new one and open it from the email.',
+      'unknown-request':
+        'NoorLife could not match that link to a request from this device. It may already have been used, it may have expired, or it was requested before the app was reinstalled. Request a new one.',
       'conflicting-flow':
         'That link does not match the request it belongs to, so it was not used. Request a new one.',
       'link-expired':
@@ -116,6 +120,8 @@ export const authCallbackCopy = {
       'missing-code': 'Link incomplete',
       'malformed-code': 'Link not valid',
       'unsupported-flow': 'Not supported yet',
+      'missing-request-id': 'Link incomplete',
+      'unknown-request': 'Link no longer valid',
       'conflicting-flow': 'Link does not match',
       'link-expired': 'Link expired',
       'link-already-used': 'Link already used',
@@ -168,7 +174,7 @@ export const authCallbackCopy = {
     noGrantTitle: 'This link is no longer active',
     noGrantSupporting:
       'A password reset has to be started from a link in your email, and each link works once. Request a new one to continue.',
-    requestNewLink: 'Request a New Link',
+    requestNewLink: 'Request a New Reset Link',
 
     /**
      * The grant does not match the live session.

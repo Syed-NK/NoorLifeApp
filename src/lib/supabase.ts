@@ -147,6 +147,20 @@ function createSupabaseClient(): SupabaseClient | null {
        */
       detectSessionInUrl: Platform.OS === 'web',
       flowType: 'pkce',
+      /**
+       * Makes the SDK put its PKCE flow id on every email redirect.
+       *
+       * Not a default, and this project shipped once assuming it was — see `PKCE_FLOW_ID_NOTE` in
+       * `auth-callback.config.ts`. Without it `exchangeCodeForSession` falls back to the SDK's legacy
+       * fixed verifier key, which mirrors only the most recently started flow, so a signup
+       * confirmation and a password recovery held open together collide and the older one burns a
+       * single-use code against the wrong verifier.
+       *
+       * The cost is that every redirect now carries a query string, so Supabase's redirect allow-list
+       * must contain the wildcard entry in `REQUIRED_SUPABASE_REDIRECT_URLS` — a bare entry stops
+       * matching and the link falls back to the Site URL.
+       */
+      experimental: { appendPkceFlowIdToRedirects: true },
     },
   });
 }

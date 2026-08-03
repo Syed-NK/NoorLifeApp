@@ -9,6 +9,7 @@ import {
   type AuthCallbackFlowName,
 } from './auth-callback.config';
 import type { AuthCallbackErrorCode, ParsedAuthCallback } from './auth-callback.contract';
+import { NL_RID_PATTERN } from './pending-auth-flow';
 
 /**
  * The trust boundary: is this deep link a NoorLife authentication callback, and is it usable?
@@ -336,6 +337,18 @@ export function parseAuthCallback(url: unknown): ParsedAuthCallback {
 
   const error = values.get(AUTH_CALLBACK_PARAMS.error);
   const errorCode = values.get(AUTH_CALLBACK_PARAMS.errorCode);
+  const hasCode = values.has(AUTH_CALLBACK_PARAMS.code);
+  if ((error !== undefined || errorCode !== undefined) && hasCode) {
+    /**
+     * A failure and a success in one URL.
+     *
+     * GoTrue never sends both. Resolving it either way would mean choosing which half of a
+     * self-contradicting link to believe — and believing the `code` half would run an exchange for a
+     * link the server had already said no to.
+     */
+    return rejected('invalid-link');
+  }
+
   if (error !== undefined || errorCode !== undefined) {
     /**
      * A server-reported failure, before the code check.
@@ -367,21 +380,38 @@ export function parseAuthCallback(url: unknown): ParsedAuthCallback {
   }
 
   /**
-   * The flow id is dropped when malformed rather than rejecting the whole callback.
+   * NoorLife's own request id, and the one parameter this application both writes and requires.
    *
-   * It is an optimisation, not a credential: without it `supabase-js` reads the legacy fixed key,
-   * which still holds the most recently started flow's verifier. Refusing an otherwise-valid link
-   * because Supabase appended something we could not parse would fail a legitimate recovery.
+   * Refused outright when absent, repeated or malformed — unlike `sb_flow_id` below. The asymmetry
+   * is the point: `sb_flow_id` is Supabase's and a link predating the flag legitimately has none,
+   * whereas every link this application has ever asked for carries an `nl_rid`. One that does not is
+   * a link we did not send, and no amount of it being otherwise well-formed changes that.
    */
+  const rawRequestId = values.get(AUTH_CALLBACK_PARAMS.requestId);
+  if (
+    rawRequestId === undefined ||
+    conflicting.has(AUTH_CALLBACK_PARAMS.requestId) ||
+    !NL_RID_PATTERN.test(rawRequestId)
+  ) {
+    return rejected('missing-request-id');
+  }
+
+  /**
+   * A duplicated `sb_flow_id` is refused; an absent one is not.
+   *
+   * Two different values is parameter pollution and picking either would be picking. Absent means a
+   * link minted before `appendPkceFlowIdToRedirects` was enabled, which still exchanges correctly
+   * against the SDK's legacy fixed key — so refusing it would fail a legitimate in-flight recovery
+   * for a change we made on our side.
+   */
+  if (conflicting.has(AUTH_CALLBACK_PARAMS.flowId)) {
+    return rejected('invalid-link');
+  }
   const rawFlowId = values.get(AUTH_CALLBACK_PARAMS.flowId);
   const flowId =
-    rawFlowId !== undefined &&
-    !conflicting.has(AUTH_CALLBACK_PARAMS.flowId) &&
-    AUTH_FLOW_ID_PATTERN.test(rawFlowId)
-      ? rawFlowId
-      : null;
+    rawFlowId !== undefined && AUTH_FLOW_ID_PATTERN.test(rawFlowId) ? rawFlowId : null;
 
-  return { kind: 'callback', code, flowId, declaredFlow: declared.flow };
+  return { kind: 'callback', code, flowId, requestId: rawRequestId, declaredFlow: declared.flow };
 }
 
 /**

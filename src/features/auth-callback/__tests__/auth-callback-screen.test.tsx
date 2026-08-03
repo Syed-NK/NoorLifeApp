@@ -29,6 +29,14 @@ installMockLatencyTimers(() => renderCallback());
  */
 
 const CODE = '34e770dd-9ff9-416c-87fa-43b31d7ef225';
+/**
+ * A well-formed `nl_rid`.
+ *
+ * Every link this application asks for carries one — see `pending-auth-flow.ts` — so a URL used to
+ * stand in for a real callback has to carry one too, or the parser refuses it before any of the
+ * behaviour these suites are about can happen.
+ */
+const RID = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 const copy = authCallbackCopy.callback;
 
 type Fake = AuthCallbackPort & { readonly process: jest.Mock };
@@ -57,7 +65,7 @@ async function renderCallback(
   } = {},
 ) {
   if (options.url !== null) {
-    mockLinking.getInitialURL.mockResolvedValue(options.url ?? `${AUTH_CALLBACK_URL}?code=${CODE}`);
+    mockLinking.getInitialURL.mockResolvedValue(options.url ?? `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
   }
   const view = await render(
     <AppProviders>
@@ -151,15 +159,112 @@ describe('a password recovery', () => {
     expect(page).not.toContain('password has been reset');
   });
 
-  it('replaces rather than pushes, so Back cannot return to a consumed callback', async () => {
+  it('opens the password screen automatically, with no tap required', async () => {
     await renderCallback({ port: fakePort(RECOVERY) });
+
+    /**
+     * The correction this replaced.
+     *
+     * The screen used to render a Continue button and wait for it. That made a successful recovery
+     * depend on one tap, and a tap that fails to navigate is indistinguishable from a broken app — it
+     * was reported inert on a release device. There is nothing to decide at this point, so there is
+     * nothing to press.
+     */
     await waitFor(() =>
-      expect(screen.getByTestId('auth-callback-recovery-continue')).toBeTruthy(),
+      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
     );
+    expect(screen.queryByTestId('auth-callback-recovery-continue')).toBeNull();
+  });
 
-    await fireEvent.press(screen.getByTestId('auth-callback-recovery-continue'));
+  it('offers no action at all in the recovery state', async () => {
+    await renderCallback({ port: fakePort(RECOVERY) });
+    await waitFor(() => expect(screen.getByTestId('auth-callback-recovery')).toBeTruthy());
 
-    expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password');
+    // An enabled control that cannot deliver what it promises is worse than no control. If the
+    // navigation has taken this is never seen; if it has not, the message is still honest.
+    expect(screen.queryByTestId('auth-callback-recovery-continue')).toBeNull();
+    expect(screen.queryByTestId('auth-callback-continue')).toBeNull();
+  });
+
+  it('replaces rather than pushes, so the callback leaves no Back history', async () => {
+    await renderCallback({ port: fakePort(RECOVERY) });
+
+    await waitFor(() =>
+      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
+    );
+    // `push` would leave the consumed callback underneath, and Back would re-enter it.
+    expect(mockRouter.push).not.toHaveBeenCalledWith('/auth/set-new-password');
+  });
+
+  it('navigates exactly once', async () => {
+    await renderCallback({ port: fakePort(RECOVERY) });
+
+    await waitFor(() =>
+      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // A second replace onto the same route would remount the form and discard anything typed.
+    const toPassword = mockRouter.replace.mock.calls.filter(
+      ([href]: [unknown]) => href === '/auth/set-new-password',
+    );
+    expect(toPassword).toHaveLength(1);
+  });
+
+  it('mints the grant before it navigates, so the password screen finds one', async () => {
+    await renderCallback({ port: fakePort(RECOVERY) });
+
+    await waitFor(() =>
+      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
+    );
+    // The grant and the navigation are set in one pass; the banner proves the grant path ran.
+    expect(screen.getByTestId('auth-callback-recovery-banner')).toHaveTextContent(
+      copy.recoveryTitle,
+    );
+  });
+
+  it.each([
+    ['a refused callback', { status: 'failed', code: 'invalid-link' } as AuthCallbackOutcome],
+    ['an expired link', { status: 'failed', code: 'link-expired' } as AuthCallbackOutcome],
+    ['a replayed link', { status: 'failed', code: 'link-already-used' } as AuthCallbackOutcome],
+    ['an unmatched request', { status: 'failed', code: 'unknown-request' } as AuthCallbackOutcome],
+  ])('never navigates for %s', async (_label, outcome) => {
+    await renderCallback({ port: fakePort(outcome) });
+
+    await waitFor(() => expect(screen.getByTestId('auth-callback-error')).toBeTruthy());
+    // Navigation is a consequence of a successful exchange and of nothing else.
+    expect(mockRouter.replace).not.toHaveBeenCalledWith('/auth/set-new-password');
+  });
+
+  it('does not navigate for a signed-in confirmation', async () => {
+    await renderCallback({ port: fakePort(SIGNED_IN) });
+
+    await waitFor(() => expect(screen.getByTestId('auth-callback-signed-in')).toBeTruthy());
+    // A signup confirmation routes through the startup decision on a press, not to the password form.
+    expect(mockRouter.replace).not.toHaveBeenCalledWith('/auth/set-new-password');
+  });
+
+  it('navigates once for a rapidly duplicated delivery', async () => {
+    const port = fakePort(RECOVERY);
+    await renderCallback({ port });
+
+    await act(async () => {
+      // `launchMode="singleTask"` can re-deliver the same intent within a tick.
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
+      mockLinking.emit(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
+    );
+    expect(
+      mockRouter.replace.mock.calls.filter(([href]: [unknown]) => href === '/auth/set-new-password'),
+    ).toHaveLength(1);
+    expect(port.process).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -208,7 +313,7 @@ describe('an email change', () => {
 
   it('never displays an address taken from the callback URL', async () => {
     await renderCallback({
-      url: `${AUTH_CALLBACK_URL}?code=${CODE}&type=email_change&email=attacker@example.org`,
+      url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&type=email_change&email=attacker@example.org`,
       port: fakePort({
         status: 'signed-in',
         flow: 'email-change',
@@ -314,7 +419,7 @@ describe('failures', () => {
 describe('a callback the parser refused', () => {
   it('makes no service call at all', async () => {
     const port = fakePort(SIGNED_IN);
-    await renderCallback({ url: `exp+noorlifeapp://auth/callback?code=${CODE}`, port });
+    await renderCallback({ url: `exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`, port });
 
     await waitFor(() => expect(screen.getByTestId('auth-callback-error')).toBeTruthy());
     // Refused before anything was sent, so nothing was consumed at the server either.
@@ -365,7 +470,7 @@ describe('what never reaches the screen', () => {
     ['a refusal', { status: 'failed', code: 'link-expired' } as const],
   ])('renders no code, token, flow id or callback URL for %s', async (_label, outcome) => {
     await renderCallback({
-      url: `${AUTH_CALLBACK_URL}?code=${CODE}&sb_flow_id=abcd1234efgh&type=recovery`,
+      url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&sb_flow_id=abcd1234efgh&type=recovery`,
       port: fakePort(outcome),
     });
     await waitFor(() => expect(screen.getByTestId('auth-callback-actions')).toBeTruthy());
@@ -382,7 +487,7 @@ describe('what never reaches the screen', () => {
     );
 
     await renderCallback({
-      url: `${AUTH_CALLBACK_URL}?code=${CODE}&sb_flow_id=abcd1234efgh`,
+      url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&sb_flow_id=abcd1234efgh`,
       port: fakePort(SIGNED_IN),
     });
     await waitFor(() => expect(screen.getByTestId('auth-callback-signed-in')).toBeTruthy());
@@ -435,5 +540,48 @@ describe('geometry', () => {
     await renderCallback({ port: fakePort({ status: 'failed', code: 'link-expired' }) });
     await waitFor(() => expect(screen.getByTestId('auth-callback-error')).toBeTruthy());
     expect(slotMinHeight()).toBe(EXPECTED_MIN_HEIGHT);
+  });
+});
+
+/**
+ * The two action labels on a failed callback.
+ *
+ * ── Why this is asserted rather than eyeballed ──────────────────────────────
+ * "Request a New Reset Link" is the longest label in the entry flow, and the button it sits in is a
+ * fixed 48 dp. The previous copy — "Request a New Link" — fitted, so nothing caught the moment the
+ * longer string started being cut to "Request a New Reset…" at the larger Android font scales. A
+ * truncated action is not an action, and this is the control that tells a user with a broken link
+ * what to do next.
+ *
+ * React Native's `adjustsFontSizeToFit` is a native measurement, so a unit test cannot observe the
+ * rendered width. What it *can* pin is everything that decides the outcome: the full string reaches
+ * the button, and the button is configured to shrink rather than ellipsize.
+ */
+describe('the action labels', () => {
+  it('render in full, with no ellipsis', async () => {
+    const port = { process: jest.fn().mockResolvedValue({ status: 'failed', code: 'link-expired' }) };
+    await renderCallback({ url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`, port });
+
+    const primary = await screen.findByTestId('auth-callback-request-link');
+    const secondary = screen.getByTestId('auth-callback-back');
+
+    expect(primary.props.accessibilityLabel).toBe('Request a New Reset Link');
+    expect(secondary.props.accessibilityLabel).toBe('Back to Sign In');
+    // The character that would mean the string had been cut, in either form.
+    expect(primary.props.accessibilityLabel).not.toMatch(/…|\.\.\./);
+    expect(secondary.props.accessibilityLabel).not.toMatch(/…|\.\.\./);
+  });
+
+  it('are configured to shrink to fit rather than truncate', async () => {
+    const port = { process: jest.fn().mockResolvedValue({ status: 'failed', code: 'link-expired' }) };
+    await renderCallback({ url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`, port });
+
+    const label = await screen.findByText('Request a New Reset Link');
+
+    // `numberOfLines={1}` on its own is what produced the ellipsis; paired with these two it means
+    // "one line, at whatever size that takes" instead.
+    expect(label.props.adjustsFontSizeToFit).toBe(true);
+    expect(label.props.minimumFontScale).toBeGreaterThan(0);
+    expect(label.props.numberOfLines).toBe(1);
   });
 });

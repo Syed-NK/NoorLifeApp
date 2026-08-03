@@ -5,7 +5,8 @@ import type { Session as SupabaseSession, Subscription } from '@supabase/supabas
 
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
-import { authCallbackRedirectUrl } from './auth-callback.config';
+import { AUTH_CALLBACK_URL, authCallbackRedirectUrl } from './auth-callback.config';
+import { rememberPendingFlow, type PendingFlowName } from './pending-auth-flow';
 import { AuthError, type AuthErrorCode } from './auth-service.contract';
 
 /**
@@ -44,11 +45,20 @@ import { AuthError, type AuthErrorCode } from './auth-service.contract';
  * module-scope constant here — so importing this service stays free of any manifest requirement, which
  * is the property the original memoization existed to protect.
  *
- * This is the only change made to this design-locked file, and it is recorded in
+ * ── Why it became asynchronous (Phase 6C-3C correction) ─────────────────────
+ * The redirect now carries `nl_rid`, NoorLife's own record that this device asked for this link — see
+ * `pending-auth-flow.ts`. Minting it is a storage write, so the function awaits. The record is written
+ * *before* the email is requested, which is why this cannot be a lazily-computed constant.
+ *
+ * OAuth deliberately does not get one. `signInWithGoogle` consumes its own callback in-process
+ * through `openAuthSessionAsync`, which resolves with the return URL, so it never reaches the
+ * deep-link parser and has no email leg to correlate. It uses the bare `AUTH_CALLBACK_URL`.
+ *
+ * These are the only changes made to this design-locked file, and they are recorded in
  * `protected-files.test.ts`'s `REOPENED_ON_REQUEST` list with that reason.
  */
-function redirectTo(): string {
-  return authCallbackRedirectUrl();
+async function redirectTo(flow: PendingFlowName): Promise<string> {
+  return authCallbackRedirectUrl(await rememberPendingFlow(flow));
 }
 
 export type AuthUser = {
@@ -283,7 +293,7 @@ export async function signUpWithEmail(input: {
     password: input.password,
     options: {
       data: { full_name: input.fullName.trim() },
-      emailRedirectTo: redirectTo(),
+      emailRedirectTo: await redirectTo('signup'),
     },
   });
   if (error !== null) {
@@ -328,7 +338,7 @@ export async function signOut(): Promise<void> {
 export async function sendPasswordReset(email: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
-    redirectTo: redirectTo(),
+    redirectTo: await redirectTo('recovery'),
   });
   // A rate limit is worth surfacing — it is about the caller, not about whether the account exists.
   if (error !== null && toAuthErrorCode(error) === 'rate-limited') {
@@ -400,7 +410,7 @@ export async function signInWithGoogle(): Promise<void> {
   const client = requireClient();
   const { data, error } = await client.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: redirectTo(), skipBrowserRedirect: true },
+    options: { redirectTo: AUTH_CALLBACK_URL, skipBrowserRedirect: true },
   });
   if (error !== null) {
     // Supabase answers 400 for a provider that is not enabled.
@@ -410,7 +420,7 @@ export async function signInWithGoogle(): Promise<void> {
     throw new AuthError('provider-not-configured');
   }
 
-  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo());
+  const result = await WebBrowser.openAuthSessionAsync(data.url, AUTH_CALLBACK_URL);
   if (result.type === 'cancel' || result.type === 'dismiss') {
     throw new AuthError('provider-cancelled');
   }
@@ -522,5 +532,5 @@ export async function setOnboardingCompleted(userId: string): Promise<void> {
 
 /** The redirect URI Supabase must be configured to allow. Surfaced for the setup checklist. */
 export function getRedirectUri(): string {
-  return redirectTo();
+  return AUTH_CALLBACK_URL;
 }

@@ -139,13 +139,29 @@ describe('the diff against the branch point', () => {
       line === '*/' ||
       line === '}' ||
       /^import \* as AuthSession from 'expo-auth-session';$/.test(line) ||
-      /^import \{ authCallbackRedirectUrl \} from '\.\/auth-callback\.config';$/.test(line) ||
+      /^import \{ AUTH_CALLBACK_URL, authCallbackRedirectUrl \} from '\.\/auth-callback\.config';$/.test(line) ||
+      /^import \{ rememberPendingFlow, type PendingFlowName \} from '\.\/pending-auth-flow';$/.test(line) ||
       /^let cachedRedirect/.test(line) ||
       /^function redirectTo\(\): string \{$/.test(line) ||
+      /^async function redirectTo\(flow: PendingFlowName\): Promise<string> \{$/.test(line) ||
       /^if \(cachedRedirect === null\) \{$/.test(line) ||
       /^cachedRedirect = AuthSession\.makeRedirectUri/.test(line) ||
       /^return cachedRedirect;$/.test(line) ||
-      /^return authCallbackRedirectUrl\(\);$/.test(line);
+      /^return authCallbackRedirectUrl\(\);$/.test(line) ||
+      /^return authCallbackRedirectUrl\(await rememberPendingFlow\(flow\)\);$/.test(line) ||
+      // The three email actions now await the helper, and OAuth plus the setup checklist read the
+      // bare constant because neither has an email leg to correlate. See the file's own note.
+      /^emailRedirectTo: await redirectTo\('signup'\),$/.test(line) ||
+      /^redirectTo: await redirectTo\('recovery'\),$/.test(line) ||
+      /^options: \{ redirectTo: AUTH_CALLBACK_URL, skipBrowserRedirect: true \},$/.test(line) ||
+      /^const result = await WebBrowser\.openAuthSessionAsync\(data\.url, AUTH_CALLBACK_URL\);$/.test(line) ||
+      /^return AUTH_CALLBACK_URL;$/.test(line) ||
+      // The removed side of the same diff: what those five call sites said before.
+      /^emailRedirectTo: redirectTo\(\),$/.test(line) ||
+      /^redirectTo: redirectTo\(\),$/.test(line) ||
+      /^options: \{ redirectTo: redirectTo\(\), skipBrowserRedirect: true \},$/.test(line) ||
+      /^const result = await WebBrowser\.openAuthSessionAsync\(data\.url, redirectTo\(\)\);$/.test(line) ||
+      /^return redirectTo\(\);$/.test(line);
 
     expect(changed.filter((line) => !permitted(line))).toEqual([]);
   });
@@ -153,7 +169,9 @@ describe('the diff against the branch point', () => {
 
 describe('the callback redirect', () => {
   it('comes from central configuration rather than a literal', () => {
-    expect(current).toContain("import { authCallbackRedirectUrl } from './auth-callback.config'");
+    expect(current).toContain(
+      "import { AUTH_CALLBACK_URL, authCallbackRedirectUrl } from './auth-callback.config'",
+    );
     // The scheme is declared once, in the config. A second copy here is the drift this prevents.
     expect(code(current)).not.toContain('noorlifeapp');
   });

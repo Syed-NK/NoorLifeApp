@@ -102,7 +102,16 @@ Audited in `dist/main/lib/helpers.js` and `dist/main/GoTrueClient.js`:
   per-flow slot key *and* the legacy fixed key `<storageKey>-code-verifier`, then returns
   `codeChallengeMethod = codeVerifier === codeChallenge ? 'plain' : 's256'`.
 * `resetPasswordForEmail` calls `_maybeAppendFlowIdToRedirect(options.redirectTo, flowId)`, which
-  appends `sb_flow_id=<flowId>` to the redirect URL (`PKCE_FLOW_ID_PARAM = 'sb_flow_id'`).
+  appends `sb_flow_id=<flowId>` to the redirect URL (`PKCE_FLOW_ID_PARAM = 'sb_flow_id'`) **only when
+  `auth.experimental.appendPkceFlowIdToRedirects` is enabled**. It defaults to `false` and returns
+  `redirectTo` unchanged.
+
+  > **Correction (2026-08-03).** The original text of this section stated that the SDK appends
+  > `sb_flow_id` unconditionally. That was wrong, and the application shipped on it: every redirect
+  > went out bare, and every exchange fell back to the legacy fixed verifier key. The SDK's own
+  > documentation for the flag is explicit — flows that offer no way to obtain the flow id (email OTP,
+  > password recovery, sign-up confirmation) "can only be correlated via this flag". It is now
+  > enabled in `src/lib/supabase.ts`.
 * `exchangeCodeForSession(authCode, { flowId? })` resolves the verifier — **slot-only when a
   `flowId` is given, no fallback to the legacy key** — splits it on `/`, POSTs
   `token?grant_type=pkce`, removes the verifier, saves the session and notifies
@@ -120,6 +129,13 @@ Three consequences this contract relies on, none of them invented:
 3. `sb_flow_id` must be read off the callback URL and passed through as `options.flowId`, because
    the deprecation-window legacy key mirrors only the *most recently started* flow. Passing it is
    the documented usage (`GoTrueClient.exchangeCodeForSession`'s own example does exactly this).
+   It only *arrives* on the URL when the experimental flag above is on — which is what makes two
+   concurrent email flows safe rather than a coin toss over one shared verifier slot.
+4. `sb_flow_id` is **reserved**. `appendFlowIdToRedirectTo` strips any value already present in
+   `redirectTo` and substitutes the SDK's own, and the value names a verifier storage slot — so a
+   self-minted one makes `exchangeCodeForSession` throw `AuthPKCECodeVerifierMissingError` locally,
+   with no network call. NoorLife's own flow-intent discriminator is a separate parameter, `nl_rid`;
+   see `src/services/auth/pending-auth-flow.ts`.
 
 ### 1.5 The WebCrypto / plain-code-challenge warning
 
@@ -470,8 +486,10 @@ noorlifeapp://auth/callback
 noorlifeapp://auth/callback?**
 ```
 
-The second entry is required because `supabase-js` appends `sb_flow_id=<flowId>` to the redirect it
-sends for a PKCE password recovery, and Supabase matches redirect URLs by glob.
+The second entry is required because every redirect NoorLife sends now carries `nl_rid`, and the SDK
+appends `sb_flow_id=<flowId>` on top of it once `appendPkceFlowIdToRedirects` is enabled — while
+Supabase matches redirect URLs by glob, so a bare entry stops matching the moment any query string is
+present.
 
 Until those entries exist, GoTrue substitutes the project's Site URL and the emailed link will not
 return to the application. That is a dashboard action, reported here rather than attempted.

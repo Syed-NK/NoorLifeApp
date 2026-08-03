@@ -84,6 +84,13 @@ export function AuthCallbackScreen({
   const claimed = useRef(false);
   /** The callback this screen took, kept so Try Again can re-run the same one. */
   const held = useRef<CapturedCallback | null>(null);
+  /**
+   * Whether the password screen has already been opened.
+   *
+   * A ref rather than state: the guard has to hold *within* the same pass that sets the phase, and a
+   * state flag would still read false for a second call in the same tick.
+   */
+  const navigatedToRecovery = useRef(false);
 
   /**
    * Maps one claim outcome to one phase.
@@ -148,19 +155,42 @@ export function AuthCallbackScreen({
       }
       if (outcome.status === 'recovery-ready') {
         /**
-         * The grant is recorded here and the navigation is a separate press.
+         * The grant is recorded and the password screen is opened in the same pass.
          *
-         * Navigating automatically would work, but it would also mean the user never sees which link
-         * they just confirmed — and on a recovery, being told *what is about to happen* before a
-         * password field appears is the difference between a flow and a surprise.
+         * ── Why this is no longer a press ───────────────────────────────────────
+         * It used to render a success banner with a Continue button and wait. That left the one
+         * screen in the flow whose *only* way forward was a single tap — and a tap that fails to
+         * navigate, for any reason, is indistinguishable from an app that has stopped working. It was
+         * reported inert on a release device, and a control that is enabled but does nothing is worse
+         * than no control at all.
+         *
+         * There is nothing for the user to decide here. The exchange has already succeeded, the grant
+         * is already minted, and the only destination is the password form. So the callback screen is
+         * transient by construction: processing → exchange → replaced.
+         *
+         * ── Order, and why it is safe ───────────────────────────────────────────
+         * `grantRecovery` and `replace` are both called from this one continuation, so React batches
+         * them into a single commit: the provider's `recovery` is set *before* the password screen
+         * mounts and reads it. Setting the phase as well keeps the success state honest if the
+         * navigation somehow does not take — the user sees a confirmed link rather than a spinner
+         * that never ends, and there is no button offering an action that cannot happen.
+         *
+         * ── `replace`, and exactly once ─────────────────────────────────────────
+         * `replace` so Back cannot return to a consumed callback. The ref makes it once even though
+         * `run` is also reachable from Try Again — a second `replace` onto the same route would remount
+         * the password screen and throw away anything already typed into it.
          */
         grantRecovery({ userId: outcome.userId });
         setPhase({ name: 'recovery' });
+        if (!navigatedToRecovery.current) {
+          navigatedToRecovery.current = true;
+          router.replace(SET_NEW_PASSWORD_ROUTE);
+        }
         return;
       }
       setPhase({ name: 'signed-in', email: outcome.email, pending: outcome.pendingEmail });
     },
-    [grantRecovery, port],
+    [grantRecovery, port, router],
   );
 
   useEffect(() => {
@@ -349,13 +379,17 @@ export function AuthCallbackScreen({
 
       {/* The action row. Always present and always the same height; only the labels change. */}
       <View style={{ rowGap: dp(10) }} testID="auth-callback-actions">
-        {phase.name === 'processing' ? null : phase.name === 'recovery' ? (
-          <PrimaryButton
-            label={copy.continue}
-            onPress={() => router.replace(SET_NEW_PASSWORD_ROUTE)}
-            testID="auth-callback-recovery-continue"
-          />
-        ) : phase.name === 'signed-in' ? (
+        {/*
+          `recovery` shows no action at all.
+
+          The password screen is opened automatically the moment the exchange succeeds, so this state
+          is not something the user is meant to act on — and offering a button here is what produced
+          the reported "enabled but does nothing" screen. If the navigation has taken, this is never
+          seen; if it somehow has not, an honest success message is better than a control that cannot
+          deliver what it promises.
+        */}
+        {phase.name === 'processing' || phase.name === 'recovery' ? null : phase.name ===
+          'signed-in' ? (
           <PrimaryButton
             label={copy.continue}
             onPress={continueOn}

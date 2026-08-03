@@ -59,18 +59,33 @@ export const AUTH_CALLBACK_PATH = 'auth/callback';
 export const AUTH_CALLBACK_URL = `${AUTH_CALLBACK_SCHEME}://${AUTH_CALLBACK_PATH}`;
 
 /**
- * The Supabase parameter names this contract reads off a callback.
+ * The parameter names this contract reads off a callback.
  *
  * Named here rather than inline so the set is inspectable, and so `sb_flow_id` in particular is
- * recorded as *Supabase's* name and not ours — it is written by
- * `GoTrueClient._maybeAppendFlowIdToRedirect`, whose constant is
- * `PKCE_FLOW_ID_PARAM = 'sb_flow_id'` in `@supabase/auth-js@2.111.0`.
+ * recorded as *Supabase's* name and not ours — its constant is `PKCE_FLOW_ID_PARAM = 'sb_flow_id'`
+ * in `@supabase/auth-js@2.111.0`.
  */
 export const AUTH_CALLBACK_PARAMS = {
   /** The single-use PKCE authorization code. */
   code: 'code',
-  /** Supabase's own PKCE flow identifier, appended by the SDK to a recovery redirect. */
+  /**
+   * Supabase's PKCE flow identifier. **Reserved — this application never writes it.**
+   *
+   * Appended by `GoTrueClient._maybeAppendFlowIdToRedirect`, and only when
+   * `auth.experimental.appendPkceFlowIdToRedirects` is enabled — see `PKCE_FLOW_ID_NOTE` below for
+   * why that flag is now set and what shipped before it was. The value names a verifier slot inside
+   * the SDK's own storage, so a self-minted one would make `exchangeCodeForSession` look up a slot
+   * that does not exist and throw before any network call.
+   */
   flowId: 'sb_flow_id',
+  /**
+   * NoorLife's own flow-intent discriminator. See `pending-auth-flow.ts`.
+   *
+   * Ours to mint, unlike `sb_flow_id`. It answers "did this device ask for this link, and for which
+   * flow?" — which the SDK's id cannot, because it is generated after our call site runs and is
+   * never returned to us.
+   */
+  requestId: 'nl_rid',
   /** The flow the link claims to be. A hint, cross-checked and never trusted alone. */
   type: 'type',
   error: 'error',
@@ -142,12 +157,32 @@ export const AUTH_CODE_PATTERN = /^[A-Za-z0-9._~-]{20,512}$/;
 export const AUTH_FLOW_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
 /**
+ * What `@supabase/auth-js@2.111.0` actually does with `sb_flow_id`, recorded because this project
+ * shipped once on the opposite belief.
+ *
+ * Phase 6C-3C stated — in this file, in `auth-callback.service.ts` and in the phase report — that
+ * `supabase-js` appends `sb_flow_id` to a PKCE recovery redirect automatically. **It does not.**
+ * `_maybeAppendFlowIdToRedirect` returns `redirectTo` unchanged unless
+ * `auth.experimental.appendPkceFlowIdToRedirects` is set, and that flag defaults to `false`. The
+ * SDK's own documentation for it is explicit: flows that offer no way to obtain the flow id — email
+ * OTP, password recovery, sign-up confirmation — "can only be correlated via this flag".
+ *
+ * The observable consequence of shipping without it: every exchange fell back to the SDK's legacy
+ * fixed verifier key, which mirrors only the *most recently started* flow. Two email flows held open
+ * at once therefore collided, and the older one submitted the wrong verifier against a single-use
+ * code. The flag is now enabled in `lib/supabase.ts`.
+ */
+export const PKCE_FLOW_ID_NOTE =
+  'sb_flow_id is appended by @supabase/auth-js only when auth.experimental.appendPkceFlowIdToRedirects is enabled; it is not a default.';
+
+/**
  * The exact entries Supabase's **Authentication → URL Configuration → Redirect URLs** must contain.
  *
- * The second is not redundant. `supabase-js` appends `sb_flow_id=<id>` to the redirect it sends for a
- * PKCE password recovery, Supabase matches redirect URLs by glob, and a bare entry does not match a
- * URL carrying a query string. Without it a recovery email falls back to the project's Site URL and
- * never reaches the application.
+ * The second is not redundant, and with this phase it is load-bearing rather than precautionary.
+ * Every redirect this application sends now carries `nl_rid`, and the SDK appends `sb_flow_id` on top
+ * of it — while Supabase matches redirect URLs by glob, and a bare entry does not match a URL
+ * carrying a query string. Without the wildcard entry every email link falls back to the project's
+ * Site URL and never reaches the application at all.
  *
  * This code cannot configure the remote project and does not try. The list is exported so the setup
  * checklist and a test can both read the same values.
@@ -160,10 +195,11 @@ export const REQUIRED_SUPABASE_REDIRECT_URLS: readonly string[] = [
 /**
  * The redirect handed to `signUp`, `resetPasswordForEmail` and the email-change `updateUser`.
  *
- * A function rather than the bare constant so the three call sites read as asking for something
- * rather than pasting something, and so a future need to vary it — a per-flow path, a build-time
- * override — has one place to land.
+ * Takes the `nl_rid` minted for this request, so the three call sites read as asking for a redirect
+ * *for a request they have recorded* rather than pasting a constant. The SDK appends its own
+ * `sb_flow_id` to whatever this returns; the two identifiers are independent and both survive,
+ * because `appendFlowIdToRedirectTo` strips only its own parameter.
  */
-export function authCallbackRedirectUrl(): string {
-  return AUTH_CALLBACK_URL;
+export function authCallbackRedirectUrl(requestId: string): string {
+  return `${AUTH_CALLBACK_URL}?${AUTH_CALLBACK_PARAMS.requestId}=${encodeURIComponent(requestId)}`;
 }

@@ -20,14 +20,22 @@ import {
 /** A code of the shape GoTrue issues for PKCE: a UUID. */
 const CODE = '34e770dd-9ff9-416c-87fa-43b31d7ef225';
 const FLOW_ID = 'abc12345_XY-9';
+/**
+ * A well-formed `nl_rid`.
+ *
+ * Every link this application asks for carries one, so the positive cases below carry one too — a URL
+ * without it is now a URL we did not send, and is covered by its own cases further down.
+ */
+const RID = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
 describe('a trusted callback', () => {
   it('accepts the canonical URL with a code', () => {
-    const parsed = parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}`);
+    const parsed = parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
     expect(parsed).toEqual({
       kind: 'callback',
       code: CODE,
       flowId: null,
+      requestId: RID,
       declaredFlow: null,
     });
   });
@@ -36,16 +44,16 @@ describe('a trusted callback', () => {
     // The literal in the dashboard and the literal the parser trusts are the same value, from the same
     // constant. A test that spelled it out again would pass while they diverged.
     expect(REQUIRED_SUPABASE_REDIRECT_URLS[0]).toBe(AUTH_CALLBACK_URL);
-    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}`).kind).toBe('callback');
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`).kind).toBe('callback');
   });
 
   it.each([
-    ['two slashes', `noorlifeapp://auth/callback?code=${CODE}`],
-    ['three slashes, as createURL can produce', `noorlifeapp:///auth/callback?code=${CODE}`],
-    ['a trailing slash', `noorlifeapp://auth/callback/?code=${CODE}`],
-    ['an upper-case scheme', `NOORLIFEAPP://auth/callback?code=${CODE}`],
-    ['an upper-case path', `noorlifeapp://AUTH/CALLBACK?code=${CODE}`],
-    ['surrounding whitespace', `  noorlifeapp://auth/callback?code=${CODE}  `],
+    ['two slashes', `noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`],
+    ['three slashes, as createURL can produce', `noorlifeapp:///auth/callback?code=${CODE}&nl_rid=${RID}`],
+    ['a trailing slash', `noorlifeapp://auth/callback/?code=${CODE}&nl_rid=${RID}`],
+    ['an upper-case scheme', `NOORLIFEAPP://auth/callback?code=${CODE}&nl_rid=${RID}`],
+    ['an upper-case path', `noorlifeapp://AUTH/CALLBACK?code=${CODE}&nl_rid=${RID}`],
+    ['surrounding whitespace', `  noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}  `],
   ])('resolves %s to the same destination', (_label, url) => {
     // A device delivers these interchangeably. Treating them differently would be a bug nobody could
     // reproduce, because it would depend on how many slashes were typed.
@@ -54,7 +62,7 @@ describe('a trusted callback', () => {
 
   it('reads the Supabase flow id when the redirect carries one', () => {
     const parsed = parseAuthCallback(
-      `${AUTH_CALLBACK_URL}?code=${CODE}&sb_flow_id=${FLOW_ID}`,
+      `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&sb_flow_id=${FLOW_ID}`,
     );
     expect(parsed).toMatchObject({ kind: 'callback', flowId: FLOW_ID });
   });
@@ -67,7 +75,7 @@ describe('a trusted callback', () => {
     ['email_change', 'email-change'],
     ['RECOVERY', 'recovery'],
   ])('maps a declared type of %s onto %s', (declared, flow) => {
-    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&type=${declared}`)).toMatchObject({
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&type=${declared}`)).toMatchObject({
       kind: 'callback',
       declaredFlow: flow,
     });
@@ -75,13 +83,13 @@ describe('a trusted callback', () => {
 
   it('treats a link with no declared type as the ordinary PKCE case', () => {
     // A PKCE signup confirmation carries no `type` at all. Refusing it would refuse the common case.
-    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}`)).toMatchObject({
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`)).toMatchObject({
       declaredFlow: null,
     });
   });
 
   it('decodes a percent-encoded code', () => {
-    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}%2Dx`)).toMatchObject({
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}%2Dx&nl_rid=${RID}`)).toMatchObject({
       code: `${CODE}-x`,
     });
   });
@@ -89,12 +97,12 @@ describe('a trusted callback', () => {
 
 describe('an untrusted scheme', () => {
   it.each([
-    ['Expo Go', `exp+noorlifeapp://auth/callback?code=${CODE}`],
-    ['https', `https://auth/callback?code=${CODE}`],
-    ['a lookalike', `noorlifeapp2://auth/callback?code=${CODE}`],
-    ['a prefix match', `noorlife://auth/callback?code=${CODE}`],
-    ['javascript', `javascript://auth/callback?code=${CODE}`],
-    ['file', `file://auth/callback?code=${CODE}`],
+    ['Expo Go', `exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`],
+    ['https', `https://auth/callback?code=${CODE}&nl_rid=${RID}`],
+    ['a lookalike', `noorlifeapp2://auth/callback?code=${CODE}&nl_rid=${RID}`],
+    ['a prefix match', `noorlife://auth/callback?code=${CODE}&nl_rid=${RID}`],
+    ['javascript', `javascript://auth/callback?code=${CODE}&nl_rid=${RID}`],
+    ['file', `file://auth/callback?code=${CODE}&nl_rid=${RID}`],
   ])('refuses %s aimed at the callback', (_label, url) => {
     expect(parseAuthCallback(url)).toEqual({ kind: 'rejected', code: 'untrusted-scheme' });
   });
@@ -105,7 +113,7 @@ describe('an untrusted scheme', () => {
      * link here. Trusting it would mean accepting a session-establishing link from a development client
      * that any app on the device can also claim, so the manifest's tolerance is not this contract's.
      */
-    expect(parseAuthCallback(`exp+noorlifeapp://auth/callback?code=${CODE}`)).toEqual({
+    expect(parseAuthCallback(`exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`)).toEqual({
       kind: 'rejected',
       code: 'untrusted-scheme',
     });
@@ -114,9 +122,9 @@ describe('an untrusted scheme', () => {
 
 describe('an untrusted host', () => {
   it.each([
-    `noorlifeapp://elsewhere.example.com/auth/callback?code=${CODE}`,
-    `noorlifeapp://user@elsewhere.example.com/auth/callback?code=${CODE}`,
-    `noorlifeapp://a/b/auth/callback?code=${CODE}`,
+    `noorlifeapp://elsewhere.example.com/auth/callback?code=${CODE}&nl_rid=${RID}`,
+    `noorlifeapp://user@elsewhere.example.com/auth/callback?code=${CODE}&nl_rid=${RID}`,
+    `noorlifeapp://a/b/auth/callback?code=${CODE}&nl_rid=${RID}`,
   ])('refuses %s', (url) => {
     // The right path with something occupying the authority slot. Named for what is wrong rather than
     // described as a path depth, so a reader of a log knows which check fired.
@@ -126,11 +134,11 @@ describe('an untrusted host', () => {
 
 describe('an unsupported path', () => {
   it.each([
-    `noorlifeapp://auth/callback/extra?code=${CODE}`,
-    `noorlifeapp://auth/verify?code=${CODE}`,
-    `noorlifeapp://auth?code=${CODE}`,
-    `noorlifeapp://auth/?code=${CODE}`,
-    `noorlifeapp://auth/callback/callback?code=${CODE}`,
+    `noorlifeapp://auth/callback/extra?code=${CODE}&nl_rid=${RID}`,
+    `noorlifeapp://auth/verify?code=${CODE}&nl_rid=${RID}`,
+    `noorlifeapp://auth?code=${CODE}&nl_rid=${RID}`,
+    `noorlifeapp://auth/?code=${CODE}&nl_rid=${RID}`,
+    `noorlifeapp://auth/callback/callback?code=${CODE}&nl_rid=${RID}`,
   ])('refuses %s', (url) => {
     expect(parseAuthCallback(url)).toEqual({ kind: 'rejected', code: 'unsupported-path' });
   });
@@ -159,9 +167,9 @@ describe('a URL that is not addressed to the callback at all', () => {
 
   it('does not claim an unrelated URL', () => {
     expect(isAuthCallbackUrl('noorlifeapp://faith/quran')).toBe(false);
-    expect(isAuthCallbackUrl(`${AUTH_CALLBACK_URL}?code=${CODE}`)).toBe(true);
+    expect(isAuthCallbackUrl(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`)).toBe(true);
     // A hostile callback *is* claimed, so the listener can show a refusal rather than ignoring it.
-    expect(isAuthCallbackUrl(`exp+noorlifeapp://auth/callback?code=${CODE}`)).toBe(true);
+    expect(isAuthCallbackUrl(`exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`)).toBe(true);
   });
 });
 
@@ -199,13 +207,13 @@ describe('a missing or malformed code', () => {
      * Parameter pollution. The attack relies on two readers disagreeing about which value wins, so this
      * reader does not choose — it refuses.
      */
-    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&code=${CODE.replace('3', '4')}`)).toEqual(
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&code=${CODE.replace('3', '4')}`)).toEqual(
       { kind: 'rejected', code: 'malformed-code' },
     );
   });
 
   it('accepts the same code repeated identically, which is not a conflict', () => {
-    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&code=${CODE}`)).toMatchObject({
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&code=${CODE}&nl_rid=${RID}`)).toMatchObject({
       kind: 'callback',
       code: CODE,
     });
@@ -214,7 +222,7 @@ describe('a missing or malformed code', () => {
   it('drops a malformed flow id rather than refusing an otherwise valid link', () => {
     // The flow id is an optimisation, not a credential: without it the SDK reads the legacy fixed key.
     // Refusing a legitimate recovery because Supabase appended something unparseable would be worse.
-    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&sb_flow_id=$$$`)).toMatchObject({
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&sb_flow_id=$$$`)).toMatchObject({
       kind: 'callback',
       code: CODE,
       flowId: null,
@@ -227,7 +235,7 @@ describe('an unsupported flow', () => {
     'refuses a declared type of %s',
     (type) => {
       // A `type` we do not recognise is a link we did not send. Never mapped to a default.
-      expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&type=${type}`)).toEqual({
+      expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&type=${type}`)).toEqual({
         kind: 'rejected',
         code: 'unsupported-flow',
       });
@@ -236,7 +244,7 @@ describe('an unsupported flow', () => {
 
   it('refuses the reserved oauth flow while it is disabled', () => {
     // Declared in the configuration so a later phase has one switch; refused until it is thrown.
-    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&type=oauth`)).toEqual({
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&type=oauth`)).toEqual({
       kind: 'rejected',
       code: 'unsupported-flow',
     });
@@ -262,7 +270,7 @@ describe('fragment tokens', () => {
   });
 
   it('refuses them even when a valid-looking code is also present', () => {
-    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}#access_token=aaaa`)).toEqual({
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}#access_token=aaaa`)).toEqual({
       kind: 'rejected',
       code: 'invalid-link',
     });
@@ -329,12 +337,12 @@ describe('a server-reported failure', () => {
 
 describe('what the parser never returns', () => {
   const hostile = [
-    `${AUTH_CALLBACK_URL}?code=${CODE}`,
-    `${AUTH_CALLBACK_URL}?code=${CODE}&sb_flow_id=${FLOW_ID}`,
+    `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`,
+    `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&sb_flow_id=${FLOW_ID}`,
     `${AUTH_CALLBACK_URL}?error=access_denied&error_description=secret+sentence`,
     `${AUTH_CALLBACK_URL}#access_token=super-secret-token`,
-    `exp+noorlifeapp://auth/callback?code=${CODE}`,
-    `noorlifeapp://elsewhere.example.com/auth/callback?code=${CODE}`,
+    `exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`,
+    `noorlifeapp://elsewhere.example.com/auth/callback?code=${CODE}&nl_rid=${RID}`,
   ];
 
   it('never carries the URL it was given', () => {
@@ -357,7 +365,7 @@ describe('what the parser never returns', () => {
   it('exposes the code only on the answer the service consumes', () => {
     // A `callback` answer holds the code because the exchange needs it. Nothing else does, and no
     // outcome type carries it onward.
-    expect(JSON.stringify(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}`))).toContain(CODE);
+    expect(JSON.stringify(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`))).toContain(CODE);
     for (const url of hostile.slice(2)) {
       expect(JSON.stringify(parseAuthCallback(url))).not.toContain(CODE);
     }
@@ -392,5 +400,96 @@ describe('bounds', () => {
     // somewhere that then logs the URL.
     expect(() => parseAuthCallback(`${AUTH_CALLBACK_URL}?code=%E0%A4%A`)).not.toThrow();
     expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=%E0%A4%A`).kind).toBe('rejected');
+  });
+});
+
+
+/**
+ * `nl_rid`, the one parameter this application both writes and requires.
+ *
+ * Its absence is not a malformed URL in any general sense — it is a perfectly well-formed callback
+ * that this device has no reason to believe it asked for. That distinction is why it has its own
+ * rejection code rather than being folded into `invalid-link`.
+ */
+describe('the NoorLife request id', () => {
+  it('is required, even on an otherwise perfect callback', () => {
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}`)).toEqual({
+      kind: 'rejected',
+      code: 'missing-request-id',
+    });
+  });
+
+  it.each([
+    ['too short', 'abc'],
+    ['too long', 'a'.repeat(33)],
+    ['upper-case hex, which this application never mints', 'A'.repeat(32)],
+    ['non-hex characters', 'z'.repeat(32)],
+    ['empty', ''],
+  ])('refuses %s', (_label, value) => {
+    expect(
+      parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${value}`),
+    ).toMatchObject({ kind: 'rejected', code: 'missing-request-id' });
+  });
+
+  it('refuses two different request ids in one URL', () => {
+    // Parameter pollution: two readers could disagree about which one wins, so neither is used.
+    expect(
+      parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&nl_rid=${'b'.repeat(32)}`),
+    ).toMatchObject({ kind: 'rejected', code: 'missing-request-id' });
+  });
+
+  it('accepts the same request id repeated identically', () => {
+    // A repeat that says the same thing twice is not a conflict, and a mail client that rewrites a
+    // URL can produce one.
+    expect(
+      parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&nl_rid=${RID}`),
+    ).toMatchObject({ kind: 'callback', requestId: RID });
+  });
+});
+
+describe('Supabase’s own flow id', () => {
+  it('is carried through when well formed', () => {
+    expect(
+      parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&sb_flow_id=${FLOW_ID}`),
+    ).toMatchObject({ kind: 'callback', flowId: FLOW_ID, requestId: RID });
+  });
+
+  it('is optional, because a link minted before the SDK flag was enabled carries none', () => {
+    // Such a link still exchanges correctly against the SDK's legacy fixed verifier key. Refusing it
+    // would fail a legitimate in-flight recovery for a change made on our side.
+    expect(parseAuthCallback(`${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`)).toMatchObject({
+      kind: 'callback',
+      flowId: null,
+    });
+  });
+
+  it('refuses two different values rather than picking one', () => {
+    expect(
+      parseAuthCallback(
+        `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&sb_flow_id=aaaaaaaa&sb_flow_id=bbbbbbbb`,
+      ),
+    ).toMatchObject({ kind: 'rejected', code: 'invalid-link' });
+  });
+});
+
+describe('a URL that says both yes and no', () => {
+  it('refuses a callback carrying an error and a code together', () => {
+    // GoTrue never sends both. Believing the `code` half would run an exchange for a link the server
+    // had already refused.
+    expect(
+      parseAuthCallback(
+        `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}&error=access_denied&error_code=otp_expired`,
+      ),
+    ).toEqual({ kind: 'rejected', code: 'invalid-link' });
+  });
+
+  it('still reports a server error when there is no code', () => {
+    // The ordinary expired-link case, which must keep saying "expired" rather than becoming a
+    // structural rejection now that more parameters are required.
+    expect(
+      parseAuthCallback(
+        `${AUTH_CALLBACK_URL}?nl_rid=${RID}&error=access_denied&error_code=otp_expired`,
+      ),
+    ).toMatchObject({ kind: 'error', code: 'link-expired' });
   });
 });
