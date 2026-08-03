@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { authCallbackRedirectUrl } from '@services/auth/auth-callback.config';
 import { clearAccessToken } from '@services/auth/session-storage';
 
 import {
@@ -305,7 +306,25 @@ export async function requestEmailChange(newEmail: string): Promise<EmailChangeO
   const client = requireClient();
   const normalized = normalizeEmail(newEmail);
 
-  const { error } = await client.auth.updateUser({ email: normalized });
+  const { error } = await client.auth.updateUser(
+    { email: normalized },
+    /**
+     * Where the confirmation links come back to (added in Phase 6C-3C).
+     *
+     * Before this, `updateUser` was called with no `emailRedirectTo` at all, so GoTrue substituted the
+     * project's Site URL: both confirmation emails pointed at a web page rather than at the
+     * application, and a user who tapped one had no way to finish the change on their phone.
+     *
+     * The value comes from `auth-callback.config.ts` — the single declaration of the callback URL — so
+     * this, `signUp`'s `emailRedirectTo` and `resetPasswordForEmail`'s `redirectTo` cannot drift apart
+     * and there is one string to allow-list in the Supabase Dashboard.
+     *
+     * Nothing about Secure Email Change is altered by supplying a redirect. GoTrue still emails **both**
+     * the current and the new address and still requires both to be actioned; this only decides where
+     * each link lands.
+     */
+    { emailRedirectTo: authCallbackRedirectUrl() },
+  );
   if (error !== null) {
     fail(error);
   }

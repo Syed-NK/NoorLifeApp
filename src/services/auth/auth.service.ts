@@ -1,11 +1,11 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
-import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import type { Session as SupabaseSession, Subscription } from '@supabase/supabase-js';
 
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
+import { authCallbackRedirectUrl } from './auth-callback.config';
 import { AuthError, type AuthErrorCode } from './auth-service.contract';
 
 /**
@@ -27,20 +27,28 @@ import { AuthError, type AuthErrorCode } from './auth-service.contract';
  */
 
 /**
- * The deep link Supabase returns to, built from the scheme already declared in app.json.
+ * The deep link Supabase returns to.
  *
- * Resolved lazily and memoized rather than computed at module scope. `makeRedirectUri` reads the
- * expo-constants manifest, which does not exist under Jest, so evaluating it on import threw as soon
- * as anything transitively imported this module — including screens that never touch authentication.
- * Deferring it means importing the service is always safe and only *calling* a provider flow needs a
- * manifest, which is the only place one is genuinely required.
+ * ── What this used to be, and why it changed (Phase 6C-3C) ───────────────────
+ * `AuthSession.makeRedirectUri({ scheme: 'noorlifeapp' })`, memoized lazily because it reads the
+ * expo-constants manifest and Jest has none. That produced the bare scheme root — `noorlifeapp://` —
+ * which no screen in the application was listening on: there was no deep-link handler and no callback
+ * route, so a real confirmation or recovery link landed on the entry gate with its code discarded.
+ *
+ * It now delegates to `auth-callback.config.ts`, the single declaration of
+ * `noorlifeapp://auth/callback`. That file explains why the value is built from constants rather than
+ * resolved from the environment: it has to match a Supabase Dashboard allow-list entry exactly, and
+ * `makeRedirectUri` returns a LAN address under Expo Go that cannot be allow-listed honestly.
+ *
+ * Laziness is kept — the config's `authCallbackRedirectUrl()` is a function call rather than a
+ * module-scope constant here — so importing this service stays free of any manifest requirement, which
+ * is the property the original memoization existed to protect.
+ *
+ * This is the only change made to this design-locked file, and it is recorded in
+ * `protected-files.test.ts`'s `REOPENED_ON_REQUEST` list with that reason.
  */
-let cachedRedirect: string | null = null;
 function redirectTo(): string {
-  if (cachedRedirect === null) {
-    cachedRedirect = AuthSession.makeRedirectUri({ scheme: 'noorlifeapp' });
-  }
-  return cachedRedirect;
+  return authCallbackRedirectUrl();
 }
 
 export type AuthUser = {

@@ -123,45 +123,206 @@ describe('an email and password account', () => {
   });
 });
 
+/**
+ * The disabled contract.
+ *
+ * ── Why these assert the control, not the message ───────────────────────────
+ * The device pass found Update Password at full fill over two empty fields: the refusal existed
+ * only inside the handler, so the button invited a press and answered with a validation message.
+ * These tests therefore assert the *state of the control* first — a state that cannot be submitted
+ * must also not be pressable — and the explanatory message second. Asserting only the message is
+ * what let the earlier version pass while the button was still live.
+ */
+describe('the Update Password control', () => {
+  const submit = () => screen.getByTestId('change-password-submit');
+  const isDisabled = () => submit().props.accessibilityState.disabled === true;
+
+  async function fill(password: string, confirm = password) {
+    await fireEvent.changeText(screen.getByTestId('change-password-new'), password);
+    await fireEvent.changeText(screen.getByTestId('change-password-confirm'), confirm);
+  }
+
+  it('is disabled over two empty fields', async () => {
+    await renderScreen(fakePort());
+    expect(isDisabled()).toBe(true);
+  });
+
+  it('is disabled with a password but no confirmation', async () => {
+    await renderScreen(fakePort());
+    await fireEvent.changeText(screen.getByTestId('change-password-new'), 'NoorLife2026!');
+    expect(isDisabled()).toBe(true);
+  });
+
+  it('is disabled for whitespace-only input in either field', async () => {
+    await renderScreen(fakePort());
+
+    await fill('      ');
+    expect(isDisabled()).toBe(true);
+
+    await fill('NoorLife2026!', '     ');
+    expect(isDisabled()).toBe(true);
+  });
+
+  it('is disabled for a password below the shared strength policy', async () => {
+    await renderScreen(fakePort());
+    // The same `scorePassword` minimum Sign Up and New Password already enforce.
+    await fill('abc');
+    expect(isDisabled()).toBe(true);
+  });
+
+  it('is disabled when the confirmation does not match', async () => {
+    await renderScreen(fakePort());
+    await fill('NoorLife2026!', 'NoorLife2027!');
+    expect(isDisabled()).toBe(true);
+  });
+
+  it('is enabled only once the form is genuinely submittable', async () => {
+    await renderScreen(fakePort());
+    await fill('NoorLife2026!');
+    expect(isDisabled()).toBe(false);
+  });
+
+  it('never resizes between its enabled and disabled states', async () => {
+    await renderScreen(fakePort());
+    const disabledStyle = submit().props.style;
+    await fill('NoorLife2026!');
+    const enabledStyle = submit().props.style;
+
+    const geometry = (style: unknown) => {
+      const flat = (Array.isArray(style) ? style : [style]).filter(
+        (entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null,
+      );
+      const merged = Object.assign({}, ...flat) as Record<string, unknown>;
+      return {
+        height: merged.height,
+        borderRadius: merged.borderRadius,
+        paddingHorizontal: merged.paddingHorizontal,
+      };
+    };
+    expect(geometry(enabledStyle)).toEqual(geometry(disabledStyle));
+  });
+
+  it('tells a screen reader what would enable it, not what pressing it would do', async () => {
+    await renderScreen(fakePort());
+
+    expect(submit().props.accessibilityHint).toBe(
+      privacySecurityCopy.password.submitDisabledHints.empty,
+    );
+
+    await fill('NoorLife2026!', 'NoorLife2027!');
+    expect(submit().props.accessibilityHint).toBe(
+      privacySecurityCopy.password.submitDisabledHints.mismatch,
+    );
+
+    await fill('NoorLife2026!');
+    expect(submit().props.accessibilityHint).toBe(privacySecurityCopy.password.submitHint);
+  });
+});
+
 describe('validation', () => {
-  it('rejects an empty password without calling the service', async () => {
+  it('makes no service call from a press in any invalid state', async () => {
     const port = fakePort();
     await renderScreen(port);
 
-    await fireEvent.press(screen.getByTestId('change-password-submit'));
+    for (const [password, confirm] of [
+      ['', ''],
+      ['   ', '   '],
+      ['abc', 'abc'],
+      ['NoorLife2026!', 'NoorLife2027!'],
+      ['NoorLife2026!', ''],
+    ]) {
+      await fireEvent.changeText(screen.getByTestId('change-password-new'), password as string);
+      await fireEvent.changeText(screen.getByTestId('change-password-confirm'), confirm as string);
+      await fireEvent.press(screen.getByTestId('change-password-submit'));
+    }
+
+    expect(port.updates).not.toHaveBeenCalled();
+  });
+
+  it('says nothing under an untouched field', async () => {
+    await renderScreen(fakePort());
+
+    expect(screen.queryByTestId('change-password-new-error')).toBeNull();
+    expect(screen.queryByTestId('change-password-confirm-error')).toBeNull();
+  });
+
+  it('explains an empty password once the field has been left', async () => {
+    await renderScreen(fakePort());
+
+    await fireEvent(screen.getByTestId('change-password-new'), 'blur');
 
     expect(screen.getByTestId('change-password-new-error')).toHaveTextContent(
       privacySecurityCopy.password.errors.empty,
     );
-    expect(port.updates).not.toHaveBeenCalled();
   });
 
-  it('rejects a weak password using the existing policy', async () => {
-    const port = fakePort();
-    await renderScreen(port);
+  it('explains a weak password under the password field, not the confirmation', async () => {
+    await renderScreen(fakePort());
 
-    // Under the shared `scorePassword` minimum, which Sign Up and New Password already enforce.
     await fireEvent.changeText(screen.getByTestId('change-password-new'), 'abc');
-    await fireEvent.changeText(screen.getByTestId('change-password-confirm'), 'abc');
-    await fireEvent.press(screen.getByTestId('change-password-submit'));
+    await fireEvent(screen.getByTestId('change-password-new'), 'blur');
 
     expect(screen.getByTestId('change-password-new-error')).toHaveTextContent(
       privacySecurityCopy.password.errors.weak,
     );
-    expect(port.updates).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('change-password-confirm-error')).toBeNull();
   });
 
-  it('rejects a mismatched confirmation', async () => {
+  it('explains a missing confirmation as its own state', async () => {
+    await renderScreen(fakePort());
+
+    await fireEvent.changeText(screen.getByTestId('change-password-new'), 'NoorLife2026!');
+    await fireEvent(screen.getByTestId('change-password-confirm'), 'blur');
+
+    expect(screen.getByTestId('change-password-confirm-error')).toHaveTextContent(
+      privacySecurityCopy.password.errors.confirmEmpty,
+    );
+  });
+
+  it('explains a mismatch under the confirmation field', async () => {
+    await renderScreen(fakePort());
+
+    await fireEvent.changeText(screen.getByTestId('change-password-new'), 'NoorLife2026!');
+    await fireEvent.changeText(screen.getByTestId('change-password-confirm'), 'NoorLife2027!');
+    await fireEvent(screen.getByTestId('change-password-confirm'), 'blur');
+
+    expect(screen.getByTestId('change-password-confirm-error')).toHaveTextContent(
+      privacySecurityCopy.password.errors.mismatch,
+    );
+  });
+
+  it('explains a refusal on a submit attempt even with no blur', async () => {
+    await renderScreen(fakePort());
+
+    // The button is disabled, so this arrives the way a keyboard "Done" does.
+    await fireEvent(screen.getByTestId('change-password-confirm'), 'submitEditing');
+
+    expect(screen.getByTestId('change-password-new-error')).toHaveTextContent(
+      privacySecurityCopy.password.errors.empty,
+    );
+  });
+});
+
+describe("the keyboard's own Submit", () => {
+  it('sends a valid form, exactly as the button does', async () => {
+    const port = fakePort();
+    await renderScreen(port);
+
+    await fireEvent.changeText(screen.getByTestId('change-password-new'), 'NoorLife2026!');
+    await fireEvent.changeText(screen.getByTestId('change-password-confirm'), 'NoorLife2026!');
+    await fireEvent(screen.getByTestId('change-password-confirm'), 'submitEditing');
+
+    await waitFor(() => expect(port.updates).toHaveBeenCalledTimes(1));
+  });
+
+  it('is refused by the same evaluator when the form is not submittable', async () => {
     const port = fakePort();
     await renderScreen(port);
 
     await fireEvent.changeText(screen.getByTestId('change-password-new'), 'NoorLife2026!');
     await fireEvent.changeText(screen.getByTestId('change-password-confirm'), 'NoorLife2027!');
-    await fireEvent.press(screen.getByTestId('change-password-submit'));
+    await fireEvent(screen.getByTestId('change-password-confirm'), 'submitEditing');
 
-    expect(screen.getByTestId('change-password-confirm-error')).toHaveTextContent(
-      privacySecurityCopy.password.errors.mismatch,
-    );
     expect(port.updates).not.toHaveBeenCalled();
   });
 });

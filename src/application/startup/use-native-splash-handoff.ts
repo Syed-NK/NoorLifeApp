@@ -45,6 +45,35 @@ import { noorLifeAssets } from '@shared/assets/noorlife-assets';
  */
 export const NATIVE_SPLASH_FALLBACK_MS = 1500;
 
+/**
+ * Requested-once, for the whole process rather than per hook instance.
+ *
+ * ── Why this had to stop being a ref (Phase 6C-3C) ──────────────────────────
+ * The guard was an instance ref, which was correct while `useNativeSplashHandoff` had exactly one
+ * caller — the entry gate. A **cold-start deep link** broke that assumption in the worst possible
+ * way: Expo Router makes the linked route the initial route, so `src/app/index.tsx` never mounts,
+ * the hook never runs, its 1500 ms ceiling is never armed, and the *native* splash stays up over a
+ * working app for ever. That is not a hypothetical — it is what a real emailed confirmation link did
+ * on the emulator, and it looked exactly like a hang.
+ *
+ * The fix needs a second caller in the root layout, which mounts for every route. Two instances mean
+ * two refs, and two calls to `hideAsync`. The hook's own comment already says relying on that being
+ * harmless is relying on an implementation detail — so the guard moved to where the thing it guards
+ * actually lives. The native splash is one global native resource; "has it been asked to hide?" is a
+ * property of the process, not of a component.
+ */
+let hideRequestedForProcess = false;
+
+/**
+ * Clears the process-wide guard. **Tests only.**
+ *
+ * The application never calls it: once hidden, the native splash stays hidden for the life of the
+ * process. A suite that mounts the harness repeatedly needs each mount to be a fresh launch.
+ */
+export function resetNativeSplashHandoff(): void {
+  hideRequestedForProcess = false;
+}
+
 export type NativeSplashHandoff = {
   /** Attach to the branded splash's wrapper `onLayout`. */
   readonly onBrandedSplashLayout: () => void;
@@ -57,22 +86,16 @@ export function useNativeSplashHandoff(): NativeSplashHandoff {
   const [mounted, setMounted] = useState(false);
   const [hidden, setHidden] = useState(false);
 
-  /**
-   * The idempotency guard.
-   *
-   * A ref, not state: both paths can fire in the same tick, and a state flag would not have been
-   * committed in time to stop the second. `hideAsync` twice is harmless on Android today, but
-   * relying on that is relying on an implementation detail.
-   */
-  const hideRequested = useRef(false);
   const mountedAt = useRef<number | null>(null);
   mountedAt.current ??= Date.now();
 
-  const hide = useCallback((reason: 'ready' | 'fallback') => {
-    if (hideRequested.current) {
+  const hide = useCallback((reason: 'ready' | 'fallback' | 'route-backstop') => {
+    // Process-wide, so the entry gate and the root layout's backstop cannot both ask. See the note
+    // on `hideRequestedForProcess`.
+    if (hideRequestedForProcess) {
       return;
     }
-    hideRequested.current = true;
+    hideRequestedForProcess = true;
 
     const elapsed = Date.now() - (mountedAt.current ?? Date.now());
 
@@ -137,7 +160,7 @@ export function useNativeSplashHandoff(): NativeSplashHandoff {
   // Normal path. One animation frame after both signals, so the branded frame is on screen before
   // the native layer is removed — hiding in the same frame can show a flash of whatever is behind.
   useEffect(() => {
-    if (!artworkLoaded || !mounted || hideRequested.current) {
+    if (!artworkLoaded || !mounted || hideRequestedForProcess) {
       return;
     }
     const frame = requestAnimationFrame(() => hide('ready'));
@@ -150,7 +173,7 @@ export function useNativeSplashHandoff(): NativeSplashHandoff {
   // dismissal rather than a frozen screen. Cleared automatically once the normal path wins.
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (hideRequested.current) {
+      if (hideRequestedForProcess) {
         return;
       }
       if (__DEV__) {
@@ -171,4 +194,53 @@ export function useNativeSplashHandoff(): NativeSplashHandoff {
   }, []);
 
   return { onBrandedSplashLayout, isNativeSplashHidden: hidden };
+}
+
+/**
+ * The route-independent backstop, for the root layout.
+ *
+ * ── The bug this exists to prevent ──────────────────────────────────────────
+ * `useNativeSplashHandoff` lives in the entry gate, because the gate owns the "branded splash has
+ * painted" signal that makes the handoff seamless. Expo Router makes a **deep-linked route the
+ * initial route**, so a cold-start authentication callback never mounts the gate — and with it never
+ * mounted, not even the hook's own 1500 ms ceiling was armed. Measured on the emulator: launching
+ * `noorlifeapp://auth/callback` from a force-stopped app left the *native* splash up over a working
+ * callback screen indefinitely, which is indistinguishable from a hang.
+ *
+ * This hook is called from `RootNavigator`, which mounts for every route, so the ceiling is armed on
+ * every launch however it started. It shares the process-wide guard, so on an ordinary launch the
+ * gate's normal path still wins and this does nothing.
+ *
+ * ── Why the ceiling is longer than the handoff's ────────────────────────────
+ * `NATIVE_SPLASH_BACKSTOP_MS` is deliberately later than `NATIVE_SPLASH_FALLBACK_MS`. On an ordinary
+ * launch the gate is mounted and should be the one to decide, including via its own fallback; this
+ * must not pre-empt the seamless handoff by hiding the native layer before the branded splash has
+ * painted. It is a backstop, not a competitor.
+ *
+ * It takes no signal and returns nothing. There is nothing to couple it to, which is the point.
+ */
+export const NATIVE_SPLASH_BACKSTOP_MS = 2500;
+
+export function useNativeSplashBackstop(): void {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (hideRequestedForProcess) {
+        return;
+      }
+      hideRequestedForProcess = true;
+      if (__DEV__) {
+        console.warn(
+          `[splash] route backstop hiding the native layer after ${NATIVE_SPLASH_BACKSTOP_MS}ms — ` +
+            'the entry gate did not mount, which is expected for a cold-start deep link',
+        );
+      }
+      // Marked hidden either way: a rejected hide almost always means it was already gone, and a
+      // retry loop against an absent splash is worse than a no-op.
+      ExpoSplashScreen.hideAsync().catch(() => undefined);
+    }, NATIVE_SPLASH_BACKSTOP_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
 }

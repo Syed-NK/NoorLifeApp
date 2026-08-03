@@ -287,6 +287,59 @@ jest.mock('expo-auth-session', () => ({
   makeRedirectUri: () => 'noorlifeapp://',
 }));
 
+/**
+ * Linking: the deep-link boundary, stood in with something a test can drive.
+ *
+ * ── Why this is global rather than per-suite ─────────────────────────────────
+ * `AuthCallbackProvider` is inside `AppProviders`, so *every* suite that renders a screen now reaches
+ * `getInitialURL` and `addEventListener` on mount. Left to the real module those are native calls with
+ * no implementation under Jest: they resolved slowly and non-deterministically, and the two provider
+ * suites measured on this machine went from 8.0 s to 13.0 s for no assertion's benefit.
+ *
+ * The default is the honest cold-start case — the app was **not** launched by a link — so no suite
+ * inherits a pending callback it did not ask for. `mockLinking` is exported so the callback suites can
+ * set a launch URL or fire a warm `url` event, which is the only way to test either on a machine that
+ * cannot make Android send an intent.
+ *
+ * The `mock` name prefix is required: `jest.mock` factories are hoisted above variable declarations,
+ * and Jest only permits a factory to close over an out-of-scope variable when its name starts with
+ * `mock`.
+ */
+const mockLinkingInstance = {
+  /** Handlers registered through `addEventListener('url', …)`, so a test can fire one. */
+  urlHandlers: new Set<(event: { url: string }) => void>(),
+  getInitialURL: jest.fn<Promise<string | null>, []>(() => Promise.resolve(null)),
+  canOpenURL: jest.fn<Promise<boolean>, [string]>(() => Promise.resolve(true)),
+  openURL: jest.fn<Promise<boolean>, [string]>(() => Promise.resolve(true)),
+  openSettings: jest.fn<Promise<void>, []>(() => Promise.resolve()),
+  createURL: jest.fn<string, [string]>((path: string) => `noorlifeapp://${path.replace(/^\//, '')}`),
+  /** Delivers a warm-start URL to every registered handler. */
+  emit(url: string) {
+    for (const handler of mockLinkingInstance.urlHandlers) {
+      handler({ url });
+    }
+  },
+};
+
+jest.mock('expo-linking', () => ({
+  getInitialURL: () => mockLinkingInstance.getInitialURL(),
+  canOpenURL: (url: string) => mockLinkingInstance.canOpenURL(url),
+  openURL: (url: string) => mockLinkingInstance.openURL(url),
+  openSettings: () => mockLinkingInstance.openSettings(),
+  createURL: (path: string) => mockLinkingInstance.createURL(path),
+  addEventListener: (_type: string, handler: (event: { url: string }) => void) => {
+    mockLinkingInstance.urlHandlers.add(handler);
+    return {
+      remove: () => {
+        mockLinkingInstance.urlHandlers.delete(handler);
+      },
+    };
+  },
+}));
+
+/** Exposed so the callback suites can simulate a cold-start launch URL and a warm `url` event. */
+export const mockLinking = mockLinkingInstance;
+
 // Apple authentication: unavailable in the test environment, which is also the Android behaviour.
 jest.mock('expo-apple-authentication', () => ({
   isAvailableAsync: () => Promise.resolve(false),
@@ -305,7 +358,26 @@ jest.mock('expo-router', () => ({
   usePathname: () => '/home',
   useSegments: () => [],
   useFocusEffect: () => undefined,
-  Redirect: () => null,
+  /**
+   * `Redirect` renders an observable marker rather than nothing.
+   *
+   * It used to render `null`, which made a redirect indistinguishable from a screen that rendered
+   * nothing — and the entry gate's whole job is choosing a destination. The rule Phase 6C-3C has to
+   * guarantee ("a cold-start callback resolves to `/auth/callback` *instead of* Main Home") is a
+   * statement about which href the gate produced, so the href has to be readable.
+   *
+   * A `View` with the href as its accessibility label, so a test reads a prop rather than parsing a
+   * rendered string. Nothing navigates: this is the whole of the stand-in.
+   */
+  Redirect: ({ href }: { readonly href?: unknown }) =>
+    // `jest.requireActual` rather than a bare `require`: a `jest.mock` factory may not close over an
+    // out-of-scope import, and this keeps the file free of `require()`-style imports.
+    jest
+      .requireActual<typeof import('react')>('react')
+      .createElement(jest.requireActual<typeof import('react-native')>('react-native').View, {
+        testID: 'router-redirect',
+        accessibilityLabel: typeof href === 'string' ? href : JSON.stringify(href),
+      }),
   Link: ({ children }: { readonly children?: unknown }) => children,
   Stack: () => null,
   Tabs: () => null,
@@ -321,4 +393,19 @@ beforeEach(() => {
   }
   // The profile row is writable, so it is restored between tests.
   Object.assign(mockProfileRow, MOCK_PROFILE_DEFAULTS);
+
+  /**
+   * Linking is restored to "the app was not launched by a link".
+   *
+   * A launch URL set by one test would otherwise give the next one a pending callback it never asked
+   * for — and because the provider deduplicates by code, the symptom would be a test that passes
+   * alone and fails in sequence. The handler set is cleared too: an unmounted provider's listener is
+   * removed by its own effect, but a test that throws mid-render never gets there.
+   */
+  mockLinkingInstance.getInitialURL.mockReset();
+  mockLinkingInstance.getInitialURL.mockResolvedValue(null);
+  mockLinkingInstance.canOpenURL.mockClear();
+  mockLinkingInstance.openURL.mockClear();
+  mockLinkingInstance.openSettings.mockClear();
+  mockLinkingInstance.urlHandlers.clear();
 });

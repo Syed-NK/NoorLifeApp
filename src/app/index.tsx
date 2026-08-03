@@ -2,9 +2,11 @@ import { Redirect } from 'expo-router';
 import { View } from 'react-native';
 
 import { authRoutes, globalRoutes, onboardingRoutes } from '@application/navigation/routes';
+import { useAuthCallback } from '@application/providers/auth-callback-provider';
 import { subscriptionRoutes } from '@features/subscription/subscription-routes';
 import { useNativeSplashHandoff } from '@application/startup/use-native-splash-handoff';
 import { useStartupRouting } from '@application/startup/use-startup-routing';
+import { AUTH_CALLBACK_ROUTE } from '@features/auth-callback/auth-callback-routes';
 import { SplashScreen } from '@features/entry-auth/screens/splash-screen';
 
 /**
@@ -30,6 +32,30 @@ export default function Index() {
   // never waiting for session, onboarding or the 1800 ms brand minimum. See the hook for why that
   // separation is the fix rather than a tidy-up.
   const { onBrandedSplashLayout } = useNativeSplashHandoff();
+  const { pending } = useAuthCallback();
+
+  /**
+   * A cold-start authentication callback takes precedence over the startup destination.
+   *
+   * ── Why here, and why it does not shorten the splash ────────────────────────
+   * `AuthCallbackProvider` reads `getInitialURL` on the first tick, so a link that launched the app is
+   * already captured by the time the machine names a destination. Overriding the destination — rather
+   * than adding a second navigation — is what guarantees the rule the phase brief states directly: no
+   * redirect to Home before callback processing completes. The alternative, letting the gate route
+   * normally and then pushing the callback screen, means Main Home mounts first and a confirmed signup
+   * can be seen to skip the plan chooser before being sent back to it.
+   *
+   * The brand minimum is deliberately still honoured: this is read *after* `destination`, so the
+   * splash keeps its 1800 ms on a first launch and 900 ms on a returning one, and the callback simply
+   * waits. A deep link is not a reason to truncate the one uninterrupted brand moment, and the
+   * callback is held in memory rather than raced against.
+   *
+   * A **warm** callback is not handled here — the gate is not mounted then. See
+   * `use-callback-navigation.ts`.
+   */
+  if (destination !== null && pending !== null && pending.origin === 'cold') {
+    return <Redirect href={AUTH_CALLBACK_ROUTE} />;
+  }
 
   if (destination === null) {
     // Still resolving, or holding the brand for its minimum.

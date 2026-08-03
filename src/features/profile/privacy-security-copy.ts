@@ -283,6 +283,23 @@ export const privacySecurityCopy = {
     placeholder: '••••••••',
     submit: 'Update Password',
     submitHint: 'Sends your new password to your account.',
+    /**
+     * Read out in place of `submitHint` while the control is disabled.
+     *
+     * A greyed button carrying the enabled hint describes the one thing that will not happen. Each
+     * message below names what would enable the control instead, keyed by the evaluator's own state
+     * so a screen reader is never pointed at a field that is not the obstacle — a session that has
+     * expired is not fixed by typing a better password.
+     */
+    submitDisabledHints: {
+      empty: 'Unavailable until you enter a new password and confirm it.',
+      'confirm-empty': 'Unavailable until you confirm your new password.',
+      weak: 'Unavailable until your new password meets the minimum strength.',
+      mismatch: 'Unavailable until both passwords match.',
+      submitting: 'Your password change is being sent.',
+      'session-unavailable': 'Unavailable because NoorLife cannot confirm your session.',
+      'provider-unsupported': 'Unavailable because your password is managed by your sign-in provider.',
+    },
     saving: 'Updating your password',
     success: 'Password updated.',
     successSupporting: 'Use your new password the next time you sign in.',
@@ -291,6 +308,13 @@ export const privacySecurityCopy = {
       weak: 'Use at least 8 characters, mixing letters, numbers or symbols.',
       mismatch: 'The two passwords do not match.',
       empty: 'Enter a new password.',
+      /**
+       * Separate from `empty`.
+       *
+       * "Enter a new password" under a confirmation field the user has not reached yet reads as a
+       * complaint about the box above it, which they have already filled in.
+       */
+      confirmEmpty: 'Re-enter your new password to confirm it.',
     },
 
     /**

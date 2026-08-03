@@ -1,3 +1,5 @@
+import { AUTH_CALLBACK_URL } from '@services/auth/auth-callback.config';
+
 import {
   ACCOUNT_SECURITY_SUMMARY_FIELDS,
   AccountSecurityError,
@@ -190,8 +192,27 @@ describe('the email change', () => {
   it('goes to auth, normalized, and reports pending rather than done', async () => {
     const outcome = await service.requestEmailChange('  NEW@Example.com ');
 
-    expect(mockAuth.updateUser).toHaveBeenCalledWith({ email: 'new@example.com' });
+    expect(mockAuth.updateUser).toHaveBeenCalledWith(
+      { email: 'new@example.com' },
+      // Phase 6C-3C: both confirmation links now return to the application's callback rather than to
+      // the project's Site URL, which is what GoTrue substituted when no redirect was supplied.
+      { emailRedirectTo: AUTH_CALLBACK_URL },
+    );
     expect(outcome).toEqual({ status: 'pending', requestedEmail: 'new@example.com' });
+  });
+
+  it('sends both links to the one centrally declared callback, never a literal', async () => {
+    await service.requestEmailChange('new@example.com');
+
+    const options = mockAuth.updateUser.mock.calls[0]?.[1] as { emailRedirectTo?: string };
+    expect(options.emailRedirectTo).toBe(AUTH_CALLBACK_URL);
+    // Supplying a redirect does not weaken Secure Email Change: GoTrue still emails the current
+    // address as well as the new one and still needs both actioned. This only decides where each
+    // link lands, and the service still cannot report anything but `pending`.
+    expect(await service.requestEmailChange('other@example.com')).toEqual({
+      status: 'pending',
+      requestedEmail: 'other@example.com',
+    });
   });
 
   it('normalizes only case and surrounding space', () => {

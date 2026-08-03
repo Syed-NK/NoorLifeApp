@@ -5,7 +5,13 @@ import { act, render } from '@testing-library/react-native';
 import * as ExpoSplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
 
-import { NATIVE_SPLASH_FALLBACK_MS, useNativeSplashHandoff } from '../use-native-splash-handoff';
+import {
+  NATIVE_SPLASH_BACKSTOP_MS,
+  NATIVE_SPLASH_FALLBACK_MS,
+  resetNativeSplashHandoff,
+  useNativeSplashBackstop,
+  useNativeSplashHandoff,
+} from '../use-native-splash-handoff';
 
 /**
  * The native splash must dismiss without any user interaction.
@@ -52,6 +58,14 @@ describe('the native splash dismisses automatically', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     hideAsync = jest.spyOn(ExpoSplashScreen, 'hideAsync').mockResolvedValue(undefined);
+    /**
+     * The "has it been asked to hide?" guard is process-wide, not per instance.
+     *
+     * It moved there in 6C-3C so the entry gate and the root layout's route backstop cannot both call
+     * `hideAsync` — the native splash is one global native resource. Each test here is a fresh launch,
+     * so the flag is cleared between them; without this, only the first mount in the file would hide.
+     */
+    resetNativeSplashHandoff();
   });
 
   afterEach(() => {
@@ -121,6 +135,88 @@ describe('the native splash dismisses automatically', () => {
 
     // A rejected hide must not trigger a retry loop against a splash that is already gone.
     expect(hideAsync).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A cold-start deep link, which is the launch the entry gate never sees.
+ *
+ * ── The regression these lock down ──────────────────────────────────────────
+ * Expo Router makes a deep-linked route the *initial* route, so `src/app/index.tsx` — the only caller
+ * of `useNativeSplashHandoff` — never mounts. Neither of its two paths was armed, not even the 1500 ms
+ * ceiling, and the **native** splash stayed up over a working screen indefinitely. Measured on the
+ * emulator in Phase 6C-3C: `noorlifeapp://auth/callback` from a force-stopped app never painted the
+ * app at all, and it was indistinguishable from a hang.
+ *
+ * The route backstop is what fixes it. It is mounted by the root layout, which mounts for every route.
+ */
+describe('the route backstop covers a launch that never mounts the entry gate', () => {
+  let hideAsync: jest.SpyInstance;
+
+  function Root({ withGate }: { readonly withGate: boolean }) {
+    useNativeSplashBackstop();
+    return withGate ? <Harness /> : <View testID="deep-linked-route" />;
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    hideAsync = jest.spyOn(ExpoSplashScreen, 'hideAsync').mockResolvedValue(undefined);
+    resetNativeSplashHandoff();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    hideAsync.mockRestore();
+  });
+
+  it('hides the native layer when the gate is absent', async () => {
+    await render(<Root withGate={false} />);
+
+    await act(async () => {
+      jest.advanceTimersByTime(NATIVE_SPLASH_BACKSTOP_MS + 100);
+    });
+
+    expect(hideAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not pre-empt the seamless handoff on an ordinary launch', async () => {
+    const view = await render(<Root withGate />);
+    fireLayout(view.getByTestId('splash'));
+
+    await settle();
+
+    // The gate's normal path has already won, well before the backstop's ceiling.
+    expect(hideAsync).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(NATIVE_SPLASH_BACKSTOP_MS * 2);
+    });
+
+    // And the backstop does not ask again: the guard is process-wide, not per instance.
+    expect(hideAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits longer than the gate’s own fallback, so it is a backstop and not a competitor', () => {
+    // Hiding the native layer before the branded splash has painted would put a blank frame in the
+    // handoff — the thing the two-signal design exists to avoid.
+    expect(NATIVE_SPLASH_BACKSTOP_MS).toBeGreaterThan(NATIVE_SPLASH_FALLBACK_MS);
+  });
+
+  it('takes no signal, so nothing slow can block it', () => {
+    const source = codeOnly(
+      path.join(process.cwd(), 'src', 'application', 'startup', 'use-native-splash-handoff.ts'),
+    );
+    const backstop = source.slice(source.indexOf('export function useNativeSplashBackstop'));
+    expect(backstop).not.toMatch(/artworkLoaded|mounted|useAuth|onLayout/);
+  });
+});
+
+describe('the root layout arms the backstop', () => {
+  it('calls it, so every launch has a ceiling however it started', () => {
+    const root = fs.readFileSync(path.join(process.cwd(), 'src', 'app', '_layout.tsx'), 'utf8');
+    // Asserted at the call site rather than only in the hook: a hook nobody calls is a hook that does
+    // nothing, and that is exactly the shape the original bug had.
+    expect(root).toMatch(/useNativeSplashBackstop\(\)/);
   });
 });
 

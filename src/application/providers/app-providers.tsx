@@ -3,6 +3,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { EntitlementProvider } from '@features/subscription/services/entitlement-context';
 
 import { AccessibilityProvider } from './accessibility-provider';
+import { AuthCallbackProvider } from './auth-callback-provider';
 import { AuthProvider } from './auth-provider';
 import { DesignSystemProvider } from './design-system-provider';
 import { FontProvider } from './font-provider';
@@ -32,6 +33,12 @@ import { LocalizationProvider } from './localization-provider';
  * dropped or reloaded when somebody signs out. It is above Design System for the same reason a
  * future dark theme would be — a preference that changes how things render has to be readable by
  * the layer that renders them.
+ *
+ * AuthCallback sits **outside** Auth, and that placement is the whole point of it. A cold-start deep
+ * link has to be captured on the first tick, before fonts, session and onboarding have resolved and
+ * before the entry gate freezes its destination — so the boundary that reads it must not be waiting on
+ * the boundary that resolves the session. It holds a parsed link and nothing else: no network call, no
+ * session, nothing persisted. See `auth-callback-provider.tsx`.
  */
 export function AppProviders({ children }: { readonly children: React.ReactNode }) {
   return (
@@ -40,9 +47,11 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
         <DesignSystemProvider>
           <LocalizationProvider>
             <FontProvider>
-              <AuthProvider>
-                <EntitlementProvider>{children}</EntitlementProvider>
-              </AuthProvider>
+              <AuthCallbackProvider>
+                <AuthProvider>
+                  <EntitlementProvider>{children}</EntitlementProvider>
+                </AuthProvider>
+              </AuthCallbackProvider>
             </FontProvider>
           </LocalizationProvider>
         </DesignSystemProvider>

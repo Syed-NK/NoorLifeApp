@@ -54,6 +54,43 @@ const FORBIDDEN = {
     'This will sign you out on this and other devices.',
     'No saved AI conversation history is currently stored by NoorLife.',
   ],
+  /**
+   * Callback secrets, 6C-3C.
+   *
+   * ── Why a shipped *format string* is the thing to look for ──────────────────
+   * A code or a token only exists at runtime, so no scan can find one in a bundle. What a scan *can*
+   * find is the template that would print it — `code=${...}`, `url=${...}` — because Hermes keeps the
+   * literal halves of a template as strings. A hit here means somebody added a log line that will
+   * emit a credential on a real device, which is exactly the edit that is invisible in review.
+   *
+   * The three UI strings below are the other half: wording that would tell a user an email change had
+   * completed while Secure Email Change still had a side outstanding.
+   */
+  'callback logging templates (6C-3C)': [
+    '[auth-callback] url=',
+    '[auth-callback] code=$',
+    'access_token=',
+    'refresh_token=',
+    'sb_flow_id=',
+    'error_description=',
+  ],
+  /**
+   * Wording that would describe something that has not happened.
+   *
+   * Deliberately *not* including "Your password has been reset. Sign in with your new password." That
+   * is `newPasswordCopy.done` in the locked entry-auth copy, and it is shown only after the update has
+   * resolved — a true statement about a completed recovery. What makes it safe is the recovery grant
+   * gate, which is asserted behaviourally by `new-password-recovery-gate.test.tsx`, not by a grep.
+   *
+   * The fixture shortcut is here because it was a *control* rather than a claim: it pushed Screen 11
+   * directly, and Screen 11 now needs a grant, so the affordance would invite a press and refuse.
+   */
+  'claims and controls a callback must never ship (6C-3C)': [
+    'Your email has been changed',
+    'your email address has been updated',
+    'I have the link — set a new password',
+    'reset-sent-continue',
+  ],
 };
 
 /** Must appear. An absence means the scan is looking at a stale bundle. */
@@ -63,6 +100,15 @@ const REQUIRED = [
   'Uninstalling removes most of it; your operating system or backup service may retain or restore some settings.',
   'This signs out this device and prevents other devices from renewing their sessions. Another device may remain active briefly.',
   'Unavailable until you enter a valid email address that is different from your current one.',
+  // 6C-3C: the callback layer is actually in the bundle, and its honest states are the ones shipped.
+  'Confirming your link',
+  'That link has expired. Links are only good for a short while — request a new one and it will work.',
+  'That link has already been used. If you still need it, request a new one.',
+  'That link did not come from NoorLife, so it was not opened. If you were expecting an email from us, open the link in that message instead.',
+  'We still need the confirmation sent to ',
+  'A password reset has to be started from a link in your email, and each link works once. Request a new one to continue.',
+  'Unavailable until you enter a new password and confirm it.',
+  'Re-enter your new password to confirm it.',
 ];
 
 /**

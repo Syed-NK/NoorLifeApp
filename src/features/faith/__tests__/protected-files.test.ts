@@ -32,8 +32,6 @@ const PROTECTED_PATHS: readonly string[] = [
   'src/features/entry-auth/entry-auth-copy.ts',
   'src/features/entry-auth/entry-auth-assets.ts',
   'src/features/entry-auth/screens/splash-screen.tsx',
-  // Authentication service — not a layout, but out of scope for design work.
-  'src/services/auth/auth.service.ts',
 ];
 
 /**
@@ -171,6 +169,38 @@ const REOPENED_ON_REQUEST: readonly string[] = [
   'src/features/home/components/ai-insight-card.tsx',
   'src/features/home/components/quick-actions-row.tsx',
   'src/features/home/components/home-bottom-navigation.tsx',
+  /**
+   * The authentication service — reopened for Phase 6C-3C, for callback wiring only.
+   *
+   * Reason recorded on request: **the phase brief instructs that `signUp`, `resetPasswordForEmail` and
+   * the email-change flow supply the approved callback redirect from central configuration.**
+   *
+   * The lock could not be honoured and that instruction followed at the same time. This file owned the
+   * redirect for two of the three email actions:
+   *
+   *     cachedRedirect = AuthSession.makeRedirectUri({ scheme: 'noorlifeapp' });
+   *
+   * which resolves to the bare scheme root `noorlifeapp://` — a URL nothing in the application was
+   * listening on. There was no deep-link handler and no callback route, so a real confirmation or
+   * recovery link landed on the entry gate with its code discarded. Leaving the value alone and
+   * building the new callback around it would have meant either accepting the scheme root as a trusted
+   * callback path — widening the trust boundary to a URL that carries no destination — or duplicating
+   * `signUp` in a second service that could drift from this one. Both are worse than a recorded lift.
+   *
+   * The permitted change is exactly one function body. `redirectTo()` now returns
+   * `authCallbackRedirectUrl()` from `auth-callback.config.ts`, and the now-unused `expo-auth-session`
+   * import went with it. Laziness is preserved, so importing this service still needs no
+   * expo-constants manifest — the property the original memoization existed to protect.
+   *
+   * Nothing else moved: no exported function was added, removed or renamed, no error mapping changed,
+   * no logging was added, and the file still contains no credential handling it did not already have.
+   * `auth-service-surface.test.ts` asserts the exported API is identical to the branch point and that
+   * the redirect comes from the central configuration rather than a literal. That is the guarantee this
+   * entry gives up and that test takes over.
+   *
+   * Anything beyond callback wiring in this file still needs sign-off.
+   */
+  'src/services/auth/auth.service.ts',
 ];
 
 /**

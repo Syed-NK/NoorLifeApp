@@ -3,12 +3,22 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import 'react-native-url-polyfill/auto';
 
+import '@services/auth/web-crypto';
+
 /**
  * The Supabase client.
  *
  * Follows the official Expo/React Native quickstart: the URL polyfill is imported for its side effect
  * before the client is created, because `supabase-js` builds request URLs with the WHATWG `URL` API
  * and Hermes does not ship a complete one.
+ *
+ * ── WebCrypto, for the same reason and with higher stakes ────────────────────
+ * `@services/auth/web-crypto` is imported for its side effect immediately after, and before
+ * `createClient`. Hermes ships no `crypto.subtle`, and `supabase-js` responds to its absence by
+ * silently downgrading PKCE to `code_challenge_method=plain` — where the challenge *is* the verifier
+ * and PKCE protects nothing. Every email confirmation and recovery link in this project is a PKCE
+ * flow, so the globals have to be in place before the client that will use them exists. See that
+ * file for the audited SDK code and `describePkceChallengeMethod` for the self-report.
  *
  * ── Keys ────────────────────────────────────────────────────────────────────
  * Only the publishable (anon) key is read. It is designed to ship in clients and is safe there

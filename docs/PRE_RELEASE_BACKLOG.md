@@ -103,14 +103,59 @@ path is not yet exercised end to end by a real email.
 
 ## 2. Authentication hardening
 
-### 2.1 PKCE code challenge is falling back to plain — **Ready**
+### 2.1 PKCE code challenge is falling back to plain — **Done (Phase 6C-3C)**
 
 Hermes has no WebCrypto, logged at runtime as "WebCrypto API is not supported", so the
-S256 challenge degrades to `plain`. It works, but it is weaker than it should be, and it
-matters most for exactly the flow that is not live yet (2.3). Add a SHA-256 polyfill
-(`expo-crypto` can provide the digest) and confirm the challenge method is `S256`.
+S256 challenge degraded to `plain`. It worked, but it was weaker than it should be — a
+`plain` challenge *is* the verifier, so PKCE protected nothing — and it mattered for more
+than 2.3: every email confirmation and password recovery link is a PKCE flow.
 
-*Do before:* 2.3 goes live.
+`src/services/auth/web-crypto.ts` now installs `crypto.subtle.digest('SHA-256')` and
+`crypto.getRandomValues` from **`expo-crypto`** (added as a direct dependency at the
+version `expo-auth-session` already pinned), plus a minimal `TextEncoder` and `btoa`,
+filling only the globals that are missing. It is imported for its side effect in
+`src/lib/supabase.ts` *before* `createClient`, because `getCodeChallengeAndMethod` reads
+those globals at call time.
+
+`describePkceChallengeMethod()` reports the method the environment will actually produce.
+`web-crypto.test.ts` asserts `plain` for a Hermes-shaped environment before installation
+and `s256` after, and the value is captured on device — see
+`design-reference/phase-6c-3c-auth-callbacks/README.md`.
+
+### 2.1a Supabase redirect allow-list for the application callback — **Ready**
+
+Phase 6C-3C introduced `noorlifeapp://auth/callback` as the single destination for the
+signup confirmation, password recovery and email-change links. **Authentication → URL
+Configuration → Redirect URLs** must contain both of:
+
+```
+noorlifeapp://auth/callback
+noorlifeapp://auth/callback?**
+```
+
+The second is not redundant: `supabase-js` appends `sb_flow_id=<id>` to the redirect it
+sends for a PKCE password recovery, Supabase matches redirect URLs by glob, and a bare
+entry does not match a URL carrying a query string.
+
+Until both exist, GoTrue substitutes the project's Site URL and an emailed link never
+reaches the application. This is a dashboard action; no code can perform it. The exact
+strings are exported as `REQUIRED_SUPABASE_REDIRECT_URLS` from
+`src/services/auth/auth-callback.config.ts`, and
+`docs/PHASE_6C_3C_AUTH_CALLBACK_CONTRACT.md` §7 records why each is needed.
+
+*Depends on:* nothing in the code. *Blocks:* any end-to-end test of 1.3 and 2.3.
+
+### 2.1b Callback flows not yet exercised by a real email — **Blocked**
+
+The recovery-ready, email-change-pending and email-change-confirmed states are reachable
+only with a PKCE code GoTrue issued against a verifier this device stored, which needs a
+delivered email. With 1.1 deferred, they are covered by the injected-port suites
+(`auth-callback-screen.test.tsx`, `set-new-password-screen.test.tsx`,
+`auth-callback-service.test.ts`) and are **not** claimed as device-verified. No fixture
+route was added to reach them on a device — 6C-3B removed the last one, for the reason
+recorded there. See the phase README's "What is blocked, and why".
+
+*Depends on:* 1.1 (SMTP) and 2.1a (the allow-list).
 
 ### 2.2 Google sign-in — **Blocked**
 
@@ -277,6 +322,8 @@ Several items will break the working app if done out of order:
 
 1. **1.2 DNS** → **1.1 SMTP** → **1.5 OTP length** → **1.3 confirmation on**.
    Enabling confirmation before mail is deliverable breaks signup for real users.
-2. **2.1 PKCE S256** before **2.2 Google**.
+2. **2.1 PKCE S256** before **2.2 Google**. *(2.1 done in Phase 6C-3C.)*
+2a. **2.1a redirect allow-list** before **1.3 confirmation on**. With confirmation enabled
+   and no allow-listed callback, every new account is sent to a web page it cannot use.
 3. **4.1 schema review** before any module table exists.
 4. **3.1 / 3.2 published** before the store listings are submitted.
