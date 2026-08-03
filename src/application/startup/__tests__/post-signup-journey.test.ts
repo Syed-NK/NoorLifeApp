@@ -17,6 +17,8 @@ function input(overrides: Partial<StartupInput> = {}): StartupInput {
     isSignedIn: true,
     hasCompletedOnboarding: true,
     hasCompletedPlanSelection: true,
+    // These cases are about the plan decision, so recovery containment is explicitly absent.
+    hasPendingRecovery: false,
     failed: false,
     isFirstLaunch: false,
     ...overrides,

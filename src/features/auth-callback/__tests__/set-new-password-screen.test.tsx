@@ -233,8 +233,18 @@ describe('with a valid grant', () => {
     expect(screen.queryByTestId('set-new-password-new')).toBeNull();
 
     await fireEvent.press(screen.getByTestId('set-new-password-success-sign-in'));
-    // `replace`, so Back cannot re-enter a completed recovery.
-    expect(mockRouter.replace).toHaveBeenCalledWith('/sign-in');
+    /**
+     * The entry gate, not Sign In (changed in Phase 6C-3D).
+     *
+     * The recovery session is kept and becomes an ordinary one the moment the update succeeds, so
+     * sending the user to Sign In would ask a signed-in account to sign in again. Routing to the
+     * gate re-runs the startup machine — with the containment marker now cleared — and lands on
+     * whichever destination this account actually has, including the plan chooser if it still owes
+     * that choice.
+     *
+     * Still `replace`, so Back cannot re-enter a completed recovery.
+     */
+    expect(mockRouter.replace).toHaveBeenCalledWith('/');
     expect(mockRouter.push).not.toHaveBeenCalled();
   });
 

@@ -161,8 +161,14 @@ export const authCallbackCopy = {
     },
 
     success: 'Password set.',
-    successSupporting: 'Use your new password the next time you sign in.',
-    signIn: 'Go to Sign In',
+    /**
+     * The session is kept, not discarded, so this says where the user already is rather than what
+     * to do next time. Phase 6C-3D: the recovery session becomes an ordinary one the moment the
+     * password update succeeds, and sending the user back to Sign In would ask a signed-in account
+     * to sign in again.
+     */
+    successSupporting: 'You are signed in with your new password.',
+    continueToApp: 'Continue',
 
     /**
      * No recovery grant.

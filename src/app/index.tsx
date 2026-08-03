@@ -6,7 +6,10 @@ import { useAuthCallback } from '@application/providers/auth-callback-provider';
 import { subscriptionRoutes } from '@features/subscription/subscription-routes';
 import { useNativeSplashHandoff } from '@application/startup/use-native-splash-handoff';
 import { useStartupRouting } from '@application/startup/use-startup-routing';
-import { AUTH_CALLBACK_ROUTE } from '@features/auth-callback/auth-callback-routes';
+import {
+  AUTH_CALLBACK_ROUTE,
+  SET_NEW_PASSWORD_ROUTE,
+} from '@features/auth-callback/auth-callback-routes';
 import { SplashScreen } from '@features/entry-auth/screens/splash-screen';
 
 /**
@@ -83,6 +86,16 @@ export default function Index() {
  */
 function hrefFor(destination: string): Parameters<typeof Redirect>[0]['href'] {
   switch (destination) {
+    case 'password_recovery':
+      /**
+       * A session that came from an unfinished recovery has exactly one destination.
+       *
+       * Reached by `Redirect`, so it replaces rather than stacks: there is no Main Home underneath
+       * for Back to fall through to, which is half of why a force-close mid-recovery can no longer
+       * expose the application. The other half is that the marker outlives the process, so this
+       * branch is taken again on the next launch and the one after.
+       */
+      return SET_NEW_PASSWORD_ROUTE;
     case 'authenticated_home':
       return globalRoutes.home as Parameters<typeof Redirect>[0]['href'];
     case 'subscription_choice':

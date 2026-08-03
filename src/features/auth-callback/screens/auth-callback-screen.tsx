@@ -8,6 +8,7 @@ import {
   useAuthCallbackActions,
   type CapturedCallback,
 } from '@application/providers/auth-callback-provider';
+import { useAuthActions } from '@application/providers/auth-provider';
 import { AuthHeader } from '@features/entry-auth/components/auth-header';
 import { AuthScaffold } from '@features/entry-auth/components/auth-scaffold';
 import { AuthStatusBanner } from '@features/entry-auth/components/auth-status-banner';
@@ -21,6 +22,7 @@ import type {
   AuthCallbackPort,
 } from '@services/auth/auth-callback.contract';
 import { authCallbackPort } from '@services/auth/auth-callback.service';
+import { writeRecoveryPending } from '@services/auth/recovery-pending';
 
 import { authCallbackCopy } from '../auth-callback-copy';
 import { SET_NEW_PASSWORD_ROUTE } from '../auth-callback-routes';
@@ -70,6 +72,7 @@ export function AuthCallbackScreen({
   const { dp } = useEntryAuthMetrics();
   const { pending, resolved } = useAuthCallback();
   const { claim, grantRecovery, takeDestination } = useAuthCallbackActions();
+  const { signOut } = useAuthActions();
   const copy = authCallbackCopy.callback;
 
   const [phase, setPhase] = useState<Phase>({ name: 'processing' });
@@ -180,6 +183,35 @@ export function AuthCallbackScreen({
          * `run` is also reachable from Try Again — a second `replace` onto the same route would remount
          * the password screen and throw away anything already typed into it.
          */
+        /**
+         * ── The session is contained before it is used ──────────────────────────
+         * The exchange has just created a real authenticated session, and the password has not been
+         * set yet. Until the marker is on disk, that session is indistinguishable from an ordinary
+         * sign-in to anything that restarts — so if Android kills the process in the next
+         * millisecond, the next launch would route to Main Home with the recovery abandoned
+         * half-done.
+         *
+         * So the marker is written **first and awaited**, before the grant, before the phase, and
+         * before the navigation. Every ordering here was chosen against process death landing
+         * between two adjacent lines.
+         */
+        const contained = await writeRecoveryPending(outcome.userId);
+        if (!contained) {
+          /**
+           * Cannot contain it, so do not keep it.
+           *
+           * Storage refused both the keystore and plain storage, which means nothing will hold the
+           * marker across a restart and the containment this depends on would silently not apply.
+           * Signing the session out is the fail-closed answer — and it also makes the reported code
+           * exactly true rather than approximately so: after this there is no session to route on.
+           */
+          await signOut().catch(() => {
+            // Nothing further to try. The password screen is not reached either way.
+          });
+          setPhase({ name: 'failed', code: 'session-unavailable' });
+          return;
+        }
+
         grantRecovery({ userId: outcome.userId });
         setPhase({ name: 'recovery' });
         if (!navigatedToRecovery.current) {
@@ -190,7 +222,7 @@ export function AuthCallbackScreen({
       }
       setPhase({ name: 'signed-in', email: outcome.email, pending: outcome.pendingEmail });
     },
-    [grantRecovery, port, router],
+    [grantRecovery, port, router, signOut],
   );
 
   useEffect(() => {

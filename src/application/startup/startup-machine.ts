@@ -23,6 +23,11 @@ export type StartupState =
   /** Signed in, but the account still owes its initial plan choice. */
   | 'subscription_choice'
   | 'authenticated_home'
+  /**
+   * Signed in **through an unfinished password recovery**, and therefore not signed in for any
+   * other purpose. Routes only to Set New Password. See `recovery-containment.ts`.
+   */
+  | 'password_recovery'
   | 'startup_error';
 
 /**
@@ -81,6 +86,16 @@ export type StartupInput = {
    * returning user is a smaller error than truncating the brand for a new one.
    */
   readonly isFirstLaunch: boolean;
+  /**
+   * Whether a password recovery is open and must be finished before anything else.
+   *
+   * Resolved by `use-recovery-containment.ts`, which has already cross-checked the stored marker
+   * against the live session — so by the time it arrives here it means "a valid marker and a
+   * matching session", not merely "a marker exists". Null while that read is still in flight, and
+   * null blocks resolution rather than defaulting: defaulting to false is precisely the assumption
+   * that lets an unfinished recovery reach Main Home.
+   */
+  readonly hasPendingRecovery: boolean | null;
 };
 
 /**
@@ -93,7 +108,30 @@ export function isResolved(input: StartupInput): boolean {
   if (!input.fontsReady || input.isSignedIn === null || input.hasCompletedOnboarding === null) {
     return false;
   }
-  return input.isSignedIn ? input.hasCompletedPlanSelection !== null : true;
+  if (!input.isSignedIn) {
+    return true;
+  }
+  /**
+   * A signed-in launch additionally waits on the recovery read.
+   *
+   * Only when signed in: a signed-out user has no session for a marker to describe, and holding the
+   * splash for a read that cannot change the answer would slow every ordinary launch.
+   */
+  if (input.hasPendingRecovery === null) {
+    return false;
+  }
+  /**
+   * A contained session does not wait for the plan-selection read.
+   *
+   * Its destination is already decided, and that read is a network round trip against the account
+   * journey. Waiting for one that cannot change the answer would delay containment — and delay it
+   * for exactly the failure it exists to catch, since a launch after process death is when the
+   * network is least likely to be warm.
+   */
+  if (input.hasPendingRecovery) {
+    return true;
+  }
+  return input.hasCompletedPlanSelection !== null;
 }
 
 /** The minimum branded-splash duration that applies to this launch. */
@@ -129,6 +167,17 @@ export function nextStartupState(input: StartupInput): StartupState {
 
   if (input.isSignedIn === true) {
     /**
+     * Recovery containment outranks every authenticated destination.
+     *
+     * Checked before the plan-selection branch, not after, because it is not a competing
+     * destination — it is a statement that this session does not yet count as a sign-in at all. A
+     * session created by a recovery exchange must reach Set New Password and nothing else: not Main
+     * Home, not the subscription chooser, not Profile, not a module.
+     */
+    if (input.hasPendingRecovery === true) {
+      return 'password_recovery';
+    }
+    /**
      * The one authoritative post-auth decision.
      *
      * A live Supabase session is not sufficient to reach Main Home. Signing up produces a session
@@ -151,6 +200,7 @@ export function isDestination(state: StartupState): boolean {
     state === 'authentication' ||
     state === 'subscription_choice' ||
     state === 'authenticated_home' ||
+    state === 'password_recovery' ||
     state === 'startup_error'
   );
 }

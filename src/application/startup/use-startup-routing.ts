@@ -6,6 +6,7 @@ import { readOnboardingState } from '@services/onboarding/onboarding-preferences
 import { readAccountJourney } from '@services/account/account-journey';
 
 import { STARTUP_TIMEOUT_MS, nextStartupState, type StartupState } from './startup-machine';
+import { useRecoveryContainment } from './use-recovery-containment';
 
 /**
  * Drives the startup sequence and produces exactly one routing decision.
@@ -31,6 +32,13 @@ const TICK_MS = 100;
 export function useStartupRouting(): StartupRouting {
   const fonts = useFontReadiness();
   const auth = useAuth();
+  /**
+   * Read alongside fonts, session and onboarding rather than after them.
+   *
+   * The hook resolves the marker against the live session itself, so all this layer has to do is
+   * feed the verdict in. It is consulted on every launch — a signed-out one answers immediately.
+   */
+  const recovery = useRecoveryContainment();
 
   const [elapsedMs, setElapsedMs] = useState(0);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
@@ -157,6 +165,14 @@ export function useStartupRouting(): StartupRouting {
      */
     failed: false,
     isFirstLaunch,
+    /**
+     * Only meaningful while signed in, and substituted to `false` otherwise.
+     *
+     * A signed-out launch has no session for a marker to contain, and the machine's own resolution
+     * check skips this input in that case — but passing the hook's null through would still make
+     * the value read as "unanswered" to anyone inspecting the input record.
+     */
+    hasPendingRecovery: auth.status === 'signed-in' ? recovery.pending : false,
   });
 
   /**

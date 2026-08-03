@@ -22,6 +22,8 @@ function input(overrides: Partial<StartupInput> = {}): StartupInput {
     fontsReady: true,
     isSignedIn: false,
     hasCompletedOnboarding: false,
+    // No recovery in progress unless a case says so; the signed-out default never consults it.
+    hasPendingRecovery: false,
     // Signed-out by default in this helper, where the value is not consulted.
     hasCompletedPlanSelection: true,
     failed: false,

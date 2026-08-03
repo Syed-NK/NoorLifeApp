@@ -1,13 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { BackHandler, View } from 'react-native';
 
 import { authRoutes } from '@application/navigation/routes';
 import {
   useAuthCallback,
   useAuthCallbackActions,
 } from '@application/providers/auth-callback-provider';
-import { useAuth } from '@application/providers/auth-provider';
+import { useAuth, useAuthActions } from '@application/providers/auth-provider';
 import { AuthFormScaffold } from '@features/entry-auth/components/auth-form-scaffold';
 import { AuthHeader } from '@features/entry-auth/components/auth-header';
 import { AuthStatusBanner } from '@features/entry-auth/components/auth-status-banner';
@@ -28,6 +28,7 @@ import {
   type SecurityErrorCode,
 } from '@services/account/account-security.contract';
 import { accountSecurityPort } from '@services/account/account-security.service';
+import { clearRecoveryPending } from '@services/auth/recovery-pending';
 import { privacySecurityCopy } from '@features/profile/privacy-security-copy';
 
 import { authCallbackCopy } from '../auth-callback-copy';
@@ -51,6 +52,17 @@ import { authCallbackCopy } from '../auth-callback-copy';
  * become a standing permission to rotate the account's password; losing it on a restart is correct.
  * It is cleared the moment the password is set, so Back cannot re-enter a completed recovery and a
  * second submission has nothing to act on.
+ *
+ * ── What *is* persisted, and why it is not the same thing (Phase 6C-3D) ─────
+ * A recovery-pending **marker** — see `services/auth/recovery-pending.ts`. It is not a grant and
+ * confers nothing: it only tells startup that the live session came from an unfinished recovery, so
+ * that a force-close or a process death between the exchange and the update cannot leave an
+ * authenticated session wandering into Main Home. Losing the grant on a restart is still correct;
+ * what was wrong before was losing the *containment* with it.
+ *
+ * The marker is released on exactly three paths, and there is no fourth: the update succeeded, the
+ * user abandoned the recovery, or the recovery session expired. All three also end the session or
+ * hand it back as an ordinary one.
  *
  * ── One evaluator, shared with Change Password ───────────────────────────────
  * `evaluatePasswordDraft` is the same function Change Password uses, so the two screens cannot drift
@@ -76,6 +88,7 @@ export function SetNewPasswordScreen({
   const { recovery } = useAuthCallback();
   const { clearRecovery } = useAuthCallbackActions();
   const auth = useAuth();
+  const { signOut } = useAuthActions();
   const copy = authCallbackCopy.setNewPassword;
 
   const [password, setPassword] = useState('');
@@ -174,6 +187,16 @@ export function SetNewPasswordScreen({
        */
       setPassword('');
       setConfirm('');
+      /**
+       * The containment marker is released only now, and only after the update has resolved.
+       *
+       * Awaited before the success state is shown, so there is no instant in which the screen says
+       * the recovery is finished while storage still says it is open. If the process dies during
+       * this await the marker survives, the next launch resumes here, and the user sets a password
+       * that is already set — harmless, and the right direction to be wrong in. The opposite order
+       * would clear containment for an update that might still fail.
+       */
+      await clearRecoveryPending();
       setSucceeded(true);
       clearRecovery();
     } catch (thrown) {
@@ -183,6 +206,14 @@ export function SetNewPasswordScreen({
         // pointless risk, and the grant it depended on is no longer meaningful.
         setPassword('');
         setConfirm('');
+        /**
+         * The marker goes too, and this is the third of its three release paths.
+         *
+         * A marker whose session has expired can never be satisfied: the containment would hold the
+         * user at a form that cannot submit, on this launch and every one after it. Clearing it
+         * hands them back to Sign In, which is the only place the recovery can actually restart.
+         */
+        await clearRecoveryPending();
         clearRecovery();
       }
     } finally {
@@ -191,14 +222,92 @@ export function SetNewPasswordScreen({
     }
   }, [clearRecovery, confirm, grantUsable, password, port]);
 
-  const goToSignIn = useCallback(() => {
-    // `replace`, so Back cannot return to a completed recovery.
+  /**
+   * Leaving a recovery that was never completed.
+   *
+   * ── Why this signs out rather than just navigating ──────────────────────────
+   * The exchange created a real authenticated session before any password was set. Walking away
+   * from this screen with that session alive is precisely the state this phase exists to prevent —
+   * an account signed in on the strength of an emailed link, with the reset abandoned. Navigating
+   * alone would leave it; the marker would still contain it on the next launch, but *this* run
+   * would have a live session and no containment in front of it.
+   *
+   * So abandonment destroys all three: the session, the in-memory grant, and the marker.
+   *
+   * ── Order ───────────────────────────────────────────────────────────────────
+   * Marker first, for the reason in `use-recovery-containment.ts`: `signOut` re-renders every
+   * consumer, and a marker still present at that moment describes a session that no longer exists.
+   * Navigation last, so nothing routes while the session is mid-flip.
+   */
+  const abandonRecovery = useCallback(async () => {
+    await clearRecoveryPending();
+    clearRecovery();
+    await signOut().catch(() => {
+      // Already gone, or the revocation call failed. The local session is dropped either way, and
+      // the marker is cleared, so the destination below is correct regardless.
+    });
+    // `replace`, so Back cannot return to an abandoned recovery.
     router.replace(authRoutes.signIn);
+  }, [clearRecovery, router, signOut]);
+
+  /**
+   * Where a *completed* recovery goes.
+   *
+   * The entry gate, not a fixed screen. With the marker cleared the startup machine re-runs and
+   * names the destination this account should actually have — Main Home, or the plan chooser if it
+   * never made that choice. Hard-coding Home here would skip the subscription introduction for an
+   * account that still owes it, and hard-coding Sign In would ask a signed-in user to sign in
+   * again.
+   */
+  const goToPostRecovery = useCallback(() => {
+    router.replace('/');
   }, [router]);
 
+  const goToSignIn = useCallback(() => {
+    void abandonRecovery();
+  }, [abandonRecovery]);
+
+  /**
+   * Restarting the recovery from a fresh email.
+   *
+   * Also an abandonment: whatever session and marker are here belong to a recovery that is not
+   * going to be finished, so they are torn down before the new request begins. Reached from the
+   * no-grant and mismatch states, both of which mean this run cannot complete.
+   */
   const requestNewLink = useCallback(() => {
-    router.replace(authRoutes.forgotPassword);
-  }, [router]);
+    void (async () => {
+      await clearRecoveryPending();
+      clearRecovery();
+      await signOut().catch(() => {
+        // See `abandonRecovery`.
+      });
+      router.replace(authRoutes.forgotPassword);
+    })();
+  }, [clearRecovery, router, signOut]);
+
+  /**
+   * Android's hardware Back is the same abandonment as the header arrow.
+   *
+   * Without this the system default applies, and on a cold-start recovery the gate reached this
+   * screen by `Redirect` — so there is no history entry behind it and Back drops the user out of
+   * the app with the recovery session still live. The next launch would be contained by the marker,
+   * but "Back leaves a live half-finished recovery behind" is exactly the state this phase closes.
+   *
+   * Returning true claims the event, so nothing else handles it. Not installed once the update has
+   * succeeded: at that point the session is ordinary and Back should behave normally again.
+   */
+  useEffect(() => {
+    if (succeeded) {
+      return;
+    }
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      void abandonRecovery();
+      return true;
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [abandonRecovery, succeeded]);
 
   if (succeeded) {
     return (
@@ -214,8 +323,8 @@ export function SetNewPasswordScreen({
             {copy.successSupporting}
           </EntryAuthText>
           <PrimaryButton
-            label={copy.signIn}
-            onPress={goToSignIn}
+            label={copy.continueToApp}
+            onPress={goToPostRecovery}
             testID="set-new-password-success-sign-in"
           />
         </View>
