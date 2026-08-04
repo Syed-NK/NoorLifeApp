@@ -26,6 +26,7 @@
     },
     "plugins": [
       "expo-router",
+      "./plugins/with-imageless-native-splash",
       [
         "expo-splash-screen",
         {

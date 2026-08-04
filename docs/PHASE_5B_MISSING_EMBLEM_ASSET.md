@@ -58,6 +58,28 @@ The cost, stated plainly: for the ~200–400 ms before the JS bundle mounts, the
 soft-mint screen with no brand mark. That is a real regression in brand presence at cold launch
 compared with an emblem, and it is why this document exists rather than the item being closed.
 
+### Making "no image" actually mean no image on Android 12+
+
+`expo-splash-screen@57.0.5` writes `windowSplashScreenAnimatedIcon` into `Theme.App.SplashScreen`
+unconditionally, pointing at a `splashscreen_logo` drawable it does not generate when no image is
+configured, so `:app:processReleaseResources` fails to link. The local
+[`plugins/with-imageless-native-splash.ts`](../plugins/with-imageless-native-splash.ts) fixes that,
+and only that.
+
+It first *removed* the dangling item. That linked and built, but Android 12+ has no "no icon" state:
+with the attribute unset the platform substituted its own launcher-icon default, and a cold launch of
+the release APK on an Android 17 / API 37 emulator showed the **Expo placeholder launcher icon** over
+the `#FAFFFD` field — an unrelated mark from the default `com.anonymous` scaffold, and the opposite of
+the blank interim field described above.
+
+The plugin now sets that one item to `@android:color/transparent` instead. A framework colour resource
+always resolves, so nothing is generated and nothing is shipped, and a fully transparent one occupies
+the icon slot while painting nothing. The result is the plain `#FAFFFD` field this document specifies.
+
+This changes nothing about the gap. Transparency is the absence of a mark, not a substitute for one —
+no placeholder asset is added and no branding is invented. **The emblem is still required and still
+missing**, and the plugin self-cancels the moment `app.json` gains an `image`.
+
 ## What is needed to close this
 
 One PNG, from the designer who produced the approved splash:
