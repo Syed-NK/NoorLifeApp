@@ -32,7 +32,8 @@
           "backgroundColor": "#FAFFFD"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/with-mailto-package-visibility"
     ],
     "experiments": {
       "typedRoutes": true,
