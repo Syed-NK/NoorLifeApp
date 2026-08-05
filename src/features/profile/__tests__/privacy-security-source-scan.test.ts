@@ -303,15 +303,110 @@ describe('the deletion architecture', () => {
     expect(doc).toContain('Nothing in this repository deletes an account');
   });
 
-  it('has no Edge Function deployed in this phase', () => {
-    // The scan is the assertion: a `supabase/functions` directory appearing means the deferral in
-    // the document above is out of date.
-    let functionsExist = false;
+  /**
+   * ── Why this assertion changed shape in Phase AI-2, and what was lost ───────
+   * It used to be one line: `statSync('supabase/functions')` must throw. The *absence of the directory*
+   * was the proxy for "the deferral in the document above is out of date", and as a tripwire it was
+   * excellent — it fired on any Edge Function whatsoever, however that function was written.
+   *
+   * AI-2 added `supabase/functions/noor-ai`, so the proxy had to be replaced. It would be convenient to
+   * claim the replacement is strictly stronger. **It is not**, and pretending otherwise is how a
+   * guarantee quietly degrades: the old check needed no list of forbidden spellings, and any
+   * content-based check does. An account-deletion path written through a Postgres driver, an RPC call or
+   * the Admin REST API is caught only because the scans below were written to look for those too — not
+   * because the instrument is inherently better.
+   *
+   * So the replacement is deliberately two assertions, not one, and the first is what preserves the
+   * original's real value:
+   *
+   *   1. **The set of deployed functions is pinned.** A second function appearing fails the test exactly
+   *      as the old check did, and forces a human to look at it. This is the tripwire, kept.
+   *   2. **No function can reach privileged access or express a deletion.** This is the new part, and it
+   *      covers a case the old check never did: a deletion capability added *inside* an
+   *      already-approved function, which directory-existence could never have noticed.
+   *
+   * `docs/ACCOUNT_DELETION_ARCHITECTURE.md` remains the source of truth for the deferral itself, and the
+   * two assertions above it still hold it to that.
+   */
+  const FUNCTIONS_ROOT = join(SRC_ROOT, '..', 'supabase', 'functions');
+
+  /** The Edge Functions this repository has reviewed and approved. AI-2 added the only entry. */
+  const APPROVED_FUNCTIONS = ['noor-ai'];
+
+  function functionDirectories(): readonly string[] {
     try {
-      functionsExist = statSync(join(SRC_ROOT, '..', 'supabase', 'functions')).isDirectory();
+      if (!statSync(FUNCTIONS_ROOT).isDirectory()) {
+        return [];
+      }
     } catch {
-      functionsExist = false;
+      // No Edge Function exists at all, which satisfies both assertions trivially.
+      return [];
     }
-    expect(functionsExist).toBe(false);
+    return readdirSync(FUNCTIONS_ROOT)
+      .filter((entry) => statSync(join(FUNCTIONS_ROOT, entry)).isDirectory())
+      .sort();
+  }
+
+  function functionSources(): readonly string[] {
+    if (functionDirectories().length === 0) {
+      return [];
+    }
+    // A function's own `tests/` directory is skipped for the same reason `sourceFiles` skips
+    // `__tests__`: a scan asserting the absence of `DELETE FROM` necessarily contains the phrase.
+    return sourceFiles(FUNCTIONS_ROOT).filter((file) => !file.includes(`${sep}tests${sep}`));
+  }
+
+  /**
+   * A file's executable text, so a comment explaining a rule cannot be what breaks it.
+   *
+   * The same helper `auth-callback-source-scan.test.ts` uses, and needed here for the same reason: the
+   * Edge Function documents its own prohibitions at length — `jwt-verifier.ts` explains why it does not
+   * use `@supabase/server`, and `ports.ts` explains why `service_role` is unrepresentable. Scanning raw
+   * text would fail on the files being most careful. Code cannot execute from inside a comment, so
+   * stripping them narrows the scan to what the function can actually do.
+   */
+  function executable(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  }
+
+  it('deploys no Edge Function that has not been reviewed', () => {
+    // The original tripwire, narrowed from "none at all" to "none beyond the approved list". Adding a
+    // function is now a deliberate edit to `APPROVED_FUNCTIONS` rather than a silent green run.
+    expect(functionDirectories()).toEqual(APPROVED_FUNCTIONS);
+  });
+
+  it('has no Edge Function that can delete an account', () => {
+    const files = functionSources();
+    // Guard: an empty file list would satisfy every pattern below and prove nothing.
+    expect(files.length).toBeGreaterThan(0);
+
+    /**
+     * Two families, because deleting an account needs both a privileged reach and a destructive verb,
+     * and the honest check is that neither exists rather than that one specific spelling does not.
+     */
+    const privilegedReach = [
+      /@supabase\/(supabase-js|server)/,
+      /\bcreateClient\s*\(/,
+      /\bfrom\s+['"](npm:)?(postgres|pg|deno-postgres)/,
+      /\bauth\s*\.\s*admin\b/,
+      /\bdeleteUser\b/,
+      /\/auth\/v1\/admin/,
+      /service_role|SERVICE_ROLE|SUPABASE_SECRET/,
+    ];
+    const destructiveVerb = [
+      /\bDELETE FROM\b/i,
+      /\.\s*delete\s*\(/,
+      /\.\s*rpc\s*\(/,
+      /method\s*:\s*['"]DELETE['"]/i,
+    ];
+
+    const offenders = files
+      .filter((file) => {
+        const source = executable(readFileSync(file, 'utf8'));
+        return [...privilegedReach, ...destructiveVerb].some((pattern) => pattern.test(source));
+      })
+      .map((file) => file.replace(FUNCTIONS_ROOT, ''));
+
+    expect(offenders).toEqual([]);
   });
 });

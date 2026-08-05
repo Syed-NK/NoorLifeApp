@@ -78,9 +78,25 @@ Two limits of the above are stated here because the rest of the document depends
   rejects an already-issued access JWT whose session has ended. The only documented immediate
   mechanism is the `session_id`-against-`auth.sessions` check. §D.3 is written to that limit.
 - `verify_jwt` is documented as validating "legacy HS256 JWTs". Whether this project's Auth tokens
-  are HS256 or asymmetrically signed is **not** determinable from the working tree, so AI-2 must
+  are HS256 or asymmetrically signed is **not** determinable from the working tree, so AI-2 had to
   confirm the project's current signing algorithm against the dashboard before relying on the
-  gateway as a check. It is recorded as an AI-2 exit criterion in §K, not assumed here.
+  gateway as a check. **Confirmed in AI-2 — see §0.4.** The result is recorded there rather than
+  assumed here.
+
+### 0.4 This project's JWT signing key, confirmed against the dashboard in AI-2
+
+Read from the project's JWT-keys dashboard during AI-2 review. Recorded because §D.4 and §K depend
+on it, and because an earlier revision had to leave it open. **No key identifier and no key material
+is recorded here, in the source, or in any test** — none is needed, since `kid` is read from the
+token and matched against whatever the platform injects.
+
+| What the dashboard shows | JWT `alg` | What follows for this endpoint |
+| --- | --- | --- |
+| Current signing key: **ECC (P-256)**, status **CURRENT** | **`ES256`** — RFC 7518 §3.1 defines `ES256` as "ECDSA using P-256 and SHA-256", so an ECC P-256 signing key is an ES256 signing key | New access tokens are ES256. `ES256` is on the handler verifier's allow-list, `SUPABASE_JWKS` carries the public half, and nothing further needs configuring |
+| A **previous HS256 key remains listed**, temporarily, to verify already-issued tokens that have not yet reached their `exp` | `HS256` | The gateway can still validate these. The handler **cannot**, and refuses them — see §D.6 |
+
+This is a statement of the configuration as read, not a change to it. AI-2 does not migrate, revoke
+or modify any signing key, and does not add, read or depend on the legacy JWT secret.
 
 ---
 
@@ -539,7 +555,7 @@ The **Enforced by** column matters: a gateway row produces Supabase's platform 4
 | --- | -------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------- |
 | 1   | An `Authorization` JWT is present and parses, and validates against the project's signing configuration | Gateway (`verify_jwt = true`) | Platform `401` before the handler. No NoorLife body, no `request_id` |
 | 2   | `Authorization` present, single, `Bearer`, non-empty                 | Handler      | `401 unauthenticated`                                                  |
-| 3   | Signature valid against the project key set                          | Handler      | `401 unauthenticated`                                                  |
+| 3   | Signature valid against the project key set. The project's current key is ECC (P-256), so this is an `ES256` check (§0.4); an unexpired **previous-HS256** token fails here even though the gateway may have passed it (§D.6) | Handler      | `401 unauthenticated`                                                  |
 | 4   | Not expired; `nbf`/`iat` sane                                        | Handler      | `401 unauthenticated`                                                  |
 | 5   | `aud` and issuer are this project's                                  | Handler      | `401 unauthenticated`                                                  |
 | 6   | Claim `role` is `authenticated` — **not** `anon`, not `service_role`  | Handler      | `401 unauthenticated`                                                  |
@@ -601,6 +617,48 @@ Two consequences worth stating rather than implying:
   it. So "authenticated" currently means "completed a signup form", which is a weaker abuse
   deterrent than it sounds. §I.1's per-user limits must not be the only defence, and AI-10 must
   re-check this once confirmations are back on.
+
+### D.6 The signing-key transition, and the one gap it opens
+
+§0.4 records the confirmed configuration: the current signing key is **ECC (P-256)** — ES256 — and a
+**previous HS256 key remains listed** until the access tokens issued under it reach their `exp`.
+Two token generations are therefore in circulation at once, and the two gates of §D.4 do not treat
+them the same way.
+
+| Token | Gateway (`verify_jwt = true`) | Handler (§D.4 row 3) | Net result |
+| --- | --- | --- | --- |
+| Signed by the **current ES256 key** | Validated | **Verified** against the ES256 public key in the platform-injected `SUPABASE_JWKS` key set | Handled normally. This is the steady state and every new token is one of these |
+| Signed by the **previous HS256 key**, still unexpired | May be validated — `verify_jwt` is documented as validating "legacy HS256 JWTs" | **Refused.** Verifying HS256 needs the project's legacy JWT **secret**, and §K requires that "**no key exists anywhere**" in AI-2 | `401 unauthenticated` from the handler, after the gateway let it through |
+
+Five things about that second row, stated precisely because it is the kind of gap that gets
+described as either worse or better than it is:
+
+1. **It fails closed.** The refusal is §D.4 row 3's `signature` failure mapped to `401`. An
+   unverifiable credential is refused rather than trusted on the gateway's word. There is no
+   authentication bypass, no fallback, no path on which an HS256 token is treated as authenticated,
+   and nothing was weakened to accommodate one. HS256 is absent from the verifier's allow-list, so a
+   published verification key can never be pressed into service as an HMAC secret — algorithm
+   confusion is unexpressible here rather than merely guarded against.
+2. **AI-2 does not close it, and must not.** Closing it would mean adding the legacy JWT secret to
+   this function. AI-2 does not add, read or depend on that secret, and §B.2's boundary is what
+   forbids it. Nor does AI-2 migrate, revoke or modify any signing key — the dashboard state in §0.4
+   was read, not changed.
+3. **It is an availability limitation, not a security result.** A genuine signed-in user holding a
+   pre-rotation token gets a `401` from this endpoint until that token expires. That is a real cost
+   to a real user, and it is the honest way to describe it. Refusing what cannot be verified is
+   correct behaviour, but correct behaviour under a constraint is not an achievement to be claimed.
+4. **It ends by itself.** Access tokens are short-lived — "usually between 5 minutes and 1 hour",
+   with "the default expiration time of 1 hour" — so once the last pre-rotation token passes its
+   `exp`, every token in circulation is ES256 and the incompatibility is over. Nothing has to be
+   deployed, migrated or configured for that to happen.
+5. **It is bounded in time but not measured here.** This document does not assert when the last
+   HS256 token expires, because that depends on when the rotation happened and on the project's
+   `jwt_expiry`. AI-3 should confirm the previous key is no longer listed before treating the
+   endpoint as generally reachable.
+
+`tests/jwt-verifier_test.ts` pins rows one and two against real cryptography, including a genuinely
+HMAC-signed HS256 token that is correct in every other respect, and a key set carrying both
+generations at once.
 
 ---
 
@@ -1231,6 +1289,12 @@ responses carry **Supabase's platform 401 shape** — for example
 `{ "code": 401, "message": "Missing authorization header" }` — and have **no NoorLife `request_id`**.
 The same applies to the platform's other pre-handler outcomes (404, 405, 503, 504, 546).
 
+**`code` is not reliably numeric.** That documented example comes from the hosted troubleshooting page,
+but a real gateway run against `supabase-edge-runtime` 1.74.2 returned a *string* code and an extra
+duplicated `msg` key — see §K.1's observed-shapes table for the three verified bodies. AI-4 must treat
+the platform's `code` as opaque, must not assume its type, and must not treat the extra key as a
+malformed response. The invariant to rely on is the *absence* of `request_id`, not the shape of `code`.
+
 This is a real limit on what this contract can promise, and it is stated rather than hidden: the
 stable NoorLife error schema and `request_id` below apply from the moment the handler starts, not
 before it. AI-4 is responsible for normalising both categories into the same small set of safe
@@ -1389,7 +1453,7 @@ check.
 | Phase | Deliverable                                             | Exit criteria                                                                                                                        |
 | ----- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | AI-1  | **This contract.** Architecture and documentation only  | Document reviewed. No function, key, dependency, migration, or UI change. **Complete on this commit.**                                |
-| AI-2  | Local Edge Function skeleton with an injected fake provider | `supabase/functions/noor-ai/` exists; `[functions.noor-ai]` declared in `config.toml` with **`verify_jwt = true` explicit**; the project's current JWT signing algorithm confirmed against the dashboard as one the gateway validates (§0.3); §D.3's boundary restated in the handler's own doc comment so it cannot be lost; every AI-2 row in §J passes, including 2c and 2d2; **no key exists anywhere** |
+| AI-2  | Local Edge Function skeleton with an injected fake provider | `supabase/functions/noor-ai/` exists; `[functions.noor-ai]` declared in `config.toml` with **`verify_jwt = true` explicit**; the project's current JWT signing algorithm confirmed against the dashboard as one the gateway validates (§0.3); §D.3's boundary restated in the handler's own doc comment so it cannot be lost; every AI-2 row in §J passes, including 2c and 2d2; **no key exists anywhere**. **Status: met — see §K.1. Local gateway evidence only; deployment remains prohibited** |
 | AI-3  | Provider secret and the live Responses API connection   | §F.10's data-control decision recorded first; key set via `supabase secrets set` only; model, timeouts, limits, and rate-limit store chosen and pinned; §J rows 13b/18 pass; no key in the repository, the bundle, or any log. **Does not** include revocation work — §J.2f is not an AI-3 gate |
 | AI-4  | Mobile adapter and its states                           | An `AIOrchestrator` implementation posting to the endpoint with the session token on `Authorization` and the publishable key on `apikey` **only**; **both** error categories of §C.9 normalised — gateway platform errors and handler errors — into design-spec states 20/21/22/26, with no raw platform or provider text rendered and no fabricated `request_id`; §I.5's closed error set mapped; §12.1's and §12.11's shape gaps resolved; loading, unavailable, and error states verified on the emulator **and** the physical device |
 | AI-5  | Noor AI text conversation UI                            | `/ai/chat/:conversationId` and `/ai/feedback` exist per workflow §6; scope shown near the composer per §06; single-turn until AI-8; only capabilities AI-1 can actually serve are enabled |
@@ -1406,6 +1470,178 @@ Two things are deliberately **not** phase gates before AI-10, so that no phase i
 nobody has approved: immediate session revocation (§12.10) and any move of JWT verification out of
 the gateway and into the handler (§C.9). Both are reviewed decisions with privileged-access or
 architectural consequences, and neither may be introduced as an incidental part of another phase.
+
+### K.1 AI-2 exit criteria — status at completion
+
+**AI-2's exit criteria are met.** They are itemised below rather than summarised, because the last
+one to close — §J.2b — was reported unmeetable in the previous revision of this section, and a
+criterion that changes from "blocked" to "met" has to show what changed. What changed is the signing
+arrangement, not the rule: §B.2 still holds, and no key material entered this repository.
+
+Two boundaries hold at the same time as this completion, and neither is a formality. The gateway
+evidence is **local**, at the CLI and runtime versions named below, and is not proof of the hosted
+project's behaviour. **Production deployment remains prohibited at this phase** — AI-2 is a local
+skeleton, there is no provider key, and the production graph answers `503 service_unavailable` by
+construction. Completing AI-2 unblocks AI-3's *entry*, and nothing else.
+
+| Exit criterion | Status | Evidence |
+| --- | --- | --- |
+| `supabase/functions/noor-ai/` exists | **Met** | The function's source and its test suite |
+| `[functions.noor-ai]` declared with `verify_jwt = true` explicit | **Met** | `supabase/config.toml`, asserted by `repo-parity_test.ts` |
+| The project's current JWT signing algorithm confirmed against the dashboard | **Met — ECC P-256 / ES256** | §0.4. Confirmed as CURRENT; `ES256` is on the handler verifier's allow-list and is verified against real cryptography in `jwt-verifier_test.ts`. The transitional previous-HS256 case is documented in §D.6 and is a known limitation, not an open question |
+| §D.3's boundary restated in the handler's doc comment | **Met** | `handler.ts`, asserted by `source-scan_test.ts` |
+| Every AI-2 row in §J passes, including 2c and 2d2 | **Met** | All four gateway rows now execute against a real local Edge gateway — see the table below. Every other AI-2 row passes in the pure tier: 156 tests, 0 failed, **0 ignored** |
+| **No key exists anywhere** | **Met** | `source-scan_test.ts`; no provider key, no service-role key, no legacy JWT secret, and no committed private key or token in any test. §J.2b's signing secret belonged to a stack created and destroyed inside a single test run, existed only in process memory, and `gateway-integration_test.ts` asserts mechanically that it can never become a literal |
+
+#### The gateway rows
+
+These four rows are assertions about the **platform** gate, which runs before any code in this
+repository — "the platform returns a 401 error, and your code never executes" — so a mock cannot
+stand in for one without becoming the component under test.
+
+**All four have now been executed against a real local Supabase Edge gateway**: Supabase CLI 2.111.0,
+`supabase-edge-runtime` 1.74.2, started with `supabase start` and served with
+`supabase functions serve` from the repository root, honouring this repository's own
+`[functions.noor-ai]` declaration with **no** `--no-verify-jwt` and no other bypass. Local only: the
+requests targeted a `127.0.0.1` loopback port, nothing was linked, deployed or pushed, no secret was
+set, and no provider was contacted. `tests/run-tier-b.ps1` is the harness, and it tears the stack
+down in a `finally` whether the tests pass, fail or throw.
+
+That the rejections were genuinely **pre-handler** was confirmed independently of the response body:
+the edge runtime logged each failure from its own main worker, no `noor-ai` function worker booted
+for them — the runtime's `serving the request with supabase/functions/noor-ai` line is absent — and
+the handler's single structured log line never appeared.
+
+| §J row | Case | Status | Evidence |
+| --- | --- | --- | --- |
+| §J.1 | No `Authorization` header at all | **PASSES against a real gateway** | 401, platform shape, no NoorLife `request_id`, `contract_version` or `error` object. Handler-side equivalent also passes: `handler-auth_test.ts` |
+| §J.2a | Well-formed JWT with a wrong or absent signature | **PASSES against a real gateway** | 401, no NoorLife body, no `request_id`; runtime logged `ERR_JWS_SIGNATURE_VERIFICATION_FAILED` from its main worker. Handler-side: `jwt-verifier_test.ts` refuses a differently signed key, a tampered payload, a mutilated signature and a DER-framed signature |
+| §J.2b | Correctly signed token whose `exp` is in the past | **PASSES against a real gateway** | 401, platform shape, no `request_id`; the runtime logged `"exp" claim timestamp check failed` with `code: "ERR_JWT_EXPIRED", claim: "exp", reason: "check_failed"`, and no function worker booted. Attribution to `exp` rests on the paired control described below, not on the code string. Handler-side equivalent also passes: `handler-auth_test.ts` — the `exp` cases, including `exp == now`, with no leeway |
+| §J.2d | This project's `sb_publishable_*` key sent as a bearer token | **PASSES against a real gateway** | 401 as a *format* rejection, so it never reached a `role` check — proving a bundle-embedded key cannot reach the model, and proving nothing about §D.4's check-6. Handler-side: `jwt-verifier_test.ts` |
+
+Separately, the §C.1 CORS preflight was checked against the same gateway and answered **200 without a
+credential**. It is **not** one of the four authentication rows and must never be counted as one — a
+runner reporting "4 ignored" is reporting three auth rows plus this preflight, which is precisely how
+§J.2b's absence went unnoticed before. `gateway-integration_test.ts` now asserts the row-to-test
+mapping mechanically instead of describing it in prose.
+
+#### How §J.2b was run without a key entering this repository
+
+An expired token only exercises §J.2b if it is **correctly signed** — signed by the key the gateway
+actually trusts. A token signed by any other key is §J.2a, a different row. That is why the row was
+blocked: the only key satisfying the condition lived in local CLI state, and §B.2 forbids key material
+entering this repository. It could not be waited out either, because `config.toml` sets
+`jwt_expiry = 3600`.
+
+The rule was kept. What changed is where the key is allowed to exist:
+
+- the signing secret belongs to a **disposable local stack**, generated by `supabase start` and
+  destroyed by `supabase stop --no-backup` in the same run. It is not the hosted project's key, and
+  no hosted credential is read, needed or accepted. **No production Supabase credential and no legacy
+  production HS256 secret was used, added or referenced.**
+- the harness captures it from `supabase status -o json` **without printing it**, holds it in process
+  memory, and hands it to the Deno test process through that child's own environment block — not the
+  shell's, so no other child could inherit it. It is never a command-line argument, never a file,
+  never a fixture, never a log line, and never committed. A `finally` clears it.
+- every command that can emit a credential runs with **both** its streams redirected into the
+  harness and is never rendered — `supabase start` output is discarded on success, `status -o json`
+  is parsed in memory only, and `functions serve` has both pipes drained and dropped unread because
+  request-level runtime logging can carry an `Authorization` header. On failure the harness prints
+  the command name, the exit code and a fixed sentence, never the captured text. An earlier revision
+  filtered `start`'s stdout against a list of known credential labels, which could only remove what
+  it recognised and left stderr attached to the console; suppression replaced it precisely because a
+  filter's failure mode is a silently leaked key.
+- the token is minted **inside the test process** with WebCrypto, sent once to `127.0.0.1`, and
+  discarded when the process exits.
+
+So the repository holds the *procedure* and never the *material*. `gateway-integration_test.ts`
+asserts that mechanically: a literal assigned to the signing-secret binding fails the suite, so the
+row cannot degrade into a test of a committed string.
+
+#### Why the row needs a control request to mean anything
+
+A 401 on an expired token proves nothing by itself. A wrong key, an unsupported algorithm or a
+rejected issuer all produce a 401, and §J.2a already covers the wrong-key case. So the claim that the
+rejection is *about `exp`* rests on a paired control rather than on the response text:
+
+| Request | Difference | Gateway | Runtime log | Body |
+| --- | --- | --- | --- | --- |
+| Control | `exp` in the **future** | **passed** | `serving the request with supabase/functions/noor-ai`, then the handler's one structured log line | NoorLife's envelope, with a `request_id` |
+| §J.2b | `exp` in the **past** | **refused** | `"exp" claim timestamp check failed` / `ERR_JWT_EXPIRED`; no worker booted, no handler log line | platform shape, no `request_id` |
+
+Same key, same algorithm, same claim set; one claim differs and the outcome flips from "the handler
+answered" to "the handler never ran". The control is also what proves the key is genuinely the one the
+gateway trusts — without it, a 401 would be evidence of a rejected key rather than a rejected `exp`.
+
+**"One claim differs" is proved, not asserted in prose.** The shared claims — issuer, audience, role,
+`sub`, `session_id` and a single `iat` older than either `exp` — are built once and both tokens are
+spread from that one object; one frozen JOSE header object is passed to both signings; and the signing
+helper generates nothing of its own, so it cannot introduce a second variable. Before either token is
+signed the test checks mechanically that the two claim sets carry the same names in the same
+serialised order, that exactly one name's serialised value differs, and that the name is `exp` — then
+that the two tokens share an identical header segment and are nevertheless distinct. Every one of
+those comparisons is made on booleans or on claim *names*, so no serialised token and no claim value
+can reach an assertion message or a failure report. This is a correction: the previous revision minted
+a fresh `sub`, `session_id` and `iat` on each call, so the one-variable experiment it described was
+not the experiment it ran, and the row's conclusion rested on a claim the code did not support.
+
+The control's own 401 is §D.6's documented transition gap, not a defect: the gateway accepts the
+legacy HS256 token, and the handler then refuses it because it verifies against the platform's
+asymmetric key set and holds no legacy secret with which to check an HS256 signature. A 401 either
+way — but a *NoorLife* 401, which is precisely what distinguishes it.
+
+#### Observed gateway response shapes differ from the documented ones
+
+Recorded because §I.7 makes it AI-4's problem to absorb. The hosted troubleshooting page documents a
+**numeric** `{ "code": 401, "message": … }`. The real local runtime instead returns a **string** code
+and a duplicated message key:
+
+| Row | Observed body |
+| --- | --- |
+| §J.1 | `{ "code": "UNAUTHORIZED_NO_AUTH_HEADER", "message": "Missing authorization header", "msg": … }` |
+| §J.2a | `{ "code": "UNAUTHORIZED_ASYMMETRIC_JWT", "message": "Invalid JWT", "msg": … }` |
+| §J.2b | `{ "code": "UNAUTHORIZED_LEGACY_JWT", "message": "Invalid JWT", "msg": … }` |
+| §J.2d | `{ "code": "UNAUTHORIZED_INVALID_JWT_FORMAT", "message": "Invalid JWT format", "msg": … }` |
+
+Both spellings are the platform's and neither is NoorLife's, so §C.9 and §I.7 stand unchanged: a
+pre-handler rejection carries no `request_id` and AI-4 must not fabricate one. **AI-4 must not assume
+`code` is numeric, and must not treat the extra `msg` key as malformed.** The gateway test asserts
+`code` is present as either a number or a non-empty string rather than pinning one runtime's spelling.
+
+**`code` is opaque, and may differ across environments.** It is a runtime-version detail, not part of
+this contract: the hosted documentation and the local runtime already disagree about its type, and
+§J.2b makes the sharper point. Its code, `UNAUTHORIZED_LEGACY_JWT`, names the *token family* rather
+than the expiry — and it is the same family the control token belongs to, so the code alone would not
+have separated a rejected token from an accepted one. That is why no assertion in this repository
+branches on a `code` value, and why AI-4 must map on HTTP status and body *shape* instead. Anything
+that reads these strings is reading a version, not a contract.
+
+#### What this evidence is, and what it is not
+
+The distinction that matters for reading this phase's results has narrowed but not disappeared:
+**handler verification is tested and passing; platform gateway verification is now tested locally for
+all four rows.** They remain different controls. What has been shown is that `verify_jwt = true`
+behaves as documented on a *local* gateway at a *pinned* pair of versions — Supabase CLI 2.111.0 and
+`supabase-edge-runtime` 1.74.2 — which is materially more than the handler suite could ever show, and
+still not the same thing as the deployed project's gateway. This document does not claim otherwise,
+and the observed-shape divergence above is direct evidence that runtime version matters.
+
+Three consequences follow, and none of them is softened by the rows now being green:
+
+- **This is evidence for the tested CLI and runtime versions, not proof of hosted production
+  behaviour.** A hosted gateway at a different version may answer differently, and the documented
+  numeric `code` versus the observed string one shows that is not hypothetical.
+- **Production deployment remains prohibited at this phase.** AI-2 ships nothing. No key exists, the
+  production graph fails closed with `503`, and no `functions deploy`, `secrets set`, `link` or
+  `db push` has been run.
+- **AI-3 is now unblocked for entry only**, and remains gated on its own criteria — §F.10's
+  data-control decision recorded first, then a key set via `supabase secrets set`. Nothing in AI-2
+  authorises that, and none of §J's AI-3 rows (13b, 18) has been run.
+
+`tests/gateway-integration_test.ts` reports its rows as ignored, never passed, when
+`NOOR_AI_GATEWAY_URL` is unset — and §J.2b is additionally ignored when the disposable stack's signing
+secret is absent, which is every machine not actively running the harness. A row that cannot be run
+honestly is never counted as run.
 
 ---
 

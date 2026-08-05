@@ -67,3 +67,23 @@ enabled = false
 
 [auth.external.apple]
 enabled = false
+
+# ── Noor AI Edge Function (Phase AI-2) ──────────────────────────────────────
+# The endpoint contracted in docs/NOOR_AI_BACKEND_CONTRACT.md §C.1. AI-2 is the skeleton only: no
+# provider key exists, no provider SDK is installed, and the production dependency graph fails
+# closed with `503 service_unavailable` rather than answering.
+#
+# `verify_jwt` is declared explicitly even though `true` is the documented default. AI-1 §D.2 makes
+# that a requirement rather than a preference: this endpoint spends money, so "the platform
+# validates the JWT before your handler runs" must be a version-controlled fact that `config push`
+# can report drift against, not a default someone could change in the dashboard without a diff.
+#
+# Leaving it on is what creates the two-producer error split recorded in §C.9 — a missing or
+# malformed JWT is refused by the gateway in Supabase's platform shape with no NoorLife
+# `request_id`, and only errors raised after the handler starts use NoorLife's own schema. The
+# handler re-verifies the claims it depends on regardless (§D.2 mechanism 2), because the
+# documentation describes what the gateway does in one sentence and does not enumerate which claims
+# it checks.
+[functions.noor-ai]
+enabled = true
+verify_jwt = true

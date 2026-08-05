@@ -1,0 +1,24 @@
+{
+  "$schema": "https://deno.land/x/deno/cli/schemas/config-file.v1.json",
+  "lock": false,
+  "fmt": {
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": true,
+    "proseWrap": "preserve"
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "test": {
+    "include": ["noor-ai/tests"]
+  },
+  "tasks": {
+    "test": "deno test --no-remote --no-npm --allow-read=../.. --allow-env=NOOR_AI_GATEWAY_URL,NOOR_AI_LOCAL_GATEWAY_JWT_SECRET noor-ai/tests",
+    "check": "deno check noor-ai/index.ts noor-ai/tests",
+    "verify": "deno fmt --check && deno lint && deno task check && deno task test"
+  }
+}

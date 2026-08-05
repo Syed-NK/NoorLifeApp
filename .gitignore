@@ -48,6 +48,9 @@ client_secret*.json
 # Supabase CLI local state: which project this checkout is linked to, cached server versions and a
 # pooler connection string. Machine-specific and not something another clone should inherit.
 supabase/.temp/
+# Written by `supabase start`/`supabase stop` to record the local branch name. Generated, per-machine,
+# and recreated on demand — it is not part of the checkout.
+supabase/.branches/
 
 # typescript
 *.tsbuildinfo
