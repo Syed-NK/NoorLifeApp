@@ -775,6 +775,12 @@ Rules that do belong in the contract:
 - Sampling parameters are server-owned. Whether the selected model accepts `temperature` at all is
   verified in AI-3 against that model's documented parameter support rather than assumed.
 
+**Status: proposed, not pinned — `NOOR_AI3_IMPLEMENTATION_PLAN.md` §3.** That document records the
+selection with its rationale, verified pricing, and the reason the slug must temporarily be treated
+as a controlled reviewed alias rather than a dated snapshot. It is a recommendation awaiting review;
+no model is configured, and the `temperature` question above is answered there (not documented as
+supported for the recommended model, so none is sent).
+
 ### F.3 Instructions are server-owned and never concatenated with user text
 
 Two channels, and they never mix:
@@ -819,6 +825,18 @@ which is what makes §I.2's spend ceiling calculable.
 When the model stops because it hit the cap, the response carries `"finish": "length"` and the
 client must present the answer as incomplete. Silently showing a truncated answer as complete is
 how a bounded help reply becomes a wrong instruction.
+
+**Correction — this section models two outcomes and there are three.** On a reasoning model the
+official documentation states that reasoning tokens are billed as output tokens and count against
+`max_output_tokens`, and that exhausting it "might occur before any visible output tokens are
+produced, meaning you could incur costs for input and reasoning tokens without receiving a visible
+response". So the third outcome is **incomplete with no text at all**, already billed. It is not a
+truncated answer and it is not a provider fault; it is this section's cap being too small. The two
+outcomes above are still correct, and sizing `max_output_tokens` "for a help answer of a few short
+paragraphs" is **not** sufficient on such a model. `NOOR_AI3_IMPLEMENTATION_PLAN.md` §4.2 sizes the
+cap for reasoning headroom, §4.9 defines the handling, and §9.1 records that the handler's current
+empty-answer path reports this as `malformed_upstream` — the right answer to the user, the wrong
+signal to the operator — and needs a distinct log field to tell the two apart.
 
 ### F.6 No provider-side conversation state
 
@@ -1118,6 +1136,19 @@ and adding one is a contract change requiring privacy review.
 knowledge to include in the request; the route string itself does not need to travel, and a route is
 a small behavioural signal about the user. Whether the selected knowledge is generic is checked in
 AI-3 review.
+
+**One proposed addition** to this closed list is recorded in `NOOR_AI3_IMPLEMENTATION_PLAN.md` §11.2
+(R12), neither approved nor implemented: a `safety_identifier` — §12.6's open decision, for which that
+plan recommends a fixed synthetic constant for the development smoke test and a salted HMAC only as a
+future production design. Adding it is a contract change requiring the privacy review this section
+demands, plus a reviewed diff to `ProviderRequest` and its boundary test.
+
+`prompt_cache_key` is **not** proposed. An earlier revision of that plan listed it as a second
+addition; it is now deferred out of AI-3 entirely (`NOOR_AI3_IMPLEMENTATION_PLAN.md` §4.6.1) because
+the single authorised synthetic request has nothing to cache against, no repeated workload is
+approved, no caching benefit has been measured, and widening this list for an unmeasured optimisation
+weakens the list. It may return only as its own separately reviewed change, after repeated traffic is
+authorised and its benefit and privacy behaviour are measured.
 
 ### H.2 What must never leave — the deny-list
 
@@ -1456,6 +1487,17 @@ provider. A row cannot be marked passing by inspection.
 | 17  | Successful bounded help answer        | `message: "Where do I change my prayer reminder sound?"`                     | `200`, `outcome: "answer"`, non-empty `text` within `max_output_tokens`, `sources: []`, `accessed_modules: []`, `finish: "complete"`, `request_id` present | AI-2 |
 | 17b | Output cap is real                    | Fake provider returns a response that hits the cap                          | `finish: "length"`, and the client presents it as incomplete                                                  | AI-2  |
 | 18  | Live smoke                            | Real provider, real key, one help question                                   | #17's assertions hold; `store: false` was sent; the key appears in no log; §F.10's decision is on record first   | AI-3  |
+
+**Row 18's authorised volume, made explicit — `NOOR_AI3_IMPLEMENTATION_PLAN.md` §4.8.0 and §7.3.** "One
+help question" means **exactly one manually initiated synthetic user-visible handler request**. That one
+handler request may produce **at most two OpenAI provider attempts**, and only when the first attempt
+fails with an explicitly eligible transient failure (§F.8's `429`-other-than-billing, `500`, `502`,
+`503`, connection resets) **and** §F.8's automatic retry performs exactly one retry within the remaining
+budget. Normally it produces one attempt. A second *manually initiated* handler request is **not**
+authorised: if the single request fails, is inconclusive, or cannot be verified, testing stops and fresh
+explicit approval is required before any new user-visible request. The request quota counter increments
+**once** for the handler request, while cost accounting records **every** actual provider attempt
+including the permitted retry — so more than two attempts is a failed verification, not a tolerance.
 
 Acceptance for AI-2 is every AI-2 row passing **plus** an assertion that the function source
 contains no provider key, no `service_role` reference, and no network call outside the injected
