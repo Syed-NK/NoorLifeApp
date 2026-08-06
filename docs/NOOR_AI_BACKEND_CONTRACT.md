@@ -907,6 +907,22 @@ Data Safety declaration, and the App Store privacy labels — all three of which
 `PRE_RELEASE_BACKLOG.md` §3.1–3.4. Until that exists, no live traffic and no privacy claim beyond
 what the documentation states.
 
+**Status: recorded — `NOOR_AI_DATA_CONTROL_DECISION.md`, dated 2026-08-06.** The written decision
+this section demands now exists, and it is narrow: **default** API data controls, approved **only**
+for a bounded synthetic development smoke test. Neither ZDR nor Modified Abuse Monitoring has been
+applied for or approved; no training or data-sharing opt-in is enabled; `store: false` is required
+and already machine-enforced, and does **not** by itself remove default abuse-monitoring retention.
+Only developer-authored synthetic help/navigation prompts may be sent — no real user, module,
+religious-journal, health, family, or account data, and no real-user traffic in any environment.
+The privacy, Play and Apple wordings in that record are **drafts held for review, not published or
+filed declarations**.
+
+That closes this section as an AI-3 **entry** gate and nothing more. Every other AI-3 criterion in §K
+stays open — the key, the model, the timeouts and limits, the rate-limit store, deployment, and §J
+rows 13b and 18 — and public beta and production user traffic remain prohibited. ZDR must be applied
+for and its outcome reviewed before public beta, with approval not assumed; if it is unavailable or
+denied, a fresh release decision is required before any real-user traffic.
+
 ---
 
 ## G. Safety behaviour
@@ -1454,7 +1470,7 @@ check.
 | ----- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | AI-1  | **This contract.** Architecture and documentation only  | Document reviewed. No function, key, dependency, migration, or UI change. **Complete on this commit.**                                |
 | AI-2  | Local Edge Function skeleton with an injected fake provider | `supabase/functions/noor-ai/` exists; `[functions.noor-ai]` declared in `config.toml` with **`verify_jwt = true` explicit**; the project's current JWT signing algorithm confirmed against the dashboard as one the gateway validates (§0.3); §D.3's boundary restated in the handler's own doc comment so it cannot be lost; every AI-2 row in §J passes, including 2c and 2d2; **no key exists anywhere**. **Status: met — see §K.1. Local gateway evidence only; deployment remains prohibited** |
-| AI-3  | Provider secret and the live Responses API connection   | §F.10's data-control decision recorded first; key set via `supabase secrets set` only; model, timeouts, limits, and rate-limit store chosen and pinned; §J rows 13b/18 pass; no key in the repository, the bundle, or any log. **Does not** include revocation work — §J.2f is not an AI-3 gate |
+| AI-3  | Provider secret and the live Responses API connection   | §F.10's data-control decision recorded first — **done, `NOOR_AI_DATA_CONTROL_DECISION.md`, and it authorises a synthetic smoke test only**; key set via `supabase secrets set` only; model, timeouts, limits, and rate-limit store chosen and pinned; §J rows 13b/18 pass; no key in the repository, the bundle, or any log. **Every criterion other than the data-control decision is still open, and real-user traffic is prohibited.** **Does not** include revocation work — §J.2f is not an AI-3 gate |
 | AI-4  | Mobile adapter and its states                           | An `AIOrchestrator` implementation posting to the endpoint with the session token on `Authorization` and the publishable key on `apikey` **only**; **both** error categories of §C.9 normalised — gateway platform errors and handler errors — into design-spec states 20/21/22/26, with no raw platform or provider text rendered and no fabricated `request_id`; §I.5's closed error set mapped; §12.1's and §12.11's shape gaps resolved; loading, unavailable, and error states verified on the emulator **and** the physical device |
 | AI-5  | Noor AI text conversation UI                            | `/ai/chat/:conversationId` and `/ai/feedback` exist per workflow §6; scope shown near the composer per §06; single-turn until AI-8; only capabilities AI-1 can actually serve are enabled |
 | AI-6  | Permission-gated module reads                           | Module tables reviewed and approved with RLS (`PRE_RELEASE_BACKLOG.md` §4.1); a **server-side** grant store; `AI_GRANT_EDITING_AVAILABLE` flipped with the controls it requires; `accessed_modules` populated truthfully and displayed |
