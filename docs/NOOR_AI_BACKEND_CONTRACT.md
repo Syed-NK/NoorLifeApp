@@ -216,6 +216,20 @@ bug.
    to a third-party processor, so it is governed by an allow-list (§H.1), not by whatever happened
    to be in scope.
 
+There is a **fourth** boundary, added here because §B.1's diagram has always shown it and this list
+did not name it:
+
+4. **Edge Function → the rate-limit / spend / concurrency store (§I.1, §I.2).** The boundary that
+   **proves nothing about server origin**, and that must not be assumed to. If the store is reached
+   with the caller's own JWT — the design AI-3 was working towards — then the credential presented at
+   this boundary is the *same* credential the device holds, so the store cannot distinguish a call
+   made by this function from a call the user makes directly against the same endpoint. Boundary 1
+   establishes **who** is asking; nothing in the path establishes **which code path** is asking.
+   Proving server-origin requires a credential the device does not have, and adding one is a change
+   to §B.2's table that must be reviewed rather than assumed.
+   See `docs/NOOR_AI3_QUOTA_STORE_SECURITY_REVIEW.md` §6 and §13.1. This is a statement of what the
+   boundary establishes, not an approval of any store design — AI-3's R8 remains blocked.
+
 ---
 
 ## C. The endpoint

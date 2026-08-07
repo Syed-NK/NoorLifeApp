@@ -764,6 +764,17 @@ written, no dependency was added, and **no salt was generated** — §5.6.A's pr
 written down, not run. The migration, its RLS configuration and its function are AI-3 implementation work
 that starts *after* the review in §11.2, and R8 is `Blocked` until then.
 
+> **This review has since been performed: `docs/NOOR_AI3_QUOTA_STORE_SECURITY_REVIEW.md`.**
+> Its verdict is **BLOCKED**, and it supersedes two conclusions above. **§5.3 point 2's "the effect
+> is self-denial" is false as scoped** — it holds for the per-user counters but not for the global
+> counters, concurrency leases and spend accumulators that §5.2 places in the same store, which a
+> direct authenticated caller can exhaust with no provider request (review §5, finding B1; and §12.6,
+> finding B2, for the same defect in `finalize`). The review also resolves §5.4's items 2 and 3 —
+> the exposed-schema list is `public` and `graphql_public` per `supabase/config.toml:13`, and §5.7
+> point 5's tension dissolves under a direct connection rather than needing a signed-off deviation —
+> and it **inverts §5.6.E's ranking**, promoting §5.6.D to the direction to complete. R8 stays
+> `Blocked`, now against ten enumerated blockers rather than three.
+
 ### 5.5 The vendor and privacy consequence of choosing Redis instead
 
 Recorded so the rejection in §5.1 is reviewable rather than asserted. Adopting a Redis-compatible
@@ -1328,6 +1339,15 @@ R8 stayed at its original number and moved table rather than being renumbered, s
 reference to it — including §12's status row — still points at the same decision. It was moved rather
 than left in §11.2 with a caveat because a "recommended, subject to review" row reads as approved the
 moment the review is scheduled, and the store is the endpoint's only rate control (§I.1).
+
+**R8 status after the §5.4 review: still `Blocked`.** The review is
+`docs/NOOR_AI3_QUOTA_STORE_SECURITY_REVIEW.md` and its verdict is **BLOCKED** (its §14). Of the three
+reasons in the row above, (b) is **resolved** and (c) is **conditionally dissolved**; (a) is
+**confirmed unclosable from documentation** and needs a live privilege read. Against that, the review
+found **two new critical defects** — global denial-of-service and spend poisoning, both reachable by
+any authenticated caller through the directly-invocable RPC — which are design faults rather than
+verification gaps. It therefore promotes **§5.6.D** over §5.6.A as the direction to complete. **No
+store design is approved, and none may be implemented.**
 
 ### 11.3 Provisional, or open, until evidence exists
 
