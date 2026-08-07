@@ -1349,6 +1349,19 @@ any authenticated caller through the directly-invocable RPC — which are design
 verification gaps. It therefore promotes **§5.6.D** over §5.6.A as the direction to complete. **No
 store design is approved, and none may be implemented.**
 
+**R8 status after the hosted read-only verification of 2026-08-07: still `Blocked`.** The review's §17
+records it. Reason **(a)** is now **closed for direct access** — `anon`, `authenticated` and `PUBLIC`
+hold no privilege on the Vault schema, its relations or its routines — and **remains open** for
+indirect disclosure through an unrelated `SECURITY DEFINER` routine, which was not enumerated. Reason
+**(b)** is **closed**: the hosted Data API exposes exactly `public` and `graphql_public`, matching
+`supabase/config.toml:13`, so there is no drift and `vault` is confirmed unexposed. Reason **(c)** is
+unchanged. Against those two closures the verification added **five new blockers** — a PostgreSQL
+major-version mismatch (declared 15, hosted 17), automatic Data API exposure of new tables, an
+inconsistent function-grant posture with unenumerated default ACLs, SSL enforcement disabled with the
+certificate-verification mode unresolved, and unverified pooler compatibility with a dedicated
+least-privilege `LOGIN` role. **§5.6.D's direction is confirmed as the leading one and remains
+unapproved. No store design is approved, and none may be implemented.**
+
 ### 11.3 Provisional, or open, until evidence exists
 
 `max_output_tokens` (production), `upstreamTimeoutMs` and `handlerBudgetMs` (production), the

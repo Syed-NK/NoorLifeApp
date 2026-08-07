@@ -4,6 +4,11 @@ Branch `feature/subscriptions-family-six`, from `5940352`.
 
 **Conclusion: BLOCKED.** See §14.
 
+**Updated 2026-08-07 — §17 records a completed hosted, read-only verification.** It closes **B3** for
+direct access by `anon`, `authenticated` and `PUBLIC`, closes **B4**'s hosted drift check, and adds
+**five new blockers (B11–B15)**. It changes nothing about **B1** or **B2**, and the verdict is
+unchanged: **BLOCKED**.
+
 This document is the review that `NOOR_AI3_IMPLEMENTATION_PLAN.md` §5.4 demands and that §5.6.E,
 §5.7 and §11.2.1 defer to. It exists to resolve or narrow **R8** — the shared server-side quota,
 spend and concurrency store — and it does one of those two things for every question put to it.
@@ -23,7 +28,7 @@ signed-up account could fire at every other user.
 
 ## Corrections applied after first review
 
-Three claims in the first revision were wrong or overstated, and are corrected in place rather than
+Four claims in earlier revisions were wrong or overstated, and are corrected in place rather than
 quietly dropped. Each correction is marked where it applies:
 
 | # | What was wrong | Where corrected |
@@ -31,10 +36,13 @@ quietly dropped. Each correction is marked where it applies:
 | 1 | **Network reachability was treated as part of the security boundary.** The first revision argued a mobile client "has no route to the database port". Withdrawn — a Supabase direct or pooler endpoint may be reachable from any Internet client, and reachability is not authentication. The control is the credential and the narrow privilege set | §7.3.1 (new), §7.3, §7.7, T-22 to T-27 |
 | 2 | **"Salt" was used for what is an HMAC key.** HMAC takes a secret *key*; a salt is a non-secret diversifier and the two are not interchangeable | §0.4 (new), and §8, §10.2, §11, §12.7, §14 throughout |
 | 3 | **Three separately stored keys were presented as the only valid separation design.** No source supports that. Two patterns are admissible; one is recommended, with reasons | §11.4.3, §11.4.4 |
+| 4 | **The dashboard's "2 of 3 functions exposed" count was mapped onto the two repository functions lacking an explicit `REVOKE`, and the missing `REVOKE` was named as the mechanism producing the count.** Withdrawn — the dashboard evidence was a bare count that did not identify the functions, and the meaning of its "exposed" label was never established from official documentation. The repository fact and the dashboard fact are now recorded as **two independent observations**, each an independent reason for an exact per-signature audit. **B13 is renamed accordingly and stays open** | §17.8, §17.3 (third reading caution), §14.1's B13 row, §14.3 item 6 |
 
-**None of these changes the verdict, and none weakens a finding.** Correction 3 in fact
-*strengthens* B9: the requirement that the three identifiers not be comparable turns out to be
-violated by the current specification outright, not merely unspecified (§11.4.2).
+**None of these changes the verdict.** Correction 3 in fact *strengthens* B9: the requirement that the
+three identifiers not be comparable turns out to be violated by the current specification outright, not
+merely unspecified (§11.4.2). Correction 4 retracts an **inference**, not a finding — B13's two
+underlying observations are unchanged, it remains **open**, and what it now requires is a stricter,
+per-signature audit rather than a weaker one.
 
 ---
 
@@ -53,15 +61,31 @@ marked as a **decision** or an **inference** where it appears.
 | S4 | `supabase.com/docs/guides/database/functions` | "It is best practice to use `security invoker` (which is also the default). If you ever use `security definer`, you *must* set the `search_path`"; "If you use an empty search path (`search_path = ''`), you must explicitly state the schema for every relation in the function body"; `.rpc()` is the invocation method |
 | S5 | `supabase.com/docs/guides/database/vault` | Vault is "A Postgres extension and accompanying Supabase UI that makes it safe and easy to store encrypted secrets"; `vault.create_secret()`, `vault.update_secret()`; the auto-created `vault.decrypted_secrets` view "will decrypt secret data on the fly"; **"You should ensure that you protect access to this view with the appropriate SQL privilege settings at all times, as anyone that has access to the view has access to decrypted secrets"**; "The encryption key is never stored in the database alongside the encrypted data" |
 | S6 | `supabase.com/docs/guides/database/postgres/roles` | `postgres` — "The default Postgres role. This has admin privileges"; `anon` — the role PostgREST uses "when a user *is not* logged in"; `authenticated` — the role PostgREST uses "when a user *is* logged in"; `authenticator` — "a special role for the API (PostgREST) … used to validate a JWT and then 'change into' another role determined by the JWT verification"; `service_role` — "For elevated access. This role is used by the API (PostgREST) to bypass Row Level Security"; `supabase_admin` — internal |
-| S7 | `supabase.com/docs/guides/functions/connect-to-postgres` | **"Because Edge Functions are a server-side technology, it's safe to connect directly to your database using any popular Postgres client."** `supabase-js` is "the recommended approach for most applications", and its wrapper hands the function "a `supabase-js` client (`ctx.supabase`) already scoped to the caller's Row Level Security policies, so you don't manage keys or authorization headers yourself" |
+| S7 | `supabase.com/docs/guides/functions/connect-to-postgres` | **"Because Edge Functions are a server-side technology, it's safe to connect directly to your database using any popular Postgres client."** `supabase-js` is "the recommended approach for most applications", and its wrapper hands the function "a `supabase-js` client (`ctx.supabase`) already scoped to the caller's Row Level Security policies, so you don't manage keys or authorization headers yourself"; **"Deployed edge functions are pre-configured to use SSL for connections to the Supabase database"** — the page states that the deployed path is encrypted but does **not** name the certificate **verification mode** (§17.9, B14) |
 | S8 | `postgrest.org/en/v12/references/api/schemas.html` | The configured schema "is added to the `search_path` of every request"; **"You can only switch to a schema included in `db-schemas`. Using another schema will result in an error"**; `Accept-Profile` / `Content-Profile` switching; "If you don't specify a Profile header, the first schema in the list is selected as the default schema" |
 | S9 | `postgrest.org/en/v12/references/transactions.html` | `SELECT current_setting('request.headers', true)::json` returns the request headers, lower-cased; `current_setting('request.jwt.claims', true)::json` returns the JWT claims; `current_role` / `current_user` give the impersonated role; the `db-pre-request` hook "can run after the Transaction-Scoped Settings are set and before the Main query" |
 | S10 | `postgresql.org/docs/15/sql-createfunction.html` | `SECURITY INVOKER` "is the default"; `SECURITY DEFINER` executes "with the privileges of the user that owns it"; "For security, `search_path` should be set to exclude any schemas writable by untrusted users"; "Particularly important in this regard is the temporary-table schema, which is searched first by default, and is normally writable by anyone"; **"by default, execute privilege is granted to `PUBLIC` for newly created functions"**; "To avoid having a window where the new function is accessible to all, create it and set the privileges within a single transaction", with the `BEGIN; CREATE FUNCTION …; REVOKE ALL … FROM PUBLIC; GRANT EXECUTE … TO admins; COMMIT;` pattern |
 | S11 | `postgresql.org/docs/15/ddl-rowsecurity.html` | "Superusers and roles with the `BYPASSRLS` attribute always bypass the row security system when accessing a table"; "Table owners normally bypass row security as well, though a table owner can choose to be subject to row security with `ALTER TABLE … FORCE ROW LEVEL SECURITY`"; "If no policy exists for the table, a default-deny policy is used, meaning that no rows are visible or can be modified" |
 | S12 | `postgresql.org/docs/15/explicit-locking.html` | Advisory locks "are automatically cleaned up by the server at the end of the session"; session-level locks "do not honor transaction semantics: a lock acquired during a transaction that is later rolled back will still be held following the rollback"; transaction-level requests "are automatically released at the end of the transaction, and there is no explicit unlock operation"; `FOR UPDATE` "causes the rows retrieved by the `SELECT` statement to be locked as though for update" |
+| S13 | `postgresql.org/docs/17/catalog-pg-default-acl.html` | The catalog "stores initial privileges to be assigned to newly created objects" — that is, the **default privileges applied at object-creation time**; that an object whose own ACL is null therefore carries the **hard-wired built-in default**, rather than a value re-read from `pg_default_acl` after creation; and that, consequently, the catalog's existence or its **row count alone establishes nothing** about whether the configured defaults are more permissive or more restrictive than the built-in ones |
+| S14 | `postgresql.org/docs/15/sql-set-transaction.html` | In a transaction set `READ ONLY`, `INSERT`, `UPDATE`, `DELETE`, `MERGE` and `COPY FROM` are disallowed where the target is not a temporary table; all `CREATE`, `ALTER` and `DROP` commands are disallowed; and `COMMENT`, `GRANT`, `REVOKE` and `TRUNCATE` are disallowed |
 
-The Postgres pages are the **version 15** pages deliberately: `supabase/config.toml` declares
-`major_version = 15`, so version-general documentation would be the wrong authority for this project.
+The Postgres pages behind **S10–S12** are the **version 15** pages deliberately: `supabase/config.toml`
+declares `major_version = 15`, so version-general documentation would be the wrong authority for this
+project. **S14** is also a version 15 page, cited as such by §17.1. **S13 is a version 17 page**: it is
+cited only by the hosted-verification addition (§17.8), for a finding about the **hosted** project, which
+reports PostgreSQL 17. That split between the version 15 and version 17 citations is the **B11** version
+mismatch (§17.6) surfacing in the bibliography itself, and it is left visible on purpose.
+
+> **Correction of authority, added 2026-08-07.** §17.2 records that the **hosted project reports
+> PostgreSQL 17**, not 15. The version-15 pages were therefore the right authority for the *declared*
+> project and the wrong one for the *running* one. Every S10–S12 statement quoted above was re-checked
+> against this and **none of the specific quotations changes between 15 and 17** — the `SECURITY
+> DEFINER` semantics, the `PUBLIC` default-execute grant, the `FORCE ROW LEVEL SECURITY` rule, the
+> default-deny rule and the advisory-lock semantics are identical in both. **No finding in this
+> document rests on a version difference.** What the mismatch does break is migration and test parity,
+> which is **B11** (§17.6), and it means any *future* platform claim must be anchored to the version 17
+> pages until the mismatch is deliberately resolved.
 
 ### 0.2 Repository, read from the working tree at `5940352`
 
@@ -85,6 +109,13 @@ hosted-project contact beyond public documentation, and correctly so — but the
 stated rather than worked around: **a review that cannot read the grants it depends on cannot approve
 a design that depends on them.** That is not a limitation of this document. It is the reason §5.4
 made the gate a gate.
+
+> **Status, 2026-08-07.** That live read has since been performed — read-only, by the repository owner,
+> under a prepared and sanitised procedure — and **§17 records it**. Every statement in §§1–16 below is
+> preserved as written at `5940352`, because a review that silently rewrites its own premises is not
+> auditable. Where §17 supersedes a status, the row or paragraph carries a forward pointer to it.
+> **The gate did its job**: two of the questions it held open are now answered from evidence, and the
+> answer to one of them was favourable.
 
 ### 0.4 Terminology: HMAC keys are not salts
 
@@ -144,6 +175,11 @@ does **not** make those schemas addressable over REST.
 `config.toml` is the **declared** state. It becomes the hosted state when `supabase config push` runs
 against the linked project. Nothing in the repository proves that has happened, and this review may
 not check.
+
+> **CONFIRMED, 2026-08-07 (§17.3).** The hosted Data API exposes exactly `public` and `graphql_public`.
+> The declared list and the hosted list agree, so there is **no drift**, and `vault` is confirmed absent
+> from the hosted list as well as the declared one. **B4 is closed** (§17.5). The paragraph below is
+> preserved as the pre-verification reasoning.
 
 So the honest status is: **declared in version control, one read away from confirmed.** That is a
 material improvement on the plan's §5.6.A fact (2), which recorded the exposed-schema list as
@@ -650,6 +686,12 @@ Vault.
 
 ### 8.2 The five questions, answered
 
+> **Two rows in this table are superseded by §17.4.** The **actual default grants** are now read, and
+> the answer is favourable: `anon`, `authenticated` and `PUBLIC` hold **no** `USAGE` on schema `vault`,
+> **no** `SELECT` on `vault.secrets` or `vault.decrypted_secrets`, and **no** `EXECUTE` on any Vault
+> routine. The table below is preserved as the documentation-only analysis; §17.4 states precisely how
+> narrow the closure is.
+
 | Question | Answer | Status |
 | -------- | ------ | ------ |
 | **Actual default grants** | **Not documented.** S5 states access "should be protected with the appropriate SQL privilege settings at all times" and that "which roles should have access to the `vault.secrets` table should be carefully considered" — it does not publish the defaults | **UNRESOLVED. Not resolvable from documentation.** Requires a live privilege read |
@@ -673,6 +715,16 @@ the HMAC key. The unexposed schema does not protect against a call that originat
 **Recommending Vault now would mean recommending a secret whose reachability nobody has checked.**
 §5.6.E already said exactly that. This review confirms it rather than clearing it.
 
+> **Reachability has now been checked (§17.4), and the specific hazard named in the paragraph above did
+> not materialise.** `authenticated` does **not** hold `SELECT` on `vault.decrypted_secrets`, so the
+> "any signed-in user calling any exposed function that happens to select from it" path requires the
+> *function's owner* to hold the privilege, not the caller — which is the intended definer-function
+> design rather than a leak. **The residual risk is unchanged in kind and now correctly located**: an
+> incautiously written `SECURITY DEFINER` routine, owned by a role that *can* read Vault, remains able
+> to disclose decrypted content to any caller permitted to execute it. §17.4 states that this review has
+> **not** enumerated existing definer routines for that behaviour, and §17.8 records why the project's
+> current function-grant discipline makes that a live rather than theoretical concern.
+
 ### 8.4 Key provisioning, rotation and local-development complications
 
 The plan covers rotation well. Three complications it does not cover:
@@ -695,6 +747,13 @@ The plan covers rotation well. Three complications it does not cover:
 ### 8.5 Vault conclusion
 
 **Appropriate in principle; unresolved in practice; not the blocking issue it was thought to be.**
+
+> **Revised 2026-08-07:** *appropriate in principle, and now* **evidenced in practice for the question
+> B3 asked** (§17.4). Vault is installed as `supabase_vault`, the schema and both objects exist, and no
+> API role can reach them directly. What remains unresolved about Vault is no longer *who can read it*
+> but B10's lifecycle — provisioning into local and CI environments, and rotation — plus the indirect
+> definer-routine exposure §8.3 now names. `pgsodium` is **disabled** on the hosted project (§17.2),
+> which is a fact the implementation phase must not assume away if it reaches for a pgsodium primitive.
 
 Vault remains the correct home for an **HMAC key**. Its unresolved grant question (B3) is real and
 must be closed by a live read. But §5 and §6 have displaced it: the decisive question for R8 is no
@@ -1291,11 +1350,29 @@ which this phase forbids.
 cannot be verified without a local Postgres, and this phase's prohibition on Docker and local stacks —
 correct for a design review — means the implementation phase must budget for one before it starts.
 
+#### 13.2.1 What the 2026-08-07 hosted read changed in this matrix
+
+**Nothing became a passing test.** A one-off configuration read is evidence, not a test, and none of the
+twenty-seven is now automated. Three moved from *no evidence* to *partial evidence*:
+
+| # | Movement |
+| - | -------- |
+| **T-20** | **Its `anon`/`authenticated` half is satisfied by evidence** (§17.4), and its exposed-schema half is confirmed (§17.5). It is **not closed as a test**: it must still be asserted automatically, because a grant that is correct today is not a grant that stays correct. §17.4 also narrows what T-20 must assert — direct privilege only; the indirect definer path needs its own assertion |
+| **T-13** | Unchanged for `noor_ai.*`, which does not exist (§17.2). But §17.8 gives it a **second, concrete target**: the *existing* `public` functions, where the evidence shows the hardening convention was applied to one of three |
+| **T-22** | **Partially evidenced, and not by a probe.** Network restrictions are disabled (§17.3, §17.10), so the endpoints are not IP-restricted by configuration. That is consistent with T-22's expected answer of "yes, reachable" and is the *configuration-level* half of it. **No connection was attempted from any network**, so the measured half remains unrun |
+
+T-23 is **not** satisfied and has in fact hardened into **B14** (§17.9). T-24 to T-27 are untouched.
+
 ---
 
 ## 14. Conclusion
 
 > ## **BLOCKED**
+
+> **Re-affirmed 2026-08-07 after the hosted read-only verification of §17.** The verification closed
+> **B3** narrowly and **B4** outright, and found **five new blockers**. The verdict does not move,
+> because the verdict never rested on B3 or B4: it rests on **B1** and **B2**, which are design defects
+> that no verification can close. A favourable privilege read is a good result and not an approval.
 
 Not for want of analysis, and not because the remaining questions are unanswerable. R8 is
 substantially **narrowed** — four questions the plan left open are now closed, one of its three
@@ -1309,14 +1386,19 @@ and neither can be closed by documentation.
 | - | ------- | ------ | ------------ |
 | **B1** | **Global-denial via direct RPC.** Global counters, concurrency leases and (if pre-debited) the spend allowance are consumable by any authenticated caller with no provider request. Plan §5.3's "the effect is self-denial" is **false as scoped** | **NEW — CRITICAL** | A design change: §5.7's D1 or D2. Not by verification |
 | **B2** | **Spend poisoning via direct finalize.** Token counts are caller-supplied on a client-reachable RPC; a handful of calls trips the global spend ceiling and its `503` | **NEW — CRITICAL** | Same. Has **no complete mitigation** under any user-JWT-reachable design |
-| **B3** | **Vault privilege verification.** The default grants on `vault.secrets` / `vault.decrypted_secrets` are unverified — S5 does not publish them, so whether `anon` or `authenticated` can reach the HMAC key is unknown. Scope: **who can read the key store**, not where the key lives or how it rotates | **CARRIED — confirmed unclosable from documentation** | One live privilege read (T-20) |
-| **B4** | Exposed-schema list unverified | **RESOLVED** to `public` + `graphql_public` from `config.toml:13` + S8. One live drift check remains | Read the dashboard once |
+| **B3** | **Vault privilege verification.** The default grants on `vault.secrets` / `vault.decrypted_secrets` are unverified — S5 does not publish them, so whether `anon` or `authenticated` can reach the HMAC key is unknown. Scope: **who can read the key store**, not where the key lives or how it rotates | **CLOSED 2026-08-07 for direct access only** (§17.4). `anon`, `authenticated` and `PUBLIC` hold no `USAGE` on `vault`, no `SELECT` on either object and no `EXECUTE` on any Vault routine. **Not closed for indirect disclosure** through an unrelated `SECURITY DEFINER` routine, which was not enumerated | Direct half: closed by evidence, to be held closed by T-20. Indirect half: a definer-routine audit plus its own assertion |
+| **B4** | Exposed-schema list unverified | **CLOSED 2026-08-07** (§17.5). Hosted Data API exposes exactly `public` and `graphql_public`, matching `config.toml:13`. **No drift.** `vault` is confirmed unexposed on the hosted project | Done. Re-checked by T-20's second half whenever the schema list changes |
 | **B5** | Exposed-schema tension for definer functions (plan §5.7 point 5) | **CONDITIONALLY DISSOLVED.** It is a property of the PostgREST transport, not of the design. A direct connection removes it — and satisfies S3's warning instead of deviating from it | Adopt §7.7, or sign off the deviation |
 | **B6** | **Function/table ownership unverified.** §5.7's entire RLS-bypass argument depends on it, and it is asserted nowhere | **NEW** | Explicit `OWNER TO` in the migration + T-18 |
 | **B7** | **Monthly spend ceiling has no retention design.** §5.2's flat 48 hours cannot support §4.8's monthly ceiling | **NEW** | §10.3's aggregated-accumulator resolution, recorded in the data inventory |
 | **B8** | **Lease TTL vs handler budget unspecified.** Too short and real concurrency silently exceeds the ceiling | **NEW** | §12.5's rule, derived from §F.7 |
 | **B9** | **Identifier separation / domain separation.** Two of the three derived identifiers are currently specified to be **equal** — contract §H.3 makes `user_hash` "the same salted hash as `safety_identifier`" — so an exported log line joins to provider-side data by string comparison. Scope: **how the three outputs are kept non-comparable**, and whether that is done with independent keys or one domain-separated master key | **NEW — upgraded from "unassigned" to "specified as equal"** | §11.4.1's requirement, met by Pattern A (recommended) or a cryptographically reviewed Pattern B (§11.4.3–§11.4.4) |
 | **B10** | **HMAC key lifecycle — provisioning and rotation.** No local/CI provisioning path exists, so `supabase db reset` yields a store that migrates cleanly and fails at first call; and no rotation procedure is specified for any of the three keys (who rotates, on what trigger, verified how). Scope: **getting a key into every environment and changing it safely**, distinct from B3's "who can read it" | **NEW** | A provisioning step + a rotation procedure per key + T-19 |
+| **B11** | **PostgreSQL major-version mismatch.** `supabase/config.toml` declares `major_version = 15`; the hosted project reports **17**. Migrations, `db reset`, the shadow database and every one of §13.2's twenty-five database tests would run against a different major version than production | **NEW 2026-08-07** (§17.6) | A deliberate decision — align the declaration upward, or record the divergence with its consequences. **Not changed in this phase** |
+| **B12** | **The Data API automatically exposes new tables.** "Automatically expose new tables" is **enabled** on the hosted project, so a table created without an explicit privilege posture is published rather than private-by-default. §10.1's three tables would land in `noor_ai`, but the setting is project-wide and the first migration is where it bites | **NEW 2026-08-07** (§17.7) | A pre-migration gate: assert the final privilege state per table, and decide the setting deliberately. **Not toggled in this phase** |
+| **B13** | **Function privilege and Data API exposure posture unverified.** Two **independent** observations, not joined: (i) *repository evidence* — of the three existing `public` functions, only `handle_new_user()` carries an explicit `revoke … from public, anon, authenticated`; `set_updated_at()` and `enforce_client_plan_code()` do not, and their effective hosted privileges were never read; (ii) *dashboard evidence* — the dashboard displayed **"2 of 3 functions exposed"**, a bare count whose semantics were not established from official documentation and which did not identify the functions. `pg_default_acl` holds **24 rows** whose contents were not read, so the creation-time default for *new* functions is unproven in either direction | **OPEN — NEW 2026-08-07** (§17.8) | A per-signature audit: effective `EXECUTE` for `PUBLIC`/`anon`/`authenticated`/`service_role`, the exposure state of the *same* exact function, and whether it is invocable through PostgREST. Plus: enumerate the default ACLs, and make the `REVOKE`/`GRANT` pair mandatory and asserted (T-13, T-12) rather than conventional |
+| **B14** | **TLS: enforcement disabled, verification mode unresolved.** SSL enforcement is **disabled**, so the endpoints accept non-SSL connections. A CA certificate download exists; **no `verify-full` guidance was shown.** S7 says deployed Edge Functions are "pre-configured to use SSL" but does not state the verification mode — and `require` does not verify the certificate or hostname | **NEW 2026-08-07** (§17.9) | Enforce SSL deliberately, and prove the client's verification mode (T-23). **Nothing enabled in this phase** |
+| **B15** | **Supavisor compatibility with a dedicated least-privilege LOGIN role is unverified.** Transaction pooling is the leading transport, but no official source establishes that the shared pooler accepts a non-`postgres` custom role in its tenant-qualified username. If it does not, §7.7's transport cannot carry §7.3's credential and the whole direction fails | **NEW 2026-08-07** (§17.11) | An official documentation answer, or a controlled test. **Blocking for the recommended direction** |
 
 #### 14.1.1 The five key-management concerns, and which blocker owns each
 
@@ -1325,7 +1407,7 @@ owner is a concern nobody closes.
 
 | Concern | Question it answers | Owner | Status |
 | ------- | ------------------- | ----- | ------ |
-| **Vault privilege verification** | Who can *read* the key store — can `anon` or `authenticated` reach `vault.decrypted_secrets`? | **B3** | **UNRESOLVED.** Not closable from documentation; needs a live privilege read (T-20) |
+| **Vault privilege verification** | Who can *read* the key store — can `anon` or `authenticated` reach `vault.decrypted_secrets`? | **B3** | **RESOLVED 2026-08-07 for direct access — no** (§17.4). Neither role, nor `PUBLIC`, holds any privilege on the Vault schema, its relations or its routines. **Still open for indirect disclosure** via an unrelated `SECURITY DEFINER` routine, which was not enumerated. To be held closed by T-20 |
 | **HMAC key storage** | *Where* each key lives — Vault for the in-database key, the function environment for the handler-side keys (plan §6.3) | **§8.5 / §11.6** | **RECOMMENDED**, conditional on B3. Vault is the right *kind* of home; the recommendation does not survive B3 resolving badly |
 | **Key separation / domain separation** | How the three derived identifiers are kept non-comparable — independent keys, or one master key with explicit domain separation? | **B9** | **UNRESOLVED, and currently defective**: two of the three are specified as equal (§11.4.2). Pattern A recommended (§11.4.4) |
 | **Local / CI provisioning** | How a key reaches every environment, given it cannot be in a migration | **B10** | **UNRESOLVED.** No path exists; `supabase db reset` yields a store that fails at first call |
@@ -1349,7 +1431,9 @@ dissolves **B5**. Three problems, one change of transport.
 
 Vault is not displaced; it remains the right home for the rate-limit **HMAC key** (§11.6) and **B3
 still stands**. What has changed is that the key's location is no longer the question on which R8
-turns. The question R8 turns on is the one the plan did not identify as decisive: **can a client reach
+turns. *(2026-08-07: B3's direct half is now closed favourably — §17.4 — which strengthens Vault as the
+right home rather than displacing it. The sentence below is unaffected, and §17.11 records that the
+promotion of §7.7 now carries **B15** as a condition it did not have when this was written.)* The question R8 turns on is the one the plan did not identify as decisive: **can a client reach
 the RPC at all**.
 
 The promotion of §7.7 survives the §7.3.1 correction. It never depended on the database being
@@ -1360,13 +1444,21 @@ a credential the client does not hold beats a credential the client does hold.
 
 1. A design decision on §5.7's **D1 or D2** — closing B1 and B2. **This is a decision, not a
    verification**, and it belongs to a reviewer.
-2. One live privilege read closing **B3** and confirming **B4** (T-20, T-13).
+2. ~~One live privilege read closing **B3** and confirming **B4**~~ — **done 2026-08-07 (§17)**, with
+   B3 closed only for direct access and its indirect half still open (§17.4). This step is the only one
+   of the five that the verification advanced.
 3. Ownership, TTL, retention and identifier separation specified — **B6–B9**, all closable on paper.
    B9 additionally requires choosing between §11.4.3's Pattern A and Pattern B, and a cryptographic
    review if Pattern B is chosen.
 4. A local Postgres for the twenty-five tests that need one, and a provisioning path closing **B10**.
+   **§17.6 adds a precondition to this step**: the local Postgres must be the *hosted* major version, or
+   the parity it is supposed to provide is fictional.
 5. A revised port (§12.9) reviewed as a contract change, and the AI-2 source-scan assertions narrowed
    deliberately (T-21).
+6. **Added 2026-08-07:** the five new blockers — **B11** (version parity), **B12** (automatic table
+   exposure), **B13** (function privilege and exposure posture unverified), **B14** (TLS enforcement and
+   verification mode) and **B15** (Supavisor custom-role compatibility). B15 is the sharpest of the five,
+   because it can invalidate the recommended transport outright rather than merely constrain it.
 
 No unsafe design has been selected to make progress. §7.2's service-role option was evaluated on its
 merits and refused on proportionality, not adopted for convenience.
@@ -1403,6 +1495,12 @@ contract, and both are listed so that phase does not have to rediscover them.
 
 ## 16. What this review did not do
 
+> **Scope note added 2026-08-07.** This section describes the **design review** — the work recorded in
+> §§1–15, performed at `5940352` with no hosted contact of any kind. It is preserved exactly, because it
+> is the accurate account of that work. It is **no longer a description of the whole document**: §17
+> records a later, separate, read-only hosted verification, and **§17.12 is that phase's equivalent
+> statement**. Read the two together; neither supersedes the other.
+
 - **It did not implement the quota store.** No migration, no SQL file, no function, no schema, no
   table, no policy, no grant, no role.
 - **No key, salt, password, role or other secret was generated, read, displayed or stored.** No
@@ -1410,12 +1508,435 @@ contract, and both are listed so that phase does not have to rediscover them.
   of terminology and design analysis only — nothing was provisioned to accompany them.
 - **No network probe of any kind was performed.** §7.3.1's reachability analysis is reasoned from
   documentation and stated as an assumption to be tested (T-22), not measured.
-- No hosted Supabase project was contacted. No `supabase link`, `db push`, `config push`,
-  `functions deploy` or `secrets set`. No local Supabase stack, no Docker.
+- No hosted Supabase project was contacted **during the design review**. No `supabase link`, `db push`,
+  `config push`, `functions deploy` or `secrets set`. No local Supabase stack, no Docker. *(The later
+  verification of §17 read the hosted project read-only and wrote nothing to it — §17.12.)*
 - No OpenAI request. No provider key exists.
 - No application, Edge Function, dependency, package or configuration file was changed.
-- **AI-3 remains incomplete**, and R8 remains `Blocked` — now with ten enumerated blockers instead of
-  three, which is a more accurate picture rather than a worse one.
+- **AI-3 remains incomplete**, and R8 remains `Blocked` — now with **fifteen** enumerated blockers
+  instead of three, which is a more accurate picture rather than a worse one. Ten came from the design
+  review; B11–B15 came from the §17 verification.
 - **Noor AI remains unavailable to real users.** The production dependency graph still fails closed
   with `503`.
 - **NoorLife is not production-ready.**
+
+---
+
+## 17. Hosted read-only verification — completed 2026-08-07
+
+This section records the live read that §0.3 said the review could not perform and that §14.3 point 2
+required. It is **evidence, not approval.** It closes B3 narrowly and B4 outright, adds B11–B15, and
+leaves the verdict of §14 exactly where it was.
+
+### 17.1 What was done, by whom, and under what constraints
+
+| | |
+| --- | --- |
+| **Who** | The **repository owner**, manually. No agent, tool or script in this repository connected to the hosted project |
+| **Part A** | One SQL block in the hosted SQL Editor, opening `begin; set transaction read only;`, containing a **single `SELECT`** over `pg_catalog` only, and ending `rollback;`. S14's read-only rule (`postgresql.org/docs/15/sql-set-transaction.html`) forbids every `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER`, `DROP`, `GRANT`, `REVOKE`, `COMMENT` and `TRUNCATE` inside it, and the transaction was discarded regardless |
+| **Part B** | Dashboard **label reading only.** No reveal, copy, download, regenerate, reset or rotate control was pressed. No setting was changed |
+| **What was reported back** | **Sanitised findings only.** The findings below are the whole of what was transmitted |
+| **What was deliberately never requested** | Hostnames, project references, connection strings, usernames, passwords, tokens, JWTs, API keys, IP addresses, CIDRs, certificates, secret names, secret identifiers, secret descriptions and secret values. **None of these appears anywhere in this section, and none was seen by the author of it** |
+| **Vault content** | `vault.decrypted_secrets` was **never in a `FROM` clause.** It appears in the procedure only as an argument to `to_regclass()` and to the catalog privilege functions. No secret was decrypted, listed, counted by name, or read |
+
+Two consequences of that design worth stating, because they bound what §17.4 may claim:
+
+1. **The evidence is a point-in-time configuration read, not a test.** §13.2.1 records what that does and
+   does not move in the test matrix. A privilege that is correct today is not a privilege that stays
+   correct, and nothing automated currently asserts any of it.
+2. **The procedure asked about *direct* privilege only.** It did not, and by construction could not,
+   establish what an arbitrary existing routine does with the privileges *its owner* holds. §17.4 is
+   scoped to exactly what was asked.
+
+### 17.2 SQL catalog evidence
+
+| Finding | Reported | What it settles |
+| ------- | -------- | --------------- |
+| PostgreSQL server major version | **17** | Contradicts `config.toml`'s declared `major_version = 15` → **B11** (§17.6) |
+| `supabase_vault` installed | **true** | Vault is present, under that extension name |
+| `pgcrypto` installed | **true** | `extensions.hmac` is available for §7.5 / §11's constructions, if either is ever adopted |
+| `pgsodium` installed | **false** | Any design reaching for a pgsodium primitive must not assume it |
+| Schema `vault` exists | **true** | |
+| `vault.secrets` and `vault.decrypted_secrets` exist | **true** | The objects S5 describes are the objects present |
+| Schema `noor_ai` exists | **false** | **The quota store does not exist.** Nothing was pre-created, and there is nothing to un-create |
+| `anon`, `authenticated`, `PUBLIC` — `USAGE` on schema `vault` | **none** | ↓ |
+| `anon`, `authenticated`, `PUBLIC` — `SELECT` on `vault.secrets` | **none** | ↓ |
+| `anon`, `authenticated`, `PUBLIC` — `SELECT` on `vault.decrypted_secrets` | **none** | ↓ |
+| `anon`, `authenticated`, `PUBLIC` — readable Vault relations | **zero** | ↓ |
+| `anon`, `authenticated`, `PUBLIC` — writable Vault relations | **zero** | ↓ |
+| `anon`, `authenticated`, `PUBLIC` — executable Vault routines | **zero** | Together, the five rows above close **B3** for direct access (§17.4) |
+| `service_role` and `postgres` can access Vault content directly | **true** | Expected, and the mechanism §7.3 / §9.1 relies on: a definer function owned by such a role can read a Vault-held key that its caller cannot |
+| `postgres` attributes | `LOGIN`, `CREATEDB`, `CREATEROLE`, `REPLICATION`, `BYPASSRLS`; **not** `SUPERUSER` | Consistent with S6 and with `roles-superuser`. **`CREATEROLE` is present**, so §7.3's dedicated role is creatable in principle (§17.11) |
+| `service_role` attributes | `BYPASSRLS`, **no `LOGIN`** | **A sharpening of §7.2 that the review did not have.** `service_role` cannot open a PostgreSQL session at all — it is a PostgREST-only role. So the rejected service-role option was never even available over a direct connection, and a direct-connection design *necessarily* requires a new `LOGIN` role rather than reuse of an existing one. §7.3 becomes the only candidate rather than the preferred one |
+| `pg_default_acl` | **24 rows**, contents not read | A count is not a posture → **B13** (§17.8) |
+| PostgREST exposed-schema setting in role configuration | **not returned** | The setting is not carried in role configuration on this project, so the dashboard is the authority for B4 (§17.5). Expected, and recorded so nobody reads the empty result as an empty schema list |
+
+### 17.3 Dashboard evidence
+
+| Finding | Reported |
+| ------- | -------- |
+| Exposed Data API schemas | exactly **`public`** and **`graphql_public`** |
+| Is `vault` exposed? | **No** |
+| Automatically expose new tables | **enabled** → **B12** (§17.7) |
+| Current tables exposed | **0 of 1** — *see the reading caution below* |
+| Current functions exposed | **2 of 3** — *a count only; the two functions were not identified* → **B13** (§17.8) |
+| Extra search path | `public`, `extensions` |
+| Connection methods offered | direct, transaction pooler, session pooler — **all three** |
+| Direct connection addressing | **IPv6 by default**; IPv4 requires an add-on that is **not enabled** |
+| Transaction pooler | offered, and described as appropriate for stateless/serverless functions |
+| SSL enforcement | **disabled** → **B14** (§17.9) |
+| CA certificate download | **available** |
+| `verify-full` guidance | **not shown** → **B14** |
+| Network restrictions | **disabled** — database and pooler access is not IP-restricted (§17.10) |
+| Connection and disconnection logging | **disabled** |
+| Compute size | **Nano** |
+| Pool size | **15** per user/database |
+| Maximum client connections | **200** |
+| Database-password reset control | exists; **not pressed** |
+| Extensions UI | `pgcrypto` **enabled**; `pgsodium` **disabled**; **no separate `vault` entry shown** |
+
+**Three readings that must not be made from this table.**
+
+1. **"0 of 1 current tables is exposed" must not be read as a privilege fact.** The one table is
+   `public.profiles`, and `20260729140000_fix_profile_trigger_rls.sql:94` grants
+   `select, insert, update` on it to `authenticated` — which the app depends on. So either the label
+   counts something narrower than "reachable by an API role", or it disagrees with the migration. **The
+   dashboard label's precise meaning was not established from official documentation, so it is recorded
+   as reported and relied on for nothing.** Resolving it belongs to T-13, which asserts actual
+   privileges rather than reading a summary.
+2. **"No separate `vault` extension entry" must not be read as "Vault is absent."** The SQL catalog is
+   the authority and it reports `supabase_vault` installed with both objects present (§17.2). The
+   Extensions UI simply does not surface it as its own toggle on this project.
+3. **"2 of 3 current functions are exposed" must not be mapped onto any particular functions.** The
+   dashboard supplied a **count only**. It did not name the two, the definition of its "exposed" label
+   was not established from official documentation, and no per-function privilege or reachability read
+   was performed. It is recorded as reported and, like the table count, **relied on for nothing.** In
+   particular it must not be read as confirming which functions lack an explicit `REVOKE` — §17.8 keeps
+   that repository fact and this dashboard fact **separate and unjoined**.
+
+### 17.4 B3 — CLOSED for direct access, and only for that
+
+> **`anon`, `authenticated` and `PUBLIC` cannot reach Vault content directly.** No `USAGE` on the
+> schema, no `SELECT` on `vault.secrets`, no `SELECT` on `vault.decrypted_secrets`, zero readable
+> relations, zero writable relations, zero executable routines.
+
+This is the favourable answer, and it is the answer to the question **B3 actually asked** — §8.2's
+"actual default grants" row and §14.1.1's "who can *read* the key store". Two things follow:
+
+- **§8.3's specific alarm did not materialise.** The scenario it named — "if `authenticated` held
+  `SELECT` on `vault.decrypted_secrets`, then any signed-in user calling any exposed function that
+  happens to select from it … could reach the HMAC key" — required a privilege that is absent.
+- **Vault is confirmed as the right *kind* of home for the rate-limit HMAC key** (§11.6), and the
+  recommendation in §8.5 that was conditional on B3 no longer fails on this ground.
+
+**What this does not prove, stated as plainly as the closure.**
+
+| Not proven | Why |
+| ---------- | --- |
+| That **no** path exists by which `anon` or `authenticated` obtains decrypted Vault content | Only *direct* privilege was tested. `SECURITY DEFINER` runs with its **owner's** privileges (S3, S10), and §17.2 confirms `postgres` and `service_role` *can* read Vault. **A routine owned by such a role, that selects from `vault.decrypted_secrets` and returns or leaks the value, discloses it to every caller holding `EXECUTE` on that routine** — and B3's closure says nothing about whether such a routine exists |
+| That existing definer routines are safe in this respect | **They were not enumerated.** No routine body, definition, owner or privilege set outside the Vault schema was examined. §17.8's finding — that the project's function-grant convention was applied to one of three existing functions — is precisely the reason this is a live concern rather than a formality |
+| That the privileges will stay this way | A configuration read is not an assertion. T-20 must automate it (§13.2.1) |
+| That Vault's grants survive an extension upgrade | Out of scope of any point-in-time read |
+
+**Therefore B3's status is: direct half CLOSED by evidence; indirect half OPEN, and newly specified.**
+The indirect half is not a re-opening of B3 under another name — it is a distinct question that the
+original B3 wording ("who can read the key store") did not cover, and it now has somewhere to live.
+
+### 17.5 B4 — CLOSED
+
+The hosted Data API exposes exactly **`public`** and **`graphql_public`**. `supabase/config.toml:13`
+declares exactly `["public", "graphql_public"]`. **The declared list and the hosted list agree: there is
+no drift.**
+
+Three consequences:
+
+1. **§1.2's remaining drift check is discharged.** §1's `RESOLVED` becomes confirmed on the project as
+   well as in version control.
+2. **`vault` is confirmed unexposed on the hosted project**, not merely absent from the declaration. So
+   S8's rule — an unlisted schema is unreachable over PostgREST regardless of grants — applies to Vault
+   as a hosted fact. Combined with §17.4, Vault is now unreachable to API roles by **two** independent
+   controls.
+3. **The extra search path matches too** — `public`, `extensions`, as declared at `config.toml:14`. This
+   is a separate setting from exposure (§1.1's closing paragraph) and its agreement is recorded for the
+   same drift reason.
+
+`config.toml`'s comment at line 11 — that `graphql_public` is declared because "the hosted default
+exposes it. Omitting it here would silently remove it there" — is now **verified as correct** rather
+than merely prudent.
+
+### 17.6 B11 — the PostgreSQL major-version mismatch
+
+| | |
+| --- | --- |
+| Declared, `supabase/config.toml:20` | `major_version = 15` |
+| Hosted, reported by the server | **17** |
+
+**Why this blocks rather than annoys.** `major_version` governs the local stack, the shadow database
+used to diff migrations, and therefore every one of §13.2's twenty-five database-dependent tests. A test
+suite that passes on 15 makes no statement about 17. §14.3 point 4 asks for "a local Postgres for the
+twenty-five tests that need one" — that Postgres has to be the *hosted* major version, or the parity it
+exists to provide is fictional and the tests are theatre.
+
+**What is *not* affected, checked rather than assumed.** Every platform statement this review relies on
+(S10–S12: `SECURITY DEFINER` semantics, the `PUBLIC` default-execute grant, `FORCE ROW LEVEL SECURITY`,
+the default-deny rule, advisory-lock semantics) is identical in 15 and 17. **No finding in §§1–16 rests
+on a version difference**, and §0.1 carries that correction. What changes is the *authority* for future
+claims, which must be the version 17 pages.
+
+**Not resolved here, deliberately.** `config.toml` was **not changed in this phase.** Raising the
+declared version is a decision with consequences for every existing migration and for the local stack,
+and it belongs to whoever owns that decision. Two readings are available and this document does not pick
+between them: align the declaration upward to match production, or record the divergence with its
+consequences accepted. **What is not available is leaving it undecided and calling the tests parity.**
+
+### 17.7 B12 — the Data API automatically exposes new tables
+
+**"Automatically expose new tables" is enabled.** So the default posture for a newly created table is
+*published*, not private.
+
+**Why this is a pre-migration gate and not a footnote.** `PRE_RELEASE_BACKLOG.md` §4.1's rule — "No
+production tables exist for any module, deliberately" — means the very next table this project creates
+will be the first one to meet this setting. §10.1's three tables are specified for the **unexposed**
+`noor_ai` schema, which is the correct shape and is *not* what makes them safe here: the setting is
+project-wide, and the protection comes from the schema being absent from the exposed list (§17.5), not
+from the setting being off. That is a defence that works, resting on a mechanism one dashboard toggle
+away from a very different default.
+
+The interaction with §3.1's third row is the real hazard. S1's documented exposure procedure re-grants
+`ALL ON ALL TABLES` and `ALL ON ALL ROUTINES` to `anon, authenticated, service_role` and then applies
+three `ALTER DEFAULT PRIVILEGES` statements that make those grants **automatic for future objects**. A
+project with automatic exposure enabled *and* those default privileges in place has an
+open-by-default posture in any schema they cover — which is exactly what §17.8 cannot rule out.
+
+**Requirement, for the implementation phase:** assert the **final** privilege state of every created
+table and function, per object, in a test (T-13). Do not infer it from the migration statements, and do
+not rely on the setting being off. **The setting was not toggled in this phase.**
+
+### 17.8 B13 — function privilege and Data API exposure posture unverified
+
+**Two independent observations, from two different evidence sources.** They are recorded separately and
+**not joined**: neither is offered as the explanation of the other.
+
+**Observation 1 — repository evidence.** The hardening convention is applied to **one of the three**
+existing `public` functions. From the migrations:
+
+| Function | Migration | Explicit `REVOKE` in version control? |
+| -------- | --------- | ------------------------------------- |
+| `public.handle_new_user()` | `20260729120000:73`, re-asserted `20260729140000:57` | **Yes** — `revoke all on function … from public, anon, authenticated` |
+| `public.set_updated_at()` | `20260729120000:31` | **No.** No explicit revoke. `security invoker`, `set search_path = ''` |
+| `public.enforce_client_plan_code()` | `20260801120000:64` | **No.** No explicit revoke. **`security definer`**, `set search_path = public` |
+
+S10 states that "by default, execute privilege is granted to `PUBLIC` for newly created functions" —
+**unless** it is revoked, or unless default privileges change it. So what is established here is a
+version-control fact about the *statements*: two of the three functions carry no explicit
+`REVOKE … FROM PUBLIC, anon, authenticated`. **Their effective privileges on the hosted project were
+not read.** No per-function privilege query was run, and `pg_default_acl`'s **24 rows** (§17.2) were not
+enumerated, so a default-privilege rule may have altered the creation-time posture in either direction.
+
+**Observation 2 — dashboard evidence.** The dashboard displayed **"2 of 3 functions exposed."** That
+count is the entirety of this evidence. It did **not** identify which functions it counted, and the
+meaning of its "exposed" label was **not** established from official documentation. §17.3's first
+reading caution applies to this count exactly as it applies to the table count.
+
+**What the available evidence does not prove.** Stated explicitly, because an earlier draft of this
+section asserted a correspondence between the two observations that the evidence does not support:
+
+| Not proven | Why |
+| ---------- | --- |
+| **Which two functions the dashboard counted** | Only a count was supplied. No per-function listing was captured, so the identity of the two is unknown |
+| **Whether the dashboard count is based solely on PostgreSQL `EXECUTE` privileges** | The label's definition was not established from official documentation. It may reflect privileges, PostgREST reachability, some metadata rule, or a combination |
+| **Whether trigger-returning functions are counted, or are callable through the Data API** | Not established. Two of the three functions `returns trigger`, and how the dashboard and PostgREST each treat such a function was not verified |
+| **Whether a dashboard per-function toggle, or another metadata rule, affects the count** | Not established. If such a mechanism exists on this project, the count may reflect it rather than — or in addition to — catalog privileges |
+| **That the two functions lacking an explicit `REVOKE` are the two the dashboard counted, or that the missing `REVOKE` is the mechanism producing the count** | This would require every row above to be resolved first. It is an inference, not a finding, and it is **withdrawn** |
+
+The arithmetic coincidence — one of three hardened in the repository, two of three counted by the
+dashboard — is therefore **relied on for nothing**. The two observations stand separately, and **each is
+independently sufficient reason** for the exact privilege and exposure audit required below.
+
+**What is established, and is not weakened by any of the above.**
+
+- The repository's own hardening convention is applied **by hand, per function**, and two of the three
+  existing functions do not carry it — one of them `SECURITY DEFINER`. That is a version-control fact
+  and needs no dashboard evidence to support it.
+- It demonstrates §9.4 hazard 2 concretely rather than abstractly: a new signature is a new object with
+  whatever the creation-time default is, and the revoke does not follow it.
+- `pg_default_acl` holds **24 rows whose contents were not read** (§17.2). S13 is explicit that a null
+  ACL means the hard-wired default and that `pg_default_acl` "is only consulted during object creation".
+  So 24 rows means **some non-default creation-time posture is configured somewhere**, and the count
+  alone establishes nothing about its direction: those rows could tighten defaults or, as in S1's
+  step 6, grant `ALL ON ROUTINES` to `anon, authenticated, service_role` automatically for every future
+  function in a schema. **The count does not prove safe function defaults, and it does not prove unsafe
+  ones either.** It proves the question is open.
+- §5's whole surface is a **non-trigger** function, so whatever is or is not reachable today, the next
+  function created is the one that matters.
+
+**Requirements, both mandatory for any future quota migration:**
+
+1. **Explicitly `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated`** on every function created, in the
+   **same transaction** as the `CREATE` (S10's pattern, §4 component 6), and **`GRANT EXECUTE` only on
+   reviewed signatures to reviewed roles.** Never rely on a default, in either direction.
+2. **Enumerate the 24 default-ACL rows** and assert the result, per schema and per object type, so the
+   creation-time posture is a reviewed fact. This extends T-13 and pairs with T-12's
+   every-overload assertion.
+
+**Required future verification, before B13 can close.** An exact, per-object audit — not a summary
+count — that:
+
+1. **Enumerates every function in `public` on the hosted project by exact signature**, including every
+   overload.
+2. **Records effective `EXECUTE` for `PUBLIC`, `anon`, `authenticated` and `service_role`** on each of
+   those exact signatures.
+3. **Records the dashboard / Data API exposure state for that same exact function**, so the two are
+   compared per object rather than by count.
+4. **Verifies whether the function can actually be invoked through PostgREST**, which is the question
+   the exposure label is being read as answering.
+
+**Constraints on that verification, binding while this remains a documentation phase:**
+
+- **No function that changes data may be invoked** — under any transport, for any purpose.
+- **Trigger functions must not be experimentally invoked against hosted data.** Determining how they are
+  treated is a documentation and privilege-reading exercise, not a live call.
+
+### 17.9 B14 — TLS enforcement is disabled, and certificate validation is unresolved
+
+| Finding | Consequence |
+| ------- | ----------- |
+| SSL enforcement **disabled** | The database and pooler endpoints **accept connections that do not use SSL**. Nothing at the server refuses a plaintext session |
+| CA certificate download **available** | The material for `verify-full` exists |
+| **No `verify-full` guidance shown** | The dashboard does not state, and this verification did not establish, what verification mode any client will actually use |
+
+**Why the review's earlier partial comfort does not survive intact.** `connect-to-postgres` states that
+"Deployed edge functions are pre-configured to use SSL for connections to the Supabase database" — which
+is genuinely reassuring about *encryption*. It does not name the **mode**, and `ssl-enforcement`
+distinguishes them sharply: `require` "does not verify the server certificate or hostname", while
+`verify-full` "verifies the CA certificate, and confirms the hostname matches the certificate". **A
+credential sent over an encrypted-but-unauthenticated channel is a credential offered to whoever is in
+the middle**, which is T-23's whole point and §7.3's residual risk in concrete form.
+
+Combined with enforcement being **off**, the honest statement is: encryption on the deployed path is
+documented, enforcement is not configured, and **verification is unknown**. That is three different
+properties and only one of them is settled.
+
+**Nothing was enabled and nothing was downloaded in this phase.** Enforcing SSL is a project-wide change
+affecting every existing client, and it is a decision, not a cleanup.
+
+### 17.10 Network restrictions are disabled — and this is not an authentication finding
+
+**Network restrictions are disabled; database and pooler access is not IP-restricted.**
+
+§7.3.1 said this review "has not read the project, so it must assume reachable." **That assumption is
+now supported by configuration** — there is no IP allow-list standing in front of either endpoint.
+§7.3.1's discipline applies unchanged and matters more now that the fact is established rather than
+assumed:
+
+- **Reachability is not authentication.** An endpoint that answers a TCP connection has authenticated
+  nobody. This finding does **not** make the design weaker than §7.3.1 already assumed, and it must
+  not be presented as a vulnerability in itself.
+- **What protects the endpoint is the credential and the narrowness of the role**, exactly as §7.3.1
+  point 3 states. Nothing here changes that.
+- **§7.3.1 point 5 is now answered, and unfavourably for the design.** It hoped IP allow-listing might
+  serve as defence in depth. `network-restrictions` states that "Network restrictions apply to all
+  connection routes, whether pooled or direct" and — decisively — **"With network restrictions applied,
+  Edge functions lose direct access to the database."** So the two are **mutually exclusive** for this
+  design, not complementary. Adopting the direct/pooler transport forecloses a project-wide security
+  control, and that trade must be made deliberately by a reviewer rather than discovered later.
+
+**One further fact belongs here: connection and disconnection logging are disabled.** Combined with an
+un-restricted endpoint, a connection made with a leaked credential from an arbitrary host would leave
+**no connection record**. §7.3.1 point 4 already stated that a leaked credential is fully sufficient to
+imitate the Edge Function until rotated; this adds that it would also be **unobserved**. That is an
+argument for the rotation procedure B10 owns, and for enabling logging before any credential exists —
+not an argument that reachability is the control.
+
+### 17.11 The transport conclusion, and B15
+
+**Transaction pooling remains the leading transport, and the evidence strengthens the case on three
+points and weakens the ranking on none.**
+
+| Evidence | Effect |
+| -------- | ------ |
+| Transaction pooler is offered and described as appropriate for stateless/serverless functions | Confirms §7.7's transport is available and platform-endorsed for this workload |
+| Direct connection is **IPv6 by default**, and the IPv4 add-on is **not enabled** | **This is what settles the choice.** A direct connection depends on IPv6 reachability from the Edge runtime, which is unverified and not under this project's control. The transaction pooler is IPv4-only on every tier, so it sidesteps the question entirely rather than betting on it |
+| Compute **Nano**; pool size **15**; max client connections **200** | Nano permits 60 database connections; a pool of 15 is 25% of that, comfortably under `connection-management`'s caution about exceeding 40% while PostgREST is in use. Against a concurrency ceiling of 4 (§4.8) there is headroom. **Recorded as headroom, not as a measurement** — no load was generated |
+| `service_role` has **no `LOGIN`** (§17.2) | A direct-connection design cannot reuse any existing API role. §7.3's dedicated role is now the **only** candidate, not the preferred one |
+| `postgres` has **`CREATEROLE`** (§17.2) | `CREATE ROLE … WITH LOGIN PASSWORD` is available in principle, per Supabase's own roles documentation |
+| `postgres` is **not `SUPERUSER`** | Consistent with `roles-superuser`. Does not obstruct role creation |
+
+**And the blocker that all of this now rests on.**
+
+> **B15. No official source establishes that the shared pooler accepts a non-`postgres` custom role.**
+> Pooled connections identify the tenant through the username, and nothing in the Supabase or PostgREST
+> documentation consulted for this review states that an arbitrary custom `LOGIN` role is accepted in
+> that position.
+
+This is the sharpest of the five new blockers, because it is the only one that can **invalidate the
+recommended direction** rather than constrain it. §7.7's transport must carry §7.3's credential; if the
+pooler will not accept that credential, the two halves of the leading candidate do not compose, and the
+remaining options are a direct IPv6 connection (whose reachability from the Edge runtime is unverified,
+and whose IPv4 alternative requires an add-on that is not enabled) or §7.6's nonce design, which §7.6
+already labels the design of last resort.
+
+**Session-level advisory locks remain unsuitable, and the reasoning is unchanged and now has a third
+leg.** S12: a session-level lock "is held until explicitly released or the session ends" and such
+requests "do not honor transaction semantics: a lock acquired during a transaction that is later rolled
+back will still be held following the rollback." Under transaction pooling the connection returns to the
+pool at commit, so the lock either leaks onto a shared connection or disappears unpredictably; and
+§12.2's all-or-nothing savepoint rollback depends on rollback undoing everything the block did, which is
+the one thing a session-level advisory lock is documented not to honour. **The third leg, which applies
+regardless of transport:** the lease must be held across the provider HTTP call, which happens *between*
+`reserve` and `finalize` and therefore outside any transaction — so no lock of any duration, session or
+transaction, can represent it. §12.5's row-with-an-expiry stands as a consequence of the lifecycle, not
+merely of the pooling mode.
+
+**A dedicated least-privilege LOGIN role is technically feasible in principle** — `CREATEROLE` is
+present, the role attributes required (`LOGIN` yes; `SUPERUSER`, `CREATEDB`, `CREATEROLE`,
+`REPLICATION`, `BYPASSRLS` all no) are ordinary, and its privilege set is `USAGE` on one schema plus
+`EXECUTE` on reviewed signatures with no table privileges at all. It remains **unapproved**, for the
+reasons that have not moved: B15 above; the credential cannot be created by a version-controlled
+migration, so it inherits B10's provisioning and rotation gap and doubles it; B14's unresolved
+verification mode is the channel that credential would travel over; and §17.10's disabled connection
+logging means its misuse would be unobserved.
+
+### 17.12 What this verification did not do
+
+- **No hosted object was created, altered or dropped.** No `CREATE`, `ALTER`, `DROP`, `GRANT`, `REVOKE`,
+  `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `SECURITY LABEL`, `COMMENT`, extension change or
+  configuration change. The transaction was read-only and was rolled back.
+- **No dashboard setting was changed**, and no reveal, copy, download, regenerate, reset or rotate
+  control was pressed. SSL enforcement was not enabled; automatic table exposure was not toggled;
+  network restrictions were not enabled; the database password was not reset.
+- **No secret or sensitive project identifier was requested, transmitted or recorded.** No hostname,
+  project reference, connection string, username, password, token, JWT, API key, IP address, CIDR,
+  certificate or secret value. No Vault secret name, identifier, description or value. `.env` was not
+  read.
+- **`vault.decrypted_secrets` was never selected from.** No secret was decrypted.
+- **No application table was read.** `auth.users`, `auth.sessions` and every application relation were
+  outside the procedure. No user was enumerated.
+- **No network probe was performed.** §17.10's reachability statement is a *configuration* finding.
+  T-22's measured half remains unrun.
+- **No function was enumerated, privilege-read or invoked.** No per-signature listing of `public`
+  functions was captured, no `EXECUTE` privilege was read for any function outside the Vault schema, and
+  **no function was called** — not through PostgREST, not through SQL, and not as a trigger. §17.8's
+  audit is therefore entirely future work.
+- **No local stack, no Docker, no deployment, no CLI command against the project, no provider request.**
+- **No code, SQL, migration, configuration or credential was created** in the repository by this phase.
+  `supabase/config.toml` was **not** changed, including its `major_version` line.
+
+### 17.13 What did not change
+
+Stated explicitly, because a favourable privilege read is the moment at which a blocked design is most
+likely to be quietly treated as approved.
+
+| | |
+| --- | --- |
+| **Verdict** | **BLOCKED.** §14 stands |
+| **B1 — global denial via direct RPC** | **Untouched and still CRITICAL.** It is a design defect. No configuration read can close it, and this one did not attempt to |
+| **B2 — spend poisoning via direct finalize** | **Untouched and still CRITICAL.** Same reason |
+| **Service-role designs** | **Still rejected** (§7.2), now with an additional independent reason: §17.2 shows `service_role` has no `LOGIN`, so it could not serve a direct-connection design even if the prohibition were revisited. **No service-role design was invented, adopted or prepared** |
+| **The quota store** | **Not implemented.** Schema `noor_ai` does not exist on the hosted project (§17.2); no migration, SQL file, function, table, policy, grant or role was written anywhere |
+| **The recommended direction** — dedicated least-privilege role over the transaction pooler | **UNAPPROVED.** §17.11's B15 is a new condition on it, not a clearance of it |
+| **D1** | **Unapproved.** The transport verification advanced; the decision did not |
+| **R8** | **Blocked** |
+| **AI-3** | **Incomplete** |
+| **Noor AI** | **Unavailable to real users.** The production dependency graph still fails closed with `503` |
+| **NoorLife** | **Not production-ready** |
