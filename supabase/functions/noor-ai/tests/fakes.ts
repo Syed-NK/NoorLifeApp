@@ -1,5 +1,6 @@
 import type {
   AIProvider,
+  AttemptOutcomeClass,
   AuthOutcome,
   ClaimsVerifier,
   Clock,
@@ -9,9 +10,11 @@ import type {
   OperationalLogRecord,
   ProviderOutcome,
   ProviderRequest,
-  RateLimitDecision,
-  RateLimiter,
+  ProviderResult,
+  ProviderUsage,
+  QuotaStore,
   RequestIdSource,
+  ReserveOutcome,
   Timer,
   VerifiedClaims,
 } from '../ports.ts';
@@ -176,40 +179,117 @@ export function createFakeVerifier(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Rate limiter
+// Quota store
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type RecordingRateLimiter = RateLimiter & {
-  readonly subjects: readonly string[];
+export const TEST_RESERVATION_ID = '33333333-3333-4333-8333-333333333333';
+
+/** Every quota call, in order, with its arguments. The lifecycle assertions read this. */
+export type QuotaCall =
+  | { readonly op: 'reserve'; readonly subjectId: string; readonly quotaRequestId: string }
+  | {
+    readonly op: 'registerAttempt';
+    readonly subjectId: string;
+    readonly reservationId: string;
+    readonly attemptNumber: 1 | 2;
+    readonly usage: ProviderUsage;
+    readonly outcome: AttemptOutcomeClass;
+  }
+  | { readonly op: 'finalize'; readonly subjectId: string; readonly reservationId: string }
+  | { readonly op: 'release'; readonly subjectId: string; readonly reservationId: string }
+  | { readonly op: 'status'; readonly subjectId: string };
+
+export type RecordingQuotaStore = QuotaStore & {
+  readonly calls: readonly QuotaCall[];
+  /** Just the operation names, in order — the shape most ordering assertions want. */
+  readonly ops: () => readonly QuotaCall['op'][];
+  /** Every subject the store was asked about. The §I.1 subject-binding assertion reads this. */
+  readonly subjects: () => readonly string[];
+};
+
+export type FakeQuotaOptions = {
+  readonly reserve?: ReserveOutcome;
+  /**
+   * Acks per call, in order; the last entry repeats.
+   *
+   * A sequence rather than a single boolean because the accounting retry is exactly a
+   * fails-then-succeeds shape: `[false, true]` is "the first response was lost, the idempotent
+   * replay landed", which is the case the retry exists for and cannot be expressed with one flag.
+   */
+  readonly registerAcks?: readonly boolean[];
+  readonly finalizeAcks?: readonly boolean[];
+  readonly releaseOk?: boolean;
 };
 
 /**
- * A limiter that answers from a script.
+ * A quota store that answers from a script and records everything it was handed.
  *
- * §I.1 requires the subject of the limit to be "the **verified** user id from §D, never a client-supplied
- * id, and never IP alone", so the fake records what it was asked about and the test asserts on it.
- *
- * This fake is emphatically **not** an in-memory rate limiter. §12.7 and §I.1 are explicit that an
- * in-memory counter in an ephemeral isolate is not a rate limit, and §J.13b — the test that catches that
- * mistake — is an **AI-3** row needing simulated isolates. What AI-2 owns and this fake exercises is the
- * handler's behaviour *given* a decision: the `429`, the body's `retry_after_seconds`, the `Retry-After`
- * header, and no provider call on a rejected request.
+ * ── Why it records arguments and not just call counts ────────────────────────
+ * The properties this phase has to prove are almost all *about the arguments*: that the subject is the
+ * verified `sub` and never anything from the body, that attempt ordinals are exactly 1 and then 2,
+ * that the token counts the provider reported are the ones that reach the store, and that no money
+ * value is ever sent. A spy that counted calls would satisfy none of those, so every call is captured
+ * whole and the tests assert on the recorded structure.
  */
-export function createFakeRateLimiter(
-  ...decisions: readonly RateLimitDecision[]
-): RecordingRateLimiter {
-  const subjects: string[] = [];
-  const queue = [...decisions];
+export function createFakeQuotaStore(options: FakeQuotaOptions = {}): RecordingQuotaStore {
+  const calls: QuotaCall[] = [];
+  const acks = [...(options.registerAcks ?? [true])];
+  let registerIndex = 0;
+  const finalizeAcks = [...(options.finalizeAcks ?? [true])];
+  let finalizeIndex = 0;
+
   return {
-    subjects,
-    check: (userId) => {
-      subjects.push(userId);
+    calls,
+    ops: () => calls.map((call) => call.op),
+    subjects: () => calls.map((call) => ('subjectId' in call ? call.subjectId : '')),
+    reserve: (subjectId, quotaRequestId) => {
+      calls.push({ op: 'reserve', subjectId, quotaRequestId });
       return Promise.resolve(
-        queue.length > 1
-          ? (queue.shift() ?? { kind: 'allowed' })
-          : (queue[0] ?? { kind: 'allowed' }),
+        options.reserve ?? { kind: 'allowed', reservationId: TEST_RESERVATION_ID },
       );
     },
+    registerAttempt: (subjectId, reservationId, attemptNumber, usage, outcome) => {
+      calls.push({
+        op: 'registerAttempt',
+        subjectId,
+        reservationId,
+        attemptNumber,
+        usage,
+        outcome,
+      });
+      const ok = acks[Math.min(registerIndex, acks.length - 1)] ?? true;
+      registerIndex += 1;
+      return Promise.resolve({ ok });
+    },
+    finalize: (subjectId, reservationId) => {
+      calls.push({ op: 'finalize', subjectId, reservationId });
+      const ok = finalizeAcks[Math.min(finalizeIndex, finalizeAcks.length - 1)] ?? true;
+      finalizeIndex += 1;
+      return Promise.resolve({ ok });
+    },
+    release: (subjectId, reservationId) => {
+      calls.push({ op: 'release', subjectId, reservationId });
+      return Promise.resolve({ ok: options.releaseOk ?? true });
+    },
+    status: (subjectId) => {
+      calls.push({ op: 'status', subjectId });
+      return Promise.resolve({ ok: true });
+    },
+  };
+}
+
+/** The store that must never be reached. Used wherever a test requires "no quota call made". */
+export function createForbiddenQuotaStore(): RecordingQuotaStore {
+  const store = createFakeQuotaStore();
+  const refuse = (op: string) => (): never => {
+    throw new Error(`the quota store was called (${op}) on a path that must never reach it`);
+  };
+  return {
+    ...store,
+    reserve: refuse('reserve'),
+    registerAttempt: refuse('registerAttempt'),
+    finalize: refuse('finalize'),
+    release: refuse('release'),
   };
 }
 
@@ -230,7 +310,7 @@ export type RecordingProvider = AIProvider & {
  * The last scripted outcome repeats, so a single-outcome script covers the common case and a two-outcome
  * script expresses "fails, then succeeds" for the retry rows without the test having to count calls.
  */
-export function createFakeProvider(...outcomes: readonly ProviderOutcome[]): RecordingProvider {
+export function createFakeProvider(...outcomes: readonly ProviderResult[]): RecordingProvider {
   const calls: ProviderRequest[] = [];
   const aborted: boolean[] = [];
   let index = 0;
@@ -267,7 +347,7 @@ export function createTimingOutProvider(timer: FakeTimer): RecordingProvider & {
     aborted,
     abortObserved: () => observed,
     generate: (request, signal) =>
-      new Promise<ProviderOutcome>((resolve) => {
+      new Promise<ProviderResult>((resolve) => {
         calls.push(request);
         aborted.push(signal.aborted);
         signal.addEventListener('abort', () => {
@@ -336,6 +416,9 @@ export function testConfig(overrides: Partial<HandlerConfig> = {}): HandlerConfi
     upstreamTimeoutMs: 30_000,
     handlerBudgetMs: 40_000,
     retryBackoffMs: 250,
+    // Small relative to the handler budget, so an accounting retry has room by default and a
+    // test can remove that room by raising this rather than by contriving a clock.
+    quotaTimeoutMs: 3_000,
     ...overrides,
   };
 }
@@ -344,7 +427,7 @@ export type TestHarness = {
   readonly deps: NoorAIDependencies;
   readonly verifier: RecordingVerifier;
   readonly provider: RecordingProvider;
-  readonly rateLimiter: RecordingRateLimiter;
+  readonly quota: RecordingQuotaStore;
   readonly clock: FakeClock;
   readonly timer: FakeTimer;
   readonly logger: CapturingLogger;
@@ -354,7 +437,10 @@ export function createHarness(
   options: {
     readonly auth?: AuthOutcome;
     readonly provider?: RecordingProvider;
-    readonly limit?: RateLimitDecision;
+    /** A pre-built store, for the forbidden-store and scripted-ack cases. */
+    readonly quota?: RecordingQuotaStore;
+    /** Shorthand for the common case: script only the reserve decision. */
+    readonly reserve?: ReserveOutcome;
     readonly config?: Partial<HandlerConfig>;
     readonly timer?: FakeTimer;
   } = {},
@@ -362,21 +448,21 @@ export function createHarness(
   const timer = options.timer ?? createFakeTimer();
   const verifier = createFakeVerifier(options.auth);
   const provider = options.provider ?? createFakeProvider(helpAnswer());
-  const rateLimiter = createFakeRateLimiter(options.limit ?? { kind: 'allowed' });
+  const quota = options.quota ?? createFakeQuotaStore({ reserve: options.reserve });
   const clock = createFakeClock();
   const logger = createCapturingLogger();
 
   return {
     verifier,
     provider,
-    rateLimiter,
+    quota,
     clock,
     timer,
     logger,
     deps: {
       verifier,
       provider,
-      rateLimiter,
+      quota,
       clock,
       timer,
       requestIds: createFakeRequestIds(),
@@ -394,6 +480,23 @@ export function helpAnswer(
     kind: 'answer',
     answer: { text, finish: 'complete', category: null, citationRequired: false },
   };
+}
+
+/** Distinct, non-round token counts, so a test can tell them apart if they are ever transposed. */
+export function usage(
+  inputTokens = 137,
+  outputTokens = 42,
+  reasoningTokens = 19,
+): ProviderUsage {
+  return { inputTokens, outputTokens, reasoningTokens };
+}
+
+/** An answer that also reports what it consumed — the ordinary AI-3 provider result. */
+export function answerWithUsage(
+  tokens: ProviderUsage = usage(),
+  text = 'Open Faith, then Prayer Settings, then Reminders.',
+): ProviderResult {
+  return { ...helpAnswer(text), usage: tokens };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

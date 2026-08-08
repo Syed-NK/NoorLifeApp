@@ -129,6 +129,91 @@ describe('no secrets in the repository', () => {
     }
   });
 
+  /**
+   * The whole of `src/`, not two hand-picked files.
+   *
+   * Widened 2026-08-09 by the AI-3 quota integration. That phase introduces exactly one module that
+   * legitimately names the platform service-role secret — the Edge Function's quota adapter, which
+   * runs on the server and is never bundled. The mobile app holds the publishable key and nothing
+   * else, so the guard that actually protects users is "no service-role access path anywhere in the
+   * shipped application source", and checking two files could never have established that.
+   *
+   * `supabase/functions/` is deliberately out of scope here: it is server code, it is not part of the
+   * app bundle, and its own containment is asserted by `tests/source-scan_test.ts`, which pins the
+   * secret name to a single file by exact equality.
+   */
+  /**
+   * Walks `src/`, returning the repo-relative paths whose text matches.
+   *
+   * `shippedOnly` drops `__tests__` and `test-support`: those files are not in the app bundle, and a
+   * test that asserts a string must be absent necessarily contains that string. It is the same
+   * exclusion the Edge Function's own scan makes for `source-scan_test.ts`, and it is a scoping
+   * decision rather than a loophole — the value-shaped scan below deliberately keeps *no* exclusion.
+   */
+  const scanSrc = (
+    pattern: RegExp,
+    { shippedOnly, stripComments }: { shippedOnly: boolean; stripComments: boolean },
+  ): string[] => {
+    const found: string[] = [];
+    const walk = (directory: string): void => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          if (shippedOnly && /^(__tests__|test-support|__mocks__)$/.test(entry.name)) continue;
+          walk(join(directory, entry.name));
+          continue;
+        }
+        if (!/\.(ts|tsx|js|jsx)$/.test(entry.name)) continue;
+        const path = join(directory, entry.name);
+        const raw = readFileSync(path, 'utf8');
+        const text = stripComments
+          ? raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+          : raw;
+        if (pattern.test(text)) found.push(path.slice(ROOT.length + 1).replace(/\\/g, '/'));
+      }
+    };
+    walk(join(ROOT, 'src'));
+    return found.sort();
+  };
+
+  it('contains no service-role secret name or access path anywhere in the app bundle source', () => {
+    expect(
+      scanSrc(
+        /service_role|serviceRole|SERVICE_ROLE|supabaseAdmin|createAdminClient|auth\s*\.\s*admin/,
+        { shippedOnly: true, stripComments: true },
+      ),
+    ).toEqual([]);
+  });
+
+  it('embeds no secret-shaped credential anywhere under src, tests included', () => {
+    /**
+     * No exclusion at all, and no comment stripping. A key pasted into a fixture is committed key
+     * material regardless of which directory it landed in or whether somebody commented it out.
+     */
+    expect(
+      scanSrc(
+        /sb_secret_[A-Za-z0-9]{20,}|sbp_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/,
+        {
+          shippedOnly: false,
+          stripComments: false,
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it('the mobile app reaches no Noor AI quota RPC and no private schema', () => {
+    /**
+     * The quota wrappers are executable by `service_role` alone, so the app could not call them even
+     * if it tried — `anon` and `authenticated` hold no EXECUTE. This asserts the app does not even
+     * reference them, which keeps the boundary legible as well as enforced.
+     */
+    expect(
+      scanSrc(
+        /noor_ai_reserve|noor_ai_register_attempt|noor_ai_finalize|noor_ai_release|noor_ai_status|noor_ai\./,
+        { shippedOnly: true, stripComments: false },
+      ),
+    ).toEqual([]);
+  });
+
   it('never embeds a service-role key in SQL, only the role name as a grantee', () => {
     expect(sql).not.toMatch(/SERVICE_ROLE_KEY/);
     expect(sql).not.toMatch(/service[_-]?role[_-]?key/i);

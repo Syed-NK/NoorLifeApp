@@ -123,28 +123,128 @@ export type ClaimsVerifier = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Rate limiting
+// Quota store — §I.1's limiter, and §I.2's spend controls, as one lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * §I.1's decision, and the third member is the point of the type.
+ * The shared store §12.7 left open, now selected.
  *
- * `unavailable` exists because §I.1 has a hard constraint that must not be discovered later: an Edge
- * Function runs in ephemeral, horizontally-scaled isolates, so **an in-memory counter is not a rate
- * limit**. AI-2 has not chosen a shared store (§12.7 is open), so the production limiter cannot
- * answer, and a limiter that cannot answer must fail closed rather than wave the request through.
+ * ── Why this port replaced the standalone `RateLimiter` ──────────────────────
+ * AI-2 shipped a limiter port whose only production implementation answered `unavailable`, because
+ * §I.1's hard constraint — an Edge Function runs in ephemeral, horizontally-scaled isolates, so **an
+ * in-memory counter is not a rate limit** — ruled out every implementation available at the time.
+ * AI-3 chose the store: the `noor_ai` schema behind five `service_role`-only public wrappers.
  *
- * Returning `unavailable` maps to `503 service_unavailable`. That is a deliberate availability cost
- * paid to avoid the alternative, which is an unmetered endpoint that spends money.
+ * That store does not answer a yes/no question. It issues a *reservation*, records what each provider
+ * attempt actually cost, and settles the account — because a rate limit that cannot see spend cannot
+ * enforce §I.2's ceilings. Keeping a separate `check()` alongside it would mean two limiters, one of
+ * which could only ever guess, so `reserve` **is** the §I.1 check now.
  */
-export type RateLimitDecision =
-  | { readonly kind: 'allowed' }
-  | { readonly kind: 'limited'; readonly retryAfterSeconds: number }
+
+/**
+ * Why a reservation was refused, as a closed set.
+ *
+ * These are the store's own `reason` strings. They are mapped to HTTP by the handler and **never**
+ * returned to a caller: §I.6 forbids forwarding backend detail, and "you exceeded the global daily
+ * ceiling" tells a prober how the service is provisioned. The split that matters is which of them are
+ * the *caller's* doing:
+ *
+ *   • The three per-user reasons are → `429`. The user asked too often, and waiting genuinely helps.
+ *   • Everything else is → `503`. A global ceiling, a concurrency cap, a spend ceiling or an operator
+ *     kill switch is NoorLife's state, not the user's behaviour, and answering `429` there would tell
+ *     somebody who did nothing wrong to slow down.
+ */
+export type QuotaDenialReason =
+  | 'per_user_minute'
+  | 'per_user_hour'
+  | 'per_user_day'
+  | 'global_minute'
+  | 'global_day'
+  | 'concurrency'
+  | 'daily_spend'
+  | 'monthly_spend'
+  | 'disabled';
+
+/**
+ * The reserve decision.
+ *
+ * `unavailable` is every way the store failed to give an answer — a network failure, a timeout, a
+ * non-2xx status, unparseable JSON, a shape the adapter does not recognise, or the store's own
+ * `configuration_error`. They collapse into one member on purpose: the handler's response is
+ * identical for all of them, and a handler that branched on them would be a handler that could
+ * accidentally treat one of them as permission to proceed.
+ */
+export type ReserveOutcome =
+  | { readonly kind: 'allowed'; readonly reservationId: string }
+  | { readonly kind: 'limited'; readonly reason: QuotaDenialReason }
   | { readonly kind: 'unavailable' };
 
-export type RateLimiter = {
-  /** The subject is the **verified** user id from §D — never a client-supplied id, never IP alone. */
-  readonly check: (userId: string, nowMs: number) => Promise<RateLimitDecision>;
+/**
+ * The coarse outcome class the store records per attempt.
+ *
+ * Three values, and deliberately not the provider's own error. §H.1 and §I.6 both forbid provider
+ * wording crossing a boundary, and the database column is an enum with nowhere to put one.
+ */
+export type AttemptOutcomeClass = 'success' | 'transient' | 'terminal';
+
+/** What an attempt consumed. Counts only — the handler never computes or sends money (§I.2). */
+export type ProviderUsage = {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+};
+
+/**
+ * An acknowledgement from an accounting call.
+ *
+ * Deliberately not the store's payload. The handler needs to know whether the write landed, and
+ * nothing else: a reservation id, a cost in micro-USD or a raw error string would all be things the
+ * handler could then leak. `ok: false` covers refusal and transport failure alike, for the same
+ * reason `unavailable` above is one member.
+ */
+export type QuotaAck = { readonly ok: boolean };
+
+/**
+ * The quota store port — the five approved public wrappers, and nothing else.
+ *
+ * Every method takes the **verified** subject as its first argument. That is not decoration: the
+ * database binds every reservation to its subject and refuses cross-subject access, so passing the
+ * wrong id fails closed rather than accounting against a stranger. The handler only ever has one id
+ * to pass — the verified `sub` — because that is the only identity it is given (`VerifiedClaims`).
+ */
+export type QuotaStore = {
+  /**
+   * `public.noor_ai_reserve(uuid, text)`.
+   *
+   * `quotaRequestId` is NoorLife's own server-generated request id, bounded to 64 characters by the
+   * database. It is the store's idempotency key, so **replaying this same call with this same key**
+   * returns the original reservation instead of consuming a second quota unit.
+   *
+   * That is the whole of its scope. The id is minted fresh per handler execution, so it does not
+   * deduplicate a separate client HTTP retry — that would need a client-supplied key, which the
+   * contract tracks as `client_request_id` and this phase does not implement.
+   */
+  readonly reserve: (subjectId: string, quotaRequestId: string) => Promise<ReserveOutcome>;
+  /**
+   * `public.noor_ai_register_attempt(uuid, uuid, integer, integer, integer, integer, text)`.
+   *
+   * `attemptNumber` is `1 | 2` in the type, not `number`. §F.8 permits one retry and the database
+   * bounds the ordinal to the same range, so a third attempt is unexpressible here rather than
+   * rejected there.
+   */
+  readonly registerAttempt: (
+    subjectId: string,
+    reservationId: string,
+    attemptNumber: 1 | 2,
+    usage: ProviderUsage,
+    outcome: AttemptOutcomeClass,
+  ) => Promise<QuotaAck>;
+  /** `public.noor_ai_finalize(uuid, uuid)`. Idempotent in the database; safe to replay. */
+  readonly finalize: (subjectId: string, reservationId: string) => Promise<QuotaAck>;
+  /** `public.noor_ai_release(uuid, uuid)`. Only for a reservation no attempt was made against. */
+  readonly release: (subjectId: string, reservationId: string) => Promise<QuotaAck>;
+  /** `public.noor_ai_status(uuid)`. Not used by the request path; present so the port is complete. */
+  readonly status: (subjectId: string) => Promise<QuotaAck>;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -237,6 +337,24 @@ export type ProviderOutcome =
 export type ProviderOutcomeKind = ProviderOutcome['kind'];
 
 /**
+ * An outcome plus what it consumed.
+ *
+ * ── Why usage is attached to the outcome rather than to the answer ───────────
+ * §I.2's spend ceiling is enforced from recorded cost, and cost is incurred by *attempts*, not by
+ * successful ones. A provider that returns a malformed body, an unexpected tool call or a refusal has
+ * still billed for the input tokens it read. Hanging usage off `ProviderAnswer` would make exactly
+ * those cases unaccountable — the ones where the money is spent and nothing useful comes back.
+ *
+ * Written as an intersection over the union so every member gains the field without the nine-member
+ * discriminated union being restated. `usage` is optional because it is genuinely unknown for a
+ * timeout or a connection reset, and the handler must not invent a number: absent means "the provider
+ * reported nothing", which the store records as zero tokens rather than as an estimate.
+ */
+export type ProviderResult = ProviderOutcome & {
+  readonly usage?: ProviderUsage;
+};
+
+/**
  * Exactly what crosses the boundary that leaves NoorLife (§B.3 boundary 3, §H.1).
  *
  * ── This type *is* the outbound allow-list ──────────────────────────────────
@@ -286,7 +404,7 @@ export type AIProvider = {
   readonly generate: (
     request: ProviderRequest,
     signal: AbortSignal,
-  ) => Promise<ProviderOutcome>;
+  ) => Promise<ProviderResult>;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -341,7 +459,32 @@ export type OperationalLogRecord = {
   readonly message_length: number | null;
   readonly surface_accepted: boolean | null;
   readonly locale_accepted: boolean | null;
+  /** Now driven by the quota store's reserve decision — `reserve` *is* the §I.1 check. */
   readonly rate_limit_state: 'ok' | 'limited' | 'unavailable' | 'not-evaluated';
+  /**
+   * Which ceiling refused the reservation, as the closed enum above.
+   *
+   * Safe to log and operationally necessary — "we are shedding load" and "one user is hot" need
+   * different responses. It is a *reason*, never a count, a threshold, a subject or a reservation id:
+   * §H.3 bans the raw uuid, and a reservation id is a handle to one person's request.
+   */
+  readonly quota_reason: QuotaDenialReason | null;
+  /** How many provider attempts were recorded against the reservation. A count, never the tokens. */
+  readonly attempts_registered: number;
+  /**
+   * Whether the reservation was settled.
+   *
+   * `failed` is the state §I.2 cares about most: a provider attempt happened and the store did not
+   * record it, so recorded spend is now behind real spend until the lease expires and late accounting
+   * corrects it. It is flagged rather than inferred from a 503, because most 503s cost nothing.
+   */
+  readonly accounting:
+    | 'complete'
+    | 'failed'
+    | 'released'
+    /** The reservation was unused, but the store did not acknowledge the release. See below. */
+    | 'release-failed'
+    | 'not-required';
   readonly retry_after_seconds: number | null;
   readonly provider_outcome: ProviderOutcomeKind | null;
   /** §F.8 — "a rising retry rate is a signal, and one buried in a loop is not". */
@@ -387,12 +530,20 @@ export type HandlerConfig = {
    * that matters. If AI-3 raises the attempt cap, jitter comes back with it.
    */
   readonly retryBackoffMs: number;
+  /**
+   * The quota store's per-RPC wall clock, mirrored here so the *handler* can budget for it.
+   *
+   * The adapter enforces this bound itself and deliberately performs no retry, because it cannot see
+   * §F.7's deadline. The handler can, which is why the one permitted accounting retry lives above the
+   * port — and why the handler needs to know what a quota call costs before deciding it has room.
+   */
+  readonly quotaTimeoutMs: number;
 };
 
 export type NoorAIDependencies = {
   readonly verifier: ClaimsVerifier;
   readonly provider: AIProvider;
-  readonly rateLimiter: RateLimiter;
+  readonly quota: QuotaStore;
   readonly clock: Clock;
   readonly timer: Timer;
   readonly requestIds: RequestIdSource;

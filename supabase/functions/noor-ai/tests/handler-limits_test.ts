@@ -2,6 +2,7 @@ import { createNoorAIHandler } from '../handler.ts';
 import { assertEquals, assertExcludes } from './assert.ts';
 import {
   createForbiddenProvider,
+  createForbiddenQuotaStore,
   createHarness,
   jsonRequest,
   TEST_USER_ID,
@@ -36,22 +37,27 @@ Deno.test('§I.1 / §J.13a — exceeding the per-user limit is 429 with both ret
    * request."
    */
   const harness = createHarness({
-    limit: { kind: 'limited', retryAfterSeconds: 30 },
+    reserve: { kind: 'limited', reason: 'per_user_minute' },
     provider: createForbiddenProvider(),
   });
   const { response, body } = await ask(harness);
 
   assertEquals(response.status, 429, '429');
   assertEquals(body.error.code, 'rate_limited', 'with the contract’s code');
-  assertEquals(body.error.retry_after_seconds, 30, 'the body field §I.5 specifies');
-  assertEquals(response.headers.get('retry-after'), '30', 'and the HTTP header §I.1 requires');
+  assertEquals(
+    body.error.retry_after_seconds,
+    60,
+    'the body field §I.5 specifies — the minute window',
+  );
+  assertEquals(response.headers.get('retry-after'), '60', 'and the HTTP header §I.1 requires');
   assertEquals(harness.provider.calls.length, 0, 'no provider call on the rejected request');
   assertEquals(harness.logger.records[0]?.rate_limit_state, 'limited', 'recorded for metrics');
+  assertEquals(harness.logger.records[0]?.quota_reason, 'per_user_minute', 'and which ceiling');
 });
 
 Deno.test('§I.1 — the rate-limit copy is non-accusatory', async () => {
   // §I.1: "The copy is NoorLife's and non-accusatory; a keen user is not an attacker."
-  const harness = createHarness({ limit: { kind: 'limited', retryAfterSeconds: 30 } });
+  const harness = createHarness({ reserve: { kind: 'limited', reason: 'per_user_day' } });
   const { body } = await ask(harness);
 
   assertEquals(
@@ -72,7 +78,13 @@ Deno.test('§I.1 — the subject of the limit is the verified user id, not anyth
    */
   const harness = createHarness();
   await ask(harness);
-  assertEquals(harness.rateLimiter.subjects, [TEST_USER_ID], 'exactly the verified subject');
+  // Every quota call in the whole lifecycle — reserve, register, finalize — carries the same verified
+  // subject and no other. Asserted as a set so the property holds however many calls the run makes.
+  assertEquals(
+    [...new Set(harness.quota.subjects())],
+    [TEST_USER_ID],
+    'exactly the verified subject, on every quota call',
+  );
 });
 
 Deno.test('§I.1 / §12.7 — a limiter that cannot answer fails closed with 503', async () => {
@@ -84,7 +96,7 @@ Deno.test('§I.1 / §12.7 — a limiter that cannot answer fails closed with 503
    * would be a lie that also suggests waiting would help.
    */
   const harness = createHarness({
-    limit: { kind: 'unavailable' },
+    reserve: { kind: 'unavailable' },
     provider: createForbiddenProvider(),
   });
   const { response, body } = await ask(harness);
@@ -113,12 +125,13 @@ Deno.test('§I.2 — the kill switch answers 503 without reading the rate limit 
   const harness = createHarness({
     config: { enabled: false },
     provider: createForbiddenProvider(),
+    quota: createForbiddenQuotaStore(),
   });
   const { response, body } = await ask(harness);
 
   assertEquals(response.status, 503, '503');
   assertEquals(body.error.code, 'service_unavailable', 'with the contract’s code');
-  assertEquals(harness.rateLimiter.subjects.length, 0, 'before the rate-limit read');
+  assertEquals(harness.quota.calls.length, 0, 'before the quota reserve');
   assertEquals(harness.provider.calls.length, 0, 'and before the provider call');
   assertEquals(
     harness.logger.records[0]?.rate_limit_state,

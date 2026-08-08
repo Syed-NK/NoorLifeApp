@@ -115,8 +115,8 @@ async function everyPath(): Promise<readonly OperationalLogRecord[]> {
 
   // Limits.
   await run({ config: { enabled: false } }, jsonRequest(body));
-  await run({ limit: { kind: 'limited', retryAfterSeconds: 30 } }, jsonRequest(body));
-  await run({ limit: { kind: 'unavailable' } }, jsonRequest(body));
+  await run({ reserve: { kind: 'limited', reason: 'per_user_minute' } }, jsonRequest(body));
+  await run({ reserve: { kind: 'unavailable' } }, jsonRequest(body));
 
   // Every provider outcome that carries an answer or a refusal.
   await run({ provider: createFakeProvider(answerWith(SECRETS.answer)) }, jsonRequest(body));
@@ -337,7 +337,7 @@ Deno.test('§J.15c — no response body on any path contains a secret, a header 
   await collect({}, jsonRequest(null, { rawBody: `{"x":${SECRETS.rejectedValue}` }));
   await collect({}, jsonRequest({ contract_version: 1, message, nickname: SECRETS.rejectedValue }));
   await collect(
-    { limit: { kind: 'limited', retryAfterSeconds: 30 } },
+    { reserve: { kind: 'limited', reason: 'per_user_minute' } },
     jsonRequest({ contract_version: 1, message }),
   );
   for (

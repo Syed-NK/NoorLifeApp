@@ -1,5 +1,6 @@
 import type { ClaimsPolicy } from './claims.ts';
 import { createJwtClaimsVerifier } from './jwt-verifier.ts';
+import { createQuotaRpcStore } from './quota-rpc.ts';
 import type {
   AIProvider,
   Clock,
@@ -7,7 +8,6 @@ import type {
   Logger,
   NoorAIDependencies,
   OperationalLogRecord,
-  RateLimiter,
   RequestIdSource,
   Timer,
 } from './ports.ts';
@@ -61,23 +61,13 @@ export const unavailableProvider: AIProvider = {
 };
 
 /**
- * The limiter that refuses rather than guesses (§I.1, §12.7).
+ * The quota timeout, and why it is well inside the handler budget.
  *
- * §I.1 states the constraint that rules out the obvious implementation: "an Edge Function runs in
- * ephemeral, horizontally-scaled isolates, so an in-memory counter is not a rate limit. It resets on cold
- * start and each isolate counts separately, which yields a limit that is neither enforced nor
- * observable."
- *
- * So there is no counter here. Presenting one as distributed rate limiting would be the specific
- * dishonesty §12.7 and §J.13b exist to catch — and §J.13b is an **AI-3** row precisely because it is the
- * test that fails against a naive implementation. AI-3 chooses the store (Postgres table, external KV, or
- * something reviewed) and the numbers; until then the answer is `unavailable`, which the handler turns
- * into `503`.
+ * A reserve that took as long as the whole request would leave nothing for the provider, so the store
+ * gets a small fixed slice. It is a constant rather than a config field because it is a property of a
+ * database round trip in the same region, not something a deployment tunes.
  */
-export const unavailableRateLimiter: RateLimiter = {
-  // deno-lint-ignore require-await
-  check: async () => ({ kind: 'unavailable' }),
-};
+export const QUOTA_TIMEOUT_MS = 3_000;
 
 export const systemClock: Clock = {
   now: () => Date.now(),
@@ -134,6 +124,26 @@ export const structuredLogger: Logger = {
         surface_accepted: entry.surface_accepted,
         locale_accepted: entry.locale_accepted,
         rate_limit_state: entry.rate_limit_state,
+        /**
+         * The AI-3 quota fields. All three are coarse by construction — a closed enum, a count and a
+         * settlement state — and none can hold a subject, a reservation id or a token count.
+         *
+         * `accounting: 'failed'` is the one an operator must be able to see, and it covers **two**
+         * distinct states rather than one:
+         *
+         *   • **Registration failed.** A provider attempt was incurred and the store has no record
+         *     of it, so recorded spend is behind real spend by an unknown amount.
+         *   • **Finalization failed.** The attempts *are* registered, but their cost was never
+         *     accumulated into the spend counters, so the ceilings cannot yet see it.
+         *
+         * Both leave §I.2's ceilings enforcing against an understated figure, which is why they share
+         * a value — but they are not the same defect, and `attempts_registered` distinguishes them:
+         * zero means nothing was recorded, non-zero means the attempts landed and the settlement did
+         * not. In both cases the lease is left to expire so late accounting can correct it.
+         */
+        quota_reason: entry.quota_reason,
+        attempts_registered: entry.attempts_registered,
+        accounting: entry.accounting,
         retry_after_seconds: entry.retry_after_seconds,
         provider_outcome: entry.provider_outcome,
         provider_attempts: entry.provider_attempts,
@@ -165,6 +175,7 @@ export const productionConfig: HandlerConfig = {
   upstreamTimeoutMs: 20_000,
   handlerBudgetMs: 25_000,
   retryBackoffMs: 500,
+  quotaTimeoutMs: QUOTA_TIMEOUT_MS,
 };
 
 /**
@@ -197,6 +208,21 @@ export type ProductionEnvironment = {
    * `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEYS`, or anything shaped like a provider secret.
    */
   readonly jwks: string | undefined;
+  /**
+   * Platform-injected `SUPABASE_SERVICE_ROLE_KEY` — the **only** secret this function reads, and the
+   * only one it may.
+   *
+   * §B.2's service-role row read "Never" for AI-2 because AI-2 needed no privileged database access at
+   * all. AI-3 does: the quota store's five wrappers are executable by `service_role` and by nothing
+   * else, which is what keeps `anon` and `authenticated` — and therefore the mobile app — unable to
+   * reach quota state in any way. The containment is that this value lives only in the Edge Function
+   * environment, is read only by `quota-rpc.ts`, and never appears in the app bundle, a log line, a
+   * response body or this repository. `tests/source-scan_test.ts` asserts each of those.
+   *
+   * When it is absent — which it is everywhere today, because nothing is deployed and no secret is
+   * set — the adapter degrades to the store that can only refuse, and the handler answers `503`.
+   */
+  readonly serviceRoleKey: string | undefined;
 };
 
 /**
@@ -217,7 +243,11 @@ export function createProductionDependencies(
       nowSeconds: () => Math.floor(systemClock.now() / 1000),
     }),
     provider: unavailableProvider,
-    rateLimiter: unavailableRateLimiter,
+    quota: createQuotaRpcStore({
+      supabaseUrl: environment.supabaseUrl,
+      serviceRoleKey: environment.serviceRoleKey,
+      timeoutMs: QUOTA_TIMEOUT_MS,
+    }),
     clock: systemClock,
     timer: systemTimer,
     requestIds: cryptoRequestIds,

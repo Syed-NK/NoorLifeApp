@@ -73,6 +73,24 @@ const ALL = collect(FUNCTION_ROOT);
 const PRODUCTION = ALL.filter((file) => !file.isTest);
 const SCANNABLE = ALL.filter((file) => file.name !== 'tests/source-scan_test.ts');
 
+/**
+ * The one deliberate exception, named once — the AI-3 quota adapter.
+ *
+ * ── Why this is a narrowing and not a hole ───────────────────────────────────
+ * AI-2 could assert absolutes: no `fetch`, no secret read, no `service_role` in any spelling. AI-3
+ * connects the handler to a quota store whose wrappers are executable by `service_role` and by
+ * nothing else, so exactly one module must hold the platform secret and reach the network. Deleting
+ * the guards would trade a real invariant for a comment.
+ *
+ * Instead every affected scan becomes an **exact-equality** assertion naming this file. That is
+ * strictly stronger than the absolute it replaced in the way that matters: a second file gaining
+ * `fetch`, or the adapter losing it, both fail. The invariant the guards actually protect —
+ * capability lives in one reviewable place, and never in the app — is preserved and pinned, and
+ * `OTHER_PRODUCTION` below keeps the original absolute over everything else.
+ */
+const QUOTA_ADAPTER = 'quota-rpc.ts';
+const OTHER_PRODUCTION = PRODUCTION.filter((file) => file.name !== QUOTA_ADAPTER);
+
 function offenders(pattern: RegExp, files: readonly SourceFile[]): readonly string[] {
   return files.filter((file) => pattern.test(file.code)).map((file) => file.name);
 }
@@ -151,8 +169,25 @@ Deno.test('§B.2 — nothing reads an OpenAI key, and no AI-2 file reads any sec
   );
   assertEquals(
     [...new Set(reads)].sort(),
-    ['SUPABASE_JWKS', 'SUPABASE_URL'],
-    'exactly two environment reads, both platform-injected and neither a secret',
+    ['SUPABASE_JWKS', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL'],
+    'exactly three environment reads, all platform-injected and exactly one a secret',
+  );
+
+  /**
+   * And the secret is read in one place only.
+   *
+   * `index.ts` reads it and hands it straight to `production.ts`, which gives it to the adapter and
+   * to nothing else — so the *read* is in the entry point and the *name* appears in only those three
+   * files. No handler, verifier, policy or response module can see it, which is what makes "it cannot
+   * reach a log line or a response body" structural rather than careful.
+   */
+  const secretReaders = PRODUCTION.filter((file) =>
+    /Deno\.env\.get\(\s*'SUPABASE_SERVICE_ROLE_KEY'/.test(file.code)
+  );
+  assertEquals(
+    secretReaders.map((file) => file.name),
+    ['index.ts'],
+    'read in the entry point only',
   );
 });
 
@@ -168,16 +203,114 @@ Deno.test('§B.2 — no service-role or secret key is referenced or used', () =>
    */
   assertEquals(offenders(/service_role/, PRODUCTION), [], 'no service_role reference');
   assertEquals(
-    offenders(/SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEYS/, SCANNABLE),
+    offenders(/SUPABASE_SECRET_KEYS/, SCANNABLE),
     [],
-    'no privileged key read, in production or in a test',
+    'no legacy secret-keys read anywhere',
   );
   assertEquals(
     offenders(/supabaseAdmin|createAdminClient|auth\s*\.\s*admin/, SCANNABLE),
     [],
     'no admin client anywhere',
   );
-  assertEquals(offenders(/serviceRole|SERVICE_ROLE/, PRODUCTION), [], 'in no spelling');
+
+  /**
+   * The service-role name is now permitted in exactly three production files and nowhere else: the
+   * entry point that reads it, the graph that passes it, and the adapter that uses it. Everything
+   * else in the function — and the whole of `src/` — is still absolute.
+   */
+  assertEquals(
+    [...offenders(/serviceRole|SERVICE_ROLE/, PRODUCTION)].sort(),
+    ['index.ts', 'production.ts', QUOTA_ADAPTER].sort(),
+    'the platform secret name is confined to the entry point, the graph and the adapter',
+  );
+  assertEquals(
+    [...offenders(/serviceRole|SERVICE_ROLE/, OTHER_PRODUCTION)].sort(),
+    ['index.ts', 'production.ts'].sort(),
+    'and no policy, handler, verifier or response module names it at all',
+  );
+});
+
+Deno.test('AI-3 — the quota adapter is the only thing that can reach the network', () => {
+  /**
+   * The narrowed form of AI-2's "nothing in the production graph can make a network call".
+   *
+   * The pattern is `\bfetch\b` rather than `fetch\s*\(`, and that difference is the point. The
+   * adapter aliases the function (`const call = config.fetchImpl ?? fetch`) so it can be driven by a
+   * test without a network, and a call-shaped pattern would have quietly passed over it — the guard
+   * would have gone on reporting "no network capability" about a module built to make HTTP requests.
+   * Matching the identifier catches the capability however it is spelled.
+   */
+  assertEquals(
+    offenders(/\bfetch\b/, PRODUCTION),
+    [QUOTA_ADAPTER],
+    'exactly one production file references fetch, and it is the quota adapter',
+  );
+  assertEquals(
+    offenders(
+      /XMLHttpRequest|WebSocket|EventSource|Deno\.(connect|connectTls|createHttpClient)/,
+      SCANNABLE,
+    ),
+    [],
+    'and no other transport exists, in production or in a test',
+  );
+});
+
+Deno.test('AI-3 — the adapter calls the five approved wrappers and can reach nothing else', () => {
+  /**
+   * §B.2's containment, asserted as capability rather than intent. The adapter builds its URL as
+   * `/rest/v1/rpc/<wrapper>` from a fixed table of five names, so there is no path parameter a caller
+   * could influence and no query-builder surface at all.
+   *
+   * The private schema is not merely ungranted here — it is unaddressable. PostgREST exposes only
+   * `public` and `graphql_public`, so a `noor_ai.*` function cannot be named over this transport,
+   * which is exactly why the five thin public wrappers exist.
+   */
+  const adapter = PRODUCTION.find((file) => file.name === QUOTA_ADAPTER);
+  assert(adapter !== undefined, 'the adapter is in the scan');
+
+  const wrappers = [...adapter.code.matchAll(/'(noor_ai_[a-z_]+)'/g)].map((match) => match[1]);
+  assertEquals(
+    [...new Set(wrappers)].sort(),
+    [
+      'noor_ai_finalize',
+      'noor_ai_register_attempt',
+      'noor_ai_release',
+      'noor_ai_reserve',
+      'noor_ai_status',
+    ],
+    'exactly the five approved public wrappers, by exact name',
+  );
+
+  assertEquals(/noor_ai\./.test(adapter.code), false, 'the private schema is never named');
+  assertEquals(
+    /\/rest\/v1\/(?!rpc\/)/.test(adapter.code),
+    false,
+    'no table or view route is built',
+  );
+  /**
+   * Table names only. `reservation_id` is deliberately not in this list — it is the *parameter* the
+   * wrappers take, and banning the word would ban the API rather than the table access. What must not
+   * appear is a name that means nothing except as a relation to read.
+   */
+  assertEquals(
+    /limit_config|price_table|user_counter|global_counter/.test(adapter.code),
+    false,
+    'no quota table is named, so none can be queried directly',
+  );
+
+  // The caller's token is never forwarded: this call authenticates as the server, not as the user.
+  assertEquals(
+    /request\s*\.\s*headers|authorizationHeader|forwardAuth/.test(adapter.code),
+    false,
+    'the caller’s Authorization header cannot reach the quota RPC',
+  );
+
+  // No direct-Postgres transport was reintroduced. B14/B15 stay NOT APPLICABLE.
+  assertEquals(
+    offenders(/postgres:\/\/|postgresql:\/\/|Supavisor|pgbouncer|\bClient\s*\(\s*\{/i, SCANNABLE),
+    [],
+    'no connection string, pooler or Postgres client anywhere',
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -360,9 +493,12 @@ Deno.test('nothing selects a provider from request input or an environment flag'
     'no field',
   );
   assertEquals(
-    offenders(/Deno\.env\.get\(\s*'(?!SUPABASE_URL|SUPABASE_JWKS)/, PRODUCTION),
+    offenders(
+      /Deno\.env\.get\(\s*'(?!SUPABASE_URL|SUPABASE_JWKS|SUPABASE_SERVICE_ROLE_KEY)/,
+      PRODUCTION,
+    ),
     [],
-    'and no environment read beyond the two permitted ones',
+    'and no environment read beyond the three permitted ones',
   );
 });
 

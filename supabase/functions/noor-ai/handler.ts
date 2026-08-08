@@ -10,12 +10,17 @@ import {
   refusalResponse,
 } from './responses.ts';
 import type {
+  AttemptOutcomeClass,
   AuthFailureReason,
   NoorAIDependencies,
   OperationalLogRecord,
   ProviderOutcome,
   ProviderOutcomeKind,
   ProviderRequest,
+  ProviderResult,
+  ProviderUsage,
+  QuotaAck,
+  QuotaDenialReason,
   SafetyCategory,
 } from './ports.ts';
 
@@ -103,6 +108,76 @@ function isRetryable(outcome: ProviderOutcome): boolean {
 }
 
 /**
+ * Whether an attempt actually reached the provider and therefore may have cost money.
+ *
+ * `unavailable` is the single exception, and it is exact rather than conservative: it means no
+ * provider is configured, so the port returned without anything leaving the process. Every other
+ * outcome — including `timeout`, and including the connection-level throw that `attemptProvider`
+ * converts into `transient-server-error` — means a request was issued and the answer is unknown.
+ *
+ * The bias is deliberate and one-directional. Recording an attempt that turned out to be free costs a
+ * zero-token row; *not* recording one that was billed means recorded spend drifts below real spend,
+ * and §I.2's ceilings are enforced from recorded spend. Under-recording is the failure that spends
+ * money, so ambiguity resolves toward recording.
+ */
+function attemptWasIncurred(outcome: ProviderOutcome): boolean {
+  return outcome.kind !== 'unavailable';
+}
+
+/**
+ * The coarse class the store records. Three values, chosen by what the operator needs to distinguish:
+ * it answered, it might answer if asked again, or it will not.
+ */
+function outcomeClass(outcome: ProviderOutcome): AttemptOutcomeClass {
+  switch (outcome.kind) {
+    case 'answer':
+    case 'refusal':
+      return 'success';
+    case 'rate-limited':
+    case 'transient-server-error':
+    case 'timeout':
+      return 'transient';
+    default:
+      return 'terminal';
+  }
+}
+
+/**
+ * Usage the provider reported, or zeros.
+ *
+ * Zeros are not an estimate and must not be read as one. §12.7's crash case is already accepted as an
+ * under-count, and the database's own rule is that it "must not invent an estimate" — so an attempt
+ * whose usage is unknown is recorded as having happened, with no cost attributed to it.
+ */
+const NO_USAGE: ProviderUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+
+/** The per-user reasons, which are the caller's doing and therefore the only ones that earn a 429. */
+const PER_USER_REASONS: readonly QuotaDenialReason[] = [
+  'per_user_minute',
+  'per_user_hour',
+  'per_user_day',
+];
+
+/**
+ * §I.1 requires a `429` to carry `retry_after_seconds`, and the window that denied the request is the
+ * honest answer to "how long?". A shorter hint would send the user straight back into the same
+ * denial, which is how one `429` becomes three.
+ */
+const RETRY_AFTER_SECONDS: Readonly<Record<string, number>> = {
+  per_user_minute: 60,
+  per_user_hour: 3600,
+  per_user_day: 86_400,
+};
+
+/** What one accounted provider run produced. `accountingFailed` stops everything downstream. */
+type AccountedRun = {
+  readonly outcome: ProviderOutcome;
+  readonly attempts: number;
+  readonly registered: number;
+  readonly accountingFailed: boolean;
+};
+
+/**
  * A mutable accumulator for the single log line each request emits (§H.3).
  *
  * Every field starts at a value meaning "we never got that far", so a log record is honest about a
@@ -120,6 +195,9 @@ type LogDraft = {
   surface_accepted: boolean | null;
   locale_accepted: boolean | null;
   rate_limit_state: OperationalLogRecord['rate_limit_state'];
+  quota_reason: QuotaDenialReason | null;
+  attempts_registered: number;
+  accounting: OperationalLogRecord['accounting'];
   retry_after_seconds: number | null;
   provider_outcome: ProviderOutcomeKind | null;
   provider_attempts: number;
@@ -130,7 +208,7 @@ type LogDraft = {
 export function createNoorAIHandler(
   deps: NoorAIDependencies,
 ): (request: Request) => Promise<Response> {
-  const { verifier, provider, rateLimiter, clock, timer, requestIds, logger, config } = deps;
+  const { verifier, provider, quota, clock, timer, requestIds, logger, config } = deps;
 
   /**
    * One provider attempt, with the upstream budget actually aborting it (§F.7).
@@ -140,7 +218,7 @@ export function createNoorAIHandler(
    * the provider, a test's fake provider can observe the abort and prove the operation was cancelled
    * rather than merely abandoned.
    */
-  const attemptProvider = async (request: ProviderRequest): Promise<ProviderOutcome> => {
+  const attemptProvider = async (request: ProviderRequest): Promise<ProviderResult> => {
     const controller = new AbortController();
     let timedOut = false;
     const cancelTimer = timer.schedule(config.upstreamTimeoutMs, () => {
@@ -175,16 +253,39 @@ export function createNoorAIHandler(
   const callProvider = async (
     request: ProviderRequest,
     deadlineMs: number,
-  ): Promise<{ readonly outcome: ProviderOutcome; readonly attempts: number }> => {
+    register: (attemptNumber: 1 | 2, result: ProviderResult) => Promise<boolean>,
+  ): Promise<AccountedRun> => {
     const first = await attemptProvider(request);
+    let registered = 0;
+
+    /**
+     * Accounting happens immediately after the attempt it describes, not at the end.
+     *
+     * §I.2's ceilings are enforced from recorded spend, so the window in which an attempt is incurred
+     * but unrecorded is the window in which the store under-reports. Registering here makes that
+     * window one RPC wide instead of spanning the retry delay and the second attempt.
+     */
+    if (attemptWasIncurred(first)) {
+      if (!(await register(1, first))) {
+        /**
+         * §F.8 and §I.2 together: a quota RPC failure is **not** permission to call the provider
+         * again. The retry allowance exists for a provider that might succeed on a second ask; it is
+         * not a general "try harder" budget, and spending more money because the accounting failed is
+         * precisely backwards.
+         */
+        return { outcome: first, attempts: 1, registered: 0, accountingFailed: true };
+      }
+      registered = 1;
+    }
+
     if (!isRetryable(first)) {
-      return { outcome: first, attempts: 1 };
+      return { outcome: first, attempts: 1, registered, accountingFailed: false };
     }
 
     const requested = first.kind === 'rate-limited' ? first.retryAfterSeconds : null;
     const delayMs = requested === null ? config.retryBackoffMs : requested * 1000;
     if (clock.now() + delayMs + config.upstreamTimeoutMs > deadlineMs) {
-      return { outcome: first, attempts: 1 };
+      return { outcome: first, attempts: 1, registered, accountingFailed: false };
     }
 
     await new Promise<void>((resolve) => {
@@ -192,7 +293,13 @@ export function createNoorAIHandler(
     });
 
     const second = await attemptProvider(request);
-    return { outcome: second, attempts: 2 };
+    if (attemptWasIncurred(second)) {
+      if (!(await register(2, second))) {
+        return { outcome: second, attempts: 2, registered, accountingFailed: true };
+      }
+      registered += 1;
+    }
+    return { outcome: second, attempts: 2, registered, accountingFailed: false };
   };
 
   return async (request: Request): Promise<Response> => {
@@ -211,6 +318,9 @@ export function createNoorAIHandler(
       surface_accepted: null,
       locale_accepted: null,
       rate_limit_state: 'not-evaluated',
+      quota_reason: null,
+      attempts_registered: 0,
+      accounting: 'not-required',
       retry_after_seconds: null,
       provider_outcome: null,
       provider_attempts: 0,
@@ -235,6 +345,9 @@ export function createNoorAIHandler(
         surface_accepted: draft.surface_accepted,
         locale_accepted: draft.locale_accepted,
         rate_limit_state: draft.rate_limit_state,
+        quota_reason: draft.quota_reason,
+        attempts_registered: draft.attempts_registered,
+        accounting: draft.accounting,
         retry_after_seconds: draft.retry_after_seconds,
         provider_outcome: draft.provider_outcome,
         provider_attempts: draft.provider_attempts,
@@ -325,29 +438,127 @@ export function createNoorAIHandler(
         return fail('service_unavailable');
       }
 
-      // ── §I.1 ──────────────────────────────────────────────────────────────
-      const limit = await rateLimiter.check(auth.claims.userId, clock.now());
-      if (limit.kind === 'limited') {
-        draft.rate_limit_state = 'limited';
-        return fail('rate_limited', undefined, limit.retryAfterSeconds);
-      }
-      if (limit.kind === 'unavailable') {
+      /**
+       * ── §I.1 / §I.2 — reserve, before anything can be spent ────────────────
+       *
+       * The subject is `auth.claims.userId` and it is the only identity in scope. There is no other
+       * value the handler could pass: §C.6 rejects `user_id`, `subject_id` and `sub` as unknown
+       * fields before this line is reached, so a body carrying them is a `400` rather than an
+       * override, and `VerifiedClaims` is the only place a user id exists at all.
+       *
+       * The store's idempotency key is NoorLife's own `request_id` — server-generated, random, and
+       * bounded well inside the database's 64-character limit.
+       *
+       * ── What that key does and does not deduplicate ────────────────────────
+       * It is generated fresh at the top of **every handler execution**, so a client that gives up and
+       * issues a second HTTP request arrives with a *different* quota request id and takes a *second*
+       * reservation. The database's `(subject_id, request_id)` idempotency protects a replay of the
+       * same server-controlled key — the same reserve operation retried — and nothing more.
+       *
+       * It is therefore **not** cross-request deduplication, and must not be described as if it were.
+       * A client-controlled key is what would provide that; §I.1 already records `client_request_id`
+       * as future work, and this phase deliberately does not add one.
+       */
+      const reservation = await quota.reserve(auth.claims.userId, requestId);
+
+      if (reservation.kind === 'limited') {
+        draft.quota_reason = reservation.reason;
+        if (PER_USER_REASONS.includes(reservation.reason)) {
+          // The caller's own doing, and waiting genuinely helps: §I.1's `429`.
+          draft.rate_limit_state = 'limited';
+          return fail('rate_limited', undefined, RETRY_AFTER_SECONDS[reservation.reason]);
+        }
         /**
-         * §I.1 / §12.7 — the limiter cannot answer, so the request is refused rather than waved through.
-         *
-         * "an Edge Function runs in ephemeral, horizontally-scaled isolates, so an in-memory counter is
-         * not a rate limit." Until AI-3 selects a shared store there is nothing that can answer, and an
-         * unmetered AI endpoint is worse than an unavailable one.
+         * A global ceiling, the concurrency cap, a spend ceiling or the operator kill switch. None of
+         * them is the caller's behaviour, so none of them earns a `429` — telling somebody who did
+         * nothing wrong that they asked too often is both untrue and useless advice. No retry hint is
+         * invented either: NoorLife does not know when capacity returns.
          */
         draft.rate_limit_state = 'unavailable';
         return fail('service_unavailable');
       }
+
+      if (reservation.kind === 'unavailable') {
+        /**
+         * The store could not answer — transport, timeout, non-2xx, malformed JSON, an unrecognised
+         * shape, or its own `configuration_error`. All of them fail closed, and none of them is a
+         * `429`: an unmetered AI endpoint is worse than an unavailable one (§I.1), and a store fault
+         * dressed as a rate limit would blame the user for NoorLife's defect.
+         */
+        draft.rate_limit_state = 'unavailable';
+        return fail('service_unavailable');
+      }
+
       draft.rate_limit_state = 'ok';
+      const { reservationId } = reservation;
+
+      // §F.7's wall clock, computed here because both the accounting retry and the pre-provider
+      // budget check below need it.
+      const deadlineMs = startedAt + config.handlerBudgetMs;
+
+      /**
+       * Hands back a reservation nothing was spent against.
+       *
+       * Only ever called where no provider attempt was incurred. §12.7 is explicit that release does
+       * **not** refund consumed quota — the request unit stays spent — so this frees the concurrency
+       * lease and nothing more. A failure to release is not surfaced: the lease TTL reclaims it, and
+       * turning a successful-but-unreleased request into an error would trade a recoverable lease for
+       * a user-visible failure.
+       */
+      const releaseUnused = async (): Promise<void> => {
+        const ack = await quota.release(auth.claims.userId, reservationId);
+        /**
+         * The log records what happened, not what was attempted.
+         *
+         * An unacknowledged release still resolves — the lease TTL reclaims it — so this does not
+         * change the response. But writing `released` when the store never confirmed it would make
+         * the one field an operator uses to reconcile leases quietly untrue, and a concurrency
+         * ceiling that appears to have been freed is exactly the thing somebody would stop
+         * investigating. No detail of the failure is recorded: the ack is a boolean.
+         */
+        draft.accounting = ack.ok ? 'released' : 'release-failed';
+      };
+
+      /**
+       * One accounting call, with at most one bounded retry.
+       *
+       * ── Why this lives here and not in the adapter ─────────────────────────
+       * The adapter is deliberately retry-free: it cannot see §F.7's deadline, and a retry policy
+       * blind to the deadline can blow through it. The handler *can* see it, so the single permitted
+       * retry sits above the port where the budget check is possible.
+       *
+       * ── Why retrying is safe at all ────────────────────────────────────────
+       * Only for these two operations, and only because the database makes them idempotent under
+       * keys this caller supplies: `register_attempt` on `(reservation_id, attempt_number)` and
+       * `finalize` on its state guard. The retry re-invokes the *same closure*, so the subject,
+       * reservation, ordinal and token counts are identical by construction rather than by
+       * discipline — an identical replay is recognised and returns the original result instead of
+       * inserting or accumulating twice.
+       *
+       * There is no delay: an immediate second call is bounded, and a wait would spend budget the
+       * handler is trying to protect. `reserve` and `release` gain no retry here.
+       *
+       * **This does not eliminate under-counting.** If both calls fail, or the isolate dies between
+       * them, the crash/timeout under-count in §12.7 remains possible. It narrows the window; it does
+       * not close it, and nothing here should be read as a durable reconciliation design.
+       */
+      const withAccountingRetry = async (attempt: () => Promise<QuotaAck>): Promise<boolean> => {
+        const first = await attempt();
+        if (first.ok) {
+          return true;
+        }
+        // Retry only if what remains of the handler budget can actually absorb another quota RPC.
+        // Starting a call the deadline will cut off spends budget and changes nothing.
+        if (clock.now() + config.quotaTimeoutMs > deadlineMs) {
+          return false;
+        }
+        return (await attempt()).ok;
+      };
 
       // ── §F ────────────────────────────────────────────────────────────────
-      const deadlineMs = startedAt + config.handlerBudgetMs;
       if (clock.now() >= deadlineMs) {
-        // §F.7 — handler budget exhausted before the provider was even reached.
+        // §F.7 — handler budget exhausted before the provider was even reached. Nothing was spent.
+        await releaseUnused();
         return fail('timeout');
       }
 
@@ -369,9 +580,71 @@ export function createNoorAIHandler(
         languageHint: locale.locale,
       };
 
-      const { outcome, attempts } = await callProvider(providerRequest, deadlineMs);
+      const run = await callProvider(
+        providerRequest,
+        deadlineMs,
+        (attemptNumber, result) =>
+          withAccountingRetry(() =>
+            quota.registerAttempt(
+              auth.claims.userId,
+              reservationId,
+              attemptNumber,
+              // Counts only. The handler never computes, receives or sends a money value — the
+              // database derives cost from its own price table (§I.2).
+              result.usage ?? NO_USAGE,
+              outcomeClass(result),
+            )
+          ),
+      );
+
+      const { outcome } = run;
       draft.provider_outcome = outcome.kind;
-      draft.provider_attempts = attempts;
+      draft.provider_attempts = run.attempts;
+      draft.attempts_registered = run.registered;
+
+      /**
+       * ── Post-provider accounting failure ───────────────────────────────────
+       *
+       * An attempt happened and the store did not record it. Three things follow, and each is a
+       * choice rather than a default:
+       *
+       *   • **No further provider call.** Already guaranteed inside `callProvider`; restated because
+       *     the tempting fix — "retry the whole thing" — spends more money to fix a bookkeeping
+       *     problem.
+       *   • **No release.** Releasing here would assert the reservation went unused, which is false:
+       *     a provider attempt occurred and may have been billed. The lease is left to expire, and
+       *     the store's late-accounting rule then permits the incurred cost to be recorded after
+       *     expiry — exactly the case that rule was written for.
+       *   • **No success.** The user gets §I.5's stable `503`. Returning the answer would mean
+       *     serving a response NoorLife cannot account for, and §I.2's ceilings are only as good as
+       *     the spend they can see.
+       *
+       * The log carries `accounting: 'failed'` and the safe `request_id`, and nothing else — no
+       * subject, no reservation id, no token counts and no database text.
+       */
+      if (run.accountingFailed) {
+        draft.accounting = 'failed';
+        return fail('service_unavailable');
+      }
+
+      if (run.registered === 0) {
+        // No attempt was incurred, so the reservation is genuinely unused (§F.7 / §K's `unavailable`).
+        await releaseUnused();
+      } else {
+        /**
+         * Settle once. The store is idempotent on finalize, so a replay adds nothing — but a *failed*
+         * finalize means the attempts are recorded and the spend is not yet accumulated, which is the
+         * same under-count as above and gets the same answer.
+         */
+        const settled = await withAccountingRetry(() =>
+          quota.finalize(auth.claims.userId, reservationId)
+        );
+        if (!settled) {
+          draft.accounting = 'failed';
+          return fail('service_unavailable');
+        }
+        draft.accounting = 'complete';
+      }
 
       const refuse = (category: SafetyCategory): Response => {
         const decision = decidePolicy(category);

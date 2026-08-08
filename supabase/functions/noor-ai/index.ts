@@ -35,6 +35,9 @@ Deno.serve(
     createProductionDependencies({
       supabaseUrl: Deno.env.get('SUPABASE_URL'),
       jwks: Deno.env.get('SUPABASE_JWKS'),
+      // Read here and handed straight to `production.ts`, which gives it to `quota-rpc.ts` and to
+      // nothing else. It is never held by the handler, never logged and never returned.
+      serviceRoleKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
     }),
   ),
 );

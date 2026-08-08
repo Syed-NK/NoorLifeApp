@@ -3,8 +3,8 @@ import {
   createProductionDependencies,
   productionConfig,
   unavailableProvider,
-  unavailableRateLimiter,
 } from '../production.ts';
+import { unavailableQuotaStore } from '../quota-rpc.ts';
 import { assert, assertEquals, assertExcludes } from './assert.ts';
 import {
   createCapturingLogger,
@@ -49,20 +49,25 @@ Deno.test('the production provider is unavailable by construction and touches no
   }
 });
 
-Deno.test('the production rate limiter fails closed and is not a counter', async () => {
+Deno.test('the quota store with no credential fails closed and is not a counter', async () => {
   /**
    * §I.1: "an Edge Function runs in ephemeral, horizontally-scaled isolates, so an in-memory counter is not a
    * rate limit." So the assertion is not "the counter works" — it is that repeated calls never start allowing
    * traffic, because there is no counter to exhaust or reset.
+   *
+   * This is the state of every environment in this phase: nothing is deployed and no service-role secret is
+   * set, so `createQuotaRpcStore` degrades to exactly this store. It cannot allow, and it cannot ack.
    */
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const decision = await unavailableRateLimiter.check('any-user', Date.now());
+    const decision = await unavailableQuotaStore.reserve('any-user', 'noorai_req_x');
     assertEquals(
       decision.kind,
       'unavailable',
       'never allowed, never limited — simply unable to answer',
     );
   }
+  assertEquals((await unavailableQuotaStore.finalize('a', 'b')).ok, false, 'and it acks nothing');
+  assertEquals((await unavailableQuotaStore.release('a', 'b')).ok, false, 'in either direction');
 });
 
 Deno.test('§I.2 — the production kill switch is off and the budgets are correctly shaped', () => {
@@ -93,7 +98,11 @@ Deno.test('the production graph answers 503 to a genuinely authenticated request
       iss: `${PROJECT_URL}/auth/v1`,
     }));
 
-    const production = createProductionDependencies({ supabaseUrl: PROJECT_URL, jwks: keys.jwks });
+    const production = createProductionDependencies({
+      supabaseUrl: PROJECT_URL,
+      jwks: keys.jwks,
+      serviceRoleKey: undefined,
+    });
     const logger = createCapturingLogger();
     const handler = createNoorAIHandler({
       ...production,
@@ -137,7 +146,11 @@ Deno.test('the production graph refuses an anon-role token even with a valid sig
     validClaimSet(Math.floor(Date.now() / 1000), { iss: `${PROJECT_URL}/auth/v1`, role: 'anon' }),
   );
 
-  const production = createProductionDependencies({ supabaseUrl: PROJECT_URL, jwks: keys.jwks });
+  const production = createProductionDependencies({
+    supabaseUrl: PROJECT_URL,
+    jwks: keys.jwks,
+    serviceRoleKey: undefined,
+  });
   const logger = createCapturingLogger();
   const handler = createNoorAIHandler({
     ...production,
@@ -159,7 +172,11 @@ Deno.test('the production graph refuses an anon-role token even with a valid sig
 
 Deno.test('the production graph fails closed when the platform supplies no verification key', async () => {
   // The legacy-HS256 configuration. `503`, not `401`, and not a guess at an algorithm.
-  const production = createProductionDependencies({ supabaseUrl: PROJECT_URL, jwks: undefined });
+  const production = createProductionDependencies({
+    supabaseUrl: PROJECT_URL,
+    jwks: undefined,
+    serviceRoleKey: undefined,
+  });
   const logger = createCapturingLogger();
   const handler = createNoorAIHandler({
     ...production,
@@ -186,7 +203,11 @@ Deno.test('nothing in the production graph is a fake, and nothing in it can be t
   const token = await keys.sign(validClaimSet(Math.floor(Date.now() / 1000), {
     iss: `${PROJECT_URL}/auth/v1`,
   }));
-  const production = createProductionDependencies({ supabaseUrl: PROJECT_URL, jwks: keys.jwks });
+  const production = createProductionDependencies({
+    supabaseUrl: PROJECT_URL,
+    jwks: keys.jwks,
+    serviceRoleKey: undefined,
+  });
   const handler = createNoorAIHandler({
     ...production,
     requestIds: createFakeRequestIds(),

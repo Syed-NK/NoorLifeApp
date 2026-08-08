@@ -1505,6 +1505,62 @@ expired. `register_attempt` accepts `reserved` or `expired`; `finalize` closes e
 releases the concurrency lease permanently and late accounting never reopens it, never touches request
 counters, and never restores `reserved`. Contract §I.1's amendment and review §21.6 carry the rule.
 
+**Edge Function quota integration — implemented locally, 2026-08-09.** The handler now drives the
+approved lifecycle: **reserve → provider attempt → register attempt → finalize**, with **release** for
+a reservation nothing ran against. It is verified entirely with an injected fake quota adapter and a
+fake provider; **no deployment, no secret operation and no provider connectivity exists.**
+
+- **Server-only RPC path.** `supabase/functions/noor-ai/quota-rpc.ts` is the sole module that reaches
+  the network or names `SUPABASE_SERVICE_ROLE_KEY`. It POSTs to the five approved **public** wrappers
+  at `/rest/v1/rpc/<wrapper>` and cannot address the private `noor_ai` schema — PostgREST exposes only
+  `public` and `graphql_public`, which is why the wrappers exist. No table route, no query builder, no
+  Postgres client, no pooler. The caller's `Authorization` header is never forwarded.
+- **Subject binding.** Every quota call takes the **verified JWT `sub`** from `VerifiedClaims`. §C.6
+  rejects `user_id`, `subject_id` and `sub` as unknown fields before reserve is reached, so a
+  client-supplied identity is a `400` rather than an override. The handler holds no other user id.
+- **Denial mapping.** Per-user ceilings → **429** with the window as `retry_after_seconds`. Global,
+  concurrency, spend, `disabled`, and every store failure — transport, timeout, non-2xx, malformed
+  JSON, unknown shape, and `{ configuration_error: true, decision: "unavailable" }` — → **503**. A
+  store fault is never dressed as a rate limit.
+- **Post-provider accounting failure.** Once an attempt is incurred, registration and finalization are
+  mandatory. A failure returns the safe **503**, makes **no further provider call**, and does **not**
+  release — releasing would assert the reservation went unused, which is false. The lease is left to
+  expire so the store's late-accounting rule can record the incurred cost. Nothing claims the cost was
+  recorded when it was not.
+- **Retry rule unchanged.** One attempt, at most one retry, only for the approved eligible transient
+  outcomes, ordinals exactly 1 and 2. A quota RPC failure is **not** permission to call the provider
+  again, and a client retry is not converted into a provider retry.
+- **Idempotency scope, stated precisely.** The quota request id is NoorLife's **server-generated**
+  request id, minted fresh on every handler execution. The database's `(subject_id, request_id)` key
+  therefore protects a replay of the **same server-controlled key** — the same reserve operation
+  retried — and does **not** deduplicate a separate client HTTP retry, which arrives with a new id and
+  takes a new reservation. A client-controlled key would be needed for that; the contract records
+  `client_request_id` as future work and this phase does not add one.
+- **Bounded accounting recovery.** `registerAttempt` and `finalize` each get **at most one** retry at
+  the handler layer, using identical arguments, and only when the remaining handler budget covers
+  another quota RPC. Both are idempotent in the database under caller-supplied keys. The adapter stays
+  retry-free. This **narrows** the under-count window; it does not close it — if both calls fail or the
+  isolate dies, §12.7's crash/timeout under-count remains possible until a durable reconciliation
+  design exists.
+- **URL validation before the credential moves.** `SUPABASE_URL` is parsed and checked against a
+  closed shape before the adapter is constructed: HTTPS, a single-label `*.supabase.co` project host
+  (never the bare apex, never a deceptive suffix), no userinfo, no explicit port, no path, query or
+  fragment. HTTP is permitted only for loopback. An environment variable is not trusted merely for
+  being one — anything that can set it could otherwise redirect every service-role-bearing request to
+  a host of its choosing. A rejected URL yields the unavailable store, makes zero network calls, and
+  is never placed in a log or an error.
+- **Guards narrowed, not deleted.** The Edge Function source scan now asserts by **exact equality**
+  that `quota-rpc.ts` is the only production file referencing `fetch` or the platform secret, and the
+  Jest guard was widened from two files to **all shipped `src/`**, with a value-shaped scan over
+  `src/` including tests. The mobile app references no quota RPC and no service-role path.
+- **B14 and B15 remain NOT APPLICABLE**, not passed. NoorAI still opens no database connection of its
+  own; this integration speaks HTTP to PostgREST, so there is no client TLS posture and no pooler
+  custom-role question. They would return with any future direct-connection design.
+
+**Still not done in this phase:** no OpenAI import, endpoint, key or request; the production provider
+remains the one that reports itself unavailable and the kill switch remains **off**, so no user can
+reach NoorAI. **AI-3 remains incomplete.**
+
 ### 11.3 Provisional, or open, until evidence exists
 
 `max_output_tokens` (production), `upstreamTimeoutMs` and `handlerBudgetMs` (production), the

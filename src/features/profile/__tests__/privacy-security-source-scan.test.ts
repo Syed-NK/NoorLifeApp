@@ -74,9 +74,7 @@ describe('auth admin APIs', () => {
   it('leaves no account-deletion call of any kind', () => {
     const offenders = ALL_SOURCE.filter((file) => {
       const source = readFileSync(file, 'utf8');
-      return (
-        /\.\s*delete\s*\(\s*\)/.test(source) && /from\s*\(\s*['"]profiles['"]/.test(source)
-      );
+      return /\.\s*delete\s*\(\s*\)/.test(source) && /from\s*\(\s*['"]profiles['"]/.test(source);
     }).map(relative);
 
     // Deleting the profile row while `auth.users` keeps the credential produces an account that
@@ -157,10 +155,7 @@ describe('credential logging', () => {
       'change-password-screen.tsx',
       'change-email-screen.tsx',
     ]) {
-      const source = readFileSync(
-        join(SRC_ROOT, 'features', 'profile', 'screens', screen),
-        'utf8',
-      );
+      const source = readFileSync(join(SRC_ROOT, 'features', 'profile', 'screens', screen), 'utf8');
       expect(source).not.toMatch(/console\s*\./);
     }
   });
@@ -388,9 +383,6 @@ describe('the deletion architecture', () => {
       /@supabase\/(supabase-js|server)/,
       /\bcreateClient\s*\(/,
       /\bfrom\s+['"](npm:)?(postgres|pg|deno-postgres)/,
-      /\bauth\s*\.\s*admin\b/,
-      /\bdeleteUser\b/,
-      /\/auth\/v1\/admin/,
       /service_role|SERVICE_ROLE|SUPABASE_SECRET/,
     ];
     const destructiveVerb = [
@@ -400,13 +392,51 @@ describe('the deletion architecture', () => {
       /method\s*:\s*['"]DELETE['"]/i,
     ];
 
-    const offenders = files
-      .filter((file) => {
-        const source = executable(readFileSync(file, 'utf8'));
-        return [...privilegedReach, ...destructiveVerb].some((pattern) => pattern.test(source));
-      })
-      .map((file) => file.replace(FUNCTIONS_ROOT, ''));
+    /**
+     * The admin user API, banned outright.
+     *
+     * These are not "privileged reach" in general — they are the specific capability that deletes an
+     * account, and there is no legitimate reason for any Edge Function in this repository to name one.
+     * Kept as an absolute so the narrowing below cannot reach them.
+     */
+    const accountDeletionApi = [/\bauth\s*\.\s*admin\b/, /\bdeleteUser\b/, /\/auth\/v1\/admin/];
 
-    expect(offenders).toEqual([]);
+    const sources = files.map((file) => ({
+      name: file.replace(FUNCTIONS_ROOT, ''),
+      code: executable(readFileSync(file, 'utf8')),
+    }));
+
+    expect(
+      sources
+        .filter((file) => accountDeletionApi.some((pattern) => pattern.test(file.code)))
+        .map((file) => file.name),
+    ).toEqual([]);
+
+    /**
+     * Narrowed 2026-08-09 by the AI-3 quota integration, along the axis this test is actually about.
+     *
+     * Until then no Edge Function had any privileged reach at all, so flagging reach *or* a
+     * destructive verb cost nothing. `noor-ai/quota-rpc.ts` now legitimately holds the platform
+     * service-role secret to call five quota RPCs — and holds no destructive verb whatsoever: no
+     * `DELETE`, no `.delete(`, no `DELETE` method, and no client that could express one.
+     *
+     * "Can delete an account" is the conjunction, not either half. Requiring both is what keeps this
+     * test meaningful: a function that gains a destructive verb *next to* its privileged reach fails,
+     * which is the change that would actually matter, while a reach with nothing to destroy does not
+     * masquerade as a deletion capability.
+     */
+    const canDelete = sources.filter(
+      (file) =>
+        privilegedReach.some((pattern) => pattern.test(file.code)) &&
+        destructiveVerb.some((pattern) => pattern.test(file.code)),
+    );
+    expect(canDelete.map((file) => file.name)).toEqual([]);
+
+    // And the destructive verbs remain absolutely absent on their own, reach or no reach.
+    expect(
+      sources
+        .filter((file) => destructiveVerb.some((pattern) => pattern.test(file.code)))
+        .map((file) => file.name),
+    ).toEqual([]);
   });
 });
