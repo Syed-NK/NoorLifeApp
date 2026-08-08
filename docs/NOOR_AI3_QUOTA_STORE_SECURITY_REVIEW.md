@@ -2554,6 +2554,9 @@ D2 is a decision. R8 remains **Blocked** on all of the following, none of which 
 3. The atomic reservation / lease / finalize functions.
 4. **B15's controlled connection test** with the real custom role over the transaction pooler.
 5. **B14's TLS proof** — client chosen, verification mode demonstrated, SSL enforcement decided.
+   *Updated 2026-08-08 (§20): the **client is now chosen** — `jsr:@db/postgres@0.19.5` — and its
+   mandatory configuration is specified. The demonstration and the enforcement decision are
+   **still outstanding**.*
 6. **A negative test proving an `authenticated` client cannot reach any part of the store.** This is
    what converts B1 and B2 from *design-level resolved* to *closed*, and nothing else does.
 7. **B10** — credential and HMAC key provisioning and rotation, for every environment. The credential
@@ -2569,8 +2572,8 @@ D2 is a decision. R8 remains **Blocked** on all of the following, none of which 
 | --- | --- |
 | **Verdict** | **BLOCKED.** §14 stands. D2 is an approved *direction*, not an approved implementation |
 | **B1, B2** | **Resolved at the design level only.** Implementation-test gates until §19.6 point 6 passes. Not closed |
-| **B14** | **Open and unchanged.** Encryption is documented; verification is not |
-| **B15** | Documentation side closed; **controlled test still mandatory** |
+| **B14** | **Open and unchanged.** Encryption is documented; verification is not — *narrowed 2026-08-08 by §20: the client is selected and its downgrade behaviour traced to source. **Still open**, because end-to-end verification on the deployed runtime is unproven (§20.5)* |
+| **B15** | Documentation side closed; **controlled test still mandatory** — *the test is now specified in §20.9 and remains unrun* |
 | **B9, B10, B12** | **Open, untouched** by this decision |
 | **B3** | Indirect half still open — no definer-routine disclosure audit was performed |
 | **Service-role designs** | **Still rejected** (§7.2), now also by explicit owner decision (§19.2 point 5) |
@@ -2580,4 +2583,316 @@ D2 is a decision. R8 remains **Blocked** on all of the following, none of which 
 | **R8** | **Blocked** — see §19.6 |
 | **AI-3** | **Incomplete** |
 | **Noor AI** | **Unavailable to real users.** The production dependency graph still fails closed with `503` |
+| **NoorLife** | **Not production-ready** |
+
+---
+
+## 20. Client selection and the TLS trace — 2026-08-08
+
+**Scope: the client-selection half of B14, and nothing else.** This is a design review of a pinned
+package's source. It adds no dependency, writes no code, changes no migration, sets no secret, and
+makes no connection. §19.7 is otherwise unchanged.
+
+§19.3 recorded that B14 could not move partly because **"no client has been chosen."** That specific
+gap is what this section closes. It does **not** close B14.
+
+### 20.1 The selected client
+
+| | |
+| --- | --- |
+| **Selected** | **`jsr:@db/postgres@0.19.5`** — the `denodrivers/postgres` driver |
+| **Pinned to** | The git tag [`v0.19.5`](https://github.com/denodrivers/postgres/tree/v0.19.5). Every line citation in §20.2–§20.7 is read from that tag, not from `main` and not from a version range |
+| **Latest?** | **Yes.** `v0.19.5` is the newest tag in the repository, ahead of `v0.19.4`. JSR publishes the package as `@db/postgres` at the same version |
+| **Status** | **Selected for planning.** Not added to any manifest — the repository still has no Deno dependency file for the quota store, and this phase created none |
+
+**One premise behind the candidate is weaker than it was offered, and is corrected here.** The
+proposal rested partly on "current Supabase documentation explicitly demonstrates `@db/postgres` for
+Edge Functions." [Connect to Postgres from Edge Functions](https://supabase.com/docs/guides/functions/connect-to-postgres)
+**refers to** the Deno Postgres driver and links a full example, but the code block **shown on the
+page** is `npm:@supabase/server@^1`; **no versioned `@db/postgres` import appears on it.** So the page
+is corroborating, not demonstrative.
+
+**The selection therefore does not stand on that page.** It stands on §20.2's source trace, which is
+the only evidence that speaks to the properties B14 actually asks about. Recorded because a selection
+justified by a citation that does not say what it was said to say is a selection that has to be
+redone later.
+
+### 20.2 What the pinned source actually does with TLS
+
+Read from the pinned tag. Line numbers are that tag's.
+
+| Question | Answer | Exact evidence |
+| --- | --- | --- |
+| Is the connection hostname supplied to the TLS handshake? | **Yes** | `connection/connection.ts:373-376` passes `{ hostname, caCerts: caCertificates }` into `#openTlsConnection`, and `hostname` is the same value destructured at `:345` and used for the TCP connect at `:356` — so the name verified is the name dialled, not a separate label |
+| What performs the handshake? | `Deno.startTls` | `connection/connection.ts:316` — `this.#conn = await Deno.startTls(connection, options);` |
+| Is the certificate chain verified? | **Yes, by the runtime, and not disableable through this client** | Deno's `startTls` documents `caCerts` as roots used "in addition to the default root certificates to verify the peer's certificate", and documents that disabling hostname verification "still validates the certificate chain" — chain validation has no off switch |
+| Is the hostname verified? | **Yes at the client layer** — the client supplies it and never opts out | Deno exposes `unsafelyDisableHostnameVerification` as the only way to skip it. **It appears nowhere in the pinned sources** — a scan of `connection/connection.ts`, `connection/connection_params.ts`, `pool.ts` and `client.ts` for it, `rejectUnauthorized`, `insecure` and `allowUnauthorized` returned **no matches** |
+| Is a supplied CA certificate supported? | **Yes, but only through structured options** | `TLSOptions.caCertificates` (`connection/connection_params.ts:86-94`) — "Must be in PEM format", default `[]`, threaded to `caCerts` at `:539` and `connection.ts:375`. **The connection-string path discards it** — §20.4 |
+| Can the connection silently downgrade? | **Yes, on the default settings** | **§20.3. This is the decisive finding.** |
+
+### 20.3 The silent downgrade — two paths, both open by default
+
+`TLSOptions.enforce` is documented as **"Default: `false`"** (`connection/connection_params.ts:79-85`),
+and the default object confirms it: `enabled: true, enforce: false, caCertificates: []`
+(`:404-406`), re-resolved at `:510`.
+
+With `enforce` left at its default there are **two distinct paths that fall back to an unencrypted
+socket**, each announced only by a `console.error`:
+
+| # | Trigger | Lines | Behaviour when `enforce: false` |
+| --- | --- | --- | --- |
+| 1 | `Deno.startTls` throws — which is exactly what a **bad chain or a hostname mismatch** produces | `connection.ts:378-391` | Logs `"TLS connection failed with message: … Defaulting to non-encrypted connection"`, then `await this.#openConnection({ hostname, port, transport: "tcp" })` and sets `#tls = false` |
+| 2 | The startup message fails with `InvalidData` / `BadResource` | `connection.ts:409-432` | Same log, same plaintext reopen at `:425`, **then re-sends the startup message at `:428`** |
+
+**What the fallback actually costs — stated precisely, because an earlier draft of this section
+overstated it.** That draft said the fallback "sends the role's password over cleartext". **That claim
+is withdrawn: it asserted a PostgreSQL authentication method that this review has not measured.** The
+accurate conclusion is narrower and still sufficient:
+
+1. With `tls.enforce` false, the pinned client **may fall back to a plaintext PostgreSQL connection
+   after TLS establishment fails** (`connection.ts:378-391`, `:409-432`).
+2. Authentication then happens **on that unprotected transport** — `#authenticate(startup_response)`
+   runs at `connection.ts:435`, after both fallback blocks.
+3. **What is actually on the wire during authentication depends on the server-selected authentication
+   method**, which the client does not choose. **SCRAM does not transmit the password itself in
+   plaintext**; other methods have materially different properties. This document does **not** assert
+   which method the hosted server selects.
+4. **Regardless of method, the fallback removes TLS confidentiality and integrity protection** from
+   the authentication metadata *and* from every subsequent byte of database protocol traffic — the
+   quota SQL, its parameters and its results. **That alone is disqualifying**, and it does not depend
+   on resolving point 3.
+
+**Do not state the hosted server's current authentication method anywhere** unless it has been
+independently measured through an approved, non-secret method. It has not been.
+
+**With `enforce: true` both paths throw instead:** `:388-390` re-throws, and `:413-417` throws
+`"The certificate used to secure the TLS connection is invalid: …"`. A third guard at `:392-397`
+throws when the server does not offer TLS at all.
+
+**Consequence — a binding planning decision.** `tls.enforce: true` is **mandatory** for this design,
+and **must be tested**, not merely set. It is the single option on which the entire transport-security
+argument rests: without it, a verification failure silently becomes an unprotected session rather than
+an error. This is also why §17.9's finding that **SSL enforcement is disabled project-wide** cannot be
+dismissed as harmless — the server is documented to still accept non-SSL connections, so nothing on
+the far end would refuse the downgraded session.
+
+### 20.4 The connection string and the structured options are **not** equivalent
+
+`connection/connection_params.ts:349-372` maps `sslmode` as follows:
+
+| `sslmode` in the DSN | Resulting `TLSOptions` | Consequence |
+| --- | --- | --- |
+| **absent** | *no assignment* — `case undefined: break;` at `:350-351`, so the `:404-406` default stands | **`enforce: false`.** A DSN that merely omits the parameter is fully downgradeable |
+| `disable` | `{ enabled: false, enforce: false, caCertificates: [] }` | No TLS |
+| `prefer` | `{ enabled: true, enforce: false, caCertificates: [] }` | Downgradeable |
+| `require` **/** `verify-ca` **/** `verify-full` | `{ enabled: true, enforce: true, caCertificates: [] }` — **one shared `case` block** | Enforced, **but the three modes are indistinguishable to this driver** |
+| anything else | throws `ConnectionParamsError` | — |
+
+Three facts follow, and each is a reason to **not** configure this client from a connection string:
+
+1. **`caCertificates` is hardcoded to `[]` on every DSN branch.** A CA certificate cannot be supplied
+   through the connection string at all. Only structured `ClientOptions` can carry one (`:539`).
+2. **`sslmode=verify-full` buys nothing over `sslmode=require` here.** Both produce the identical
+   options object. The verification that actually happens is whatever `Deno.startTls` does — so the
+   DSN's mode name is decorative, and **must never be cited as evidence of verify-full behaviour.**
+   Note this cuts the other way too: `require` is not being adopted *as a substitute* for
+   verification: verification comes from the runtime, and the mode string is inert either way.
+3. **A typo'd or dropped parameter fails open, not closed.** `:350-351` is a silent `break`.
+
+**Planning decision: configure with structured `ClientOptions`, never a bare `ConnectionString`,** and
+set `tls: { enabled: true, enforce: true, caCertificates: [ … ] }` explicitly. `:512-514` additionally
+rejects the incoherent `enabled: false, enforce: true` combination, so the intended pair is the only
+one that both validates and enforces.
+
+### 20.5 What is proven, and what is still missing
+
+**Proven, from primary sources:**
+
+- The client supplies the dialled hostname to the handshake, supplies any configured CA roots, and
+  contains **no** verification-bypass flag of any kind (§20.2).
+- With `enforce: true`, chain or hostname failure is a **thrown error raised before
+  `#authenticate` is reached**, so **no authentication exchange occurs at all** on a failed handshake
+  (§20.3, `connection.ts:435` ordering). This is a statement about ordering, not about what any
+  particular authentication method would have put on the wire.
+- Supavisor is in scope for SSL enforcement — [SSL enforcement](https://supabase.com/docs/guides/platform/ssl-enforcement)
+  states enforcement "applies to connections to Postgres, Supavisor (shared Connection Pooler) and
+  PgBouncer (dedicated Connection Pooler)". §17.9's finding that it is **disabled** therefore applies
+  to the planned endpoint.
+
+**Not proven, and not inferable from anything consulted:**
+
+1. **Runtime behaviour on the deployed Supabase Edge Runtime.** Every hostname- and chain-verification
+   claim above terminates in `Deno.startTls`'s *documented* behaviour. Supabase Edge Functions do not
+   run stock Deno, and **no consulted source states that the deployed edge runtime's `startTls`
+   verifies identically or carries a root store that chains the pooler's certificate.** The Supabase
+   page's own local-development instructions (`SSL_CERT_FILE`, `DENO_TLS_CA_STORE=mozilla,system`)
+   show the trust store is environment-dependent, which is the opposite of a guarantee.
+2. **Whether a CA certificate is required at all**, i.e. whether the pooler certificate chains to a
+   root already present. Unknown without connecting.
+3. **That "pre-configured to use SSL" implies verification.** It does not, and §19.3's reading stands
+   unchanged: it establishes encryption, not mode.
+
+**Therefore hostname verification is proven at the client layer and *not* proven end-to-end.** The
+exact missing evidence is a **live negative test** — §20.9's wrong-hostname case — run on the target
+runtime. Nothing short of it closes B14, and no amount of further source reading substitutes.
+
+### 20.6 Transaction-mode constraints, and the prepared-statement question left open
+
+[Connecting to Postgres](https://supabase.com/docs/guides/database/connecting-to-postgres) states
+transaction mode "is ideal for serverless or edge functions, which require many transient
+connections", and that it is IPv4-only — which is why §17.11 chose it and why nothing here reopens
+that choice. It also states:
+
+> "Transaction mode does not support prepared statements. To avoid errors, turn off prepared
+> statements for your connection library."
+
+**An earlier draft read this as an instruction the pinned client cannot follow, and therefore as a
+strike against it. That framing is withdrawn — it conflated two different things.** What is actually
+established:
+
+1. **The pinned client uses PostgreSQL's extended query protocol with *unnamed* statement and portal
+   identifiers.** The Parse message writes an empty statement name, twice, with the driver's own TODOs
+   recording that named statements are unimplemented:
+   `.addCString("") // TODO: handle named queries (config.name)` and
+   `.addCString("") // TODO: unnamed prepared statement`.
+2. **Unnamed statements are not persistent named prepared statements.** The unnamed statement is
+   replaced on reuse and does not accumulate as server-side session state, which is the property the
+   Supabase warning is about. Treating "uses the extended protocol" as "uses prepared statements in
+   the sense the warning means" is the conflation.
+3. **The `prepare: false` instruction is client-specific.** It is the switch offered by the
+   **Postgres.js** client that Supabase's own example demonstrates. It **cannot automatically be
+   generalised to `@db/postgres`**, which has no equivalent option because it has no named-statement
+   feature to disable.
+4. **Source inspection found no user-selectable option for the simple-query protocol.** That is a
+   fact about the API surface. **It does not, on its own, prove incompatibility with Supavisor
+   transaction mode**, and this review does not present it as though it did.
+
+**Therefore transaction-mode compatibility is undetermined and requires a controlled live test with
+the exact pinned client** (§20.9 test 10). **`@db/postgres` must not be classified as incompatible**
+unless that test demonstrates failure, or official documentation says so explicitly. Neither has
+happened.
+
+The remaining constraints are unchanged and restated because they bind the schema work that follows:
+
+- **No reliance on session state.** A connection returns to the pool at commit.
+- **No session-level `SET`.** Anything a routine needs must be set inside its own transaction, or
+  fixed on the function (§19.4's `search_path` pinning is the pattern).
+- **No session-level advisory locks** — §17.11's three-legged reasoning stands untouched.
+- **Every quota operation is one self-contained transaction.** This is already what D2 requires
+  (§19.2 point 4); transaction mode makes it mandatory rather than merely preferred.
+
+### 20.7 Pool size, and the timeout options the inspected API does not expose
+
+`pool.ts` exposes `constructor(connection_params, size, lazy = false)`.
+
+**Recommended: `size` = 1, `lazy` = true.** No evidence justifies more. An Edge Function isolate
+serves one handler request, the dev concurrency lease is **1**, and a larger pool would hold idle
+server-side connections against the project-wide budget §17.11 measured. This is a planning
+recommendation; nothing is implemented.
+
+**The inspected client API exposes retry attempts and intervals, but no native per-connect or
+per-query timeout option was identified.** `ConnectionOptions` offers only `attempts` and `interval`
+(`connection_params.ts:45-62`), which govern *retries*, not deadlines. A scan of the pinned sources
+for `timeout` / `AbortSignal` / `abort` found only `connection.ts:512`'s retry backoff `setTimeout`
+and, tellingly, the comment `pool.ts:66`: `// Initialization should probably have a timeout`.
+
+**State the limit of that finding, because the obvious remedy does not do what it looks like it
+does.** Wrapping a call in `Promise.race` or any similar JavaScript timer **abandons the promise; it
+does not cancel the underlying socket, and it does not cancel a query already executing on the
+server.** A "timed out" quota call may therefore still be running, still holding a pooled connection,
+and still able to commit. **No claim that a generic timeout wrapper cancels the connection or the
+query may appear in this design.**
+
+**Recorded as an implementation requirement, not a resolved property:**
+
+- An **outer request deadline** on the handler (`NOOR_AI3_IMPLEMENTATION_PLAN.md` §4.5's
+  `handlerBudgetMs` is the existing mechanism), plus **guaranteed client release/termination** on
+  every path — `release()` returns the connection, `end()` closes the pool, and neither happens on
+  its own.
+- `attempts` set to **1**, so a stalled connect is not silently multiplied inside a budget the driver
+  knows nothing about.
+- **Tests must later prove** that timed-out work does not leak a pooled connection and does not
+  continue mutating quota state after the handler has answered.
+- **If true cancellation cannot be demonstrated, the design fails closed and the client choice is
+  reconsidered before production use.** This is the one open question that could still displace
+  `@db/postgres` on grounds unrelated to TLS.
+
+**Parameterised queries are safe.** Arguments travel in Bind, never interpolated into SQL, so the
+extended-protocol path that §20.6 flags for pooling compatibility is the same path that provides
+injection safety. No string-built SQL is permitted in the quota store.
+
+### 20.8 The future secret — name only
+
+**The two names reserved in an earlier draft were reviewed, and one is changed.** The draft reserved
+`NOOR_AI_QUOTA_DB_URL`. That name is **wrong for this design**: `_URL` states that the value is a DSN,
+and §20.4 concluded that a DSN **cannot** carry the required configuration and must not be handed to
+this driver. A name that advertises the rejected shape invites exactly the mistake §20.4 exists to
+prevent. It is renamed before it is ever created.
+
+The design separates **two distinct concerns**, which is why there are two names and not one:
+
+| Concern | Reserved secret name | Status |
+| --- | --- | --- |
+| **Connection configuration and credential material** — the values parsed into structured `ClientOptions` (§20.4) | **`NOOR_AI_QUOTA_DB_CONNECTION`** | Required by the design. Does not exist |
+| **An optional CA certificate**, supplied **only if** the runtime's trusted root store cannot validate the Supavisor certificate | **`NOOR_AI_QUOTA_DB_CA_CERT`** | **Conditional and possibly unnecessary.** Does not exist |
+
+**A custom CA certificate is not asserted to be required.** Whether one is needed is §20.5's open
+point 2, and it is answerable only by connecting. **The runtime's own trust store is preferred** — if
+§20.9's controlled test demonstrates correct chain and hostname validation without a supplied root,
+then `caCertificates` stays `[]`, `NOOR_AI_QUOTA_DB_CA_CERT` is never created, and the design carries
+one less secret to provision and rotate. A supplied root is the fallback, not the plan.
+
+**These are names, not values. Neither secret exists.** No value has been generated, requested,
+displayed, transmitted or stored, and no hostname, region, project reference, username, port or
+connection string is recorded in this repository.
+
+### 20.9 The B15 controlled test — defined here, executed nowhere
+
+**Not run. Not authorised by this section.** It requires separate approval for credential
+provisioning, which has not been given and is not requested here.
+
+**Preconditions.** The credential is generated by a secure generator, installed **directly** into the
+database role and into the Edge Function secret through non-displaying channels, and **never**
+printed, echoed, pasted into chat, committed, or written to any repository file — including test
+fixtures and logs. `noor_ai_runtime` currently has `LOGIN` but **no password verifier**, so it cannot
+authenticate today; that state is deliberate and is what makes this section safe to write.
+
+**Transport.** Supavisor transaction mode, structured `ClientOptions`, `tls.enforce: true`, pool size
+1. No direct endpoint, no session pooler.
+
+| # | Assertion | Method |
+| --- | --- | --- |
+| 1 | Allowed connection succeeds | Connect, then a trivial self-contained transaction |
+| 2 | The authenticated identity is the intended role | `current_user` / `session_user` compared **in-database against a literal**, returning a boolean — never printing the value |
+| 3 | TLS is active | Read the session's SSL state from the server side, asserted as a boolean |
+| 4 | **Verification cannot be bypassed** | **Separate from 3.** Re-run with a deliberately wrong hostname and assert the attempt **fails before authentication** — the `connection.ts:378-391` throw, not an auth error. Then re-run with `enforce` at its default and confirm the §20.3 downgrade is what would otherwise occur. **The negative run must target a host that is not the production endpoint, and must never carry the real credential** |
+| 5 | `USAGE` but **not** `CREATE` on `noor_ai` | `has_schema_privilege`, both asserted |
+| 6 | Cannot access `public.profiles` | Attempt inside a savepoint; assert the error, roll back |
+| 7 | Cannot execute public application functions | Same, per signature, against §19.4's inventory |
+| 8 | Cannot reach Vault, `auth`, `storage`, migration history | Same, per target |
+| 9 | Cannot create arbitrary schema objects | Attempt `CREATE` in `noor_ai` and in `public`; assert refusal |
+| 10 | **Transaction-mode compatibility of the pinned client** (§20.6) | Run **multiple sequential parameterised operations across pooled transaction-mode connections**, not one query once. **Fail if the driver turns out to depend on session-persistent state.** A pass here is what determines compatibility; source reading did not |
+| 11 | **A timed-out operation leaks nothing** (§20.7) | Trip the outer deadline mid-operation, then assert the pooled connection is released and that no further quota mutation lands after the handler answered. **If cancellation cannot be demonstrated, fail closed and reconsider the client** |
+| 12 | **No credential or connection detail appears in output** | Scan the full transcript before it is recorded anywhere |
+
+**Cleanup.** Every assertion runs inside a transaction that is rolled back, or against `TEMP` objects.
+Nothing persists. The pool is `end()`ed.
+
+**A failure of 4, 5, 6, 7, 8 or 9 is a stop, not a finding to work around.**
+
+### 20.10 Verdicts
+
+| | |
+| --- | --- |
+| **Client selection** | **Settled — `jsr:@db/postgres@0.19.5`,** on §20.2's trace rather than on the Supabase page (§20.1) |
+| **B14** | **CONDITIONALLY APPROVED — still open, still blocking.** The client is chosen and the exact configuration that makes it verify-full-equivalent is specified and sourced (§20.3, §20.4). It is **not closed**: §20.5's runtime gap is unproven, and TLS being enabled or enforced is explicitly *not* the bar. Closure requires §20.9 test 4 |
+| **B15** | **OPEN.** Documentation side stays closed (§19.3); the controlled test is now *specified* rather than merely *required* — specifying a test is not running one |
+| **Transaction-mode compatibility** | **UNDETERMINED, not adverse.** The pinned client uses unnamed extended-protocol statements, which are not persistent named prepared statements; Postgres.js's `prepare: false` does not generalise to it. **`@db/postgres` is not classified as incompatible** — §20.9 test 10 decides it (§20.6) |
+| **Timeout behaviour** | **An implementation requirement, and the one non-TLS risk that could still displace the client.** No native connect/query timeout option was identified, and a JavaScript timer does not cancel the socket or the server-side query. Outer deadline + guaranteed release, proven by §20.9 test 11 (§20.7) |
+| **Credential** | **Does not exist.** `noor_ai_runtime` has `LOGIN` and no password verifier, so it cannot authenticate |
+| **Live connection** | **None has ever been made** from this repository to the hosted project over any Postgres endpoint |
+| **Dependency** | **Not added.** The selection is recorded in prose only |
+| **R8** | **Blocked.** §19.6's list is unchanged except that item 5's "client chosen" clause is now satisfied |
+| **SSL enforcement** | **Still disabled, still undecided** (§17.9). §20.5 confirms Supavisor is in its scope |
+| **AI-3** | **Incomplete** |
 | **NoorLife** | **Not production-ready** |

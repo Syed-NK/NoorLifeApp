@@ -1400,12 +1400,76 @@ Function workloads, and the Supavisor FAQ documents the `[USER].[project-ref]` u
 that a database may have many users — but **a controlled connection test with the real custom role
 remains mandatory before production deployment**. **B14 remains open**: Supabase states deployed Edge
 Function database connections use SSL, which proves encryption and *not* `verify-full` certificate or
-hostname verification for the client this project will use, and no client has been chosen. Separately,
+hostname verification for the client this project will use. *(The "and no client has been chosen"
+clause of this sentence is superseded 2026-08-08 — see the client-selection paragraph below. B14
+itself remains open.)* Separately,
 **B18** and **B13**'s existing-function half are **corrected, deployed and verified on hosted**, and
 **B11** now has a committed local PostgreSQL-17 assertion in
 `supabase/tests/security_invariants.test.sql` — which, because the repository has **no CI workflow**,
 runs only when a developer runs it. **No role, schema, table, function, password, secret, connection
 string or provider integration exists.**
+
+**R8 status after the client-selection and TLS design review of 2026-08-08: still `Blocked`.** The
+review's §20 records it. The Postgres client is now **selected and pinned in planning**:
+**`jsr:@db/postgres@0.19.5`** (`denodrivers/postgres`, git tag `v0.19.5`, confirmed the newest tag).
+**No dependency, manifest, lockfile or import was added** — the selection exists only as prose.
+
+The selection was made from the **pinned package source**, not from option names and not from the
+Supabase page, which turned out to reference the Deno Postgres driver without showing a versioned
+`@db/postgres` import (review §20.1). Three findings drive the design, and each is a source citation
+rather than an inference:
+
+1. **The client passes the dialled hostname and any configured CA roots into `Deno.startTls`**, and
+   contains **no** verification-bypass flag — no `unsafelyDisableHostnameVerification`, no
+   `rejectUnauthorized`, nothing equivalent (§20.2).
+2. **`tls.enforce` defaults to `false`, and on that default a failed TLS handshake may fall back to a
+   plaintext PostgreSQL connection and authenticate over it.** What the authentication exchange puts
+   on the wire depends on the **server-selected** authentication method — SCRAM does not transmit the
+   password itself in plaintext, and other methods differ — so **this plan asserts no claim about the
+   hosted server's method**, which has not been measured. What the fallback does regardless of method
+   is remove TLS confidentiality and integrity from the authentication metadata and from all
+   subsequent database traffic, which is disqualifying on its own. **`tls.enforce: true` is mandatory
+   and must be tested** (§20.3).
+3. **A connection string cannot express the required configuration.** `sslmode=require`, `verify-ca`
+   and `verify-full` all map to one identical options object, `caCertificates` is hardcoded empty on
+   every DSN branch, and an absent `sslmode` silently leaves enforcement off. **Structured
+   `ClientOptions` only** (§20.4).
+
+**B14 is conditionally approved and remains open and blocking.** Hostname and chain verification are
+proven *at the client layer*; they are **not** proven end-to-end on the deployed Supabase Edge
+Runtime, which is not stock Deno and whose trust store is environment-dependent. The exact missing
+evidence is a live wrong-hostname negative test (§20.5, §20.9 test 4). **TLS being enabled or enforced
+is explicitly not the bar.** **B15 remains open**; its controlled connection test is now *specified*
+(§20.9) and has **not been run**.
+
+Transaction-mode planning constraints are fixed by the same review: **pool size 1, lazy**, `attempts`
+1, every quota operation one self-contained transaction, no session state, no session-level `SET`, no
+session-level advisory lock. Two further items are recorded as **open questions rather than as
+defects**:
+
+- **Transaction-mode compatibility is undetermined.** The client uses the extended query protocol with
+  **unnamed** statement and portal identifiers, which are *not* persistent named prepared statements
+  and are replaced on reuse. Supabase's "turn off prepared statements" instruction is satisfied by
+  **Postgres.js**'s `prepare: false`, which does not generalise to `@db/postgres`. No simple-query
+  option was found in the source, but that alone proves nothing. **`@db/postgres` is not classified as
+  incompatible**; §20.9 test 10 — multiple sequential parameterised operations across pooled
+  transaction-mode connections — decides it (§20.6).
+- **No native connect or query timeout option was identified** in the inspected API, which exposes
+  only retry `attempts` and `interval`. **A JavaScript timeout wrapper does not cancel the underlying
+  socket or a running server-side query**, so this is an implementation requirement, not a solved
+  problem: an outer request deadline plus guaranteed client release/termination, with tests proving
+  that timed-out work leaks no connection and mutates no quota afterwards. **If cancellation cannot be
+  demonstrated, fail closed and reconsider the client before production use** (§20.7).
+
+The future credential is recorded **as a secret name only** — **`NOOR_AI_QUOTA_DB_CONNECTION`**
+(renamed from an earlier draft's `NOOR_AI_QUOTA_DB_URL`, because `_URL` advertises the DSN shape that
+finding 3 rejects), with `NOOR_AI_QUOTA_DB_CA_CERT` reserved **only for the case where the runtime's
+trusted root store cannot validate the Supavisor certificate**. **A custom CA certificate is not
+asserted to be required**, and the runtime trust store is preferred if the controlled test proves
+correct chain and hostname validation without one (§20.8). **No credential exists**: `noor_ai_runtime`
+holds `LOGIN` with **no password verifier**, so it cannot authenticate. **No connection has ever been
+made**, and this phase provisioned nothing, deployed nothing and contacted the hosted project not at
+all.
 
 ### 11.3 Provisional, or open, until evidence exists
 
@@ -1455,7 +1519,7 @@ proposes how to close them.
 | Model selected and pinned, with rationale (§F.2)          | **Recommended (R1), not approved and not pinned.** No configuration value is set   |
 | Timeouts from measured latency (§F.7)                     | **Proposed and explicitly provisional.** No latency has been measured              |
 | Token and spend limits pinned (§I.2, §I.3)                | **Proposed (§4).** Not pinned; two of three global controls are not implemented (§9.3) |
-| Rate-limit store chosen (§12.7, §I.1)                     | **Architecture chosen 2026-08-08 (review §19: D2); still `Blocked` for implementation** (§11.2.1). A dedicated least-privilege `LOGIN` role over transaction-mode Supavisor, credential as an Edge Function secret only, objects in a private `noor_ai` schema, no `service_role`, atomic and server-only, failing closed. *Supersedes "Postgres + definer RPC is the direction" and "not chosen".* Still unsettled: the credential and HMAC key lifecycle (B10), TLS verification (B14), the pooler custom-role test (B15). **No migration, no role, no schema, no dependency, no salt, no secret** |
+| Rate-limit store chosen (§12.7, §I.1)                     | **Architecture chosen 2026-08-08 (review §19: D2); still `Blocked` for implementation** (§11.2.1). A dedicated least-privilege `LOGIN` role over transaction-mode Supavisor, credential as an Edge Function secret only, objects in a private `noor_ai` schema, no `service_role`, atomic and server-only, failing closed. *Supersedes "Postgres + definer RPC is the direction" and "not chosen".* The Postgres client is **selected and pinned in planning** 2026-08-08 — `jsr:@db/postgres@0.19.5`, with `tls.enforce: true`, structured options rather than a connection string, and pool size 1 (review §20). Still unsettled: the credential and HMAC key lifecycle (B10), the end-to-end TLS verification proof (B14 — conditionally approved, still blocking), the pooler custom-role test (B15 — specified, unrun). **No migration, no role, no schema, no dependency, no salt, no secret** |
 | §12.6 `safety_identifier` decision                        | **Recommended (R10, R11), not approved.** No salt generated, no field implemented  |
 | Platform log retention confirmed (§H.4)                   | **Not done** — step 6b                                                            |
 | Previous HS256 signing key no longer listed (§D.6.5)      | **Not confirmed** — step 6b                                                       |
