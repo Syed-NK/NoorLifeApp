@@ -234,6 +234,84 @@ describe('profiles least-privilege convergence (20260808120000)', () => {
   });
 });
 
+describe('function execute hardening (20260808140000)', () => {
+  /**
+   * B13: the hosted per-signature inventory found exactly three application functions in `public`
+   * and no extension-owned ones. `handle_new_user` was already restricted; the two trigger functions
+   * still carried EXECUTE for PUBLIC, anon and authenticated, and one of them resolved names through
+   * `search_path=public` while running as SECURITY DEFINER.
+   *
+   * Read on its own, not the concatenation, and with comment lines stripped: the migration explains
+   * triggers, RLS and the elevated role in prose, and asserting over raw text would match that prose.
+   */
+  const FILE = '20260808140000_function_execute_hardening.sql';
+  const raw = readFileSync(join(MIGRATIONS, FILE), 'utf8');
+  const statements = raw
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('alters exactly one function, and only its search_path', () => {
+    const alters = [...statements.matchAll(/alter\s+function\s+([^\s(]+\([^)]*\))/gi)];
+    expect(alters).toHaveLength(1);
+    expect(alters.map((match) => match[1])).toEqual(['public.enforce_client_plan_code()']);
+    expect(statements).toMatch(
+      /alter function public\.enforce_client_plan_code\(\) set search_path = '';/i,
+    );
+  });
+
+  it('pins that search_path to empty, not to a schema', () => {
+    const setClause = statements.match(/set\s+search_path\s*=\s*([^;]+);/i);
+    expect(setClause).not.toBeNull();
+    // `= ''` is the hardened value. `= public` would be the defect this migration removes.
+    expect(setClause?.[1]?.trim()).toBe("''");
+  });
+
+  it('revokes execute from PUBLIC, anon and authenticated on exactly the two named functions', () => {
+    const revokes = [
+      ...statements.matchAll(
+        /revoke\s+execute\s+on\s+function\s+([^\s(]+\([^)]*\))\s+from\s+([^;]+);/gi,
+      ),
+    ];
+    expect(revokes).toHaveLength(2);
+    expect(revokes.map((match) => match[1]).sort()).toEqual([
+      'public.enforce_client_plan_code()',
+      'public.set_updated_at()',
+    ]);
+    for (const match of revokes) {
+      // `?? ''` keeps this type-safe; a missing capture yields [''] and fails the assertion loudly.
+      const grantees = (match[2] ?? '').split(',').map((grantee) => grantee.trim().toLowerCase());
+      expect(grantees.sort()).toEqual(['anon', 'authenticated', 'public']);
+    }
+  });
+
+  it('leaves handle_new_user untouched', () => {
+    // It may be discussed in the comments; it must not appear in any statement.
+    expect(statements).not.toMatch(/handle_new_user/i);
+  });
+
+  it('replaces no function body', () => {
+    expect(statements).not.toMatch(/create\s+(or replace\s+)?function/i);
+    expect(statements).not.toMatch(/\$\$/);
+    expect(statements).not.toMatch(/language\s+plpgsql/i);
+    expect(statements).not.toMatch(/returns\s+trigger/i);
+    expect(statements).not.toMatch(/security\s+(definer|invoker)/i);
+  });
+
+  it('changes no trigger, table, RLS, policy, default privilege, schema or elevated role', () => {
+    expect(statements).not.toMatch(/(create|drop|alter)\s+trigger/i);
+    expect(statements).not.toMatch(/(create|drop|alter)\s+table/i);
+    expect(statements).not.toMatch(/row level security/i);
+    expect(statements).not.toMatch(/(create|drop|alter)\s+policy/i);
+    expect(statements).not.toMatch(/alter\s+default\s+privileges/i);
+    expect(statements).not.toMatch(/(create|drop|alter)\s+schema/i);
+    expect(statements).not.toMatch(/on\s+table/i);
+    expect(statements).not.toMatch(/\bgrant\b/i);
+    expect(statements).not.toMatch(/service_role/i);
+    expect(raw).not.toMatch(/service_role/i);
+  });
+});
+
 describe('git hygiene', () => {
   const gitignore = readFileSync(join(ROOT, '.gitignore'), 'utf8');
 
