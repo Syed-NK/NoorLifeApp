@@ -21,11 +21,13 @@ const lower = sql.toLowerCase();
  * naive scan of the whole file reports those very words as present. Assertions about what the SQL
  * *does* must read the statements, not the explanation of them.
  */
-const body = sql
-  .split('\n')
-  .filter((l) => !l.trimStart().startsWith('--'))
-  .join('\n')
-  .toLowerCase();
+const stripComments = (s: string): string =>
+  s
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('--'))
+    .join('\n');
+
+const body = stripComments(sql).toLowerCase();
 
 describe('NoorAI quota migration — shape', () => {
   it('is a single forward-only migration that amends no earlier file', () => {
@@ -206,21 +208,43 @@ describe('NoorAI quota migration — data minimisation', () => {
     expect(lower).toMatch(/unique \(reservation_id, attempt_number\)/);
   });
 
-  it('re-checks the reservation replay after acquiring the reserve lock', () => {
-    const fn = sql.slice(
-      sql.indexOf('create or replace function noor_ai.reserve('),
-      sql.indexOf('create or replace function noor_ai.register_attempt('),
+  it('orders the reserve lock, replay, expiry, ceilings and counters correctly', () => {
+    // Executable statements only. An ordering claim that a comment could satisfy proves nothing.
+    const fn = stripComments(
+      sql.slice(
+        sql.indexOf('create or replace function noor_ai.reserve('),
+        sql.indexOf('create or replace function noor_ai.register_attempt('),
+      ),
     );
     const lockAt = fn.indexOf('pg_advisory_xact_lock');
-    const afterLock = fn.slice(lockAt);
-    // The authoritative lookup must sit between the lock and any ceiling test or increment.
-    const replayAt = afterLock.indexOf('r.request_id = p_request_id');
-    const leaseAt = afterLock.indexOf('concurrency_lease');
-    const incrAt = afterLock.indexOf('try_increment');
     expect(lockAt).toBeGreaterThan(-1);
-    expect(replayAt).toBeGreaterThan(-1);
-    expect(replayAt).toBeLessThan(leaseAt);
-    expect(replayAt).toBeLessThan(incrAt);
+
+    const afterLock = fn.slice(lockAt);
+    const at = (needle: string) => {
+      const i = afterLock.indexOf(needle);
+      expect(i).toBeGreaterThan(-1);
+      return i;
+    };
+
+    // advisory lock -> authoritative replay -> expire stale -> concurrency -> counters -> insert
+    const replayAt = at('r.request_id = p_request_id');
+    const expireAt = at('expire_stale');
+    const leaseAt = at('into v_leases');
+    const incrAt = at('try_increment_global');
+    const insertAt = at('insert into noor_ai.reservation');
+
+    expect(replayAt).toBeLessThan(expireAt);
+    expect(expireAt).toBeLessThan(leaseAt);
+    expect(leaseAt).toBeLessThan(incrAt);
+    expect(incrAt).toBeLessThan(insertAt);
+
+    // Exactly one sweep, and it is the one inside the lock. A leftover pre-lock call would restore
+    // the unserialised sweep this ordering exists to remove, while still satisfying every check above.
+    expect(fn.match(/expire_stale/g) ?? []).toHaveLength(1);
+
+    // Ceilings are resolved before the lock, so a configuration defect never reaches admission.
+    expect(fn.indexOf('require_limit')).toBeGreaterThan(-1);
+    expect(fn.indexOf('require_limit')).toBeLessThan(lockAt);
   });
 
   it('accepts late accounting only from reserved or expired, never from a terminal state', () => {
@@ -284,5 +308,104 @@ describe('NoorAI quota migration — approved configuration', () => {
 
   it('keeps the kill switch fail-closed', () => {
     expect(lower).toMatch(/limit_of\('enabled'\) is distinct from 1/);
+  });
+});
+
+describe('NoorAI quota migration — configuration fails closed', () => {
+  const REQUIRED = [
+    'enabled',
+    'per_user_minute',
+    'per_user_hour',
+    'per_user_day',
+    'global_minute',
+    'global_day',
+    'concurrency_lease',
+    'daily_spend_micros',
+    'monthly_spend_micros',
+    'max_input_tokens',
+    'max_output_tokens',
+    'max_attempts',
+    'lease_ttl_seconds',
+  ];
+
+  it('declares the required configuration keys in exactly one place', () => {
+    // The function body alone. Reading as far as the next statement would sweep in unrelated quoted
+    // literals — `default 'reserved'` and a partial index predicate both sit between here and there.
+    const start = sql.indexOf('create or replace function noor_ai.required_limit_keys(');
+    expect(start).toBeGreaterThan(-1);
+    const fn = stripComments(sql.slice(start, sql.indexOf('$$;', start)));
+
+    for (const key of REQUIRED) {
+      expect(fn).toContain(`'${key}'`);
+    }
+    // Set equality, not containment: an undeclared key would go unenforced.
+    expect(fn.match(/'[a-z_]+'/g) ?? []).toHaveLength(REQUIRED.length);
+  });
+
+  it('asserts the seed satisfies the required set at migration time', () => {
+    // `on conflict do nothing` means a re-run keeps whatever is present, so a drifted seed is only
+    // catchable here.
+    expect(body).toMatch(/missing required configuration keys/);
+    expect(body).toMatch(
+      /raise exception[\s\S]{0,120}required_limit_keys|required_limit_keys[\s\S]{0,400}raise exception/,
+    );
+  });
+
+  it('treats missing, duplicated, null and non-positive alike, and substitutes nothing', () => {
+    const fn = stripComments(
+      sql.slice(
+        sql.indexOf('create or replace function noor_ai.require_limit('),
+        sql.indexOf('create or replace function noor_ai.config_error('),
+      ),
+    );
+    expect(fn).toMatch(/v_rows <> 1 or v_value is null or v_value < 1/);
+    expect(fn).toMatch(/raise exception using errcode = 'NOCFG'/);
+    // No default, no coalesce, no re-seed: a defect must not be papered over.
+    expect(fn).not.toMatch(/coalesce|insert into|default/i);
+  });
+
+  it('routes every ceiling through the strict lookup, leaving limit_of for the kill switch alone', () => {
+    // The permissive lookup returns null for a missing key; a null ceiling reaching try_increment_*
+    // admits the first request of each window. Only `enabled` may still use it.
+    const permissive = body.match(/limit_of\('(\w+)'\)/g) ?? [];
+    expect(new Set(permissive)).toEqual(new Set(["limit_of('enabled')"]));
+
+    const strict = (sql.match(/require_limit\('(\w+)'\)/g) ?? []).map((m) =>
+      m.replace(/require_limit\('/, '').replace(/'\)/, ''),
+    );
+    // Every required key except the kill switch is resolved strictly somewhere in the lifecycle.
+    expect(new Set(strict)).toEqual(new Set(REQUIRED.filter((k) => k !== 'enabled')));
+  });
+
+  it('reports a configuration defect as a store failure, never as a rate-limit denial', () => {
+    const fn = sql.slice(
+      sql.indexOf('create or replace function noor_ai.config_error('),
+      sql.indexOf('-- Database time only'),
+    );
+    expect(fn).toMatch(/'decision', 'unavailable'/);
+    expect(fn).toMatch(/'reason', 'configuration'/);
+    expect(fn).toMatch(/'configuration_error', true/);
+    expect(fn).toMatch(/'ok', false/);
+    // A configuration failure must never be dressed up as a quota denial.
+    expect(fn).not.toMatch(/'limited'/);
+  });
+
+  it('resolves configuration before any mutation in every lifecycle entry point', () => {
+    for (const fnName of ['reserve', 'register_attempt', 'status']) {
+      const start = sql.indexOf(`create or replace function noor_ai.${fnName}(`);
+      expect(start).toBeGreaterThan(-1);
+      const fn = stripComments(sql.slice(start, start + 4000));
+      const cfgAt = fn.indexOf('require_limit');
+      expect(cfgAt).toBeGreaterThan(-1);
+      // Nothing may be written, and no row locked, before the ceilings are known to be valid.
+      for (const mutation of ['insert into', 'update noor_ai', 'for update', 'try_increment']) {
+        const at = fn.indexOf(mutation);
+        if (at > -1) expect(cfgAt).toBeLessThan(at);
+      }
+      // And the failure is returned as data the Edge Function can map, not raised at the caller.
+      expect(fn).toMatch(
+        /exception when sqlstate 'NOCFG' then\s*\n\s*return noor_ai\.config_error/,
+      );
+    }
   });
 });

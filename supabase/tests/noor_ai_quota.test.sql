@@ -39,6 +39,17 @@ insert into t_subj values
 create or replace function pg_temp.sid(p text) returns uuid language sql stable as
 $$ select id from t_subj where label = p $$;
 
+-- The pristine seeded configuration, captured before any section edits it. §16 deletes and zeroes
+-- individual keys to prove the fail-closed rule, and restores from here between probes so each probe
+-- starts from the same known-good state rather than from the previous probe's damage.
+create temporary table t_cfg_backup on commit drop as
+  select * from noor_ai.limit_config;
+
+create or replace function pg_temp.restore_cfg() returns void language sql as $$
+  delete from noor_ai.limit_config;
+  insert into noor_ai.limit_config select * from t_cfg_backup;
+$$;
+
 -- Raise every ceiling AND clear accumulated state, so an individual limit can be isolated by lowering
 -- just that one. Clearing matters: counters persist across sections within the transaction, so
 -- without it a later section would be denied by an earlier section's consumption rather than by the
@@ -684,6 +695,252 @@ select is((select value from noor_ai.global_counter where window_kind = 'month')
 -- is the targeted delete proven in §14, and it remains a separate, separately gated path.
 select is((select count(*)::int from noor_ai.user_counter where subject_id = pg_temp.sid('a')), 1,
   'purge is age-based and subject-blind — it is not an account-erasure mechanism');
+
+-- ── 16. Invalid configuration fails closed ──────────────────────────────────
+-- The defect this pins: try_increment_*() takes its ceiling as an argument, and a null ceiling makes
+-- the ON CONFLICT guard `w.value + p_amount <= p_limit` evaluate to null. On an existing counter row
+-- that denies — which LOOKS safe — but on the first request of a window there is no conflict, so the
+-- INSERT succeeded unconditionally and the request was admitted. One admission leaked per window, per
+-- counter, silently, and no test noticed because every test seeded a complete configuration.
+--
+-- Each probe below damages exactly one key, drives the real RPC through the public wrapper, and then
+-- reads the whole store back. A configuration failure must be distinguishable from a rate-limit
+-- denial (503 vs 429) and must move nothing at all.
+
+-- Probe: damage one key, then reserve. Returns the decision plus the entire mutable state, so the
+-- assertions can prove "nothing changed" rather than merely "the answer looked right".
+create or replace function pg_temp.cfg_probe_reserve(p_key text, p_mode text)
+returns jsonb language plpgsql as $$
+declare v_res jsonb; v_u bigint; v_g bigint; v_r bigint; v_a bigint;
+begin
+  perform pg_temp.restore_cfg();
+  perform pg_temp.open_limits();
+  if p_mode = 'missing' then
+    delete from noor_ai.limit_config where key = p_key;
+  else
+    update noor_ai.limit_config set value = 0 where key = p_key;
+  end if;
+  v_res := pg_temp.rpc_reserve(pg_temp.sid('a'), 'cfg-' || pg_catalog.left(p_key, 55));
+  select coalesce(pg_catalog.sum(value), 0) into v_u from noor_ai.user_counter;
+  select coalesce(pg_catalog.sum(value), 0) into v_g from noor_ai.global_counter;
+  select pg_catalog.count(*) into v_r from noor_ai.reservation;
+  select pg_catalog.count(*) into v_a from noor_ai.provider_attempt;
+  return pg_catalog.jsonb_build_object(
+    'decision', v_res->>'decision', 'reason', v_res->>'reason', 'key', v_res->>'key',
+    'flag', v_res->>'configuration_error',
+    'user_counters', v_u, 'global_counters', v_g, 'reservations', v_r, 'attempts', v_a);
+end $$;
+
+-- Probe: reserve legitimately FIRST, then damage one key, then register an attempt. The reservation
+-- exists, so a leak here would be a real cost record written under unknown ceilings.
+create or replace function pg_temp.cfg_probe_attempt(p_key text, p_mode text)
+returns jsonb language plpgsql as $$
+declare v_rid uuid; v_res jsonb; v_a bigint; v_sp bigint;
+begin
+  perform pg_temp.restore_cfg();
+  perform pg_temp.open_limits();
+  v_rid := (pg_temp.rpc_reserve(pg_temp.sid('a'), 'cfga-' || pg_catalog.left(p_key, 54))->>'reservation_id')::uuid;
+  if p_mode = 'missing' then
+    delete from noor_ai.limit_config where key = p_key;
+  else
+    update noor_ai.limit_config set value = 0 where key = p_key;
+  end if;
+  v_res := pg_temp.rpc_attempt(pg_temp.sid('a'), v_rid, 1, 100, 10, 0, 'success');
+  select pg_catalog.count(*) into v_a from noor_ai.provider_attempt;
+  select coalesce(pg_catalog.sum(value), 0) into v_sp
+    from noor_ai.global_counter where metric = 'spend_micros';
+  return pg_catalog.jsonb_build_object(
+    'ok', v_res->>'ok', 'reason', v_res->>'reason', 'key', v_res->>'key',
+    'flag', v_res->>'configuration_error', 'attempts', v_a, 'spend', v_sp);
+end $$;
+
+-- Every ceiling reserve() depends on, probed individually, missing and then zero.
+create temporary table t_cfg_res (key text, mode text, r jsonb) on commit drop;
+insert into t_cfg_res
+select k, m, pg_temp.cfg_probe_reserve(k, m)
+  from pg_catalog.unnest(array['per_user_minute', 'per_user_hour', 'per_user_day',
+                               'global_minute', 'global_day', 'concurrency_lease',
+                               'daily_spend_micros', 'monthly_spend_micros',
+                               'lease_ttl_seconds']) k
+ cross join pg_catalog.unnest(array['missing', 'zero']) m;
+
+select is((select count(*)::int from t_cfg_res), 18,
+  'every reserve-path ceiling is probed both missing and zero');
+
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_res where r->>'decision' <> 'unavailable' $$,
+  'an invalid ceiling makes reserve report unavailable — a store failure (503), never a denial (429)');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_res where r->>'reason' <> 'configuration' $$,
+  'the refusal reason is `configuration`, distinguishable from every rate-limit reason');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_res where r->>'key' is distinct from key $$,
+  'the failure names the offending configuration key, so the defect is diagnosable');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_res where r->>'flag' <> 'true' $$,
+  'the failure carries the configuration_error flag the Edge Function switches on');
+
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_res where (r->>'reservations')::bigint <> 0 $$,
+  'no reservation is created when configuration is invalid');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_res where (r->>'user_counters')::bigint <> 0 $$,
+  'no per-user counter moves when configuration is invalid');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_res where (r->>'global_counters')::bigint <> 0 $$,
+  'no global counter moves when configuration is invalid — including the first request of a window');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_res where (r->>'attempts')::bigint <> 0 $$,
+  'no provider attempt is inserted when configuration is invalid');
+
+-- The attempt-path ceilings, which reserve() never reads.
+create temporary table t_cfg_att (key text, mode text, r jsonb) on commit drop;
+insert into t_cfg_att
+select k, m, pg_temp.cfg_probe_attempt(k, m)
+  from pg_catalog.unnest(array['max_input_tokens', 'max_output_tokens', 'max_attempts']) k
+ cross join pg_catalog.unnest(array['missing', 'zero']) m;
+
+select is((select count(*)::int from t_cfg_att), 6,
+  'every attempt-path ceiling is probed both missing and zero');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_att where r->>'ok' <> 'false' $$,
+  'an invalid token or attempt ceiling refuses the provider attempt');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_att where r->>'reason' <> 'configuration' $$,
+  'the attempt refusal is a configuration failure, not a token-limit denial');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_att where r->>'key' is distinct from key $$,
+  'the attempt failure names the offending configuration key');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_att where r->>'flag' <> 'true' $$,
+  'the attempt failure carries the configuration_error flag');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_att where (r->>'attempts')::bigint <> 0 $$,
+  'no provider attempt row is inserted under invalid configuration');
+select is_empty(
+  $$ select key || '/' || mode from t_cfg_att where (r->>'spend')::bigint <> 0 $$,
+  'no spend is accumulated under invalid configuration');
+
+-- `enabled` is the one key whose ABSENCE is not an error. Off is a legitimate operational state, and
+-- absence must resolve to it — a missing kill switch may never read as "on".
+select pg_temp.restore_cfg();
+select pg_temp.open_limits();
+delete from noor_ai.limit_config where key = 'enabled';
+select is(pg_temp.rpc_reserve(pg_temp.sid('a'), 'cfg-enabled')->>'decision', 'limited',
+  'a missing `enabled` key denies rather than erroring — absence means disabled');
+select is(pg_temp.rpc_reserve(pg_temp.sid('a'), 'cfg-enabled2')->>'reason', 'disabled',
+  'the missing kill switch reports `disabled`, the same as an explicit 0');
+select is((select count(*)::int from noor_ai.reservation), 0,
+  'a missing kill switch creates no reservation');
+select is((select coalesce(sum(value), 0)::bigint from noor_ai.global_counter), 0::bigint,
+  'a missing kill switch moves no counter');
+select is(pg_temp.rpc_status(pg_temp.sid('a'))->>'enabled', 'false',
+  'status reports a missing kill switch as disabled, never as null or enabled');
+
+-- status() must refuse rather than quote a ceiling it could not resolve: a null limit renders as
+-- "unlimited" to anything downstream.
+select pg_temp.restore_cfg();
+delete from noor_ai.limit_config where key = 'per_user_day';
+select is(pg_temp.rpc_status(pg_temp.sid('a'))->>'reason', 'configuration',
+  'status fails closed on a missing ceiling instead of reporting a null limit');
+
+-- Structural guarantees: neither a duplicate nor a negative value is representable at all.
+select pg_temp.restore_cfg();
+select throws_ok(
+  $$ insert into noor_ai.limit_config (key, value, unit) values ('per_user_day', 5, 'count') $$,
+  '23505', null,
+  'a duplicate configuration key is rejected structurally by the primary key');
+select throws_ok(
+  $$ update noor_ai.limit_config set value = -1 where key = 'per_user_day' $$,
+  '23514', null,
+  'a negative configuration value is rejected structurally by the check constraint');
+
+-- The declared required set is the single source of truth, and the seed satisfies it exactly.
+select set_eq(
+  $$ select pg_catalog.unnest(noor_ai.required_limit_keys()) $$,
+  $$ select key from noor_ai.limit_config $$,
+  'the seeded configuration equals the declared required key set exactly');
+select is((select pg_catalog.array_length(noor_ai.required_limit_keys(), 1)), 13,
+  'the required configuration set is the thirteen approved DEV keys');
+
+-- A damaged configuration is never silently repaired: nothing re-seeds a deleted key.
+select pg_temp.restore_cfg();
+delete from noor_ai.limit_config where key = 'per_user_day';
+select pg_temp.rpc_reserve(pg_temp.sid('a'), 'cfg-noreseed');
+select is((select count(*)::int from noor_ai.limit_config where key = 'per_user_day'), 0,
+  'a deleted configuration key is never re-seeded by a lifecycle call');
+select pg_temp.restore_cfg();
+
+-- The intentional DEV seed is preserved by all of this. Asserted against t_cfg_backup, which was
+-- captured from the freshly migrated database BEFORE any section edited a ceiling — comparing the
+-- restored config against itself would prove only that restore_cfg() copies rows.
+select set_eq(
+  $$ select key || '=' || value from t_cfg_backup $$,
+  $$ values ('enabled=1'), ('per_user_minute=1'), ('per_user_hour=1'), ('per_user_day=1'),
+            ('global_minute=1'), ('global_day=1'), ('concurrency_lease=1'),
+            ('daily_spend_micros=500000'), ('monthly_spend_micros=2000000'),
+            ('max_input_tokens=12000'), ('max_output_tokens=2000'),
+            ('max_attempts=2'), ('lease_ttl_seconds=90') $$,
+  'the migration seeds exactly the approved DEV values — no production ceiling is invented');
+select set_eq(
+  $$ select key || '=' || value from noor_ai.limit_config $$,
+  $$ select key || '=' || value from t_cfg_backup $$,
+  'and the store is left holding those same values after every configuration probe');
+
+-- ── 17. reserve() statement order, read from the live function body ─────────
+-- Positional proof against pg_get_functiondef with comment lines stripped, so prose can neither
+-- satisfy nor break it. The order under test:
+--     advisory lock -> authoritative replay -> expire stale -> concurrency -> counters -> insert
+create or replace function pg_temp.reserve_body() returns text language sql stable as $$
+  select pg_catalog.string_agg(l, E'\n')
+    from pg_catalog.unnest(pg_catalog.string_to_array(
+           pg_catalog.pg_get_functiondef('noor_ai.reserve(uuid,text)'::regprocedure), E'\n')) l
+   where pg_catalog.btrim(l) not like '--%'
+$$;
+
+create temporary table t_body (b text, tail text) on commit drop;
+insert into t_body
+select body, pg_catalog.substr(body, pg_catalog.strpos(body, 'pg_advisory_xact_lock'))
+  from (select pg_temp.reserve_body() as body) s;
+
+select ok((select pg_catalog.strpos(b, 'pg_advisory_xact_lock') from t_body) > 0,
+  'order: reserve takes the global transaction advisory lock');
+select ok((select pg_catalog.strpos(tail, 'r.request_id = p_request_id') from t_body) > 0,
+  'order: an authoritative replay lookup exists after the lock');
+select ok(
+  (select pg_catalog.strpos(tail, 'expire_stale') from t_body)
+  > (select pg_catalog.strpos(tail, 'r.request_id = p_request_id') from t_body),
+  'order: the stale-expiry sweep runs after the authoritative replay lookup');
+select ok(
+  (select pg_catalog.strpos(tail, 'into v_leases') from t_body)
+  > (select pg_catalog.strpos(tail, 'expire_stale') from t_body),
+  'order: the concurrency count runs after the stale-expiry sweep, so it sees reclaimed slots');
+select ok(
+  (select pg_catalog.strpos(tail, 'try_increment_global') from t_body)
+  > (select pg_catalog.strpos(tail, 'into v_leases') from t_body),
+  'order: no counter is incremented before the concurrency check');
+select ok(
+  (select pg_catalog.strpos(tail, 'insert into noor_ai.reservation') from t_body)
+  > (select pg_catalog.strpos(tail, 'try_increment_global') from t_body),
+  'order: the reservation insert is last');
+
+-- Exactly one sweep, and it is the one inside the lock. A leftover pre-lock call would be the very
+-- deadlock this reordering removes, and would still satisfy every ordering assertion above.
+select is(
+  (select (pg_catalog.length(b) - pg_catalog.length(pg_catalog.replace(b, 'expire_stale', '')))
+          / pg_catalog.length('expire_stale') from t_body),
+  1, 'order: expire_stale is called exactly once in reserve, and only inside the lock');
+
+-- Every ceiling is resolved through the strict lookup before the lock is taken; reserve reads the
+-- permissive one only for the kill switch.
+select ok(
+  (select pg_catalog.strpos(b, 'require_limit') from t_body)
+  < (select pg_catalog.strpos(b, 'pg_advisory_xact_lock') from t_body),
+  'order: configuration is resolved before the lock, so a defect never reaches admission');
+select is(
+  (select (pg_catalog.length(b) - pg_catalog.length(pg_catalog.replace(b, 'limit_of(', '')))
+          / pg_catalog.length('limit_of(') from t_body),
+  1, 'reserve reads the permissive lookup exactly once — for the kill switch and nothing else');
 
 select * from finish();
 rollback;

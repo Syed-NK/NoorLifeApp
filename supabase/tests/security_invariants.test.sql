@@ -424,11 +424,56 @@ select set_eq(
 select set_eq(
   $$ select p.proname::text from pg_proc p
      where p.pronamespace = (select oid from pg_namespace where nspname = 'noor_ai') $$,
-  $$ values ('limit_of'), ('window_start_of'), ('try_increment_user'), ('try_increment_global'),
+  $$ values ('limit_of'), ('require_limit'), ('config_error'), ('required_limit_keys'),
+            ('window_start_of'), ('try_increment_user'), ('try_increment_global'),
             ('accumulate_global'), ('global_value'), ('user_value'), ('expire_stale'),
             ('reserve'), ('register_attempt'), ('finalize'), ('release'), ('status'),
             ('purge_expired') $$,
   'noor_ai contains exactly the approved routines'
+);
+
+-- ── 7b-i. Configuration is structurally single-valued ───────────────────────
+-- `require_limit` refuses a key that resolves to anything other than exactly one row. That check is
+-- defence in depth; the primary key is what makes a duplicate unrepresentable in the first place, and
+-- a schema change that dropped it would move the guarantee from "impossible" to "hopefully caught".
+-- Read from the catalog, never by touching the schema: this guard holds no privilege on noor_ai and
+-- must not acquire one to assert about it. `pg_get_constraintdef` and `pg_get_functiondef` need no
+-- USAGE, no SELECT and no EXECUTE, so the assertions below run from the production posture itself.
+select is(
+  (select pg_get_constraintdef(con.oid) from pg_constraint con
+     join pg_class c on c.oid = con.conrelid
+    where c.relname = 'limit_config' and con.contype = 'p'
+      and c.relnamespace = (select oid from pg_namespace where nspname = 'noor_ai')),
+  'PRIMARY KEY (key)',
+  'noor_ai.limit_config keys a single row per configuration key — duplicates are unrepresentable'
+);
+
+-- The declared required set, read out of the function body. Adding a ceiling to the lifecycle without
+-- adding it here would leave it unenforced; adding it here without seeding it fails closed on the
+-- first request. Editing this list is the deliberate review, exactly like the allowlists above.
+select set_eq(
+  $$ select m[1] from pg_proc p,
+       regexp_matches(pg_get_functiondef(p.oid), '''([a-z_]+)''', 'g') m
+      where p.proname = 'required_limit_keys'
+        and p.pronamespace = (select oid from pg_namespace where nspname = 'noor_ai') $$,
+  $$ values ('enabled'), ('per_user_minute'), ('per_user_hour'), ('per_user_day'),
+            ('global_minute'), ('global_day'), ('concurrency_lease'),
+            ('daily_spend_micros'), ('monthly_spend_micros'),
+            ('max_input_tokens'), ('max_output_tokens'), ('max_attempts'),
+            ('lease_ttl_seconds') $$,
+  'the required configuration set is exactly the thirteen approved keys'
+);
+
+-- Neither the strict lookup nor the failure payload may become a reachable entry point. They are
+-- helpers; only the five lifecycle functions are granted, and section 7b already asserts that set.
+select is_empty(
+  $$ select p.proname::text from pg_proc p
+     where p.pronamespace = (select oid from pg_namespace where nspname = 'noor_ai')
+       and p.proname in ('require_limit', 'config_error', 'required_limit_keys', 'limit_of')
+       and (has_function_privilege('service_role', p.oid, 'EXECUTE')
+         or has_function_privilege('anon', p.oid, 'EXECUTE')
+         or has_function_privilege('authenticated', p.oid, 'EXECUTE')) $$,
+  'the configuration helpers are reachable by no client or service role'
 );
 
 -- Every private object belongs to the NOLOGIN owner.

@@ -136,8 +136,88 @@ if [ "$distinct_ids" = "1" ] && [ "$replies" = "$SESSIONS" ] && [ "$rows_b" = "1
 fi
 echo "case_identical_replay=$([ $case_b_pass = 1 ] && echo PASS || echo FAIL)"
 
+# ── Case C: stale expiry racing live admission ─────────────────────────────
+#
+# expire_stale() used to run BEFORE the advisory lock. Two concurrent reserves could each UPDATE a
+# different overlapping subset of the same expired rows, and `select ... limit 500` has no ORDER BY,
+# so they could take row locks in opposite orders and deadlock — turning a reserve into a database
+# error rather than a decision. The sweep now runs inside the lock, which serialises it.
+#
+# This case is the one that would have caught it: many expired rows, many sessions sweeping at once.
+# The ceiling is 3 rather than 1 so the result proves "exactly the configured number" rather than
+# merely "at most one". Expired leases must occupy no slot.
 echo "---"
-if [ $case_a_pass = 1 ] && [ $case_b_pass = 1 ]; then
+STALE=8
+LEASE=3
+psql_c "
+set role noor_ai_owner;
+delete from noor_ai.reservation;
+delete from noor_ai.user_counter;
+delete from noor_ai.global_counter;
+update noor_ai.limit_config set value = 1000
+ where key in ('per_user_minute','per_user_hour','per_user_day','global_minute','global_day');
+update noor_ai.limit_config set value = $LEASE where key = 'concurrency_lease';
+insert into noor_ai.reservation (subject_id, request_id, state, created_at, expires_at)
+select ('7'||lpad(i::text,7,'0')||'-0000-4000-8000-000000000000')::uuid,
+       'stale-'||i, 'reserved',
+       now() - interval '10 minutes', now() - interval '1 second'
+  from generate_series(1, $STALE) i;
+" >/dev/null
+
+stale_before=$(psql_c "set role noor_ai_owner; select count(*) from noor_ai.reservation where state='reserved' and expires_at <= now();" | tail -1)
+
+tmp3="$(mktemp -d)"
+trap 'rm -rf "$tmp" "$tmp2" "$tmp3"' EXIT
+
+for i in $(seq 1 "$SESSIONS"); do
+  (
+    sub=$(printf '6%07d-0000-4000-8000-000000000000' "$i")
+    psql_c "set role service_role; select public.noor_ai_reserve('$sub'::uuid, 'exp-$i')->>'decision';" \
+      > "$tmp3/out.$i"
+  ) &
+done
+wait
+
+allowed_c=$(cat "$tmp3"/out.* 2>/dev/null | grep -c '^allowed$')
+limited_c=$(cat "$tmp3"/out.* 2>/dev/null | grep -c '^limited$')
+errors_c=$(cat "$tmp3"/out.* 2>/dev/null | grep -ciE 'error|deadlock' || true)
+deadlocks_c=$(cat "$tmp3"/out.* 2>/dev/null | grep -ci 'deadlock' || true)
+
+# The arranged stale rows must all have been reclaimed, and none may still hold a slot.
+still_stale=$(psql_c "set role noor_ai_owner; select count(*) from noor_ai.reservation where state='reserved' and expires_at <= now();" | tail -1)
+expired_now=$(psql_c "set role noor_ai_owner; select count(*) from noor_ai.reservation where state='expired';" | tail -1)
+live_c=$(psql_c "set role noor_ai_owner; select count(*) from noor_ai.reservation where state='reserved' and expires_at > now();" | tail -1)
+
+echo "sessions=$SESSIONS"
+echo "stale_reservations_arranged=$stale_before"
+echo "configured_lease_ceiling=$LEASE"
+echo "allowed=$allowed_c"
+echo "limited=$limited_c"
+echo "errors=$errors_c"
+echo "deadlocks=$deadlocks_c"
+echo "stale_still_holding_a_slot=$still_stale"
+echo "reclaimed_to_expired=$expired_now"
+echo "live_reservations=$live_c"
+
+psql_c "
+set role noor_ai_owner;
+delete from noor_ai.reservation;
+delete from noor_ai.user_counter;
+delete from noor_ai.global_counter;
+update noor_ai.limit_config set value = 1
+ where key in ('per_user_minute','per_user_hour','per_user_day','global_minute','global_day','concurrency_lease');
+" >/dev/null
+
+case_c_pass=0
+if [ "$allowed_c" = "$LEASE" ] && [ "$limited_c" = "$((SESSIONS - LEASE))" ] \
+   && [ "$errors_c" = "0" ] && [ "$deadlocks_c" = "0" ] \
+   && [ "$still_stale" = "0" ] && [ "$expired_now" = "$STALE" ] && [ "$live_c" = "$LEASE" ]; then
+  case_c_pass=1
+fi
+echo "case_expired_lease_race=$([ $case_c_pass = 1 ] && echo PASS || echo FAIL)"
+
+echo "---"
+if [ $case_a_pass = 1 ] && [ $case_b_pass = 1 ] && [ $case_c_pass = 1 ]; then
   echo "concurrency_test=PASS"
   exit 0
 fi

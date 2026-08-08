@@ -142,6 +142,37 @@ insert into noor_ai.limit_config (key, value, unit) values
   ('lease_ttl_seconds',     90,      'seconds')    -- exceeds handlerBudgetMs 70s + clock skew (§12.5)
 on conflict (key) do nothing;
 
+-- The exact set of keys the lifecycle requires, named ONCE. Without a single declaration, "which keys
+-- are required" is re-derived at every call site and a key can be dropped from the seed without
+-- anything noticing. Tests assert `limit_config` equals this set exactly.
+create or replace function noor_ai.required_limit_keys()
+returns text[] language sql immutable set search_path = ''
+as $$ select array[
+  'enabled',
+  'per_user_minute', 'per_user_hour', 'per_user_day',
+  'global_minute', 'global_day',
+  'concurrency_lease',
+  'daily_spend_micros', 'monthly_spend_micros',
+  'max_input_tokens', 'max_output_tokens',
+  'max_attempts',
+  'lease_ttl_seconds']::text[] $$;
+
+-- The seed must satisfy that set at migration time. `on conflict do nothing` above means a re-run
+-- silently keeps whatever is already there, so this is the only place a seed that has drifted from the
+-- required set can still be caught. It reports the missing keys and aborts rather than deploying a
+-- store that would fail closed on its first request.
+do $$
+declare v_missing text[];
+begin
+  select pg_catalog.array_agg(k) into v_missing
+    from pg_catalog.unnest(noor_ai.required_limit_keys()) k
+   where not exists (select 1 from noor_ai.limit_config c where c.key = k);
+  if v_missing is not null then
+    raise exception 'noor_ai.limit_config is missing required configuration keys: %', v_missing;
+  end if;
+end
+$$;
+
 create table if not exists noor_ai.price_table (
   version                 integer     primary key,
   input_micros_per_mtok   bigint      not null,
@@ -249,9 +280,58 @@ comment on table noor_ai.provider_attempt is
   'email, phone, JWT or module/journal/health/family column exists — there is nowhere to put one.';
 
 -- ── 6. Internal helpers (never granted to service_role) ─────────────────────
+-- Permissive lookup. Returns null for a missing key, and is used for ONE thing only: the `enabled`
+-- kill switch, whose absence must read as "disabled" rather than as an error. Every ceiling goes
+-- through require_limit() below instead.
 create or replace function noor_ai.limit_of(p_key text)
 returns bigint language sql stable strict set search_path = ''
 as $$ select c.value from noor_ai.limit_config c where c.key = p_key $$;
+
+-- Strict lookup — the fail-closed rule for every ceiling.
+--
+-- The hazard this closes: try_increment_*() receives its ceiling as an argument, and a null ceiling
+-- makes `w.value + p_amount <= p_limit` evaluate to null. On an EXISTING counter row that null fails
+-- the ON CONFLICT guard and denies, which looks safe — but on the FIRST request of a window there is
+-- no conflict, so the INSERT succeeds unconditionally and the request is admitted. A deleted ceiling
+-- therefore leaked exactly one admission per window, per counter, silently.
+--
+-- Failing here instead means a configuration defect can never reach the admission path at all:
+--
+--   • missing (0 rows), duplicated (>1 rows), null, or non-positive are ALL defects, and all fail
+--     the same way — there is no ordering in which one of them is treated as headroom;
+--   • nothing is substituted, no default is invented, and a deleted row is never re-seeded;
+--   • it raises rather than returning, so it cannot be ignored at a call site by accident.
+--
+-- Zero is rejected on purpose. A ceiling of 0 admits nothing, so it is not *dangerous*, but it is
+-- indistinguishable from a truncated deploy and would otherwise present as an endless 429 storm. A
+-- configuration failure the operator can see beats a silent denial of every request. Deliberately
+-- turning NoorAI off is what `enabled = 0` is for, and that path is untouched.
+create or replace function noor_ai.require_limit(p_key text)
+returns bigint language plpgsql stable set search_path = ''
+as $$
+declare v_rows bigint; v_value bigint;
+begin
+  select pg_catalog.count(*), pg_catalog.min(c.value) into v_rows, v_value
+    from noor_ai.limit_config c where c.key = p_key;
+  if v_rows <> 1 or v_value is null or v_value < 1 then
+    raise exception using errcode = 'NOCFG', message = p_key;
+  end if;
+  return v_value;
+end
+$$;
+
+-- One payload shape for every entry point, so the Edge Function has a single thing to test.
+--
+-- It carries BOTH `ok:false` and `decision:'unavailable'` because the five RPCs do not share a return
+-- shape, and `configuration_error` is the unambiguous flag. This is a STORE failure, to be mapped to
+-- 503 — never to 429. A rate-limit denial means "you asked too often"; this means the store cannot
+-- answer the question at all, and telling a user to slow down would be a lie about our own defect.
+-- `key` names the missing configuration key. It is a key NAME, never a value.
+create or replace function noor_ai.config_error(p_key text)
+returns jsonb language sql immutable set search_path = ''
+as $$ select pg_catalog.jsonb_build_object(
+  'ok', false, 'decision', 'unavailable', 'reason', 'configuration',
+  'key', p_key, 'configuration_error', true) $$;
 
 -- Database time only. A caller-supplied timestamp is never accepted anywhere in this schema.
 create or replace function noor_ai.window_start_of(p_kind noor_ai.window_kind, p_now timestamptz)
@@ -351,6 +431,15 @@ declare
   v_exist  noor_ai.reservation%rowtype;
   v_rid    uuid;
   v_leases bigint;
+  v_lim_concurrency bigint;
+  v_lim_daily       bigint;
+  v_lim_monthly     bigint;
+  v_lim_gmin        bigint;
+  v_lim_gday        bigint;
+  v_lim_umin        bigint;
+  v_lim_uhour       bigint;
+  v_lim_uday        bigint;
+  v_lim_ttl         bigint;
 begin
   if p_subject_id is null or p_request_id is null then
     return pg_catalog.jsonb_build_object('decision', 'invalid', 'reason', 'missing_argument');
@@ -364,8 +453,26 @@ begin
     return pg_catalog.jsonb_build_object('decision', 'limited', 'reason', 'disabled');
   end if;
 
+  -- Every ceiling this call needs is resolved HERE, before the first read of quota state and long
+  -- before any write, so an invalid configuration cannot reach the admission path and be mistaken for
+  -- headroom. Resolving up front also means the failure needs no rollback: nothing has happened yet.
+  begin
+    v_lim_concurrency := noor_ai.require_limit('concurrency_lease');
+    v_lim_daily       := noor_ai.require_limit('daily_spend_micros');
+    v_lim_monthly     := noor_ai.require_limit('monthly_spend_micros');
+    v_lim_gmin        := noor_ai.require_limit('global_minute');
+    v_lim_gday        := noor_ai.require_limit('global_day');
+    v_lim_umin        := noor_ai.require_limit('per_user_minute');
+    v_lim_uhour       := noor_ai.require_limit('per_user_hour');
+    v_lim_uday        := noor_ai.require_limit('per_user_day');
+    v_lim_ttl         := noor_ai.require_limit('lease_ttl_seconds');
+  exception when sqlstate 'NOCFG' then
+    return noor_ai.config_error(sqlerrm);
+  end;
+
   -- Idempotent replay: same subject + same request id returns the SAME reservation and consumes no
-  -- second quota unit (review §12.4).
+  -- second quota unit (review §12.4). Unlocked fast path — racy on its own, which is why the
+  -- authoritative repeat below exists.
   select * into v_exist from noor_ai.reservation r
    where r.subject_id = p_subject_id and r.request_id = p_request_id;
   if found then
@@ -373,8 +480,6 @@ begin
       'decision', case when v_exist.state = 'reserved' then 'allowed' else 'replayed' end,
       'reservation_id', v_exist.reservation_id, 'state', v_exist.state, 'idempotent', true);
   end if;
-
-  perform noor_ai.expire_stale();
 
   -- Deterministic lock ordering (review §9.6): every reserve takes this ONE transaction-scoped lock
   -- before touching counters, so all reservations serialise in a single global order and no deadlock
@@ -400,19 +505,31 @@ begin
       'reservation_id', v_exist.reservation_id, 'state', v_exist.state, 'idempotent', true);
   end if;
 
+  -- Stale-lease reclamation, moved INSIDE the lock (2026-08-09).
+  --
+  -- It used to run before the lock, where two concurrent reserves could each UPDATE a different
+  -- overlapping subset of the same expired rows. `select ... limit 500` has no ORDER BY, so the two
+  -- statements could take row locks in opposite orders and deadlock — aborting a reserve with a
+  -- database error, which the Edge Function would have to treat as a store failure rather than a
+  -- decision. Under the lock every sweep is serialised with every other sweep, so no such cycle can
+  -- form. It runs AFTER the authoritative replay above (a replay needs no sweep and must not pay for
+  -- one) and BEFORE the concurrency count below, so the count sees reclaimed slots in this same
+  -- transaction rather than a stale snapshot.
+  perform noor_ai.expire_stale();
+
   select pg_catalog.count(*) into v_leases from noor_ai.reservation r
    where r.state = 'reserved' and r.expires_at > v_now;
-  if v_leases >= noor_ai.limit_of('concurrency_lease') then
+  if v_leases >= v_lim_concurrency then
     return pg_catalog.jsonb_build_object('decision', 'limited', 'reason', 'concurrency');
   end if;
 
   -- Spend ceilings are READ and compared, never pre-debited (review §12.2 hard rule).
   if noor_ai.global_value('spend_micros', 'day', noor_ai.window_start_of('day', v_now))
-       >= noor_ai.limit_of('daily_spend_micros') then
+       >= v_lim_daily then
     return pg_catalog.jsonb_build_object('decision', 'limited', 'reason', 'daily_spend');
   end if;
   if noor_ai.global_value('spend_micros', 'month', noor_ai.window_start_of('month', v_now))
-       >= noor_ai.limit_of('monthly_spend_micros') then
+       >= v_lim_monthly then
     return pg_catalog.jsonb_build_object('decision', 'limited', 'reason', 'monthly_spend');
   end if;
 
@@ -420,23 +537,23 @@ begin
   -- on a later counter rolls back the increments already made by the earlier ones (review §12.2).
   begin
     if noor_ai.try_increment_global('requests', 'minute',
-         noor_ai.window_start_of('minute', v_now), noor_ai.limit_of('global_minute'), 1) is null then
+         noor_ai.window_start_of('minute', v_now), v_lim_gmin, 1) is null then
       raise exception using errcode = 'NOQTA', message = 'global_minute';
     end if;
     if noor_ai.try_increment_global('requests', 'day',
-         noor_ai.window_start_of('day', v_now), noor_ai.limit_of('global_day'), 1) is null then
+         noor_ai.window_start_of('day', v_now), v_lim_gday, 1) is null then
       raise exception using errcode = 'NOQTA', message = 'global_day';
     end if;
     if noor_ai.try_increment_user(p_subject_id, 'requests', 'minute',
-         noor_ai.window_start_of('minute', v_now), noor_ai.limit_of('per_user_minute'), 1) is null then
+         noor_ai.window_start_of('minute', v_now), v_lim_umin, 1) is null then
       raise exception using errcode = 'NOQTA', message = 'per_user_minute';
     end if;
     if noor_ai.try_increment_user(p_subject_id, 'requests', 'hour',
-         noor_ai.window_start_of('hour', v_now), noor_ai.limit_of('per_user_hour'), 1) is null then
+         noor_ai.window_start_of('hour', v_now), v_lim_uhour, 1) is null then
       raise exception using errcode = 'NOQTA', message = 'per_user_hour';
     end if;
     if noor_ai.try_increment_user(p_subject_id, 'requests', 'day',
-         noor_ai.window_start_of('day', v_now), noor_ai.limit_of('per_user_day'), 1) is null then
+         noor_ai.window_start_of('day', v_now), v_lim_uday, 1) is null then
       raise exception using errcode = 'NOQTA', message = 'per_user_day';
     end if;
   exception when sqlstate 'NOQTA' then
@@ -447,7 +564,7 @@ begin
 
   insert into noor_ai.reservation (subject_id, request_id, expires_at)
   values (p_subject_id, p_request_id,
-          v_now + pg_catalog.make_interval(secs => noor_ai.limit_of('lease_ttl_seconds')))
+          v_now + pg_catalog.make_interval(secs => v_lim_ttl))
   returning reservation_id into v_rid;
 
   return pg_catalog.jsonb_build_object(
@@ -467,6 +584,9 @@ declare
   v_prior   noor_ai.provider_attempt%rowtype;
   v_micros  bigint;
   v_outcome noor_ai.outcome_class;
+  v_lim_input    bigint;
+  v_lim_output   bigint;
+  v_lim_attempts bigint;
 begin
   if p_subject_id is null or p_reservation_id is null or p_outcome is null
      or p_attempt_number is null then
@@ -480,8 +600,18 @@ begin
      or p_input_tokens < 0 or p_output_tokens < 0 or p_reasoning_tokens < 0 then
     return pg_catalog.jsonb_build_object('ok', false, 'reason', 'bad_tokens');
   end if;
-  if p_input_tokens > noor_ai.limit_of('max_input_tokens')
-     or (p_output_tokens::bigint + p_reasoning_tokens::bigint) > noor_ai.limit_of('max_output_tokens') then
+  -- Resolved before the token bounds are tested and before any row is read or locked. A missing token
+  -- or attempt ceiling must refuse the attempt outright, never wave it through unbounded.
+  begin
+    v_lim_input    := noor_ai.require_limit('max_input_tokens');
+    v_lim_output   := noor_ai.require_limit('max_output_tokens');
+    v_lim_attempts := noor_ai.require_limit('max_attempts');
+  exception when sqlstate 'NOCFG' then
+    return noor_ai.config_error(sqlerrm);
+  end;
+
+  if p_input_tokens > v_lim_input
+     or (p_output_tokens::bigint + p_reasoning_tokens::bigint) > v_lim_output then
     return pg_catalog.jsonb_build_object('ok', false, 'reason', 'token_limit');
   end if;
 
@@ -529,7 +659,7 @@ begin
   if v_res.state not in ('reserved', 'expired') then
     return pg_catalog.jsonb_build_object('ok', false, 'reason', 'not_open');
   end if;
-  if v_res.attempt_count >= noor_ai.limit_of('max_attempts') then
+  if v_res.attempt_count >= v_lim_attempts then
     return pg_catalog.jsonb_build_object('ok', false, 'reason', 'attempt_limit');
   end if;
 
@@ -644,20 +774,33 @@ $$;
 create or replace function noor_ai.status(p_subject_id uuid)
 returns jsonb language plpgsql security definer set search_path = ''
 as $$
-declare v_now timestamptz := pg_catalog.now();
+declare
+  v_now timestamptz := pg_catalog.now();
+  v_lim_uday bigint;
+  v_lim_gday bigint;
 begin
   if p_subject_id is null then
     return pg_catalog.jsonb_build_object('ok', false, 'reason', 'missing_argument');
   end if;
+  -- A status read must not quote a ceiling it could not resolve. Reporting `null` as a limit would
+  -- read as "unlimited" to anything that renders it.
+  begin
+    v_lim_uday := noor_ai.require_limit('per_user_day');
+    v_lim_gday := noor_ai.require_limit('global_day');
+  exception when sqlstate 'NOCFG' then
+    return noor_ai.config_error(sqlerrm);
+  end;
   return pg_catalog.jsonb_build_object(
     'ok', true,
-    'enabled', noor_ai.limit_of('enabled') = 1,
+    -- Same fail-closed rule as reserve: a missing or non-1 `enabled` reads as disabled, not as an
+    -- error, because "off" is a legitimate operational state and absence must resolve to it.
+    'enabled', noor_ai.limit_of('enabled') is not distinct from 1,
     'user_day_used', noor_ai.user_value(p_subject_id, 'requests', 'day',
                        noor_ai.window_start_of('day', v_now)),
-    'user_day_limit', noor_ai.limit_of('per_user_day'),
+    'user_day_limit', v_lim_uday,
     'global_day_used', noor_ai.global_value('requests', 'day',
                          noor_ai.window_start_of('day', v_now)),
-    'global_day_limit', noor_ai.limit_of('global_day'));
+    'global_day_limit', v_lim_gday);
 end
 $$;
 

@@ -1361,6 +1361,30 @@ The narrow rules, so expiry and financial accounting are no longer ambiguous:
   request, never alters a historical attempt cost, and **never restores `reserved`**.
 - The two-attempt ceiling and every subject/reservation binding check are preserved.
 
+**Amendment, 2026-08-09 — invalid quota configuration fails closed.** Recorded here because it adds a
+response the Edge Function must handle, and no other document specifies the mapping.
+
+Every ceiling the store enforces is resolved through a strict lookup before any admission decision.
+A key that is **missing, duplicated, null or non-positive** is a configuration defect, and all four
+fail identically:
+
+- The call returns `configuration_error: true`, with `decision: "unavailable"`, `reason:
+  "configuration"`, and `key` naming the offending configuration key. The `key` is a key **name**,
+  never a value.
+- **The Edge Function must map this to `503`, never to `429`.** A rate-limit denial means the user
+  asked too often; this means the store cannot answer at all, and telling a user to slow down would
+  misattribute our own defect to their behaviour.
+- **Nothing is substituted.** No default is invented, no deleted row is re-seeded, and no counter,
+  reservation, provider attempt or spend row changes. Configuration is resolved before the first
+  write, so the refusal needs no rollback.
+- **`enabled` is the single exception**: its absence means *disabled*, not an error, because "off" is
+  a legitimate operational state and a missing kill switch may never read as "on". That path continues
+  to return `429`-shaped `limited`/`disabled`.
+
+Zero is rejected for every ceiling on purpose. A ceiling of `0` admits nothing, so it is not unsafe,
+but it is indistinguishable from a truncated deploy and would otherwise present as an endless `429`
+storm rather than a visible fault. Turning NoorAI off is what `enabled = 0` is for.
+
 ### I.2 Global circuit breaker and spend protection
 
 Per-user limits do not bound the total. Three independent global controls:
