@@ -151,6 +151,89 @@ describe('no secrets in the repository', () => {
   });
 });
 
+describe('profiles least-privilege convergence (20260808120000)', () => {
+  /**
+   * B18: a hosted read-only audit found `authenticated` holding all eight table privileges on
+   * public.profiles — five more than this repository intends. These assertions read the correcting
+   * migration on its own, not the concatenation, because the properties under test are absences and
+   * an earlier file legitimately contains what this one must not.
+   *
+   * Comment lines are stripped first. The migration explains RLS, the elevated role and the default
+   * privileges in prose on purpose; asserting over raw text would match that prose and fail for the
+   * wrong reason.
+   */
+  const FILE = '20260808120000_profiles_least_privilege.sql';
+  const raw = readFileSync(join(MIGRATIONS, FILE), 'utf8');
+  const statements = raw
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  const grantMatches = [
+    ...statements.matchAll(
+      /grant\s+([^;]+?)\s+on\s+table\s+public\.profiles\s+to\s+authenticated/gi,
+    ),
+  ];
+  const grantedPrivileges = (grantMatches[0]?.[1] ?? '')
+    .split(',')
+    .map((privilege) => privilege.trim().toLowerCase())
+    .filter((privilege) => privilege.length > 0)
+    .sort();
+
+  it('revokes from authenticated before granting, so the end state cannot depend on the start state', () => {
+    const revokeAt = statements.search(
+      /revoke all privileges on table public\.profiles from authenticated/i,
+    );
+    const grantAt = statements.search(
+      /grant select, insert, update on table public\.profiles to authenticated/i,
+    );
+    expect(revokeAt).toBeGreaterThanOrEqual(0);
+    expect(grantAt).toBeGreaterThanOrEqual(0);
+    // Grant-after-revoke is the whole mechanism. Reversed, the migration would be a no-op.
+    expect(grantAt).toBeGreaterThan(revokeAt);
+  });
+
+  it('grants authenticated exactly select, insert and update', () => {
+    expect(grantMatches).toHaveLength(1);
+    expect(grantedPrivileges).toEqual(['insert', 'select', 'update']);
+  });
+
+  it('grants authenticated none of the five privileges the audit found unintended', () => {
+    for (const privilege of ['delete', 'truncate', 'references', 'trigger', 'maintain']) {
+      expect(grantedPrivileges).not.toContain(privilege);
+    }
+    // Belt and braces: no grant statement anywhere in the file may mention them.
+    expect(statements).not.toMatch(/grant[^;]*\b(delete|truncate|references|trigger|maintain)\b/i);
+  });
+
+  it('re-asserts revoke all for anon and PUBLIC', () => {
+    expect(statements).toMatch(/revoke all privileges on table public\.profiles from anon;/i);
+    expect(statements).toMatch(/revoke all privileges on table public\.profiles from public;/i);
+  });
+
+  it('changes nothing but privileges on one table', () => {
+    expect(statements).not.toMatch(/row level security/i);
+    expect(statements).not.toMatch(/(create|drop|alter) policy/i);
+    expect(statements).not.toMatch(/(create|drop|alter)( or replace)? function/i);
+    expect(statements).not.toMatch(/(create|drop|alter) trigger/i);
+    expect(statements).not.toMatch(/alter default privileges/i);
+    expect(statements).not.toMatch(/(create|alter|drop) (schema|table|index|extension)/i);
+    // Every statement in the file targets public.profiles and nothing else.
+    const targets = statements.match(/on table (\S+)/gi) ?? [];
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) {
+      expect(target.toLowerCase()).toBe('on table public.profiles');
+    }
+  });
+
+  it('leaves the elevated server-side role untouched, and does not name it', () => {
+    expect(statements).not.toMatch(/service_role/i);
+    // The whole file, comments included — the repository's secret scan objects to the role name
+    // appearing in tracked files, so the prose says "the elevated server-side role" instead.
+    expect(raw).not.toMatch(/service_role/i);
+  });
+});
+
 describe('git hygiene', () => {
   const gitignore = readFileSync(join(ROOT, '.gitignore'), 'utf8');
 
