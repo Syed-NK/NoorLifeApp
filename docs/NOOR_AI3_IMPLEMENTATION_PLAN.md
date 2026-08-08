@@ -1333,7 +1333,7 @@ and default API data controls for a synthetic development smoke test only.
 
 | #      | Item                                                                                                                    | Why it is blocked                                                                                                                                                                            |
 | ------ | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **R8** | **The shared rate-limit store** — Postgres table + `SECURITY DEFINER` RPC, called with the caller's JWT, keyed on an HMAC of `auth.uid()`, 48-hour retention | **Blocked pending the §5.4 schema and security review.** The earlier draft listed this as recommended while leaving the keying secret's location entirely unspecified. §5.6.A (Supabase Vault) is the recommended direction and its caller-binding **is** complete, but three things are not: (a) the default `anon`/`authenticated` grants on `vault.decrypted_secrets` are not documented and must be inspected on the project; (b) whether `vault` is in the Data API's exposed-schema list must be read, not assumed; (c) §5.7 point 5's exposed-schema tension for definer functions is unresolved. §5.6.B (edge-computed digest) is **rejected outright** — the RPC cannot bind a caller-supplied digest to `auth.uid()`. §5.6.C and §5.6.D are documented fallbacks with stated costs. **No store design is approved, and none may be implemented** |
+| **R8** | **The shared rate-limit store** — Postgres table + `SECURITY DEFINER` RPC, called with the caller's JWT, keyed on an HMAC of `auth.uid()`, 48-hour retention | **Blocked pending the §5.4 schema and security review.** The earlier draft listed this as recommended while leaving the keying secret's location entirely unspecified. §5.6.A (Supabase Vault) is the recommended direction and its caller-binding **is** complete, but three things are not: (a) the default `anon`/`authenticated` grants on `vault.decrypted_secrets` are not documented and must be inspected on the project; (b) whether `vault` is in the Data API's exposed-schema list must be read, not assumed; (c) §5.7 point 5's exposed-schema tension for definer functions is unresolved. §5.6.B (edge-computed digest) is **rejected outright** — the RPC cannot bind a caller-supplied digest to `auth.uid()`. §5.6.C and §5.6.D are documented fallbacks with stated costs. **No store design is approved, and none may be implemented** — *superseded 2026-08-08 (review §19): **§5.6.D's direction is now the approved architecture (D2)**, and §5.6.A is no longer the recommended one. D1 is rejected for implementation. R8 stays `Blocked` on the implementation, B14's TLS proof, B15's controlled connection test, B10's key and credential lifecycle, and the tests in review §19.6. **Still nothing may be implemented without those.*** |
 
 R8 stayed at its original number and moved table rather than being renumbered, so that every existing
 reference to it — including §12's status row — still points at the same decision. It was moved rather
@@ -1378,6 +1378,34 @@ B16** as non-material, **narrowed B17**, and recorded a new **B18** — `authent
 `TRUNCATE` on `public.profiles`, confirmed locally, hosted state unverified. **This phase aligned local
 test infrastructure only: no quota schema, migration, role, HMAC key or provider connectivity was
 implemented, and no store design is approved.**
+
+**R8 status after the architecture decision of 2026-08-08: still `Blocked`.** The review's §19 records
+it. The owner has **approved D2** — the Edge Function reaches the store through a dedicated
+least-privilege `LOGIN` role over the Supabase Shared Pooler in transaction mode, the credential lives
+only as an Edge Function secret and never reaches the app, `service_role` is not used, quota objects
+live in a private `noor_ai` schema rather than `public`, reservation/limits/leases/spend stay atomic
+and unreachable by `authenticated` clients, and the function fails closed on store errors. **D1 is
+rejected for implementation** — it splits the reservation across two calls, loses atomicity, and
+introduces a partial-failure state; it is retained in §5.6/§5.7 as the fallback of record only, which
+is not the same as approved. **This supersedes "no store design is approved" wherever it appears in
+the three dated status paragraphs above and in §11.2.1's R8 row: a store *direction* is now approved.
+Those paragraphs remain accurate records of their own dates and are deliberately not rewritten.
+Nothing is implemented.**
+
+**B1** and **B2** are **resolved at the design level** by server-only database access, and become
+**implementation-test gates**: they may be marked closed only once the role and functions exist and a
+test proves an `authenticated` client cannot reach any part of the store. **B15**'s documentation side
+is closed — the official connection guide recommends transaction-mode Supavisor for serverless/Edge
+Function workloads, and the Supavisor FAQ documents the `[USER].[project-ref]` username format and
+that a database may have many users — but **a controlled connection test with the real custom role
+remains mandatory before production deployment**. **B14 remains open**: Supabase states deployed Edge
+Function database connections use SSL, which proves encryption and *not* `verify-full` certificate or
+hostname verification for the client this project will use, and no client has been chosen. Separately,
+**B18** and **B13**'s existing-function half are **corrected, deployed and verified on hosted**, and
+**B11** now has a committed local PostgreSQL-17 assertion in
+`supabase/tests/security_invariants.test.sql` — which, because the repository has **no CI workflow**,
+runs only when a developer runs it. **No role, schema, table, function, password, secret, connection
+string or provider integration exists.**
 
 ### 11.3 Provisional, or open, until evidence exists
 
@@ -1427,7 +1455,7 @@ proposes how to close them.
 | Model selected and pinned, with rationale (§F.2)          | **Recommended (R1), not approved and not pinned.** No configuration value is set   |
 | Timeouts from measured latency (§F.7)                     | **Proposed and explicitly provisional.** No latency has been measured              |
 | Token and spend limits pinned (§I.2, §I.3)                | **Proposed (§4).** Not pinned; two of three global controls are not implemented (§9.3) |
-| Rate-limit store chosen (§12.7, §I.1)                     | **Not chosen — R8 is `Blocked`** (§11.2.1) pending the §5.4 schema and security review. Postgres + definer RPC is the direction; the keying secret's storage and reachability are unsettled (§5.6). No migration, no dependency, no salt |
+| Rate-limit store chosen (§12.7, §I.1)                     | **Architecture chosen 2026-08-08 (review §19: D2); still `Blocked` for implementation** (§11.2.1). A dedicated least-privilege `LOGIN` role over transaction-mode Supavisor, credential as an Edge Function secret only, objects in a private `noor_ai` schema, no `service_role`, atomic and server-only, failing closed. *Supersedes "Postgres + definer RPC is the direction" and "not chosen".* Still unsettled: the credential and HMAC key lifecycle (B10), TLS verification (B14), the pooler custom-role test (B15). **No migration, no role, no schema, no dependency, no salt, no secret** |
 | §12.6 `safety_identifier` decision                        | **Recommended (R10, R11), not approved.** No salt generated, no field implemented  |
 | Platform log retention confirmed (§H.4)                   | **Not done** — step 6b                                                            |
 | Previous HS256 signing key no longer listed (§D.6.5)      | **Not confirmed** — step 6b                                                       |
