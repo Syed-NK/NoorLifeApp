@@ -1305,6 +1305,30 @@ Concrete numbers are set in AI-3 from observed usage, not guessed here; they mus
 changeable without a deploy. The subject of the limit is the **verified** user id from §D, never a
 client-supplied id, and never IP alone.
 
+**Amendment, 2026-08-08 — how the subject is stored.** The quota store holds the verified Supabase
+Auth user UUID **directly**, as a `uuid` column. No digest, no HMAC, no salt, no reversible encoding,
+and no duplicate raw-plus-digest pair. Recorded here because an earlier draft of the AI-3 review
+listed an unkeyed `sha256` as a "viable fallback", and this contract had not previously spoken on the
+question at all:
+
+- The Edge Function derives the UUID **only from verified JWT claims**. It is never read from a
+  request-body field. The database cannot check that and does not pretend to — it is a caller
+  obligation, stated so it is testable in review.
+- The quota store and Supabase Auth share one database. An unkeyed digest therefore provides **no
+  meaningful unlinkability** against an actor who can already read the user list; it would be
+  cosmetic. This is a statement about *known* user ids being available to a privileged actor, **not**
+  a claim that UUIDs are enumerable by brute force — they are not.
+- The direct UUID is **necessary** data: per-user enforcement, incident investigation and
+  deterministic account-deletion cleanup all require it.
+- **It is account-linked personal data.** It is neither anonymous nor pseudonymous for NoorLife's
+  disclosure purposes, and must be declared that way in the privacy policy and store data-safety
+  filings.
+- Protection comes from the private `noor_ai` schema, exact RPC privileges, server-only `service_role`
+  invocation, retention and deletion — not from hashing.
+
+The separate **provider `safety_identifier`** decision is *not* resolved by this. §H.2's requirement
+that its salt be a function secret stands unchanged, and B10 remains open for it.
+
 The storage decision is genuinely open (§12.7) and has one hard constraint that must not be
 discovered later: **an Edge Function runs in ephemeral, horizontally-scaled isolates, so an
 in-memory counter is not a rate limit.** It resets on cold start and each isolate counts separately,
@@ -1313,6 +1337,29 @@ storage.
 
 Exceeding a limit → `429 rate_limited` with `retry_after_seconds` and a `Retry-After` header. The
 copy is NoorLife's and non-accusatory; a keen user is not an attacker.
+
+**Amendment, 2026-08-08 — late accounting after lease expiry.** §12.7 of the AI-3 review covers a
+finalize that *never arrives* (a crash), and accepts the resulting under-count. It did not cover a
+result that arrives **late**, after the lease expired. That ambiguity is now closed by owner decision:
+
+> If a real provider attempt was incurred, a late `register_attempt` or `finalize` arriving after the
+> reservation lease expired **must still record and accumulate that cost exactly once.**
+
+The narrow rules, so expiry and financial accounting are no longer ambiguous:
+
+- Expiry **releases the concurrency lease and never reopens it.**
+- Expiry **does not refund or alter** the handler-request quota counters.
+- `register_attempt` accepts a reservation in state `reserved` **or** `expired`; `finalized` and
+  `released` are refused (`not_open`).
+- Attempt-number idempotency and conflict detection remain mandatory, unchanged.
+- `finalize` may cost-finalize a `reserved` or `expired` reservation when at least one provider
+  attempt exists and spend has not already been accumulated. It accumulates **all** registered
+  attempts exactly once, and a repeated finalize adds nothing.
+- An **expired reservation with no registered attempt** stays the documented crash/timeout
+  under-count case: zero spend, no invented estimate, and the row stays `expired`.
+- Late accounting never recreates a lease, never increments a request counter, never admits another
+  request, never alters a historical attempt cost, and **never restores `reserved`**.
+- The two-attempt ceiling and every subject/reservation binding check are preserved.
 
 ### I.2 Global circuit breaker and spend protection
 

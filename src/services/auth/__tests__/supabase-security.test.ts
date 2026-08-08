@@ -112,10 +112,32 @@ describe('no secrets in the repository', () => {
   const service = readFileSync(join(ROOT, 'src', 'services', 'auth', 'auth.service.ts'), 'utf8');
   const envExample = readFileSync(join(ROOT, '.env.example'), 'utf8');
 
-  it('never mentions the service-role key', () => {
-    for (const source of [client, service, sql]) {
+  // Deliberately split 2026-08-08 by the NoorAI service-role RPC pivot.
+  //
+  // The APP must still never mention service_role at all — it holds only the publishable key, and any
+  // appearance there would mean the broad key had reached the client bundle. That prohibition is
+  // unchanged and is the one that protects users.
+  //
+  // The MIGRATIONS now legitimately name `service_role`, because the quota RPCs grant EXECUTE to that
+  // database role — that IS the approved architecture. What they must never contain is a service-role
+  // *key*: the role name is a grantee, the key is a secret. Conflating the two would either force the
+  // architecture to lie about itself or leave the real hazard untested.
+  it('never mentions the service role in any app source', () => {
+    for (const source of [client, service]) {
       expect(source).not.toMatch(/service_role/i);
       expect(source).not.toMatch(/SERVICE_ROLE_KEY/);
+    }
+  });
+
+  it('never embeds a service-role key in SQL, only the role name as a grantee', () => {
+    expect(sql).not.toMatch(/SERVICE_ROLE_KEY/);
+    expect(sql).not.toMatch(/service[_-]?role[_-]?key/i);
+    // A Supabase secret/JWT-shaped literal must never appear.
+    expect(sql).not.toMatch(/sb_secret_|sbp_|eyJ[A-Za-z0-9_-]{10,}/);
+    // Every mention must be a grant/revoke of the role, never an assignment of a value to it.
+    for (const line of sql.split('\n').filter((l) => /service_role/i.test(l))) {
+      expect(line).toMatch(/grant|revoke|--/i);
+      expect(line).not.toMatch(/=\s*'/);
     }
   });
 

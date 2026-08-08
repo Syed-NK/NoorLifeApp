@@ -1471,6 +1471,40 @@ holds `LOGIN` with **no password verifier**, so it cannot authenticate. **No con
 made**, and this phase provisioned nothing, deployed nothing and contacted the hosted project not at
 all.
 
+**R8 status after the service-role RPC pivot of 2026-08-08: implemented locally, still unapproved for
+production.** The review's §21 records it. The direct-connection runtime path is **superseded**:
+`jsr:@db/postgres@0.19.5` was rejected for unbounded connection acquisition, `npm:postgres@3.4.9` was
+never adopted, and the credential harness is withdrawn from production use. **No connection secret and
+no database password verifier remains**; `noor_ai_runtime` is `NOLOGIN` with a null verifier and no
+schema privilege, preserved but inert.
+
+The store now exists in migration `20260808180000_noor_ai_quota_store.sql`: six relations and fourteen
+routines in the private `noor_ai` schema, reachable only through five `SECURITY INVOKER` wrappers in
+`public` that only `service_role` may execute. `noor_ai` is never exposed to the Data API.
+`service_role` holds `USAGE` plus `EXECUTE` on exactly five entry points and **no** table, sequence or
+internal-helper privilege.
+
+**Subject identity is the verified user UUID, stored directly** (`subject_id uuid`) — see the contract
+§I.1 amendment. It is **account-linked personal data**, not anonymous and not pseudonymous for
+disclosure purposes. The provider `safety_identifier` keying decision (**B10**) is untouched and
+remains open.
+
+**B14 and B15 are NOT APPLICABLE** to the selected path — NoorAI opens no database connection of its
+own, so there is no client TLS posture and no pooler custom-role question. They are *removed, not
+passed*, and would return with any future direct-connection design.
+
+**Every production ceiling remains unapproved.** `noor_ai.limit_config` is seeded with the §4.8
+**dev-smoke** values only, and is changed by controlled migration rather than by any RPC. **AI-3 is
+still incomplete**: no Edge Function integration, no provider connectivity, no OpenAI traffic, nothing
+deployed.
+
+**Late accounting after lease expiry is resolved (2026-08-08, owner decision).** An incurred provider
+attempt is recorded and accumulated **exactly once** even when its result arrives after the lease
+expired. `register_attempt` accepts `reserved` or `expired`; `finalize` closes either one-way into
+`finalized`; an expired reservation with no attempt records zero spend and invents nothing. Expiry
+releases the concurrency lease permanently and late accounting never reopens it, never touches request
+counters, and never restores `reserved`. Contract §I.1's amendment and review §21.6 carry the rule.
+
 ### 11.3 Provisional, or open, until evidence exists
 
 `max_output_tokens` (production), `upstreamTimeoutMs` and `handlerBudgetMs` (production), the

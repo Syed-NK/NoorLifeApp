@@ -89,10 +89,24 @@ create temporary view noorlife_functions as
          p.proowner, p.prosecdef, p.proconfig, p.proacl, p.prorettype
   from pg_proc p
   where p.pronamespace = 'public'::regnamespace
+    and p.proname not like 'noor\_ai\_%'  -- NoorAI wrappers are asserted separately, see section 10
     and not exists (
       select 1 from pg_depend d
       where d.classid = 'pg_proc'::regclass and d.objid = p.oid
         and d.refclassid = 'pg_extension'::regclass and d.deptype = 'e');
+
+-- The NoorAI quota wrappers are the ONLY reachable entry points into the private schema, so they get
+-- their own assertions rather than being folded into the application-function set: they return jsonb
+-- rather than trigger, and they are the one place `service_role` is deliberately granted EXECUTE.
+create temporary view noorai_wrappers as
+  select p.oid,
+         'public.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
+           as signature,
+         p.proname, p.proowner, p.prosecdef, p.proconfig, p.proacl, p.prorettype,
+         p.pronargdefaults
+  from pg_proc p
+  where p.pronamespace = 'public'::regnamespace
+    and p.proname like 'noor\_ai\_%';
 
 create temporary view noorlife_tables as
   select c.oid, c.relname, c.relowner, c.relacl
@@ -296,10 +310,26 @@ select is(
   'noor_ai_owner is NOLOGIN — nothing can authenticate as the object owner'
 );
 
+-- SUPERSEDED 2026-08-08: the direct-connection runtime path is abandoned. Nothing connects as this
+-- role any more, so it must be inert. It is deliberately NOT dropped — dropping a role a deployed
+-- migration created makes the history non-replayable, and keeping it lets this guard prove it stays
+-- disabled rather than silently reappearing.
 select is(
   (select rolcanlogin from pg_roles where rolname = 'noor_ai_runtime'),
-  true,
-  'noor_ai_runtime has LOGIN — it is the identity the Edge Function will connect as'
+  false,
+  'noor_ai_runtime is NOLOGIN — the direct-connection path is superseded and the role is inert'
+);
+
+select is_empty(
+  $$ select 1 from pg_authid
+     where rolname = 'noor_ai_runtime' and rolpassword is not null $$,
+  'noor_ai_runtime holds no password verifier'
+);
+
+select is(
+  has_schema_privilege('noor_ai_runtime', 'noor_ai', 'USAGE'),
+  false,
+  'noor_ai_runtime holds no USAGE on noor_ai — its last reachability is revoked'
 );
 
 -- The predicate is read, never the value. This is what "exists but cannot connect" means: a LOGIN
@@ -363,27 +393,191 @@ select is_empty(
 );
 
 select ok(
-  has_schema_privilege('noor_ai_runtime', 'noor_ai', 'USAGE'),
-  'noor_ai_runtime holds USAGE on noor_ai — the precondition for later EXECUTE grants'
-);
-
-select ok(
   not has_schema_privilege('noor_ai_runtime', 'noor_ai', 'CREATE'),
   'noor_ai_runtime does NOT hold CREATE on noor_ai — it may never add objects to what it queries'
 );
 
-select is(
-  (select count(*)::int from pg_class
-    where relnamespace = (select oid from pg_namespace where nspname = 'noor_ai')),
-  0,
-  'noor_ai contains no relations yet'
+-- service_role reaches the definer entry points through USAGE and nothing else. USAGE alone confers
+-- no access to any object; every table privilege stays with the owner.
+select ok(
+  has_schema_privilege('service_role', 'noor_ai', 'USAGE'),
+  'service_role holds USAGE on noor_ai — the precondition for the five EXECUTE grants'
 );
 
-select is(
-  (select count(*)::int from pg_proc
-    where pronamespace = (select oid from pg_namespace where nspname = 'noor_ai')),
-  0,
-  'noor_ai contains no routines yet'
+select ok(
+  not has_schema_privilege('service_role', 'noor_ai', 'CREATE'),
+  'service_role does NOT hold CREATE on noor_ai'
+);
+
+-- ── 7b. Exact private inventory ─────────────────────────────────────────────
+-- Allowlists, not counts. A new relation or routine in `noor_ai` fails here until it is added
+-- deliberately — that edit IS the security review.
+select set_eq(
+  $$ select c.relname::text from pg_class c
+     where c.relnamespace = (select oid from pg_namespace where nspname = 'noor_ai')
+       and c.relkind in ('r', 'p') $$,
+  $$ values ('limit_config'), ('price_table'), ('user_counter'), ('global_counter'),
+            ('reservation'), ('provider_attempt') $$,
+  'noor_ai contains exactly the approved quota relations'
+);
+
+select set_eq(
+  $$ select p.proname::text from pg_proc p
+     where p.pronamespace = (select oid from pg_namespace where nspname = 'noor_ai') $$,
+  $$ values ('limit_of'), ('window_start_of'), ('try_increment_user'), ('try_increment_global'),
+            ('accumulate_global'), ('global_value'), ('user_value'), ('expire_stale'),
+            ('reserve'), ('register_attempt'), ('finalize'), ('release'), ('status'),
+            ('purge_expired') $$,
+  'noor_ai contains exactly the approved routines'
+);
+
+-- Every private object belongs to the NOLOGIN owner.
+select is_empty(
+  $$ select c.relname::text from pg_class c
+     where c.relnamespace = (select oid from pg_namespace where nspname = 'noor_ai')
+       and c.relkind in ('r', 'p')
+       and pg_get_userbyid(c.relowner) <> 'noor_ai_owner' $$,
+  'every noor_ai relation is owned by noor_ai_owner'
+);
+
+select is_empty(
+  $$ select p.proname::text from pg_proc p
+     where p.pronamespace = (select oid from pg_namespace where nspname = 'noor_ai')
+       and pg_get_userbyid(p.proowner) <> 'noor_ai_owner' $$,
+  'every noor_ai routine is owned by noor_ai_owner'
+);
+
+-- Fixed empty search_path on every private routine.
+select is_empty(
+  $$ select p.proname::text from pg_proc p
+     where p.pronamespace = (select oid from pg_namespace where nspname = 'noor_ai')
+       and coalesce(
+         (select c from unnest(coalesce(p.proconfig, '{}'::text[])) c
+           where split_part(c, '=', 1) = 'search_path' limit 1),
+         'NOT SET') <> 'search_path=""' $$,
+  'every noor_ai routine pins search_path to empty'
+);
+
+-- The EXECUTE matrix: exactly five entry points, and no internal helper.
+select set_eq(
+  $$ select p.proname::text from pg_proc p
+     where p.pronamespace = (select oid from pg_namespace where nspname = 'noor_ai')
+       and has_function_privilege('service_role', p.oid, 'EXECUTE') $$,
+  $$ values ('reserve'), ('register_attempt'), ('finalize'), ('release'), ('status') $$,
+  'service_role executes exactly the five lifecycle entry points and no internal helper'
+);
+
+select is_empty(
+  $$ select g.who || ' -> ' || p.proname
+     from (values ('anon'), ('authenticated')) g(who)
+     cross join pg_proc p
+     where p.pronamespace = (select oid from pg_namespace where nspname = 'noor_ai')
+       and has_function_privilege(g.who, p.oid, 'EXECUTE') $$,
+  'anon and authenticated execute no noor_ai routine'
+);
+
+-- No direct table reach for anyone but the owner. This is what makes the lifecycle unbypassable.
+select is_empty(
+  $$ select g.who || ' -> ' || c.relname || ':' || p.privilege
+     from (values ('service_role'), ('anon'), ('authenticated')) g(who)
+     cross join all_table_privileges p
+     join pg_class c on c.relnamespace = (select oid from pg_namespace where nspname = 'noor_ai')
+       and c.relkind = 'r'
+     where has_table_privilege(g.who, c.oid, p.privilege) $$,
+  'service_role, anon and authenticated hold NO direct privilege on any noor_ai table'
+);
+
+select is_empty(
+  $$ select c.relname::text from pg_class c
+     where c.relnamespace = (select oid from pg_namespace where nspname = 'noor_ai')
+       and c.relkind = 'S'
+       and (has_sequence_privilege('service_role', c.oid, 'USAGE')
+         or has_sequence_privilege('anon', c.oid, 'USAGE')
+         or has_sequence_privilege('authenticated', c.oid, 'USAGE')) $$,
+  'no client or service role holds any noor_ai sequence privilege'
+);
+
+-- ── 7c. The public wrappers ─────────────────────────────────────────────────
+select set_eq(
+  'select signature from noorai_wrappers',
+  $$ values ('public.noor_ai_reserve(p_subject_id uuid, p_request_id text)'),
+            ('public.noor_ai_register_attempt(p_subject_id uuid, p_reservation_id uuid, p_attempt_number integer, p_input_tokens integer, p_output_tokens integer, p_reasoning_tokens integer, p_outcome text)'),
+            ('public.noor_ai_finalize(p_subject_id uuid, p_reservation_id uuid)'),
+            ('public.noor_ai_release(p_subject_id uuid, p_reservation_id uuid)'),
+            ('public.noor_ai_status(p_subject_id uuid)') $$,
+  'public exposes exactly the five approved NoorAI wrappers, with exact signatures'
+);
+
+select is_empty(
+  $$ select signature from noorai_wrappers where prosecdef $$,
+  'every NoorAI wrapper is SECURITY INVOKER — it carries no authority of its own'
+);
+
+select is_empty(
+  $$ select signature from noorai_wrappers where pronargdefaults > 0 $$,
+  'no NoorAI wrapper has default arguments that could broaden reachability'
+);
+
+select is_empty(
+  $$ select signature from noorai_wrappers
+     where coalesce(
+       (select c from unnest(coalesce(proconfig, '{}'::text[])) c
+         where split_part(c, '=', 1) = 'search_path' limit 1),
+       'NOT SET') <> 'search_path=""' $$,
+  'every NoorAI wrapper pins search_path to empty'
+);
+
+select is_empty(
+  $$ select w.signature from noorai_wrappers w
+     where exists (
+       select 1 from aclexplode(coalesce(w.proacl, acldefault('f', w.proowner))) a
+       where a.grantee = 0 and a.privilege_type = 'EXECUTE') $$,
+  'no NoorAI wrapper grants EXECUTE to PUBLIC'
+);
+
+select is_empty(
+  $$ select w.signature || ' -> ' || r.rolname
+     from noorai_wrappers w cross join client_roles r
+     where has_function_privilege(r.oid, w.oid, 'EXECUTE') $$,
+  'no NoorAI wrapper grants EXECUTE to anon or authenticated'
+);
+
+select is_empty(
+  $$ select w.signature from noorai_wrappers w
+     where not has_function_privilege('service_role', w.oid, 'EXECUTE') $$,
+  'service_role executes every NoorAI wrapper — the server-only call path'
+);
+
+-- A prefix-matching function must NOT inherit service_role EXECUTE.
+--
+-- An earlier revision granted by looping over `proname like 'noor\_ai\_%'`, so any future function
+-- whose name happened to match would have been granted silently. The migration now names each exact
+-- signature. This proves it against the live catalog rather than trusting the SQL text: a synthetic
+-- decoy is created here, inside the rolled-back test transaction, and must come out ungranted.
+create or replace function public.noor_ai_decoy_not_granted(p int)
+returns int language sql set search_path = '' as $decoy$ select p $decoy$;
+
+-- PostgreSQL grants EXECUTE to PUBLIC on every new function, and service_role is implicitly PUBLIC.
+-- That inherited grant has nothing to do with this migration, so it is removed first; what remains is
+-- exactly the question being asked — did the migration itself grant service_role anything here?
+revoke all on function public.noor_ai_decoy_not_granted(int) from public;
+
+select ok(
+  not has_function_privilege('service_role', 'public.noor_ai_decoy_not_granted(int)'::regprocedure, 'EXECUTE'),
+  'a synthetic public.noor_ai_* function does NOT receive service_role EXECUTE from this migration'
+);
+
+drop function public.noor_ai_decoy_not_granted(int);
+
+-- ── 7d. The private schema is never exposed to the Data API ─────────────────
+select is_empty(
+  $$ select n.nspname::text from pg_namespace n
+     where n.nspname = 'noor_ai'
+       and exists (
+         select 1 from pg_db_role_setting s
+         where array_to_string(s.setconfig, ',') like '%noor_ai%'
+           and array_to_string(s.setconfig, ',') like '%pgrst.db_schemas%') $$,
+  'noor_ai never appears in a PostgREST exposed-schema setting'
 );
 
 -- The runtime role must reach nothing that already exists. Note that both roles DO hold USAGE on

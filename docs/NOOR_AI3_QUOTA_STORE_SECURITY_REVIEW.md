@@ -2896,3 +2896,91 @@ Nothing persists. The pool is `end()`ed.
 | **SSL enforcement** | **Still disabled, still undecided** (§17.9). §20.5 confirms Supavisor is in its scope |
 | **AI-3** | **Incomplete** |
 | **NoorLife** | **Not production-ready** |
+
+---
+
+## 21. The service-role RPC pivot, and the quota store as built — 2026-08-08
+
+**Owner decision.** The direct-connection D2 runtime path is **superseded**. It is not erased: §19 and
+§20 remain the record of why it was chosen and what it cost.
+
+### 21.1 What was rejected, and why
+
+| Candidate | Disposition |
+| --- | --- |
+| `jsr:@db/postgres@0.19.5` | **Rejected** (§20). Connection acquisition cannot be bounded: `pool.end()` awaits a pending initialize and ignores checked-out clients, and no acquisition timeout exists |
+| `npm:postgres@3.4.9` | **Not adopted.** Source-level gates passed, but it was still blocked on one hosted runtime test and the whole transport is now unnecessary |
+| The credential provisioning harness | **Withdrawn from production use.** It produced two safely remediated but unacceptable failure modes: a self-enforcing guard that constant-folded `1/0` and aborted every run, and — more seriously — a reconciliation gated on the mutation's own success signal, which reported `password_installed=false` while the credential was in fact installed |
+
+**Neither direct client, nor the harness, is part of the production design.** No connection secret and
+no database password verifier remains anywhere; `noor_ai_runtime` is `NOLOGIN` with a null verifier
+and no schema privilege, preserved but inert.
+
+### 21.2 The approved architecture
+
+Quota state lives in the private `noor_ai` schema. All logic runs in `SECURITY DEFINER` functions
+owned by `noor_ai_owner` (NOLOGIN, no verifier, no `CREATE` on `public`). The Edge Function reaches
+them **only** through five thin `SECURITY INVOKER` wrappers in `public`, executable **only** by
+`service_role`.
+
+`noor_ai` is **never exposed to the Data API**. PostgREST sees only `public` and `graphql_public`,
+which is why the wrappers exist at all: a `noor_ai.*` function is unreachable via `.rpc()`.
+
+**The tradeoff, stated plainly:** `service_role` is a broad key. It is not narrowed by this design; it
+is *contained* by it — server-only, never shipped to the mobile app, no general-purpose SQL surface,
+only five named RPCs with strict typed parameters and no default arguments. `service_role` holds
+`USAGE` on the schema and `EXECUTE` on exactly five entry points, and **zero** table, sequence or
+internal-helper privileges, so no counter can move except through the audited lifecycle.
+
+### 21.3 Subject identity — corrected
+
+§11.1 called unkeyed `sha256(auth.uid())` a "viable fallback". **That framing is withdrawn for this
+store.** In a design where the quota tables and `auth.users` share one database, an unkeyed digest
+offers no meaningful unlinkability against an actor who can already read the user list — it is
+cosmetic, and presenting it as a privacy control would be misleading.
+
+The store holds the **verified user UUID directly**, as `subject_id uuid`. See
+`NOOR_AI_BACKEND_CONTRACT.md` §I.1's 2026-08-08 amendment for the full rationale. It is
+**account-linked personal data** — not anonymous, not pseudonymous for disclosure purposes.
+
+This says nothing about the provider `safety_identifier`, whose secret-salt requirement stands and
+whose key lifecycle (**B10**) remains **open**.
+
+### 21.4 B14 and B15
+
+| | |
+| --- | --- |
+| **B14** (TLS verification for a direct client) | **NOT APPLICABLE** to the selected runtime path. NoorAI opens no database connection of its own, so there is no client TLS posture to prove. **Not "passed"** — the question is removed, not answered |
+| **B15** (Supavisor custom-role connection test) | **NOT APPLICABLE**, for the same reason. Never executed |
+
+Both remain on record because a future design that reintroduces a direct connection reintroduces them.
+
+### 21.5 Status
+
+| | |
+| --- | --- |
+| **R8** | **Implemented locally, unapproved for production.** The store exists, applies from empty on PostgreSQL 17, and is covered by 200 pgTAP assertions plus two real 12-session concurrency cases. It is not deployed |
+| **AI-3** | **Incomplete.** No Edge Function integration, no provider connectivity, no OpenAI traffic |
+| **Quota values** | **DEV only.** Every production/free/paid ceiling remains **unapproved** (plan §4.8). Configuration is changed by controlled migration, never by an RPC |
+| **Account deletion** | **Open release gate.** Erasure is a targeted delete on `subject_id` and is proven by test, but no deletion RPC exists: neither this contract nor `ACCOUNT_DELETION_ARCHITECTURE.md` authorizes one yet |
+| **Retention** | `purge_expired()` exists and is deliberately **not scheduled**. Month rows are exempt so the monthly ceiling stays enforceable |
+| **NoorLife** | **Not production-ready** |
+
+### 21.6 Late accounting after lease expiry — resolved by owner decision
+
+§12.7 described the crash case and accepted under-counting. It did **not** say what happens when the
+result arrives late, after expiry — a different situation, because the money was really spent and the
+answer really came back. §12.4's "only where the reservation is still `reserved`" would have silently
+dropped it. That gap is closed:
+
+**A provider attempt that was actually incurred is accounted exactly once, even late.**
+
+`register_attempt` accepts `reserved` or `expired` and refuses `finalized`/`released` with `not_open`.
+`finalize` closes `reserved` or `expired` in one direction only, into `finalized`; an expired
+reservation with **zero** attempts records zero spend, invents no estimate, and stays `expired` so it
+is never mistaken for a completed request.
+
+What late accounting deliberately does **not** do: reopen the lease (expiry releases it permanently),
+refund or increment any request counter, admit another request, alter a historical attempt cost, or
+restore `reserved`. §12.7's under-count therefore now applies only to the genuinely unobserved case —
+a request that vanished without ever registering an attempt.
