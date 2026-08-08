@@ -357,9 +357,42 @@ describe('noor_ai trust boundary (20260808160000)', () => {
   });
 
   it('grants the runtime role usage but never create', () => {
-    expect(statements).toMatch(/grant usage on schema noor_ai to noor_ai_runtime;/i);
-    expect(statements).not.toMatch(/grant[^;]*create[^;]*on schema noor_ai/i);
-    expect(statements).not.toMatch(/grant all[^;]*on schema noor_ai/i);
+    expect(statements).toMatch(/grant usage on schema noor_ai to noor_ai_runtime/i);
+    expect(statements).not.toMatch(/grant[^;']*create[^;']*on schema noor_ai/i);
+    expect(statements).not.toMatch(/grant all[^;']*on schema noor_ai/i);
+  });
+
+  it('contains no SET ROLE or RESET ROLE, in any spelling', () => {
+    /**
+     * The regression this guards is a real hosted failure: an earlier revision wrapped the schema
+     * configuration in `SET ROLE noor_ai_owner ... RESET ROLE`, and the Supabase CLI's own
+     * migration-history INSERT — appended to the same session — then ran as noor_ai_owner and was
+     * refused on supabase_migrations. The hosted transaction rolled back in full.
+     *
+     * A migration must not change the session role and rely on changing it back.
+     */
+    expect(statements).not.toMatch(/\bset\s+(local\s+)?role\b/i);
+    expect(statements).not.toMatch(/\breset\s+role\b/i);
+    expect(statements).not.toMatch(/\bset\s+session\s+authorization\b/i);
+  });
+
+  it('transfers schema ownership as the final schema operation', () => {
+    // Ownership last is what removes the need for SET ROLE: every privilege statement is issued
+    // while the migration role still owns the schema.
+    const transfer = statements.search(/alter schema noor_ai owner to noor_ai_owner/i);
+    const grant = statements.search(/grant usage on schema noor_ai to noor_ai_runtime/i);
+    const revoke = statements.search(/revoke all on schema noor_ai from public/i);
+    expect(transfer).toBeGreaterThanOrEqual(0);
+    expect(grant).toBeGreaterThanOrEqual(0);
+    expect(revoke).toBeGreaterThanOrEqual(0);
+    expect(transfer).toBeGreaterThan(grant);
+    expect(transfer).toBeGreaterThan(revoke);
+  });
+
+  it('introduces no SECURITY DEFINER helper or privilege escalation', () => {
+    expect(statements).not.toMatch(/security\s+definer/i);
+    expect(statements).not.toMatch(/\bsuperuser\b/i);
+    expect(statements).not.toMatch(/\bbypassrls\b/i);
   });
 
   it('grants the custom roles no membership in any platform role', () => {

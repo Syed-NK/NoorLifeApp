@@ -37,6 +37,26 @@
 -- `authenticator`, or any other platform role, and neither is granted SUPERUSER, BYPASSRLS,
 -- CREATEDB, CREATEROLE or REPLICATION. Both are NOINHERIT, so even a future membership would not
 -- apply implicitly. The elevated server-side platform role is neither used nor modified.
+--
+-- ── Why this file contains no SET ROLE, and must not ────────────────────────
+-- An earlier revision configured the schema under `SET ROLE noor_ai_owner ... RESET ROLE`. It
+-- applied cleanly against a local reset and then **failed on the hosted project**: the Supabase CLI
+-- appends its own `INSERT INTO supabase_migrations.schema_migrations` to the same session after the
+-- file's statements, and that INSERT ran while the session role was still `noor_ai_owner` — which
+-- holds no privilege on `supabase_migrations`, exactly as this design intends. The hosted
+-- transaction rolled back in full, so nothing was left behind, but nothing was deployed either.
+--
+-- The lesson is general and outlives this file: **a migration must not change the session role and
+-- rely on changing it back.** A tool that appends a statement to the same session will run it under
+-- whatever role the file left behind, and a trailing `RESET ROLE` is not a reliable guard against
+-- that. Do not reintroduce `SET ROLE` here.
+--
+-- The alternative used instead is ordinary ownership sequencing: the schema is created under the
+-- migration role, every privilege statement is issued while the migration role still owns it, and
+-- **ownership is transferred to `noor_ai_owner` as the very last operation**. PostgreSQL rewrites
+-- the ACL on transfer, re-attributing each grant to the incoming owner, so the end state is
+-- identical to the SET ROLE version — verified: the ACL becomes
+-- `{noor_ai_owner=UC/noor_ai_owner,noor_ai_runtime=U/noor_ai_owner}` and the comment survives.
 
 -- ── Roles ───────────────────────────────────────────────────────────────────
 -- CREATE ROLE has no IF NOT EXISTS, so existence is checked explicitly. This is the only construct
@@ -83,15 +103,16 @@ alter role noor_ai_runtime
 alter role noor_ai_owner set search_path = '';
 alter role noor_ai_runtime set search_path = '';
 
--- ── Administrative membership, needed only to set the schema's owner ────────
--- On PostgreSQL 16+, a non-superuser that creates a role receives ADMIN OPTION on it but with
--- `set_option = false`, so it cannot `SET ROLE` to the new role. `CREATE SCHEMA ... AUTHORIZATION`
--- requires exactly that ability, and fails with "must be able to SET ROLE" without it.
+-- ── Administrative membership, needed only to hand over ownership ───────────
+-- `ALTER SCHEMA ... OWNER TO noor_ai_owner` requires the caller to be able to `SET ROLE` to the
+-- incoming owner. On PostgreSQL 16+, a non-superuser that creates a role receives ADMIN OPTION on it
+-- but with `set_option = false`, which is not enough — verified: the transfer fails with "must be
+-- able to SET ROLE". This grant supplies exactly that ability and nothing more.
 --
--- This grants the *migration* role the ability to act as `noor_ai_owner`. It is the opposite
--- direction from the memberships this design forbids: `noor_ai_owner` gains nothing, and neither
--- custom role becomes a member of any platform role. `INHERIT FALSE` means the migration role does
--- not implicitly acquire owner privileges either — it must ask for them explicitly.
+-- It is the opposite direction from the memberships this design forbids: `noor_ai_owner` gains
+-- nothing, and neither custom role becomes a member of any platform role. `INHERIT FALSE` keeps it
+-- minimal — the migration role can *assume* the owner role but does not implicitly hold its
+-- privileges. This is the smallest membership that makes the ownership transfer possible.
 --
 -- Written as dynamic SQL over `current_user` rather than hardcoding a role name. Do **not** rewrite
 -- this as `GRANT ... TO CURRENT_USER WITH INHERIT FALSE, SET TRUE`: that spelling segfaults the
@@ -104,40 +125,47 @@ end
 $$;
 
 -- ── Private schema ──────────────────────────────────────────────────────────
-create schema if not exists noor_ai authorization noor_ai_owner;
-
--- Re-asserted in case the schema predates this migration with a different owner.
-alter schema noor_ai owner to noor_ai_owner;
-
--- Owner-scoped DDL runs as the owner. Because the grant above is INHERIT FALSE, the migration role
--- does not hold owner rights implicitly and must ask for them — `COMMENT ON SCHEMA` requires
--- ownership. This is the pattern every later migration that creates objects in `noor_ai` will use,
--- so the objects end up owned by `noor_ai_owner` rather than by whoever ran the migration.
--- Everything from here to `reset role` runs as the schema owner. That is not stylistic: GRANT and
--- REVOKE by a role without ownership or grant option do **not** raise an error — PostgreSQL emits
--- "WARNING: no privileges were granted" and continues. A migration written outside this block would
--- report success and silently grant nothing. The pgTAP guard asserts the resulting privileges for
--- exactly that reason.
-set role noor_ai_owner;
-
-comment on schema noor_ai is
-  'Private NoorAI quota store. Not exposed through the Data API and not on any extra_search_path. '
-  'Owned by noor_ai_owner (NOLOGIN); queried by noor_ai_runtime (LOGIN, no credential yet).';
-
--- A new schema does not grant PUBLIC anything by default, so these revokes are belt-and-braces
--- rather than corrections. They are stated anyway: the whole point of this schema is that its
--- privilege posture is explicit rather than inherited, and a reader should not have to know
--- PostgreSQL's default to know that anon and authenticated hold nothing here.
-revoke all on schema noor_ai from public;
-revoke all on schema noor_ai from anon;
-revoke all on schema noor_ai from authenticated;
-
--- The runtime role gets USAGE and nothing else. USAGE alone confers no access to any object; it is
--- the precondition for the explicit EXECUTE grants that a later migration will add, once the
--- functions exist.
+-- One guarded block, and the guard is what makes it idempotent. Because the migration role holds the
+-- owner role with INHERIT FALSE, it cannot alter the schema once ownership has moved — so a second
+-- run must not retry the configuration. It skips instead, and the pgTAP guard is what proves the
+-- state is still correct rather than this file re-asserting it.
 --
--- CREATE is deliberately withheld. The runtime role must never be able to add objects to the schema
--- it queries — that is the second half of the owner/runtime split described above.
-grant usage on schema noor_ai to noor_ai_runtime;
+-- Order matters and is the whole point: create, configure, then hand over. Every statement between
+-- the create and the transfer is issued by the schema's current owner, so none of them can hit the
+-- silent-warning failure mode where GRANT without ownership emits "WARNING: no privileges were
+-- granted" and the migration reports success having granted nothing.
+do $$
+begin
+  if not exists (select 1 from pg_catalog.pg_namespace where nspname = 'noor_ai') then
 
-reset role;
+    execute 'create schema noor_ai';
+
+    execute 'comment on schema noor_ai is '
+         || quote_literal(
+              'Private NoorAI quota store. Not exposed through the Data API and not on any '
+              || 'extra_search_path. Owned by noor_ai_owner (NOLOGIN); queried by noor_ai_runtime '
+              || '(LOGIN, no credential yet).');
+
+    -- A new schema does not grant PUBLIC anything by default, so these revokes are belt-and-braces
+    -- rather than corrections. They are stated anyway: the whole point of this schema is that its
+    -- privilege posture is explicit rather than inherited, and a reader should not have to know
+    -- PostgreSQL's default to know that anon and authenticated hold nothing here.
+    execute 'revoke all on schema noor_ai from public';
+    execute 'revoke all on schema noor_ai from anon';
+    execute 'revoke all on schema noor_ai from authenticated';
+
+    -- The runtime role gets USAGE and nothing else. USAGE alone confers no access to any object; it
+    -- is the precondition for the explicit EXECUTE grants that a later migration will add, once the
+    -- functions exist.
+    --
+    -- CREATE is deliberately withheld. The runtime role must never be able to add objects to the
+    -- schema it queries — that is the second half of the owner/runtime split described above.
+    execute 'grant usage on schema noor_ai to noor_ai_runtime';
+
+    -- Last operation on the schema. After this the migration role can no longer alter it, which is
+    -- the intended end state.
+    execute 'alter schema noor_ai owner to noor_ai_owner';
+
+  end if;
+end
+$$;

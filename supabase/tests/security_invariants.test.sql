@@ -475,6 +475,46 @@ select is(pg_temp.probe_as_runtime('select 1 from auth.users limit 1'), '42501',
 select is(pg_temp.probe_as_runtime('select 1 from supabase_migrations.schema_migrations limit 1'),
   '42501', 'runtime role is REFUSED reading the migration history');
 
+-- ── 9. The migration must not leave the session role changed ───────────────
+-- This is the regression assertion for a real hosted deployment failure. An earlier revision of
+-- 20260808160000 configured the schema under `SET ROLE noor_ai_owner ... RESET ROLE`. The Supabase
+-- CLI appends its own `INSERT INTO supabase_migrations.schema_migrations` to the same session after
+-- the file's statements; that INSERT ran as noor_ai_owner, which holds no privilege on
+-- supabase_migrations, and the whole hosted transaction rolled back.
+--
+-- The direct evidence that the migration no longer does this is simply that its history row exists:
+-- the CLI could only have written it if the post-migration session still held its own privileges.
+select ok(
+  exists (select 1 from supabase_migrations.schema_migrations where version = '20260808160000'),
+  'migration 20260808160000 recorded its history row — the post-migration session kept its privileges'
+);
+
+select is(
+  current_user::text,
+  session_user::text,
+  'no migration left a session role change behind (current_user still equals session_user)'
+);
+
+-- And the same capability demonstrated directly: a statement issued immediately after the migrations,
+-- as the current role, can create and write a migration-history-shaped object. Everything here is
+-- inside the guard's transaction and is rolled back with it.
+select lives_ok(
+  $$ create schema noor_ai_history_probe $$,
+  'post-migration session can CREATE SCHEMA — as the CLI needs in order to record history'
+);
+
+select lives_ok(
+  $$ create table noor_ai_history_probe.schema_migrations
+       (version text primary key, name text, statements text[]) $$,
+  'post-migration session can CREATE TABLE in a schema it owns'
+);
+
+select lives_ok(
+  $$ insert into noor_ai_history_probe.schema_migrations (version, name, statements)
+     values ('probe', 'probe', array['probe']) $$,
+  'post-migration session can INSERT a history-shaped row — the exact statement that failed hosted'
+);
+
 select * from finish();
 
 rollback;
