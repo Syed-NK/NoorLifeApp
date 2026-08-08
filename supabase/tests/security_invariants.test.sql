@@ -268,6 +268,213 @@ select set_eq(
   'authenticated holds exactly the approved privileges across every NoorLife table in public'
 );
 
+-- ── 7. D2 trust boundary: the noor_ai schema and its two roles ──────────────
+-- Migration 20260808160000 creates the boundary the approved D2 architecture rests on
+-- (docs/NOOR_AI3_QUOTA_STORE_SECURITY_REVIEW.md §19). Nothing is implemented inside it yet, and
+-- these assertions are what keep "nothing" true until a reviewed migration changes it.
+--
+-- Why this is asserted against the live catalogue rather than trusted from the migration text:
+-- `GRANT` and `REVOKE` issued by a role without ownership or grant option do **not** error. They
+-- emit "WARNING: no privileges were granted" and the migration reports success. An earlier draft of
+-- 20260808160000 did exactly that, and only the assertion below caught it.
+
+create temporary table approved_noor_ai_roles (rolname text primary key, must_login boolean)
+  on commit drop;
+insert into approved_noor_ai_roles (rolname, must_login) values
+  ('noor_ai_owner',   false),
+  ('noor_ai_runtime', true);
+
+select set_eq(
+  'select rolname::text from pg_roles where rolname like ''noor\_ai\_%''',
+  'select rolname from approved_noor_ai_roles',
+  'exactly the two approved NoorAI roles exist'
+);
+
+select is(
+  (select rolcanlogin from pg_roles where rolname = 'noor_ai_owner'),
+  false,
+  'noor_ai_owner is NOLOGIN — nothing can authenticate as the object owner'
+);
+
+select is(
+  (select rolcanlogin from pg_roles where rolname = 'noor_ai_runtime'),
+  true,
+  'noor_ai_runtime has LOGIN — it is the identity the Edge Function will connect as'
+);
+
+-- The predicate is read, never the value. This is what "exists but cannot connect" means: a LOGIN
+-- role with a null verifier cannot authenticate by any password method. Provisioning a credential is
+-- a separate, secret-managed phase; when it happens, THIS ASSERTION IS EXPECTED TO FAIL LOCALLY ONLY
+-- IF someone provisions one locally, which they should not.
+select is_empty(
+  $$ select rolname::text from pg_authid
+     where rolname like 'noor\_ai\_%' and rolpassword is not null $$,
+  'neither NoorAI role has a password verifier — no usable credential exists yet'
+);
+
+select is_empty(
+  $$ select rolname::text || ' has ' ||
+       case when rolsuper then 'SUPERUSER ' else '' end ||
+       case when rolbypassrls then 'BYPASSRLS ' else '' end ||
+       case when rolcreatedb then 'CREATEDB ' else '' end ||
+       case when rolcreaterole then 'CREATEROLE ' else '' end ||
+       case when rolreplication then 'REPLICATION ' else '' end
+     from pg_roles
+     where rolname like 'noor\_ai\_%'
+       and (rolsuper or rolbypassrls or rolcreatedb or rolcreaterole or rolreplication) $$,
+  'neither NoorAI role holds SUPERUSER, BYPASSRLS, CREATEDB, CREATEROLE or REPLICATION'
+);
+
+select is_empty(
+  $$ select rolname::text from pg_roles where rolname like 'noor\_ai\_%' and rolinherit $$,
+  'both NoorAI roles are NOINHERIT — a future membership would not apply implicitly'
+);
+
+-- Neither custom role may be a member of anything. The reverse direction — the migration role being
+-- granted SET on noor_ai_owner so it can own the schema — is deliberate and is not covered here.
+select is_empty(
+  $$ select m.rolname::text || ' is a member of ' || r.rolname::text
+     from pg_auth_members a
+     join pg_roles m on m.oid = a.member
+     join pg_roles r on r.oid = a.roleid
+     where m.rolname like 'noor\_ai\_%' $$,
+  'neither NoorAI role is a member of any other role, platform or otherwise'
+);
+
+select is(
+  (select pg_get_userbyid(nspowner)::text from pg_namespace where nspname = 'noor_ai'),
+  'noor_ai_owner',
+  'schema noor_ai is owned by the NOLOGIN owner role'
+);
+
+select is_empty(
+  $$ select g.who || ':' || p.priv
+     from (values ('anon'), ('authenticated')) g(who)
+     cross join (values ('USAGE'), ('CREATE')) p(priv)
+     where has_schema_privilege(g.who, 'noor_ai', p.priv) $$,
+  'anon and authenticated hold neither USAGE nor CREATE on noor_ai'
+);
+
+select is_empty(
+  $$ select a.privilege_type from pg_namespace n,
+       aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+     where n.nspname = 'noor_ai' and a.grantee = 0 $$,
+  'PUBLIC holds no privilege on noor_ai'
+);
+
+select ok(
+  has_schema_privilege('noor_ai_runtime', 'noor_ai', 'USAGE'),
+  'noor_ai_runtime holds USAGE on noor_ai — the precondition for later EXECUTE grants'
+);
+
+select ok(
+  not has_schema_privilege('noor_ai_runtime', 'noor_ai', 'CREATE'),
+  'noor_ai_runtime does NOT hold CREATE on noor_ai — it may never add objects to what it queries'
+);
+
+select is(
+  (select count(*)::int from pg_class
+    where relnamespace = (select oid from pg_namespace where nspname = 'noor_ai')),
+  0,
+  'noor_ai contains no relations yet'
+);
+
+select is(
+  (select count(*)::int from pg_proc
+    where pronamespace = (select oid from pg_namespace where nspname = 'noor_ai')),
+  0,
+  'noor_ai contains no routines yet'
+);
+
+-- The runtime role must reach nothing that already exists. Note that both roles DO hold USAGE on
+-- schema `public`, because `public` grants USAGE to PUBLIC and every role is implicitly PUBLIC.
+-- Schema USAGE alone confers no access to any object, which is what these assertions establish.
+select is_empty(
+  $$ select p.privilege from all_table_privileges p
+     where has_table_privilege('noor_ai_runtime', 'public.profiles'::regclass, p.privilege) $$,
+  'noor_ai_runtime holds no privilege on public.profiles'
+);
+
+select is_empty(
+  $$ select f.signature from noorlife_functions f, pg_roles r
+     where r.rolname = 'noor_ai_runtime'
+       and has_function_privilege(r.oid, f.oid, 'EXECUTE') $$,
+  'noor_ai_runtime cannot EXECUTE any existing public function'
+);
+
+select is_empty(
+  $$ select g.who || ' -> ' || s.nspname
+     from (values ('noor_ai_runtime'), ('noor_ai_owner')) g(who)
+     cross join (values ('vault'), ('auth'), ('storage'), ('extensions'),
+                        ('supabase_migrations')) s(nspname)
+     where exists (select 1 from pg_namespace n where n.nspname = s.nspname)
+       and has_schema_privilege(g.who, s.nspname, 'USAGE') $$,
+  'neither NoorAI role holds USAGE on vault, auth, storage, extensions or supabase_migrations'
+);
+
+select is_empty(
+  $$ select g.who || ' -> ' || t.relname
+     from (values ('noor_ai_runtime'), ('noor_ai_owner')) g(who)
+     cross join (values ('vault.secrets'), ('vault.decrypted_secrets')) t(relname)
+     where exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                   where n.nspname || '.' || c.relname = t.relname)
+       and has_table_privilege(g.who, t.relname, 'SELECT') $$,
+  'neither NoorAI role can SELECT from any Vault relation'
+);
+
+-- Data API exposure. The local stack does not persist `pgrst.db_schemas` as a role setting, so this
+-- is vacuously true locally and becomes meaningful wherever that setting exists. The authoritative
+-- local declaration is `supabase/config.toml`, asserted separately in the Jest security suite —
+-- neither check alone is sufficient, and that is stated rather than papered over.
+select is_empty(
+  $$ select e from pg_db_role_setting s,
+       unnest(coalesce(s.setconfig, '{}'::text[])) e
+     where split_part(e, '=', 1) = 'pgrst.db_schemas'
+       and e like '%noor\_ai%' $$,
+  'noor_ai does not appear in any pgrst.db_schemas role setting'
+);
+
+-- ── 8. Negative probes: the boundary refused, not merely ungranted ──────────
+-- Each probe assumes the runtime role inside a subtransaction, runs one statement, and returns its
+-- SQLSTATE. 42501 is insufficient_privilege. Nothing selects real columns, so no row data or secret
+-- can surface even if a probe unexpectedly succeeds — it would return 'NO ERROR' and fail the test.
+create function pg_temp.probe_as_runtime(stmt text) returns text
+language plpgsql as $probe$
+declare
+  state text;
+begin
+  begin
+    execute 'set local role noor_ai_runtime';
+    execute stmt;
+    return 'NO ERROR';
+  exception when others then
+    state := sqlstate;
+    return state;
+  end;
+end;
+$probe$;
+
+select is(pg_temp.probe_as_runtime('select 1 from public.profiles limit 1'), '42501',
+  'runtime role is REFUSED reading public.profiles');
+select is(pg_temp.probe_as_runtime('select public.set_updated_at()'), '42501',
+  'runtime role is REFUSED calling public.set_updated_at()');
+select is(pg_temp.probe_as_runtime('select public.handle_new_user()'), '42501',
+  'runtime role is REFUSED calling public.handle_new_user()');
+select is(pg_temp.probe_as_runtime('select public.enforce_client_plan_code()'), '42501',
+  'runtime role is REFUSED calling public.enforce_client_plan_code()');
+select is(pg_temp.probe_as_runtime('create table noor_ai.should_not_exist(i int)'), '42501',
+  'runtime role is REFUSED creating objects in noor_ai');
+select is(pg_temp.probe_as_runtime('create table public.should_not_exist(i int)'), '42501',
+  'runtime role is REFUSED creating objects in public');
+select is(pg_temp.probe_as_runtime('select 1 from vault.secrets limit 1'), '42501',
+  'runtime role is REFUSED reading vault.secrets');
+select is(pg_temp.probe_as_runtime('select 1 from vault.decrypted_secrets limit 1'), '42501',
+  'runtime role is REFUSED reading vault.decrypted_secrets');
+select is(pg_temp.probe_as_runtime('select 1 from auth.users limit 1'), '42501',
+  'runtime role is REFUSED reading auth.users');
+select is(pg_temp.probe_as_runtime('select 1 from supabase_migrations.schema_migrations limit 1'),
+  '42501', 'runtime role is REFUSED reading the migration history');
+
 select * from finish();
 
 rollback;

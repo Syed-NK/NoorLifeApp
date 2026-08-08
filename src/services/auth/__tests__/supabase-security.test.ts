@@ -312,6 +312,73 @@ describe('function execute hardening (20260808140000)', () => {
   });
 });
 
+describe('noor_ai trust boundary (20260808160000)', () => {
+  /**
+   * The pgTAP guard asserts the database side of the D2 boundary. It cannot see `config.toml`, which
+   * is where the local Data API exposure and search path are actually declared — so that half is
+   * asserted here. Neither check alone is sufficient.
+   */
+  const FILE = '20260808160000_noor_ai_trust_boundary.sql';
+  const raw = readFileSync(join(MIGRATIONS, FILE), 'utf8');
+  const statements = raw
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+  const config = readFileSync(join(ROOT, 'supabase', 'config.toml'), 'utf8');
+
+  it('keeps noor_ai out of the Data API exposed schemas', () => {
+    const schemas = config.match(/^schemas\s*=\s*\[(.*)\]/m)?.[1] ?? '';
+    expect(schemas).not.toContain('noor_ai');
+    // Positive control: the assertion above would pass on an empty match too.
+    expect(schemas).toContain('public');
+  });
+
+  it('keeps noor_ai off extra_search_path', () => {
+    const extra = config.match(/^extra_search_path\s*=\s*\[(.*)\]/m)?.[1] ?? '';
+    expect(extra).not.toContain('noor_ai');
+    expect(extra).toContain('public');
+  });
+
+  it('creates no table, function, sequence or quota object', () => {
+    expect(statements).not.toMatch(/create\s+(table|sequence|view|index|materialized)/i);
+    expect(statements).not.toMatch(/create\s+(or replace\s+)?function/i);
+    expect(statements).not.toMatch(/create\s+(or replace\s+)?trigger/i);
+    expect(statements).not.toMatch(/create\s+policy/i);
+    expect(statements).not.toMatch(/insert\s+into/i);
+  });
+
+  it('embeds no password, credential or secret placeholder', () => {
+    // No PASSWORD clause of any kind — not even PASSWORD NULL, which would wipe a credential
+    // provisioned later by the separate secret-managed phase.
+    expect(statements).not.toMatch(/\bpassword\b/i);
+    expect(statements).not.toMatch(/\bencrypted\b/i);
+    expect(raw).not.toMatch(/eyJ[A-Za-z0-9_-]{20,}/);
+    expect(raw).not.toMatch(/postgres(ql)?:\/\//i);
+  });
+
+  it('grants the runtime role usage but never create', () => {
+    expect(statements).toMatch(/grant usage on schema noor_ai to noor_ai_runtime;/i);
+    expect(statements).not.toMatch(/grant[^;]*create[^;]*on schema noor_ai/i);
+    expect(statements).not.toMatch(/grant all[^;]*on schema noor_ai/i);
+  });
+
+  it('grants the custom roles no membership in any platform role', () => {
+    for (const platform of ['supabase_admin', 'authenticator', 'anon', 'authenticated']) {
+      expect(statements).not.toMatch(new RegExp(`grant\\s+${platform}\\s+to`, 'i'));
+    }
+    expect(statements).not.toMatch(/service_role/i);
+    expect(raw).not.toMatch(/service_role/i);
+  });
+
+  it('claims no superuser-only attribute it cannot actually set', () => {
+    // ALTER ROLE ... NOSUPERUSER is refused for a non-superuser even to turn the attribute off, so
+    // naming these would make the migration fail. They are verified by the pgTAP guard instead.
+    expect(statements).not.toMatch(/\bnosuperuser\b/i);
+    expect(statements).not.toMatch(/\bnobypassrls\b/i);
+    expect(statements).not.toMatch(/\bnoreplication\b/i);
+  });
+});
+
 describe('git hygiene', () => {
   const gitignore = readFileSync(join(ROOT, '.gitignore'), 'utf8');
 
