@@ -1362,6 +1362,23 @@ certificate-verification mode unresolved, and unverified pooler compatibility wi
 least-privilege `LOGIN` role. **§5.6.D's direction is confirmed as the leading one and remains
 unapproved. No store design is approved, and none may be implemented.**
 
+**R8 status after the local PostgreSQL 17 parity verification of 2026-08-08: still `Blocked`.** The
+review's §18 records it. **B11's present mismatch is closed**: `supabase/config.toml` now declares
+`major_version = 17`, and all three migrations replay from empty on a disposable local
+`postgres:17.6.1.147` stack (server version 17.6) with every schema, constraint, partial-index, trigger,
+RLS, policy, function and behavioural assertion holding, alongside the full repository suite and the Tier B
+gateway harness. **That was a one-time verification: no test file was added, so nothing in the repository
+detects future drift between the declaration and the hosted server version. A committed local/CI version
+assertion remains required, and until it exists B11 is closed for the current state but not guarded
+against regression.** The closure discharges the parity precondition on the local Postgres this plan's
+§11.2.1 work will eventually need — **it implements nothing.** The verification also **advanced B13** (per-signature local `EXECUTE` evidence:
+only `handle_new_user()` carries the explicit revoke, and the other two `public` functions are executable
+by `anon` and `authenticated`; the hosted audit and the dashboard-count semantics stay open), **retracted
+B16** as non-material, **narrowed B17**, and recorded a new **B18** — `authenticated` holds unintended
+`TRUNCATE` on `public.profiles`, confirmed locally, hosted state unverified. **This phase aligned local
+test infrastructure only: no quota schema, migration, role, HMAC key or provider connectivity was
+implemented, and no store design is approved.**
+
 ### 11.3 Provisional, or open, until evidence exists
 
 `max_output_tokens` (production), `upstreamTimeoutMs` and `handlerBudgetMs` (production), the

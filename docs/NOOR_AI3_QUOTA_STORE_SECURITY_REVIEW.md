@@ -85,7 +85,11 @@ mismatch (§17.6) surfacing in the bibliography itself, and it is left visible o
 > default-deny rule and the advisory-lock semantics are identical in both. **No finding in this
 > document rests on a version difference.** What the mismatch does break is migration and test parity,
 > which is **B11** (§17.6), and it means any *future* platform claim must be anchored to the version 17
-> pages until the mismatch is deliberately resolved.
+> pages until the mismatch is deliberately resolved. *(Resolved 2026-08-08 — §18.10. `config.toml` now
+> declares 17, so the version 17 pages are the authority from here on. §18.3 records the one place the
+> difference bit in practice: two of this review's own ad-hoc verification queries used
+> `text || "char"`, which 17 rejects as ambiguous and 15 resolved. No migration or application file uses
+> that pattern.)*
 
 ### 0.2 Repository, read from the working tree at `5940352`
 
@@ -1394,11 +1398,14 @@ and neither can be closed by documentation.
 | **B8** | **Lease TTL vs handler budget unspecified.** Too short and real concurrency silently exceeds the ceiling | **NEW** | §12.5's rule, derived from §F.7 |
 | **B9** | **Identifier separation / domain separation.** Two of the three derived identifiers are currently specified to be **equal** — contract §H.3 makes `user_hash` "the same salted hash as `safety_identifier`" — so an exported log line joins to provider-side data by string comparison. Scope: **how the three outputs are kept non-comparable**, and whether that is done with independent keys or one domain-separated master key | **NEW — upgraded from "unassigned" to "specified as equal"** | §11.4.1's requirement, met by Pattern A (recommended) or a cryptographically reviewed Pattern B (§11.4.3–§11.4.4) |
 | **B10** | **HMAC key lifecycle — provisioning and rotation.** No local/CI provisioning path exists, so `supabase db reset` yields a store that migrates cleanly and fails at first call; and no rotation procedure is specified for any of the three keys (who rotates, on what trigger, verified how). Scope: **getting a key into every environment and changing it safely**, distinct from B3's "who can read it" | **NEW** | A provisioning step + a rotation procedure per key + T-19 |
-| **B11** | **PostgreSQL major-version mismatch.** `supabase/config.toml` declares `major_version = 15`; the hosted project reports **17**. Migrations, `db reset`, the shadow database and every one of §13.2's twenty-five database tests would run against a different major version than production | **NEW 2026-08-07** (§17.6) | A deliberate decision — align the declaration upward, or record the divergence with its consequences. **Not changed in this phase** |
+| **B11** | **PostgreSQL major-version mismatch.** `supabase/config.toml` declared `major_version = 15`; the hosted project reports **17**. Migrations, `db reset`, the shadow database and every one of §13.2's twenty-five database tests would run against a different major version than production | **CLOSED 2026-08-08 for the current state** (§18.10). `config.toml` now declares **17**; a fresh local stack runs `postgres:17.6.1.147` (server version **17.6**); all three migrations replay from empty with exit 0; and every schema, constraint, partial-index, trigger, RLS, policy, function and behavioural assertion holds on that version. **This was a one-time verification. No test was added, so nothing in the repository will detect future drift** | Present mismatch: done. **Still required:** a committed local/CI assertion of the server major version. Until it exists, B11 is closed for the current state but **not automatically guarded against regression** |
 | **B12** | **The Data API automatically exposes new tables.** "Automatically expose new tables" is **enabled** on the hosted project, so a table created without an explicit privilege posture is published rather than private-by-default. §10.1's three tables would land in `noor_ai`, but the setting is project-wide and the first migration is where it bites | **NEW 2026-08-07** (§17.7) | A pre-migration gate: assert the final privilege state per table, and decide the setting deliberately. **Not toggled in this phase** |
 | **B13** | **Function privilege and Data API exposure posture unverified.** Two **independent** observations, not joined: (i) *repository evidence* — of the three existing `public` functions, only `handle_new_user()` carries an explicit `revoke … from public, anon, authenticated`; `set_updated_at()` and `enforce_client_plan_code()` do not, and their effective hosted privileges were never read; (ii) *dashboard evidence* — the dashboard displayed **"2 of 3 functions exposed"**, a bare count whose semantics were not established from official documentation and which did not identify the functions. `pg_default_acl` holds **24 rows** whose contents were not read, so the creation-time default for *new* functions is unproven in either direction | **OPEN — NEW 2026-08-07** (§17.8) | A per-signature audit: effective `EXECUTE` for `PUBLIC`/`anon`/`authenticated`/`service_role`, the exposure state of the *same* exact function, and whether it is invocable through PostgREST. Plus: enumerate the default ACLs, and make the `REVOKE`/`GRANT` pair mandatory and asserted (T-13, T-12) rather than conventional |
 | **B14** | **TLS: enforcement disabled, verification mode unresolved.** SSL enforcement is **disabled**, so the endpoints accept non-SSL connections. A CA certificate download exists; **no `verify-full` guidance was shown.** S7 says deployed Edge Functions are "pre-configured to use SSL" but does not state the verification mode — and `require` does not verify the certificate or hostname | **NEW 2026-08-07** (§17.9) | Enforce SSL deliberately, and prove the client's verification mode (T-23). **Nothing enabled in this phase** |
 | **B15** | **Supavisor compatibility with a dedicated least-privilege LOGIN role is unverified.** Transaction pooling is the leading transport, but no official source establishes that the shared pooler accepts a non-`postgres` custom role in its tenant-qualified username. If it does not, §7.7's transport cannot carry §7.3's credential and the whole direction fails | **NEW 2026-08-07** (§17.11) | An official documentation answer, or a controlled test. **Blocking for the recommended direction** |
+| **B16** | **`graphql_public` exposure and Data API startup on PostgreSQL 17.** `config.toml:13` exposes `graphql_public`; raising the declared major version raised the question of whether that schema and the Data API still come up | **RETRACTED 2026-08-08 as non-material** (§18.11). The schema exists on 17, the Data API starts and serves with both schemas declared, and Tier B passed 156 assertions through the local gateway. Noted: `pg_graphql` is **not installed** locally, so `graphql_public` currently holds one function and no relations | Nothing to carry. Hosted exposure is covered by B4, closed on hosted evidence |
+| **B17** | **Vault availability on PostgreSQL 17 without `pgsodium`.** §8.4 point 3 recorded that whether Vault is enabled on a fresh local stack was unverified; the version change reopened it | **NARROWED 2026-08-08, not closed** (§18.12). On fresh 17: `supabase_vault` 0.3.1 installed, `pgsodium` **absent**, `vault.secrets` and `vault.decrypted_secrets` present, startup clean, and **no API role or `PUBLIC` can reach Vault** — independently corroborating B3's direct half | Still open: nothing about hosted encryption-key management or recovery, no secret was created or read, and **B10**'s provisioning and rotation remain unresolved |
+| **B18** | **`authenticated` holds unintended `TRUNCATE`, `REFERENCES` and `TRIGGER` on `public.profiles`.** `20260729140000:94` grants only `select, insert, update`; the `postgres`-owner default ACL in schema `public` adds the rest, and the migration revokes from `anon` and `PUBLIC` but **never from `authenticated`**. `TRUNCATE` is **not subject to RLS** | **NEW 2026-08-08 — CONFIRMED locally on replayed migrations** (§18.7.1); **hosted state unverified**. Not currently reachable by an end user: PostgREST exposes no `TRUNCATE` verb, and issuing SQL as `authenticated` is not a path the client has | An explicit revoke of the unintended privileges, plus a per-table final-state assertion (T-13). A **migration** change — about existing shipped migrations, not the quota store |
 
 #### 14.1.1 The five key-management concerns, and which blocker owns each
 
@@ -1452,7 +1459,12 @@ a credential the client does not hold beats a credential the client does hold.
    review if Pattern B is chosen.
 4. A local Postgres for the twenty-five tests that need one, and a provisioning path closing **B10**.
    **§17.6 adds a precondition to this step**: the local Postgres must be the *hosted* major version, or
-   the parity it is supposed to provide is fictional.
+   the parity it is supposed to provide is fictional. *(2026-08-08: that precondition is **met for the
+   current state** — §18.10 closes B11's present mismatch, and a local PostgreSQL 17.6 stack reproducing
+   the hosted major version is now reproducible from `config.toml`. The twenty-five tests still do not
+   exist; only their foundation does — and that foundation is a declaration plus a one-time manual
+   verification, **not a committed assertion**, so this step must also add the version check that would
+   detect the declaration drifting from the hosted server again.)*
 5. A revised port (§12.9) reviewed as a contract change, and the AI-2 source-scan assertions narrowed
    deliberately (T-21).
 6. **Added 2026-08-07:** the five new blockers — **B11** (version parity), **B12** (automatic table
@@ -1688,6 +1700,13 @@ declared version is a decision with consequences for every existing migration an
 and it belongs to whoever owns that decision. Two readings are available and this document does not pick
 between them: align the declaration upward to match production, or record the divergence with its
 consequences accepted. **What is not available is leaving it undecided and calling the tests parity.**
+
+> **RESOLVED 2026-08-08 — §18.10.** The first reading was taken: `config.toml` now declares
+> `major_version = 17`, and the alignment was verified by replaying all three migrations from empty on a
+> disposable local `postgres:17.6.1.147` stack. **B11's present mismatch is closed.** That was a one-time
+> verification and **no test was committed**, so the paragraph above's warning — that leaving parity
+> undecided and calling the tests parity is not available — now applies to a second thing: a committed
+> version assertion is still required before drift can be detected rather than rediscovered.
 
 ### 17.7 B12 — the Data API automatically exposes new tables
 
@@ -1939,4 +1958,423 @@ likely to be quietly treated as approved.
 | **R8** | **Blocked** |
 | **AI-3** | **Incomplete** |
 | **Noor AI** | **Unavailable to real users.** The production dependency graph still fails closed with `503` |
+| **NoorLife** | **Not production-ready** |
+
+---
+
+## 18. Local PostgreSQL 17 parity verification — completed 2026-08-08
+
+§17.6 opened **B11** and deliberately left it open: `supabase/config.toml` declared `major_version = 15`
+while the hosted project reported **17**, and §14.3 point 4's "local Postgres for the twenty-five tests
+that need one" was therefore a Postgres of the wrong major version. This section records the phase that
+closed **the present mismatch**, on a **disposable local stack** — and what that phase found on the way.
+
+**Read §18.10 before relying on B11.** The verification below was performed once, by hand, during that
+phase. **No test file was added**, so nothing in the repository detects the declaration drifting from the
+hosted server version again. B11 is closed for the current state and is **not** guarded against
+regression; the committed assertion that would guard it is future work.
+
+**This aligns local test infrastructure only.** No quota schema, migration, role, HMAC key or provider
+connectivity was implemented, and nothing hosted was contacted or changed.
+
+### 18.1 What was done, and under what constraints
+
+| | |
+| --- | --- |
+| **The change** | One line: `supabase/config.toml` `major_version = 15` → `17`. Nothing else in that file, and no temporary port change was needed (the declared ports 54320–54323 were free and outside every Hyper-V TCP exclusion range on the day) |
+| **The stack** | A fresh local stack created by Supabase CLI **2.111.0**, resolved through `npx` so it is not a repository dependency. Created for this phase and destroyed at the end of it |
+| **Pre-mutation inventory** | **Zero** containers and **zero** volumes existed before the change, confirmed by label- and name-scoped `docker ps -a` / `docker volume ls`. Twelve Supabase images were already present locally, so nothing was pulled |
+| **Credential handling** | `supabase status` was **never run** by this phase. `supabase start` and `db reset` were invoked with **stdout and stderr discarded at the process boundary**; only exit codes were captured. No JWT, key, password, URI or connection string was printed, stored or written to a file. No `docker inspect`, no container environment inspection, no network detail |
+| **How SQL was run** | `docker exec` into the exact `supabase_db_noorlife` container, `psql -U postgres` over the container's local socket — **no connection string and no password anywhere** |
+| **Vault** | **No secret was created and none was read.** Only catalog existence and privileges were inspected |
+| **Test data** | Every behavioural test ran inside `begin … rollback`. Post-rollback row counts were asserted at **zero** |
+| **Hosted** | No `link`, `db push`, `db pull`, `config push`, `functions deploy`, `secrets set`, hosted query or dashboard action. **No OpenAI or provider request** |
+
+### 18.2 Version evidence
+
+| | |
+| --- | --- |
+| Database image | `public.ecr.aws/supabase/postgres:17.6.1.147` |
+| `current_setting('server_version')` | **17.6** |
+| `current_setting('server_version_num')` | **170006** |
+
+The hosted project reports major version 17 (§17.2). **The declared, local and hosted major versions now
+agree.**
+
+### 18.3 Migration replay from empty
+
+`supabase db reset` replayed all three migrations from an empty database and **exited 0**:
+
+| Migration | Result |
+| --------- | ------ |
+| `20260729120000_create_profiles.sql` | applied |
+| `20260729140000_fix_profile_trigger_rls.sql` | applied |
+| `20260801120000_account_journey.sql` | applied |
+
+Compatibility items §14.3 and this phase required, each confirmed by catalog evidence rather than by the
+absence of an error message:
+
+| Item | Result on 17.6 |
+| ---- | -------------- |
+| `uuid-ossp` availability | **Available and installed**, version 1.1 (`create extension if not exists "uuid-ossp"` at `20260729120000:9` succeeded) |
+| Trigger compatibility | All three triggers created and enabled — §18.4 |
+| RLS behaviour | `relrowsecurity` true, `relforcerowsecurity` false, three policies with the intended structure — §18.5 |
+| `SECURITY DEFINER` / `search_path` behaviour | Pins survived; `proconfig` populated as written — §18.6 |
+| Partial-index compatibility | `profiles_initial_plan_pending_idx` created **with its predicate intact** — §18.4 |
+| Constraint compatibility | `profiles_initial_plan_code_check` created with the paired-null logic intact — §18.4 |
+| Grant behaviour | Grants applied — **and they are not what the migrations alone imply.** §18.7 |
+
+**One incompatibility was found, and it is in this review's own tooling rather than in the project.**
+Two ad-hoc verification queries written for §17's hosted packet used `'text' || some_char_column`, which
+PostgreSQL 17 rejects as `operator is not unique: text || "char"` where 15 resolved it. The fix is an
+explicit `::text` cast. **No migration, function or application file is affected** — the pattern does not
+occur in any of them — but any future verification SQL must carry the cast, and §17's Part A block would
+need that correction before it is re-run against a 17 project.
+
+### 18.4 Schema, column, constraint, index and trigger evidence
+
+| Assertion | Result |
+| --------- | ------ |
+| Schema `public` exists | **true** |
+| Schema `graphql_public` exists | **true** |
+| Schema `noor_ai` exists | **false** — the quota store still does not exist |
+| Schemas `vault`, `extensions`, `auth`, `storage` exist | **true** |
+| `public.profiles` exists | **true** |
+| `initial_plan_selection_completed_at` | `timestamptz`, nullable, no default |
+| `initial_plan_code` | `text`, nullable, no default |
+| `account_journey_version` | `integer`, **not null**, default `1` |
+| `profiles_initial_plan_code_check` | present, `CHECK (((initial_plan_code IS NULL) AND (initial_plan_selection_completed_at IS NULL)) OR ((initial_plan_code = ANY (ARRAY['free','premium_single','premium_family'])) AND (initial_plan_selection_completed_at IS NOT NULL)))` — the paired-null logic intact |
+| `profiles_id_fkey` | present, `FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE` |
+| `profiles_initial_plan_pending_idx` | present, **partial = true** |
+| `profiles_onboarding_completed_idx` | present, partial = false |
+| `profiles_pkey` | present, unique |
+| `profiles_set_updated_at` | on `public.profiles`, enabled, → `set_updated_at()` |
+| `profiles_plan_code_guard` | on `public.profiles`, enabled, → `enforce_client_plan_code()` |
+| `on_auth_user_created` | on `auth.users`, enabled, → `handle_new_user()` |
+
+### 18.5 RLS evidence
+
+`public.profiles`: **`relrowsecurity = true`, `relforcerowsecurity = false`, owner `postgres`.** That is
+exactly the end state `20260729140000` exists to produce, and it confirms on 17 that the FORCE incident of
+§9.2 does not reappear on replay.
+
+| Policy | Permissive | Roles | Command | `USING` | `WITH CHECK` |
+| ------ | ---------- | ----- | ------- | ------- | ------------ |
+| `profiles_select_own` | PERMISSIVE | `authenticated` | SELECT | `(( SELECT auth.uid() AS uid) = id)` | — |
+| `profiles_insert_own` | PERMISSIVE | `authenticated` | INSERT | — | `(( SELECT auth.uid() AS uid) = id)` |
+| `profiles_update_own` | PERMISSIVE | `authenticated` | UPDATE | `(( SELECT auth.uid() AS uid) = id)` | `(( SELECT auth.uid() AS uid) = id)` |
+
+Roles, commands and the USING/WITH CHECK split match the migrations exactly, including the both-clauses
+requirement that `20260729140000:82` explains. **No profile or user row content was selected.**
+
+### 18.6 Function evidence — and what it does and does not do for B13
+
+All three functions, by exact signature, as replayed on 17.6:
+
+| Function | `SECURITY` | Owner | `proconfig` | `proacl` | `EXECUTE` PUBLIC | anon | authenticated | service_role |
+| -------- | ---------- | ----- | ----------- | -------- | ---------------- | ---- | ------------- | ------------ |
+| `public.handle_new_user()` | **DEFINER** | `postgres` | `search_path=""` | `{postgres=X/postgres}` | **false** | **false** | **false** | **false** |
+| `public.set_updated_at()` | INVOKER | `postgres` | `search_path=""` | **null** (hard-wired default) | **true** | **true** | **true** | **true** |
+| `public.enforce_client_plan_code()` | **DEFINER** | `postgres` | `search_path=public` | **null** (hard-wired default) | **true** | **true** | **true** | **true** |
+
+`public` contains exactly **three** functions.
+
+**What this establishes, and it is more than §17.8 could — stated as a privilege conclusion only.**
+
+The three functions are **not otherwise identical**, and the earlier phrasing of this paragraph wrongly
+called the explicit `REVOKE` their "only difference". They also differ in `SECURITY DEFINER` versus
+`INVOKER`, in body and purpose, in `search_path` (`""` for two, `public` for one), and in which migration
+defines them. None of those differences is what the evidence below is about, and none is being controlled
+for.
+
+What the measurement supports, and no more:
+
+1. All three were created by the **same owner** (`postgres`) in the **same schema** (`public`) during the
+   **same reset**.
+2. Of the three, **only `handle_new_user()` contains an explicit function-level `REVOKE`** in the
+   repository migrations — `revoke all on function … from public, anon, authenticated` at
+   `20260729120000:73`, re-asserted at `20260729140000:57`.
+3. `handle_new_user()` has an **explicit ACL** (`{postgres=X/postgres}`) and is **not executable** by
+   `PUBLIC`, `anon`, `authenticated` or `service_role`.
+4. The other two have **null ACLs**, so PostgreSQL's hard-wired `EXECUTE to PUBLIC` default applies, and
+   they are therefore **effectively executable by those roles locally**.
+5. Therefore the explicit `REVOKE` is **demonstrated to be sufficient to remove that access locally**, and
+   the absence of an explicit `REVOKE` **leaves a function at its measured default privilege posture**.
+
+That is a claim about privileges and about the sufficiency of the `REVOKE` — not a claim that the `REVOKE`
+is the sole respect in which these functions differ, and not a general causal claim derived from a
+three-item sample with several uncontrolled variables. **It proves nothing about hosted privileges and
+nothing about the dashboard-count semantics** (§17.8's cautions, restated immediately below).
+
+**What it still does not establish, and §17.8's caution stands unweakened:**
+
+| Not proven | Why |
+| ---------- | --- |
+| That the hosted project's effective privileges match these | Local replay is not a hosted read. The hosted per-signature audit B13 asks for **has not been performed** |
+| That the dashboard's "2 of 3 functions exposed" count means these two | **The dashboard count's semantics remain unestablished from official documentation.** That the local split is also two-of-three is a consistent observation, not a proof of the counting rule |
+| Whether the count is based solely on `EXECUTE` privilege, or whether a per-function toggle or other metadata rule contributes | Not determinable from a local database |
+| Whether trigger-returning functions are counted, or invocable through PostgREST | **Not tested.** All three functions here `RETURN trigger`, and none was invoked directly — per this phase's rule that trigger functions must not be experimentally invoked |
+
+**So B13 advances but does not close.** The repository-evidence half is now backed by measured local
+privileges instead of inference from source; the dashboard half and the hosted half are untouched. The
+practical requirement is unchanged and now better evidenced: **future quota migrations must explicitly
+revoke `EXECUTE` from `PUBLIC`, `anon` and `authenticated` and grant only reviewed signatures.**
+
+### 18.7 Default privileges enumerated — and a new confirmed defect, B18
+
+§17.2 could only report that hosted `pg_default_acl` held **24 rows, contents unread**. The local
+database holds **27 rows**, fully enumerated. **The counts differ, so local is not a proxy for hosted** —
+B13's default-ACL half still needs the hosted enumeration. What the local enumeration does give is the
+mechanism, and it is not the one §17.7 assumed.
+
+Default privileges affecting schema `public`, by the role whose creations they govern:
+
+| Owner the default applies to | Object type | Grantees | Privileges |
+| ---------------------------- | ----------- | -------- | ---------- |
+| `postgres` | function | `postgres` only | EXECUTE |
+| `postgres` | **table** | **`anon`, `authenticated`, `service_role`** | **MAINTAIN, REFERENCES, TRIGGER, TRUNCATE** |
+| `supabase_admin` | function | `anon`, `authenticated`, `postgres`, `service_role` | EXECUTE |
+| `supabase_admin` | table | `anon`, `authenticated`, `postgres`, `service_role` | DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE |
+
+And for a future `noor_ai` schema — **the answer that matters for the quota store:**
+
+| Question | Answer |
+| -------- | ------ |
+| Any default ACL scoped to schema `noor_ai`? | **No** |
+| Any default ACL scoped to **all** schemas (`defaclnamespace = 0`)? | **No** — zero rows |
+
+**Consequence, favourable and narrow:** a function created in a future `noor_ai` schema inherits **no**
+schema-specific default grant, so only PostgreSQL's hard-wired `EXECUTE to PUBLIC` applies. The explicit
+`REVOKE` remains mandatory — but `anon` and `authenticated` would not be granted anything *additional* by
+a default ACL there, which is one hazard fewer than schema `public` carries.
+
+#### 18.7.1 B18 — `authenticated` holds TRUNCATE on `public.profiles`
+
+Enumerating the actual grants on the existing table produced a finding neither the migrations nor §17
+predicted. Exact privileges, from `information_schema.role_table_grants`:
+
+| Grantee | Privileges on `public.profiles` |
+| ------- | ------------------------------- |
+| `postgres` | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE |
+| **`authenticated`** | **INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE** |
+| `service_role` | REFERENCES, TRIGGER, TRUNCATE |
+| `anon` | *(none)* |
+
+`20260729140000:94` grants `authenticated` exactly `select, insert, update`. It holds **TRUNCATE,
+REFERENCES and TRIGGER** as well.
+
+**The mechanism is proven, not guessed.** The `postgres`-owner default ACL in schema `public` grants
+`MAINTAIN, REFERENCES, TRIGGER, TRUNCATE` on new tables to `anon`, `authenticated` and `service_role`.
+The migration revokes from `anon` (`:95`) and from `PUBLIC` (`:96`) — which is why `anon` holds nothing —
+but **never revokes from `authenticated`**, so `authenticated` keeps the default-privilege grants on top
+of the three it is deliberately given.
+
+**Why this matters, stated without inflation.** `TRUNCATE` is **not subject to RLS**: a role holding it
+can empty the table regardless of every policy in §18.5. Two things bound the exposure today, and neither
+is a control anybody chose:
+
+- **PostgREST exposes no `TRUNCATE` verb**, so this is not reachable through the Data API, which is the
+  only path the mobile client has (§6).
+- Reaching it requires the ability to issue arbitrary SQL **as `authenticated`**, which the client does
+  not have — and which is precisely what §7.3's dedicated-role design would introduce a session for.
+
+So this is **not** currently exploitable by an end user, and it must not be reported as though it were.
+It is a **confirmed least-privilege defect on a production-bound table**, latent rather than live, and it
+is exactly the failure mode §3.1's third row and T-13 exist to catch: the final privilege state does not
+match the migration statements, and nothing asserts the difference.
+
+> **B18 — `authenticated` holds unintended TRUNCATE/REFERENCES/TRIGGER on `public.profiles`.** Confirmed
+> locally on replayed migrations; **hosted state unverified**. Closable by an explicit revoke of the
+> unintended privileges plus a per-table final-state assertion (T-13). This is a **finding about existing
+> shipped migrations, not about the quota store**, and it is recorded here because this phase found it;
+> fixing it is a migration change and therefore outside a documentation phase.
+
+### 18.8 Behavioural evidence
+
+Every case ran inside one transaction and was rolled back. No identity or row content was printed.
+
+| # | Case | Result |
+| - | ---- | ------ |
+| F1 | `on_auth_user_created` provisions a profile row for a new `auth.users` row | **PASS** |
+| F2 | The new profile's defaults leave the journey pending — `onboarding_completed = false`, plan code and timestamp null, `account_journey_version = 1` | **PASS** |
+| G1 | Server-side path (`auth.uid()` null) **may** set a paid plan code | **PASS** |
+| G2 | `free` plus a completion timestamp accepted | **PASS** |
+| G3 | Null plan plus null timestamp accepted | **PASS** |
+| G4 | Check constraint **rejects** a plan code without a timestamp | **PASS** — `check_violation` |
+| G5a | `auth.uid()` resolves from `request.jwt.claims` | **PASS** |
+| G5b | Client path (`auth.uid()` non-null) setting a paid code is **rejected by the guard trigger** | **PASS** — raises exactly `paid_plan_requires_verification` |
+| G6 | Client path may still set `free` | **PASS** |
+| G7 | `profiles_set_updated_at` fires and **overrides** a client-supplied `updated_at` | **PASS** |
+| — | Post-rollback residue | **`profiles` 0 rows, `auth.users` 0 rows** |
+
+Two notes on method, because the first attempt at G7 was wrong and the correction matters. `now()` is
+fixed for a transaction, so comparing `updated_at` across two statements inside one transaction can never
+show it advancing — that first attempt reported a false FAIL. The valid test is that a deliberately
+back-dated client write does not survive: it is replaced by `now()`, which is the trigger doing its job.
+**The account-journey guard is therefore verified on 17 in both directions** — it blocks the client path
+and permits the server-side path — which is the property `20260801120000:56–63` exists to create.
+
+### 18.9 Repository verification
+
+| Suite | Result |
+| ----- | ------ |
+| `npm run lint` (`expo lint`) | **exit 0** |
+| `npm run typecheck` (`tsc --noEmit`) | **exit 0** |
+| `npm test -- --runInBand` | **exit 0 — 109 suites, 2962 tests, all passed** |
+| `deno fmt --check noor-ai` | **exit 0** — 25 files |
+| `deno lint noor-ai` | **exit 0** — 25 files |
+| `deno check noor-ai` | **exit 0** |
+| `deno test noor-ai/tests` (unit, no gateway env) | **exit 0 — 151 passed, 0 failed, 5 ignored** |
+| **Tier B** `run-tier-b.ps1` (real local Edge gateway) | **exit 0 — 156 passed, 0 failed** |
+
+The five ignored Deno tests are the §J gateway rows, which self-skip without a gateway URL rather than
+being faked — and Tier B then **ran all five and they passed**, against a real Kong/Auth/edge-runtime
+path on PostgreSQL 17.6, with `verify_jwt` honoured and no bypass flag. Tier B was run only after
+confirming from its source that it suppresses every credential-bearing stream, contacts no hosted
+Supabase, makes no provider request, and tears its own stack down; it did all four.
+
+**F — the app-level signup flow was NOT exercised.** No existing test connects to a live local stack
+(the one `localhost:54321` occurrence in the suite is a string fixture in
+`help-support-screen.test.tsx`). Per this phase's rule, that is reported as **not run** rather than
+improvised — no manual signup flow was invented, and no token was minted outside Tier B's own scoped
+child process. F1/F2 above verify the **database half** of provisioning (the trigger), not the
+client-to-Auth half.
+
+### 18.10 B11 — CLOSED for the current state, not guarded against regression
+
+> **B11's present mismatch is closed.** `supabase/config.toml` now declares `major_version = 17`; a fresh
+> local stack runs `postgres:17.6.1.147` reporting server version **17.6**; all three migrations replay
+> from empty with exit 0; and every schema, constraint, partial index, trigger, RLS, policy, function and
+> behavioural assertion above holds on that version. The declared, local and hosted major versions agree.
+>
+> **This was a one-time, manual verification performed during this phase. No test file was added by the
+> commit that records it**, so **nothing in the repository will detect future drift.** A committed
+> local/CI assertion of the server major version **remains required**, and until it exists B11 is closed
+> for the current state but **not automatically guarded against regression.**
+
+This discharges the precondition §14.3 point 4 acquired in §17.6: the local Postgres that the twenty-five
+database-dependent tests of §13.2 need is now the **hosted** major version, so a suite that passes locally
+is making a statement about production rather than about a version production does not run.
+
+**What closing B11 does not do.** Four things, and the first is the one most easily misread:
+
+1. **It installs no guard.** The verification happened; it was not committed as an assertion. Re-reading
+   this section a month from now tells you what was true on 2026-08-08, not what is true then. The
+   drift-detecting assertion is **future work**, deliberately not added in the correction that clarified
+   this, because adding a test is a code change and that correction was a documentation change.
+2. It does not make any of those twenty-five tests exist — §13.2.1 stands.
+3. It does not verify anything hosted.
+4. It does not imply the hosted project will stay on 17. A future platform upgrade re-opens the parity
+   question silently, which is exactly why point 1 matters: the declaration in `config.toml` and the
+   hosted server version can diverge again with nothing in the repository noticing.
+
+### 18.11 B16 — pg_graphql, `graphql_public` and Data API startup — RETRACTED as non-material
+
+Raising the declared major version raised a fair question: `config.toml:13` exposes `graphql_public`, and
+if that schema or its extension did not exist on 17 the local Data API might fail to start. The evidence:
+
+| Fact | Result |
+| ---- | ------ |
+| `pg_graphql` **installed** | **No** |
+| `pg_graphql` available in `pg_available_extensions` | **Yes** |
+| Schema `graphql_public` exists | **Yes** |
+| Relations in `graphql_public` | **0** |
+| Functions in `graphql_public` | **1** — `graphql_public.graphql(text,text,jsonb,jsonb)` |
+| Local Data API started with `schemas = ["public","graphql_public"]` | **Yes** — `supabase start` exit 0; `supabase_kong_noorlife` healthy; `supabase_rest_noorlife` up; and Tier B reached the gateway and passed 156 assertions through it |
+
+**Disposition: retracted as a non-material concern, not "closed".** The schema exists and the Data API
+starts and serves on 17 with both schemas declared, so there is nothing to fix and nothing to carry. Two
+honest qualifications: `pg_graphql` is **not installed locally**, so exposing `graphql_public` currently
+exposes one function and no relations; and this is a **local** observation — §17.5 already confirmed the
+hosted exposed-schema list separately, and B4 is closed on that hosted evidence rather than on this.
+
+### 18.12 B17 — Vault on PostgreSQL 17 without pgsodium — NARROWED, not closed
+
+The same question for Vault, which §8 and §11.6 make the intended home for the rate-limit HMAC key. The
+local evidence:
+
+| Fact | Result |
+| ---- | ------ |
+| `supabase_vault` installed on fresh 17 | **Yes — version 0.3.1** |
+| `pgsodium` installed | **No** |
+| `pgsodium` available in `pg_available_extensions` | Yes |
+| Vault objects exist | **Yes** — `vault.secrets` (table), `vault.decrypted_secrets` (view) |
+| Vault routines | `vault.create_secret(text,text,text,uuid)`, `vault.update_secret(uuid,text,text,text,uuid)`, plus internal `vault._crypto_aead_det_encrypt/_decrypt/_noncegen` |
+| Stack startup succeeded without `pgsodium` | **Yes** — `supabase start` exit 0, database container healthy |
+| `anon` / `authenticated` / `PUBLIC` — `USAGE` on `vault` | **false** |
+| `anon` / `authenticated` / `PUBLIC` — `SELECT` on `vault.secrets` | **false** |
+| `anon` / `authenticated` / `PUBLIC` — `SELECT` on `vault.decrypted_secrets` | **false** |
+| `service_role` / `postgres` | hold `USAGE` and both `SELECT`s |
+
+**Two things worth stating.** First, Vault 0.3.1 carries its own `_crypto_aead_det_*` routines and
+functions on 17 **without `pgsodium` installed**, so the extension is not a prerequisite for Vault to
+exist and start. Second — and this is the more useful result — **the local privilege posture reproduces
+the hosted B3 finding exactly**: no API role and not `PUBLIC` can reach Vault directly, on a stack built
+from nothing but this repository's configuration and migrations. That is independent corroboration of
+§17.4 from a different project, which is stronger evidence than a second read of the same one.
+
+**Disposition: narrowed, explicitly not closed.** What is established is local: Vault exists, starts,
+and is unreachable by API roles on 17 without pgsodium. What is **not** established, and must not be
+claimed:
+
+- **Nothing about hosted encryption-key management or recovery.** A local stack proves that Vault
+  *starts*; it says nothing about how the hosted project's encryption key is held, rotated or recovered.
+  S5's "The encryption key is never stored in the database alongside the encrypted data" is the only
+  authority on that, and it is not a recovery procedure.
+- **No secret was created or read**, locally or hosted, so nothing here demonstrates that
+  `create_secret`/`update_secret` behave as documented in this project.
+- **B10 is untouched.** Provisioning a key into every local and CI environment, and rotating it, remain
+  unresolved — and §8.4 point 3's question ("whether the Vault extension is enabled by default on a fresh
+  local stack") is now answered **yes**, which removes one small unknown from B10 without closing it.
+- **B3's indirect half is untouched.** No definer routine was enumerated for indirect Vault disclosure.
+
+### 18.13 Cleanup, and what this verification did not do
+
+**Cleanup evidence.** Tier B's own `finally` block tore the stack down with `supabase stop --no-backup`,
+and it was verified independently afterwards:
+
+| Check | Result |
+| ----- | ------ |
+| Containers labelled `com.supabase.cli.project=noorlife` | **0** |
+| Containers named `*supabase*` or `*noorlife*` | **0** |
+| All containers on the daemon | **0** |
+| Volumes labelled `com.supabase.cli.project=noorlife` | **0** |
+| Volumes named `*supabase*` | **0** |
+| All volumes on the daemon | **0** |
+| Images | **12, unchanged** — none pulled, none deleted |
+
+No broad Docker command was used: no `supabase stop --all`, no `docker compose down -v`, no
+`docker system prune`, no `docker volume prune`. Only the `project_id = noorlife` stack was stopped, and
+only its own volumes were removed.
+
+**Not done:**
+
+- **No hosted Supabase contact of any kind.** No `link`, `db push`, `db pull`, `config push`,
+  `functions deploy`, `secrets set`, hosted query or dashboard action.
+- **No OpenAI or provider request.** No provider key exists.
+- **`supabase status` was never run** by this phase. Tier B runs it internally, into memory, and never
+  renders it — that is the script's documented control, not an exception to this one.
+- **No credential printed, logged, redirected to a file, or committed.** No scratch file holding command
+  output was created.
+- **No temporary port change**, so none needed restoring; the committed `config.toml` diff is the single
+  `major_version` line and nothing else.
+- **No quota store.** No migration, SQL file, schema, table, function, policy, grant, role or HMAC key.
+  `noor_ai` does not exist locally or hosted.
+
+### 18.14 What did not change
+
+| | |
+| --- | --- |
+| **Verdict** | **BLOCKED.** §14 stands |
+| **B1, B2** | **Untouched and still CRITICAL.** Design defects; a version alignment cannot and did not touch them |
+| **B12, B14, B15** | **Open, untouched.** Automatic table exposure was not toggled, SSL enforcement was not enabled, and pooler/custom-role compatibility was not tested |
+| **B13** | **Advanced, not closed** (§18.6). The hosted per-signature audit and the dashboard-count semantics remain open |
+| **B3** | Direct half stays closed and is now independently corroborated locally (§18.12); **indirect half still open** |
+| **New** | **B18** (§18.7.1) — a confirmed least-privilege defect on `public.profiles`, hosted state unverified |
+| **Service-role designs** | **Still rejected** (§7.2) |
+| **The recommended direction** — dedicated least-privilege role over the transaction pooler | **UNAPPROVED.** B15 unchanged |
+| **D1** | **Unapproved** |
+| **R8** | **Blocked** |
+| **AI-3** | **Incomplete** |
+| **Noor AI** | **Unavailable to real users.** The production dependency graph still fails closed with `503` — `production-graph_test.ts` re-asserted this on 17 |
 | **NoorLife** | **Not production-ready** |
