@@ -2,6 +2,7 @@ import type { ClaimsPolicy } from './claims.ts';
 import { createJwtClaimsVerifier } from './jwt-verifier.ts';
 import { createOpenAIProvider } from './openai-provider.ts';
 import { createQuotaRpcStore } from './quota-rpc.ts';
+import { createProductionSafetyIdentifierDeriver } from './safety-identifier.ts';
 import type {
   AIProvider,
   Clock,
@@ -36,10 +37,14 @@ export { unavailableProvider } from './openai-provider.ts';
  *      an unavailable one (§I.1).
  *   3. **No provider key exists.** `OPENAI_API_KEY` is unset in every environment, so
  *      `createOpenAIProvider` yields the provider that can only refuse.
- *   4. **B10 is open** — see `createProductionProvider`. There is no reviewed **per-user**
- *      `safety_identifier` derivation, and the adapter's construction-time option cannot be one, so
- *      nothing can be supplied and the provider refuses on that ground *alone*, whatever happens to
- *      the key.
+ *   4. **No safety-identifier HMAC key exists.** B10 is implemented — `safety-identifier.ts` derives a
+ *      per-user opaque value from the verified subject — but its dedicated secret has not been
+ *      generated and is provisioned in no environment, so the deriver answers `unavailable` and the
+ *      handler fails closed *before* a reservation is taken, whatever happens to the provider key.
+ *
+ * Reasons 3 and 4 are genuinely independent: the provider key alone leaves the deriver unavailable,
+ * and the HMAC key alone leaves the provider unavailable. Neither key can open the endpoint on its own,
+ * and neither can both, because reason 1 sits in front of them as a source constant.
  *
  * A request therefore fails closed with §I.5's stable `503 service_unavailable` *after* authentication
  * and validation have run — the whole request path is exercised and nothing is answered.
@@ -54,30 +59,21 @@ export { unavailableProvider } from './openai-provider.ts';
  * real thing from the real environment and lets its own gates decide — and today they both refuse.
  *
  * ── B10, stated where the wiring is ──────────────────────────────────────────
- * `staticSafetyIdentifier: undefined` is not an omission, and it is **not a slot waiting for a value**.
- * B10 — the key provisioning and rotation lifecycle (`NOOR_AI3_QUOTA_STORE_SECURITY_REVIEW.md` §11.5)
- * — is **open**, and the thing it is open *about* cannot be expressed here at all: this graph is built
- * once per isolate, so anything passed on that line would be a single constant shared by every user
- * the isolate serves. A safety identifier is defined as identifying each user. One constant is not
- * that, and no better constant fixes it.
+ * The construction-time safety-identifier option this factory used to pass `undefined` to is **gone**,
+ * and it was removed rather than filled in. It could never have closed B10: this graph is built once
+ * per isolate, so anything passed there would have been a single constant shared by every user the
+ * isolate serves, and a safety identifier is defined as identifying each user.
  *
- * **Closing B10 therefore does not mean filling this in.** It means a separately reviewed **per-user
- * derivation step** — server-side, after JWT verification and before the provider call, emitting an
- * opaque identifier and nothing else — carried as a new per-request field. That is a reviewed diff to
- * `ProviderRequest`, to §H.1's allow-list and to the boundary test (plan §6.5), plus an answer to the
- * Apple linkage question in `NOOR_AI_DATA_CONTROL_DECISION.md` §6.3. A raw uuid, an email, a phone
- * number, a session id and an unkeyed uuid hash all remain prohibited as input or output, and the
- * mobile client may never supply one.
+ * B10 is closed the way that note said it had to be — a per-user derivation step running server-side
+ * after JWT verification and before the provider call, carried as a per-request field on
+ * `ProviderRequest`. It lives in `safety-identifier.ts` and is wired below as its own port. The
+ * adapter accepts the derived value and validates it; it cannot produce one.
  *
- * Until that port exists, the `undefined` below keeps live provider execution unavailable **by
- * itself**, whatever happens to the API key. `tests/source-scan_test.ts` pins the literal so removing
- * it is a visible failure rather than a quiet one.
+ * A raw uuid, an email, a phone number, a session id and an unkeyed uuid hash all remain prohibited as
+ * input and as output, and the mobile client may never supply one.
  */
 export function createProductionProvider(environment: ProductionEnvironment): AIProvider {
-  return createOpenAIProvider({
-    apiKey: environment.openaiApiKey,
-    staticSafetyIdentifier: undefined,
-  });
+  return createOpenAIProvider({ apiKey: environment.openaiApiKey });
 }
 
 /**
@@ -221,11 +217,12 @@ export type ProductionEnvironment = {
   /**
    * Platform-injected `SUPABASE_JWKS` — the project's **public** verification keys.
    *
-   * Not a secret, and deliberately the only key material this function reads. §B.2's table is the
-   * security core of the contract, and the rows for the OpenAI key, the service-role key and the
-   * `safety_identifier` salt all read **Never** for the repository. Nothing here reads any of them, and
-   * `tests/source-scan_test.ts` asserts that no file in this directory reads `OPENAI_API_KEY`,
-   * `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEYS`, or anything shaped like a provider secret.
+   * Not a secret, and deliberately the only key material this file reads. §B.2's table is the security
+   * core of the contract, and the rows for the OpenAI key, the service-role key and B10's identifier
+   * key all read **Never** for the repository — no value for any of the three appears here, and this
+   * phase created none. `tests/source-scan_test.ts` asserts that every environment read in this
+   * directory is one of five named variables, that each secret is read in exactly one file, and that
+   * nothing shaped like a credential is committed anywhere.
    */
   readonly jwks: string | undefined;
   /**
@@ -276,6 +273,17 @@ export function createProductionDependencies(
       claims: claimsPolicyFor(environment.supabaseUrl),
       nowSeconds: () => Math.floor(systemClock.now() / 1000),
     }),
+    /**
+     * B10's deriver, built from the module that owns the secret name.
+     *
+     * It takes no argument from `ProductionEnvironment`, and that is deliberate rather than an
+     * inconsistency with the two credentials above. Those are read at the entry point and *handed
+     * through* to a module that uses them; this key is read, validated, imported and used inside one
+     * file and reaches no other. Keeping the name, the validation and the single use together is what
+     * lets `tests/source-scan_test.ts` pin ownership by exact equality — and there is nothing to
+     * inject here, because with no secret set the deriver is unavailable in every environment.
+     */
+    safetyIdentifiers: createProductionSafetyIdentifierDeriver(),
     provider: createProductionProvider(environment),
     quota: createQuotaRpcStore({
       supabaseUrl: environment.supabaseUrl,

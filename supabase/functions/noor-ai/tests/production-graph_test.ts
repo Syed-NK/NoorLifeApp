@@ -13,6 +13,7 @@ import {
   createFakeTimer,
   createSigningFixture,
   jsonRequest,
+  TEST_SAFETY_IDENTIFIER,
   validClaimSet,
   withNetworkTripwire,
 } from './fakes.ts';
@@ -38,6 +39,7 @@ Deno.test('the production provider is unavailable by construction and touches no
         maxOutputTokens: 1,
         store: false,
         languageHint: 'en',
+        safetyIdentifier: TEST_SAFETY_IDENTIFIER,
       },
       new AbortController().signal,
     );

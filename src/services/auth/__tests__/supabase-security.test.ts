@@ -252,21 +252,100 @@ describe('no secrets in the repository', () => {
     expect(named).toEqual(['openai-provider.ts']);
 
     /**
-     * B10 is open, so the production graph constructs the provider with no safety identifier — which
-     * makes it unavailable regardless of whether a key is ever set.
+     * B10 is now implemented as a per-user derivation, and the construction-time option the previous
+     * revision of this test pinned has been **removed** rather than filled in — it was fixed when the
+     * adapter was built, and the graph is built once per isolate, so any value there would have been
+     * one constant shared by every user.
      *
-     * The option it declines is `staticSafetyIdentifier`, and the name is the point: it is fixed at
-     * construction, the graph is built once per isolate, so any value there would be one constant
-     * shared by every user. It is mocked-test scaffolding, not a future B10 slot. B10 needs a reviewed
-     * per-user derivation carried as a per-request field, which does not exist.
+     * What replaces it: the graph wires a dedicated deriver port, and §I.2's kill switch is still a
+     * source constant rather than an environment lookup.
      */
     const wiring = readFileSync(join(fn, 'production.ts'), 'utf8');
-    expect(wiring).toMatch(/staticSafetyIdentifier:\s*undefined/);
-    // Never a literal, in any production file.
-    expect(wiring).not.toMatch(/staticSafetyIdentifier:\s*['"`]/);
+    expect(wiring).not.toMatch(/staticSafetyIdentifier/);
+    expect(wiring).toMatch(/safetyIdentifiers:\s*createProductionSafetyIdentifierDeriver\(\)/);
     // And §I.2's kill switch is a constant, not an environment lookup.
     expect(wiring).toMatch(/enabled:\s*false/);
     expect(wiring).not.toMatch(/enabled:\s*.*Deno\.env/);
+  });
+
+  /**
+   * Added 2026-08-09 by B10 — the per-user OpenAI `safety_identifier`.
+   *
+   * Two claims, and they are about different sides of the same boundary.
+   *
+   * **The app knows nothing about it.** There is no field, header, query parameter or configuration
+   * value for a safety identifier anywhere in `src/`, no reference to the HMAC secret name, and no
+   * derivation of any kind. The mobile client cannot supply, seed, override or even observe the value:
+   * it is derived server-side from the verified JWT subject, and the Edge Function's own request schema
+   * rejects every identity-shaped field name before anything is derived.
+   *
+   * **The server keeps it in one module.** The exact-equality assertions live in
+   * `supabase/functions/noor-ai/tests/source-scan_test.ts`; this is the coarse version that runs in the
+   * suite a developer runs by habit, so a second file gaining key material is caught even if nobody
+   * provisions Deno that day.
+   */
+  it('the mobile app has no safety identifier, no HMAC key name and no derivation', () => {
+    expect(
+      scanSrc(/NOOR_AI_SAFETY_HMAC_KEY|safety_identifier|safetyIdentifier|nl_osi_/i, {
+        shippedOnly: true,
+        stripComments: true,
+      }),
+    ).toEqual([]);
+    /**
+     * No app module holds key material or signs anything.
+     *
+     * Deliberately **not** a scan for `crypto.subtle`: `src/services/auth/web-crypto.ts` legitimately
+     * installs a `subtle.digest` polyfill so `supabase-js` can compute a PKCE `S256` code challenge on
+     * React Native, and banning the whole namespace would ban that. What must be absent is the
+     * capability B10 needs — importing a key and signing with it — because an app that could do either
+     * is an app that could be given a secret to do it with.
+     */
+    expect(
+      scanSrc(/importKey|subtle\s*\.\s*sign|createHmac|\bHMAC\b/i, {
+        shippedOnly: true,
+        stripComments: true,
+      }),
+    ).toEqual([]);
+    /**
+     * And no key-shaped 32-byte literal is committed anywhere under src, tests included.
+     *
+     * 43 base64url characters is exactly what a 32-byte key encodes to, but `-` and `_` are also what
+     * this codebase's testIDs are made of, so length alone flags strings like
+     * `privacy-security-ai-assistant-noor-ai-value`. The two lookaheads require an uppercase letter and
+     * a digit as well, which every kebab-case identifier lacks and which random key material has with
+     * overwhelming probability — the chance a real 32-byte key contains no uppercase character at all
+     * is about `(38/64)^43`, which is far below the odds of anything else this suite guards against.
+     */
+    expect(
+      scanSrc(
+        /['"`](?=[A-Za-z0-9_-]{43}['"`])(?=[A-Za-z0-9_-]*[A-Z])(?=[A-Za-z0-9_-]*[0-9])[A-Za-z0-9_-]{43}['"`]/,
+        { shippedOnly: false, stripComments: false },
+      ),
+    ).toEqual([]);
+  });
+
+  it('the Edge Function names the HMAC secret in exactly one server-side module', () => {
+    const fn = join(ROOT, 'supabase', 'functions', 'noor-ai');
+    const strip = (text: string): string =>
+      text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const named = readdirSync(fn)
+      .filter((f) => f.endsWith('.ts'))
+      .filter((f) => /NOOR_AI_SAFETY_HMAC_KEY/.test(strip(readFileSync(join(fn, f), 'utf8'))));
+    expect(named).toEqual(['safety-identifier.ts']);
+
+    const module = strip(readFileSync(join(fn, 'safety-identifier.ts'), 'utf8'));
+    // The reserved name, the active version as a source constant, and no v2 read.
+    expect(module).toMatch(/Deno\.env\.get\(\s*'NOOR_AI_SAFETY_HMAC_KEY_V1'\s*\)/);
+    expect(module).not.toMatch(/NOOR_AI_SAFETY_HMAC_KEY_V2/);
+    expect(module).toMatch(/SAFETY_IDENTIFIER_ACTIVE_VERSION = 'v1'/);
+    // The key is imported non-extractably, for signing only, and never exported.
+    expect(module).toMatch(/importKey\('raw',[\s\S]*?false,\s*\['sign'\]/);
+    expect(module).not.toMatch(/extractable:\s*true|exportKey/);
+    // It logs nothing and throws nothing, so no secret can escape through a message.
+    expect(module).not.toMatch(/console\s*\.\s*[a-z]+\s*\(/);
+    expect(module).not.toMatch(/throw new/);
+    // And no value for it exists in this repository.
+    expect(module).not.toMatch(/['"`][A-Za-z0-9_-]{43}['"`]/);
   });
 
   it('the mobile app reaches no Noor AI quota RPC and no private schema', () => {

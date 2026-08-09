@@ -11,6 +11,11 @@ import {
   STRUCTURED_OUTPUT_NAME,
 } from '../openai-provider.ts';
 import { buildInstructions } from '../policy.ts';
+import {
+  SAFETY_IDENTIFIER_ACTIVE_VERSION,
+  SAFETY_IDENTIFIER_PATTERN,
+  safetyIdentifierPrefix,
+} from '../safety-identifier.ts';
 import type { AIProvider, ProviderRequest, ProviderResult } from '../ports.ts';
 import { assert, assertEquals, assertExcludes } from './assert.ts';
 import {
@@ -46,14 +51,11 @@ const REQUEST: ProviderRequest = {
   maxOutputTokens: 2_000,
   store: false,
   languageHint: 'en',
+  safetyIdentifier: TEST_SAFETY_IDENTIFIER,
 };
 
 function provider(mock: FetchMock): AIProvider {
-  return createOpenAIProvider({
-    apiKey: TEST_PROVIDER_KEY,
-    staticSafetyIdentifier: TEST_SAFETY_IDENTIFIER,
-    fetchImpl: mock.impl,
-  });
+  return createOpenAIProvider({ apiKey: TEST_PROVIDER_KEY, fetchImpl: mock.impl });
 }
 
 async function run(
@@ -236,11 +238,36 @@ Deno.test('10/11/12/13 — the outbound body carries exactly the approved fields
   assertEquals(body.reasoning, { effort: OPENAI_REASONING_EFFORT }, 'effort only; no mode');
   assertEquals(OPENAI_REASONING_EFFORT, 'low', 'the effort the plan named');
 
-  // No identity of any kind, and the safety identifier is the synthetic opaque one the test supplied.
+  // No identity of any kind, and the safety identifier is the per-request opaque value, verbatim.
   const serialised = JSON.stringify(body);
   assertExcludes(serialised, '11111111-1111-4111-8111-111111111111', 'no user uuid');
   assertExcludes(serialised, '22222222-2222-4222-8222-222222222222', 'no session id');
-  assertEquals(body.safety_identifier, TEST_SAFETY_IDENTIFIER, 'a synthetic opaque value');
+  assertEquals(body.safety_identifier, TEST_SAFETY_IDENTIFIER, 'the opaque value it was handed');
+});
+
+Deno.test('37 — the identifier travels in exactly one field, and appears nowhere else', async () => {
+  /**
+   * §H.2 names `metadata` as the tempting second place to stash an identifier. There is no such field
+   * on this body, and this asserts the stronger property: the value occurs exactly once in the whole
+   * serialised request, at `safety_identifier`, and nowhere in the URL or the headers.
+   */
+  const { mock, body } = await run([ok()]);
+
+  const holders = Object.keys(body).filter((key) =>
+    JSON.stringify(body[key]).includes(TEST_SAFETY_IDENTIFIER)
+  );
+  assertEquals(holders, ['safety_identifier'], 'one field carries it');
+  assertEquals(
+    (mock.calls[0]?.body.match(new RegExp(TEST_SAFETY_IDENTIFIER, 'g')) ?? []).length,
+    1,
+    'and it occurs exactly once in the outbound body',
+  );
+  assertExcludes(mock.calls[0]?.url ?? '', TEST_SAFETY_IDENTIFIER, 'never in the URL');
+  assertExcludes(
+    JSON.stringify([...(mock.calls[0]?.headers ?? new Headers())]),
+    TEST_SAFETY_IDENTIFIER,
+    'and never in a header',
+  );
 });
 
 Deno.test('10b — the structured-output format is strict and its enum is closed', async () => {
@@ -749,11 +776,7 @@ Deno.test('43 — a refused redirect is a transport failure, and the key is not 
 Deno.test('52 — with no key the provider is unavailable and the transport is never touched', async () => {
   for (const apiKey of [undefined, '']) {
     const mock = createFetchMock();
-    const built = createOpenAIProvider({
-      apiKey,
-      staticSafetyIdentifier: TEST_SAFETY_IDENTIFIER,
-      fetchImpl: mock.impl,
-    });
+    const built = createOpenAIProvider({ apiKey, fetchImpl: mock.impl });
     const result = await built.generate(REQUEST, new AbortController().signal);
 
     assertEquals(result, { kind: 'unavailable' }, 'no key means no provider');
@@ -761,40 +784,201 @@ Deno.test('52 — with no key the provider is unavailable and the transport is n
   }
 });
 
-Deno.test('53 — the B10 gate is independent of the key, and refuses every identity-shaped value', async () => {
+Deno.test('38–41 — a missing, malformed or identity-shaped identifier makes zero fetch calls', async () => {
   /**
-   * B10 is open, so production passes nothing here and the provider stays unavailable **even with a
-   * key present** — an independent lock rather than a second condition on the same one.
+   * B10's gate at the boundary, per request. The handler already refuses before reaching this adapter,
+   * so this is the boundary's own refusal to send anything it cannot vouch for — and it holds **with a
+   * key present**, which is what makes it an independent lock rather than a second condition on the
+   * same one.
    *
-   * ── What this test does not claim ────────────────────────────────────────
-   * It does **not** show that supplying a value would close B10. It could not: this option is fixed at
-   * construction and the production adapter is built once per isolate, so any value would be one
-   * constant shared by every user, which is not a per-user safety identifier under any reading. B10
-   * needs a reviewed per-user derivation port, and this option is mocked-test scaffolding.
-   *
-   * The rejected values below are the ones a hurried implementation would reach for: a raw uuid, a
-   * prefixed uuid, an email. None is privacy-preserving, and none can build a provider.
+   * The rejected values are the ones a wrong derivation would produce: nothing at all, a bare digest
+   * with no version, the wrong prefix, a truncated or over-long digest, the standard base64 alphabet,
+   * padding, a raw uuid, a prefixed uuid, and an email. None may travel, and none may cost a request.
    */
-  const refused: readonly (string | undefined)[] = [
+  const digest = TEST_SAFETY_IDENTIFIER.slice(
+    safetyIdentifierPrefix(SAFETY_IDENTIFIER_ACTIVE_VERSION).length,
+  );
+  const refused: readonly unknown[] = [
     undefined,
+    null,
     '',
-    'short',
+    42,
+    digest,
+    `nl_osi_${digest}`,
+    `nl_osi_v_${digest}`,
+    `nl_osi_v0_${digest}`,
+    `nl_osi_V1_${digest}`,
+    `osi_v1_${digest}`,
+    ` ${TEST_SAFETY_IDENTIFIER}`,
+    `${TEST_SAFETY_IDENTIFIER} `,
+    `nl_osi_v1_${digest.slice(1)}`,
+    `nl_osi_v1_${digest}x`,
+    `nl_osi_v1_${digest.slice(0, 42)}+`,
+    `nl_osi_v1_${digest.slice(0, 42)}=`,
     '11111111-1111-4111-8111-111111111111',
-    'v1_11111111-1111-4111-8111-111111111111',
     'user@example.invalid',
-    'has spaces in it and so cannot be opaque',
-    'x'.repeat(65),
+    /**
+     * The one case the format check alone would let through: a uuid is 36 characters of `[0-9a-f-]`,
+     * which is a subset of the approved alphabet, so seven filler characters make a value that matches
+     * the pattern exactly. `looksLikeIdentity` is what refuses it, and this is why that check is kept
+     * even though it is redundant with the pattern today.
+     */
+    'nl_osi_v1_111111111111111-1111-4111-8111-111111111111',
   ];
   for (const safetyIdentifier of refused) {
     const mock = createFetchMock();
-    const built = createOpenAIProvider({
-      apiKey: TEST_PROVIDER_KEY,
-      staticSafetyIdentifier: safetyIdentifier,
-      fetchImpl: mock.impl,
-    });
-    const result = await built.generate(REQUEST, new AbortController().signal);
+    const built = createOpenAIProvider({ apiKey: TEST_PROVIDER_KEY, fetchImpl: mock.impl });
+    const result = await built.generate(
+      { ...REQUEST, safetyIdentifier } as ProviderRequest,
+      new AbortController().signal,
+    );
 
-    assertEquals(result, { kind: 'unavailable' }, 'B10 is open, so there is nothing to send');
+    assertEquals(result, { kind: 'unavailable' }, 'nothing this adapter cannot vouch for travels');
     assertEquals(mock.calls.length, 0, 'and no request is made');
+  }
+});
+
+Deno.test('38b — only the active version may travel; a valid inactive version sends nothing', async () => {
+  /**
+   * The gate that a shape check alone cannot provide.
+   *
+   * `createSafetyIdentifierDeriver` accepts an explicit version so a rotation can be built and tested
+   * before it is switched on, which means identifiers under an inactive version are constructible and
+   * syntactically perfect. Sending one would emit an identifier under a key that
+   * `SAFETY_IDENTIFIER_ACTIVE_VERSION` has not put into service — changing users' provider-side
+   * identity outside the reviewed deployment that is supposed to decide it.
+   *
+   * ── Why the accepted value is built rather than written out ──────────────
+   * The active identifier below is assembled from `safetyIdentifierPrefix(ACTIVE_VERSION)`, so this
+   * test cannot pass by agreeing with a second hand-written `v1`. If the constant moved and the
+   * adapter did not follow it, the accepted case would fail; if the adapter restated the version
+   * independently, the rejected cases would start passing. Both directions are covered.
+   */
+  const digest = TEST_SAFETY_IDENTIFIER.slice(
+    safetyIdentifierPrefix(SAFETY_IDENTIFIER_ACTIVE_VERSION).length,
+  );
+  assertEquals(digest.length, 43, 'the fixture digest is the documented length');
+
+  // The active version is accepted, and it is the value that reaches the wire.
+  const active = `${safetyIdentifierPrefix(SAFETY_IDENTIFIER_ACTIVE_VERSION)}${digest}`;
+  const accepted = await run([ok()], { safetyIdentifier: active });
+  assertEquals(accepted.mock.calls.length, 1, 'the active version is sent');
+  assertEquals(accepted.body.safety_identifier, active, 'verbatim');
+  assertEquals(SAFETY_IDENTIFIER_ACTIVE_VERSION, 'v1', 'and v1 is what is active today');
+
+  /**
+   * Every other syntactically valid version is refused, with **zero** fetch calls. `createFetchMock`
+   * with no scripted steps throws on the first call, so a request would fail loudly rather than being
+   * counted afterwards — the call count is the assertion, and the mock is the tripwire behind it.
+   */
+  for (const version of ['v2', 'v3', 'v9', 'v10', 'v999']) {
+    if (version === SAFETY_IDENTIFIER_ACTIVE_VERSION) {
+      continue;
+    }
+    const candidate = `${safetyIdentifierPrefix(version)}${digest}`;
+    assertEquals(
+      SAFETY_IDENTIFIER_PATTERN.test(candidate),
+      true,
+      `${version} is syntactically valid, which is exactly why the shape check is not enough`,
+    );
+
+    const mock = createFetchMock();
+    const built = createOpenAIProvider({ apiKey: TEST_PROVIDER_KEY, fetchImpl: mock.impl });
+    const result = await built.generate(
+      { ...REQUEST, safetyIdentifier: candidate },
+      new AbortController().signal,
+    );
+
+    assertEquals(result, { kind: 'unavailable' }, `${version} is not the active version`);
+    assertEquals(mock.calls.length, 0, `${version} makes zero fetch calls`);
+  }
+});
+
+Deno.test('38c — the adapter restates no version of its own', async () => {
+  /**
+   * The coupling, checked behaviourally rather than by reading the source (`source-scan_test.ts` owns
+   * the static half). A hypothetical adapter carrying its own `v1` literal would accept the value
+   * below just as the real one does — so the discriminating case is the *pair*: acceptance follows
+   * `safetyIdentifierPrefix(ACTIVE_VERSION)`, and every neighbouring version fails, including the two
+   * adjacent ordinals a copied-and-edited literal would most plausibly be.
+   */
+  const digest = TEST_SAFETY_IDENTIFIER.slice(
+    safetyIdentifierPrefix(SAFETY_IDENTIFIER_ACTIVE_VERSION).length,
+  );
+  const ordinal = Number(SAFETY_IDENTIFIER_ACTIVE_VERSION.slice(1));
+  const neighbours = [ordinal - 1, ordinal + 1].filter((value) => value >= 1);
+
+  for (const neighbour of neighbours) {
+    const mock = createFetchMock();
+    const built = createOpenAIProvider({ apiKey: TEST_PROVIDER_KEY, fetchImpl: mock.impl });
+    const result = await built.generate(
+      { ...REQUEST, safetyIdentifier: `${safetyIdentifierPrefix(`v${neighbour}`)}${digest}` },
+      new AbortController().signal,
+    );
+    assertEquals(result, { kind: 'unavailable' }, `v${neighbour} is not active`);
+    assertEquals(mock.calls.length, 0, 'and costs nothing');
+  }
+
+  const { mock } = await run([ok()], {
+    safetyIdentifier: `${safetyIdentifierPrefix(SAFETY_IDENTIFIER_ACTIVE_VERSION)}${digest}`,
+  });
+  assertEquals(mock.calls.length, 1, 'while the constant’s own version is accepted');
+});
+
+Deno.test('43/44/45 — one adapter, many callers: the identifier is per request and cannot persist', async () => {
+  /**
+   * The property the removed construction-time option could never have: a single adapter — the shape
+   * production builds, once per isolate — serving two different users in sequence sends two different
+   * identifiers, because the value arrives with the request rather than with the constructor.
+   *
+   * The third assertion is about the response, not the request: the provider's own body is parsed for
+   * an answer and nothing in it can influence what the *next* request carries. The mocked response
+   * below deliberately contains a `safety_identifier` field of its own, and it changes nothing.
+   */
+  const other = 'nl_osi_v1_second_synthetic_identifier_for_user_number';
+  assertEquals(other.length, TEST_SAFETY_IDENTIFIER.length, 'both fixtures are the same shape');
+
+  const mock = createFetchMock(
+    jsonResponse(providerEnvelope({ safety_identifier: 'a-value-the-adapter-must-ignore' })),
+    ok(),
+    ok(),
+  );
+  const singleton = createOpenAIProvider({ apiKey: TEST_PROVIDER_KEY, fetchImpl: mock.impl });
+
+  await singleton.generate(REQUEST, new AbortController().signal);
+  await singleton.generate(
+    { ...REQUEST, safetyIdentifier: other },
+    new AbortController().signal,
+  );
+  await singleton.generate(REQUEST, new AbortController().signal);
+
+  const sent = mock.calls.map((call) =>
+    (JSON.parse(call.body) as Record<string, unknown>).safety_identifier
+  );
+  assertEquals(
+    sent,
+    [TEST_SAFETY_IDENTIFIER, other, TEST_SAFETY_IDENTIFIER],
+    'each request carried its own value, and the second did not stick',
+  );
+  assertEquals(new Set(sent).size, 2, 'two users, two identifiers, through one adapter');
+});
+
+Deno.test('the adapter never returns, echoes or derives an identifier', async () => {
+  /**
+   * The outcome is what crosses back into the handler, and it must carry nothing about the value it
+   * sent. Checked across the success path and every failure path, because "it is not in the answer" is
+   * a much weaker claim than "it is in none of the nine outcomes".
+   */
+  const failures: readonly FetchStep[][] = [
+    [ok()],
+    [jsonResponse({ error: { message: 'no' } }, 401)],
+    [jsonResponse({ error: { message: 'slow' } }, 429)],
+    [jsonResponse({ error: { message: 'boom' } }, 500)],
+    [jsonResponse('not json', 200)],
+  ];
+  for (const steps of failures) {
+    const { result } = await run(steps);
+    assertExcludes(JSON.stringify(result), TEST_SAFETY_IDENTIFIER, 'no identifier in the outcome');
+    assertExcludes(JSON.stringify(result), 'nl_osi_', 'not even the prefix');
   }
 });

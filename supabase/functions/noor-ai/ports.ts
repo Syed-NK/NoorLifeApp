@@ -123,6 +123,47 @@ export type ClaimsVerifier = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// B10 — the per-user safety identifier
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What a derivation attempt produced.
+ *
+ * A small closed result type rather than a thrown error, for the reason `ReserveOutcome` gives about
+ * its own `unavailable` member: the implementation holds key material, and an exception escaping it
+ * is an exception carrying whatever the runtime decided to put in the message. `unavailable` collapses
+ * every configuration and runtime failure into one value the handler answers identically, so there is
+ * no branch a caller could mistake for permission to proceed without an identifier.
+ */
+export type SafetyIdentifierOutcome =
+  | { readonly kind: 'derived'; readonly identifier: string }
+  | { readonly kind: 'unavailable' };
+
+/**
+ * B10's derivation step, as the one port that may turn a verified subject into an outbound value.
+ *
+ * ── Why this is a port and not a helper the adapter calls ────────────────────
+ * The adapter must not be able to derive an identifier: `tests/source-scan_test.ts` asserts it holds
+ * no key material, no user identity and no digest primitive at all. So the derivation happens above
+ * it, once per handler request, and the *result* travels as a per-request field. That also makes the
+ * ordering testable — a fake deriver in `tests/` can record when it was asked, which is how "after
+ * JWT verification and before quota reservation" becomes an assertion rather than a comment.
+ *
+ * ── What may be passed in ────────────────────────────────────────────────────
+ * Only `VerifiedClaims.userId` — the `sub` of a token whose **signature** was verified. Not an email,
+ * not a phone number, not a session id, not a client-supplied string. §C.6 already rejects `sub`,
+ * `user_id` and `subject_id` as unknown request fields, so the handler holds exactly one identity and
+ * has nothing else it could pass. An implementation must re-check the uuid shape regardless: this port
+ * is where "the verified subject" stops being a convention and becomes a validated input.
+ *
+ * The output is opaque. It is not reversible by NoorLife without the key, it is not stored anywhere,
+ * and it is never logged — see `OperationalLogRecord`, which has no field that could hold it.
+ */
+export type SafetyIdentifierDeriver = {
+  readonly derive: (verifiedSubjectUuid: string) => Promise<SafetyIdentifierOutcome>;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Quota store — §I.1's limiter, and §I.2's spend controls, as one lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -384,11 +425,19 @@ export type ProviderResult = ProviderOutcome & {
  *
  * ── This type *is* the outbound allow-list ──────────────────────────────────
  * §H.1 is closed: "a field not on it does not travel, and adding one is a contract change requiring
- * privacy review". Writing it as a type with five properties makes the review a diff on this
+ * privacy review". Writing it as a type with six properties makes the review a diff on this
  * declaration. `tests/provider-boundary_test.ts` asserts the constructed object's keys equal exactly
- * these five, so a helpfully-spread context object fails a test rather than reaching a third party.
+ * these six, so a helpfully-spread context object fails a test rather than reaching a third party.
  *
- * Three absences are as load-bearing as the five presences:
+ * ── The sixth field, added by B10, and what its review turned on ─────────────
+ * `safetyIdentifier` is the one addition since AI-2, and it is the reviewed diff the earlier revision
+ * of this comment said would be required. It carries an **already-derived opaque value** — never an
+ * identity, never key material, never anything a client can influence. It is per-request rather than
+ * per-adapter because the adapter is built once per isolate: a value fixed at construction would be
+ * one constant shared by every user that isolate serves, which identifies the application rather than
+ * a person, and no better constant fixes that.
+ *
+ * Three absences are as load-bearing as the six presences:
  *
  *   • **`userInput` is separate from `instructions` and never concatenated into it.** §F.3: no string
  *     templating, no delimiters, no "the user asked: …". Promoting user text into the channel that
@@ -399,10 +448,9 @@ export type ProviderResult = ProviderOutcome & {
  *   • **No `model`.** §F.2 makes the model server *configuration* owned by the provider
  *     implementation and selected in AI-3; AI-2 must not name one. The handler therefore cannot
  *     express a model, which also means §J.6a/6b hold by construction.
- *   • **No `safetyIdentifier`, and no conversation state.** §12.6 leaves the salted-hash decision
- *     open, so AI-2 does not implement it — a stable pseudonymous identifier crossing to a third
- *     party is a privacy decision, not a technical default. `previous_response_id`, `conversation`
- *     and `background` are absent per §F.6.
+ *   • **No conversation state.** `previous_response_id`, `conversation` and `background` are absent
+ *     per §F.6. The privacy decision §12.6 left open is now answered for the safety identifier alone —
+ *     a keyed, per-user, non-reversible-without-the-key value — and for nothing else.
  */
 export type ProviderRequest = {
   /** §F.3 — server constant, versioned by `policy_version`. Never built from request data. */
@@ -415,6 +463,16 @@ export type ProviderRequest = {
   readonly store: false;
   /** §H.1 — a bare allow-listed language tag, not a profile setting. */
   readonly languageHint: string;
+  /**
+   * B10 — the opaque per-user value, already derived, under the active construction version.
+   *
+   * The handler puts `SafetyIdentifierDeriver`'s output here and nothing else. The adapter validates
+   * that it is an identifier of the **currently active** version — a syntactically valid identifier
+   * under an inactive version is refused — and copies it into one API field; it does not derive it,
+   * decode it, log it, persist it or return it. A raw uuid, an email or any other identity-shaped
+   * value fails that validation and makes the provider unavailable rather than travelling.
+   */
+  readonly safetyIdentifier: string;
 };
 
 /**
@@ -449,10 +507,14 @@ export type AIProvider = {
  *
  * Two fields §H.3's example log contains are deliberately absent:
  *
- *   • **`user_hash`.** It is the same salted hash as `safety_identifier`, and §12.6 has not decided
- *     whether that hash may exist. Implementing it now would settle a privacy decision by writing a
- *     log line, so AI-2 logs **no** user identifier at all — which also satisfies §H.3's ban on the
- *     raw uuid by leaving nothing to get wrong.
+ *   • **`user_hash`.** B10 now derives a per-user opaque value, and it is deliberately **not** logged.
+ *     A derived identifier in an operational log is a stable per-user correlator sitting in a store
+ *     with a different retention and a different audience from the one it was reviewed for, and it
+ *     would re-link every request to one account for anyone who could later obtain the key and the
+ *     uuid list. So this function logs **no** user identifier at all — which also satisfies §H.3's ban
+ *     on the raw uuid by leaving nothing to get wrong. The operational cost is recorded honestly: a
+ *     misconfigured HMAC key produces a `503` indistinguishable in this record from any other, and
+ *     narrowing that is a reviewed addition to this type rather than something to slip in here.
  *   • **`model_config_version`, `input_tokens`, `output_tokens`, `provider_response_id`,
  *     `provider_request_id`, `upstream_status`.** All are facts about a provider call, and AI-2
  *     makes none. They arrive with the provider in AI-3.
@@ -578,6 +640,8 @@ export type HandlerConfig = {
 
 export type NoorAIDependencies = {
   readonly verifier: ClaimsVerifier;
+  /** B10 — asked once per request, after verification and before anything can be spent. */
+  readonly safetyIdentifiers: SafetyIdentifierDeriver;
   readonly provider: AIProvider;
   readonly quota: QuotaStore;
   readonly clock: Clock;

@@ -98,7 +98,10 @@ Deno.test('§H.1 / §J.15d — the outbound request carries exactly the allow-li
    * Two allow-list rows are deliberately absent and their absence is asserted below:
    *   • `model` — §F.2 makes it the provider implementation's configuration, selected in AI-3. AI-2 names
    *     none, so the handler cannot express one, which is also what makes §J.6a and §J.6b hold.
-   *   • `safety_identifier` — §12.6 leaves the salted-hash decision open, so AI-2 does not implement it.
+   *
+   * `safety_identifier` is now **present** as `safetyIdentifier` — B10's reviewed sixth field, carrying
+   * an already-derived opaque value. It is the one addition since AI-2, and it is per-request precisely
+   * so that it can differ per caller.
    */
   const harness = createHarness();
   await ask(harness);
@@ -106,8 +109,8 @@ Deno.test('§H.1 / §J.15d — the outbound request carries exactly the allow-li
   const call = harness.provider.calls[0];
   assertEquals(
     Object.keys(call ?? {}).sort(),
-    ['instructions', 'languageHint', 'maxOutputTokens', 'store', 'userInput'],
-    'exactly §H.1’s allow-list, minus the two fields AI-2 deliberately does not send',
+    ['instructions', 'languageHint', 'maxOutputTokens', 'safetyIdentifier', 'store', 'userInput'],
+    'exactly §H.1’s allow-list, minus the one field AI-2 deliberately does not send',
   );
   assertEquals(call?.store, false, '§F.6 — `store: false` declines the 30-day response retention');
 });

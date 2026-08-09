@@ -1675,6 +1675,66 @@ attempts registered. Neither approves a model change, a ceiling, a deployment or
 approved single synthetic hosted smoke test (§7.2, §7.3).** Neither is authorised by this step, and
 the provider cannot be enabled before the first of them lands.
 
+### 11.2a B10 — the per-user safety identifier, implemented 2026-08-09
+
+**Status: implemented locally and verified against mocked transports and in-memory key fixtures. No
+key was generated, no secret was provisioned, nothing was deployed, and no request was sent to
+OpenAI.**
+
+This closes the item §11.2 above left open, and it closes it the way that entry said it had to be
+closed rather than by the shortcut it warned against.
+
+- **The construction option was removed, not filled in.** `staticSafetyIdentifier` no longer exists on
+  `OpenAIProviderConfig`, in production or in a test. A source assertion now fails if the name comes
+  back. The reasoning is unchanged from §11.2: the adapter is built once per isolate, so a value fixed
+  at construction identifies the application rather than a user, and no better constant fixes that.
+- **A dedicated port carries the derivation.** `SafetyIdentifierDeriver` in `ports.ts` —
+  `derive(verifiedSubjectUuid) -> derived | unavailable` — implemented in `safety-identifier.ts` and
+  wired into the production graph as its own dependency. The adapter cannot derive: `source-scan_test.ts`
+  asserts it holds no key material, no user identity and no digest primitive.
+- **The construction is a keyed HMAC, and going beyond the official guidance is recorded as
+  NoorLife's own decision.**
+  `HMAC-SHA-256(key, "noorlife:openai-safety-identifier:v1" ‖ NUL ‖ canonical-lowercase-uuid)`, emitted
+  as `nl_osi_v1_<43-character unpadded base64url>`. OpenAI's guidance (retrieved 2026-08-09) recommends
+  hashing a stable user identifier to avoid sending the raw identifier. A plain digest removes the
+  directly readable username, email address or uuid from the outbound value, but it **does not
+  anonymise the user**: it is still a stable pseudonymous identifier, and it can be matched once the
+  candidate set is available — hash every candidate, compare. That applies to usernames and email
+  addresses just as it does to uuids; the difference is not input entropy but who holds the list, and
+  NoorLife holds its own user table. NoorLife therefore keys the digest, which prevents candidate-list
+  matching **by parties that do not hold the HMAC key**. The result stays **pseudonymous, not
+  anonymous** — NoorLife can recompute it, and so could an attacker holding both the key and the uuid
+  list. HMAC is NoorLife's stricter decision, not an OpenAI requirement. R11's per-user HMAC is
+  therefore **implemented**; R10's synthetic constant is **withdrawn**, not deferred.
+- **The outbound boundary enforces the *active* version, not merely a valid one.** The derivation
+  module accepts an explicit version so a rotation can be built and tested before activation, which
+  makes `nl_osi_v2_…` constructible and syntactically perfect. The adapter therefore validates with
+  `isActiveSafetyIdentifier`, imported from the derivation module rather than restating `v1`, and a
+  valid identifier under any inactive version makes **zero** fetch calls.
+- **`ProviderRequest` gained its sixth field**, `safetyIdentifier`, with the boundary test widened in
+  the same diff — the reviewed change §6.5 and §H.1 both required.
+- **The handler derives once per request**, after JWT verification and *before* the quota reservation,
+  so a missing or invalid key costs the user nothing. Zero quota calls and zero provider calls on
+  failure, asserted with the forbidden fakes rather than observed.
+- **The environment surface grew from four names to five.** The fifth is
+  `NOOR_AI_SAFETY_HMAC_KEY_V1`, and it is the one secret **not** read at the entry point: it is read,
+  validated, imported non-extractably and used inside `safety-identifier.ts` and reaches nothing else,
+  so the name is pinned to that one module by exact equality. `NOOR_AI_SAFETY_HMAC_KEY_V2` is reserved
+  in the runbook and read by nothing.
+- **The production graph's four independent locks are unchanged in number and stronger in kind.** The
+  fourth was "B10 is open"; it is now "no HMAC key exists", which fails closed *before* the reservation
+  rather than at the provider. Neither key alone can enable traffic, and the source-controlled kill
+  switch still sits in front of both.
+- **Verified with:** 23 focused derivation tests, 16 focused handler-integration tests, the widened
+  adapter suite, 348 Deno tests in total, and the full Jest suite. No SQL changed, no dependency was
+  added, and no Docker, PostgreSQL or pgTAP run was needed.
+
+**Lifecycle, rotation and emergency response** are in `NOOR_AI_B10_SAFETY_IDENTIFIER_RUNBOOK.md`;
+the privacy classification is in `NOOR_AI_BACKEND_CONTRACT.md` §12.6.3 and
+`NOOR_AI_DATA_CONTROL_DECISION.md` §11. **B10's safety-identifier construction is complete locally;
+its provisioning and hosted verification remain separately gated, and the rest of B10 — the
+quota-store key lifecycle and the local/CI provisioning path — is untouched.**
+
 ### 11.3 Provisional, or open, until evidence exists
 
 `max_output_tokens` (production), `upstreamTimeoutMs` and `handlerBudgetMs` (production), the
@@ -1755,3 +1815,12 @@ stored, printed or referenced by value; no Supabase secret was set; no migration
 SQL was written; no dependency was added; no salt was generated; nothing was deployed; no OpenAI API
 call was made; and real-user traffic remains prohibited.** The kill switch is off, B10 is open, and
 **NoorLife is not production-ready.**
+
+**Superseded in part again, 2026-08-09 (B10).** §11.2a implements the per-user safety-identifier
+derivation. One further sentence above needs qualifying and the rest does not: "no salt was generated"
+remains true in a stronger form — B10 uses a **keyed HMAC rather than a salt**, and **no HMAC key was
+generated and no secret was provisioned**. Everything else restated in the paragraph above still holds
+verbatim: no API key was requested, created, stored, printed or referenced by value; no Supabase secret
+was set; no migration, table, RLS policy or SQL was written; no dependency was added; nothing was
+deployed; no OpenAI API call was made; and real-user traffic remains prohibited. The kill switch is
+still off, and **NoorLife is not production-ready.**

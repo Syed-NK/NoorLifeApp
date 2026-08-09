@@ -1,5 +1,6 @@
 import { LOCALE_ALLOW_LIST } from './allow-lists.ts';
 import type { FinishReason } from './contract.ts';
+import { isActiveSafetyIdentifier } from './safety-identifier.ts';
 import type {
   AIProvider,
   ProviderOutcome,
@@ -50,12 +51,21 @@ import type {
  *      provider at all.
  *   2. No `OPENAI_API_KEY` exists in any environment. With no key `createOpenAIProvider` returns the
  *      provider that can only refuse, before any transport is constructed.
- *   3. **B10 is open.** No reviewed per-user `safety_identifier` derivation exists, so production
- *      passes `undefined` and the factory refuses on that ground alone — independently of the key.
- *      The `staticSafetyIdentifier` construction option below is **mocked-test scaffolding, not a
- *      future B10 boundary**: this adapter is built once per isolate, so a value passed there would
- *      be one constant shared by every user, which is the opposite of what a per-user safety
- *      identifier is. B10 needs a new per-request port; see that field's note.
+ *   3. **No HMAC key exists.** B10 is now implemented — `safety-identifier.ts` derives a per-user
+ *      opaque value server-side — but its dedicated secret has not been generated or provisioned, so
+ *      the handler answers `503` before a reservation is taken and this adapter is never invoked.
+ *      This module's own gate is independent of that: a request whose `safetyIdentifier` is missing or
+ *      malformed makes **zero** fetch calls, whatever the key situation is.
+ *
+ * ── What this module may know about the identifier, and what it may not ──────
+ * It **accepts** an already-derived value on `ProviderRequest`, validates that it is an identifier of
+ * the **currently active version** — not merely a syntactically valid one, and not against a version
+ * literal restated here — and copies it into one API field. It does not derive it, does not decode it,
+ * does not persist it,
+ * does not log it — there is no logger here — and does not return it in any outcome. There is no key
+ * material, no user identity and no digest primitive in scope in this file, and
+ * `tests/source-scan_test.ts` asserts each of those absences, so nobody can route around B10's review
+ * by computing an identifier at the boundary.
  *
  * ── No retry, deliberately ───────────────────────────────────────────────────
  * `generate` issues exactly one HTTP request and returns. §F.8 permits one retry and the handler owns
@@ -261,9 +271,9 @@ export function buildAnswerSchema(): Record<string, unknown> {
 /**
  * The provider that can only report that there is no provider.
  *
- * Returned by `createOpenAIProvider` whenever the key or the B10 identifier is absent — which is
- * every environment today. It performs no network call and constructs no transport, so the refusal
- * happens before anything could be sent rather than as an error path after the fact.
+ * Returned by `createOpenAIProvider` whenever the key is absent — which is every environment today.
+ * It performs no network call and constructs no transport, so the refusal happens before anything
+ * could be sent rather than as an error path after the fact.
  *
  * A stub that answered would be the wrong thing to ship: a canned answer in the production graph is
  * a canned answer one misconfigured deployment away from a user reading it and believing it.
@@ -278,28 +288,44 @@ export const unavailableProvider: AIProvider = {
 // Configuration, and the two gates on it
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * The shape an opaque safety identifier must have before it may travel.
- *
- * Deliberately narrow: unreserved URL characters, bounded length. It exists to make a *category* of
- * value unrepresentable rather than to validate a specific design — see `looksLikeIdentity` below,
- * which is the half that matters.
- */
-const OPAQUE_IDENTIFIER = /^[A-Za-z0-9._~-]{8,64}$/;
-
 /** A uuid anywhere in the string, in any case. */
 const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 /**
- * Whether a candidate identifier is one B10 could not have produced.
+ * Whether a candidate identifier is an identity rather than a derived value.
  *
  * §H.2's deny-list is the rule; this is the structural half of it. A raw uuid is a join key into
- * NoorLife's own database, and an email or a bare uuid arriving here would mean something upstream
- * had substituted an identity for a derived value. Both are refused rather than sent, and the refusal
- * is the same one a missing identifier gets: the provider becomes unavailable.
+ * NoorLife's own database, and an email or an embedded uuid arriving here would mean something
+ * upstream had substituted an identity for a derived value. Both are refused rather than sent.
+ *
+ * It is deliberately redundant with the format check, which no email and no bare uuid can satisfy.
+ * Redundancy is the point, and it is not only theoretical: a uuid is 36 characters of `[0-9a-f-]`,
+ * which is a subset of the approved alphabet, so seven filler characters produce a value the format
+ * check alone would pass. This is what refuses it.
  */
 function looksLikeIdentity(value: string): boolean {
   return UUID_ANYWHERE.test(value) || value.includes('@');
+}
+
+/**
+ * Whether an already-derived identifier may travel.
+ *
+ * Both halves must hold: it is an identifier of the **currently active** version, and it is not an
+ * identity in any spelling. A value failing either makes the whole request `unavailable` **before**
+ * any transport is touched — so a derivation bug becomes zero outbound requests rather than a wrong
+ * subject sent to a third party.
+ *
+ * ── Why the active version rather than any syntactically valid one ───────────
+ * `isActiveSafetyIdentifier` is imported from `safety-identifier.ts` and reads
+ * `SAFETY_IDENTIFIER_ACTIVE_VERSION`. The version is deliberately **not** restated here as a literal:
+ * the derivation module can construct values under an inactive version so a rotation can be built and
+ * tested before it is switched on, and a second independently written `v1` in this file would be a
+ * second thing that rotation has to remember to change — the one it forgets being the one that keeps
+ * sending the old version. A syntactically perfect `nl_osi_v2_…` or `nl_osi_v999_…` is refused while
+ * v1 is active, and refused before the transport, so it costs zero fetch calls.
+ */
+function mayTravel(value: unknown): value is string {
+  return isActiveSafetyIdentifier(value) && !looksLikeIdentity(value);
 }
 
 export type OpenAIProviderConfig = {
@@ -308,36 +334,15 @@ export type OpenAIProviderConfig = {
    *
    * A name only — no value exists in any environment, and none appears in this repository. Absent
    * yields the unavailable provider.
+   *
+   * ── There is deliberately no identifier option beside it ────────────────────
+   * An earlier revision carried a `staticSafetyIdentifier` construction option for the mocked tests.
+   * It is **removed**, not repurposed: the adapter is built once per isolate, so a value fixed here
+   * would be one constant shared by every user it ever serves — the application, not a person. B10's
+   * value is per-request and arrives on `ProviderRequest`, which is the only channel that can carry a
+   * different value for a different caller.
    */
   readonly apiKey: string | undefined;
-  /**
-   * ── Mocked-test scaffolding. **This is not B10, and it cannot become B10.** ──
-   *
-   * A single opaque string fixed at adapter construction. The production adapter is built **once per
-   * isolate**, so any value passed here is shared by every user that isolate ever serves. Official
-   * guidance asks for "a string that uniquely identifies each user"; one constant identifies the
-   * application. Those are different things, and the gap is structural rather than a matter of
-   * choosing a better constant — plan §6.4 already records that a fixed value "would merge every user
-   * into one abuse subject".
-   *
-   * So this field exists for exactly one purpose: letting the mocked tests exercise how the request is
-   * built and parsed when the field is populated. **Production passes `undefined` and must continue
-   * to**, which is enforced by exact source assertions in `tests/source-scan_test.ts` and by the Jest
-   * guard, not by convention.
-   *
-   * ── What B10 actually requires, so nobody mistakes this for it ──────────────
-   * A separately reviewed **per-user derivation step**, running server-side *after* JWT verification
-   * and *before* provider invocation, whose output is an opaque identifier and nothing else. That is a
-   * new port and a new per-request field — a reviewed diff to `ProviderRequest`, to §H.1's allow-list
-   * and to the boundary test (plan §6.5) — not a value slotted into this constructor. Its inputs may
-   * never be, and its output may never be, a raw uuid, an email, a phone number, a session id or an
-   * unkeyed hash of a uuid. The mobile client may never supply it in any form; §C.6 already rejects
-   * `sub`, `user_id` and `subject_id` as unknown fields, and that must stay true.
-   *
-   * Until that exists, an absent value here keeps the provider unavailable on its own, independently
-   * of whether an API key is ever set. That is the gate.
-   */
-  readonly staticSafetyIdentifier: string | undefined;
   /** Injected so a test can drive the transport without a network. Defaults to global `fetch`. */
   readonly fetchImpl?: typeof fetch;
 };
@@ -749,30 +754,14 @@ async function parseSuccess(response: Response): Promise<ProviderResult> {
 /**
  * Builds the provider, or the one that refuses.
  *
- * Both gates are checked here, before any transport exists, so an incomplete configuration cannot
- * make even one request and the key is never handed to a code path that could send it somewhere.
+ * The key gate is checked here, before any transport exists, so a missing credential cannot make even
+ * one request. B10's gate is deliberately **not** here: an identifier is per-request, so it is checked
+ * per request inside `generate`, which is the only place a per-caller value exists.
  */
 export function createOpenAIProvider(config: OpenAIProviderConfig): AIProvider {
   const key = config.apiKey ?? '';
-  const safetyIdentifier = config.staticSafetyIdentifier ?? '';
 
   if (key === '') {
-    return unavailableProvider;
-  }
-  /**
-   * The B10 gate, and it is deliberately independent of the key above.
-   *
-   * B10 is open, so production passes nothing and this returns the refusing provider even in a
-   * hypothetical environment where a key had been set. **Closing B10 is not done by supplying a value
-   * here** — see the field's own note: a construction-time constant cannot identify a user. It is done
-   * by adding a reviewed per-user derivation port, at which point this branch is replaced rather than
-   * satisfied.
-   *
-   * The shape checks below therefore guard the *test* path only, and they are still worth having:
-   * they mean the mocked tests cannot accidentally normalise a uuid- or email-shaped value into
-   * something that looks acceptable, and they document what an opaque identifier is not.
-   */
-  if (!OPAQUE_IDENTIFIER.test(safetyIdentifier) || looksLikeIdentity(safetyIdentifier)) {
     return unavailableProvider;
   }
 
@@ -791,6 +780,20 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): AIProvider {
         !Number.isInteger(request.maxOutputTokens) || request.maxOutputTokens <= 0 ||
         request.maxOutputTokens > MODEL_MAX_OUTPUT_TOKENS
       ) {
+        return { kind: 'unavailable' };
+      }
+
+      /**
+       * B10's gate, per request, before the transport.
+       *
+       * The handler will not reach this adapter without a derived value — it answers `503` first — so
+       * this is the boundary's own refusal to send anything it cannot vouch for, not the primary
+       * control. It refuses a missing value, a malformed one, an identity-shaped one, and an
+       * identifier belonging to any version other than the active one. `unavailable` is exact here in
+       * the sense `attemptWasIncurred` depends on: nothing left the process, so nothing was billed and
+       * the reservation is released as unused.
+       */
+      if (!mayTravel(request.safetyIdentifier)) {
         return { kind: 'unavailable' };
       }
 
@@ -835,7 +838,13 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): AIProvider {
             schema,
           },
         },
-        safety_identifier: safetyIdentifier,
+        /**
+         * The one place B10's value is written, and the only API field it may occupy.
+         *
+         * Not `metadata` (§H.2 names that as the tempting place to stash an identifier, and this body
+         * has no such field), not `prompt_cache_key`, not the instructions, not the user message.
+         */
+        safety_identifier: request.safetyIdentifier,
       };
 
       let response: Response;

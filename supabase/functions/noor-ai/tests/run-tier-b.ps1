@@ -284,7 +284,11 @@ try {
     $psi.Arguments = @(
         'test', '--no-remote', '--no-npm',
         "--allow-read=`"$repoRoot`"",
-        '--allow-env=NOOR_AI_GATEWAY_URL,NOOR_AI_LOCAL_GATEWAY_JWT_SECRET',
+        # The third name is B10's reserved secret. It is *read* by the function's own production
+        # deriver, so the suite needs permission to look for it; it is set in no environment, so the
+        # lookup yields nothing and the deriver stays unavailable. No value is passed here, and this
+        # script never provisions one.
+        '--allow-env=NOOR_AI_GATEWAY_URL,NOOR_AI_LOCAL_GATEWAY_JWT_SECRET,NOOR_AI_SAFETY_HMAC_KEY_V1',
         "--allow-net=$netAllow",
         'noor-ai/tests'
     ) -join ' '

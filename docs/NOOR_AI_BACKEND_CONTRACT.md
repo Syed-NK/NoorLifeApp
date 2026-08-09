@@ -196,7 +196,7 @@ bug.
 | Supabase service-role / secret key            | **Never**  | **Never**  | Only if a later phase proves it necessary | **Never** | It bypasses RLS. AI-1 needs no privileged database access at all, so AI-2 must not wire it in "for later".            |
 | Supabase publishable key — this project's is `sb_publishable_*`, which is **not** a JWT | Yes | Only in `.env.example`-style placeholders | Injected by the platform | **Never** | Already the established rule in `src/lib/supabase.ts`. It travels on the `apikey` header; the documentation is explicit that it must not be sent as `Authorization: Bearer`, where the platform would try to parse it as a JWT and reject with `Invalid JWT`. Do not confuse it with a legacy JWT-format `anon` key — see §D.4 |
 | The user's Supabase access / refresh token    | Yes        | **Never**  | Received in the request header, used, never stored | **Never** | Never logged, never echoed in a response, never forwarded upstream.                                                  |
-| `safety_identifier` salt                      | **Never**  | **Never**  | Yes — function secret | **Never** (only the resulting hash, subject to §12.6) | Without a secret salt, a user-id hash is reversible by anyone who can enumerate uuids.                                |
+| `safety_identifier` HMAC key — `NOOR_AI_SAFETY_HMAC_KEY_V1` | **Never**  | **Never**  | Yes — function secret, read only by `safety-identifier.ts` | **Never** (only the derived opaque value — §12.6, now decided) | Not a salt: a **dedicated random 256-bit HMAC key**, independent of every other key. NoorLife holds the complete uuid list, so an unkeyed digest of a uuid is reversible by anyone who obtains that list. Imported non-extractably, sign-only. **No value has been generated or provisioned** — see `NOOR_AI_B10_SAFETY_IDENTIFIER_RUNBOOK.md`. |
 | The user's email, name, avatar, device ids    | Present in the app for its own UI | n/a | Not read by this function | **Never** | §H.2.                                                                                                                |
 
 ### B.3 The three boundaries and what each one is for
@@ -1186,18 +1186,39 @@ and adding one is a contract change requiring privacy review.
 | `max_output_tokens`               | Server constant                     | The output bound                                        |
 | `store: false`                    | Server constant                     | Declines the 30-day response retention                   |
 | Language hint derived from `locale` | Allow-listed request value (§C.5)   | So the answer is in the user's language; a bare tag, not a profile setting |
-| `safety_identifier`               | Salted hash of the user id — **subject to §12.6** | The documented abuse-tracking mechanism   |
+| `safety_identifier`               | HMAC-SHA-256 of the verified `sub` under a dedicated server-only key — §12.6, **decided and implemented** | The documented abuse-tracking mechanism   |
 
 `surface` is **not** forwarded verbatim. It selects which part of the server's own NoorLife
 knowledge to include in the request; the route string itself does not need to travel, and a route is
 a small behavioural signal about the user. Whether the selected knowledge is generic is checked in
 AI-3 review.
 
-**One proposed addition** to this closed list is recorded in `NOOR_AI3_IMPLEMENTATION_PLAN.md` §11.2
-(R12), neither approved nor implemented: a `safety_identifier` — §12.6's open decision, for which that
-plan recommends a fixed synthetic constant for the development smoke test and a salted HMAC only as a
-future production design. Adding it is a contract change requiring the privacy review this section
-demands, plus a reviewed diff to `ProviderRequest` and its boundary test.
+**The one addition since AI-2 is `safety_identifier`, and it went through the review this section
+demands.** It is B10, decided in §12.6 and implemented in
+`supabase/functions/noor-ai/safety-identifier.ts`, and the diff it required is exactly the one this
+section named: a sixth field on `ProviderRequest` (`safetyIdentifier`), a widened boundary test, and a
+privacy classification recorded in `NOOR_AI_DATA_CONTROL_DECISION.md`. The earlier proposal of a fixed
+synthetic constant was **rejected**: the adapter is built once per isolate, so a construction-time
+value identifies the application rather than a user.
+
+What travels is an **opaque derived value**, never an identity:
+
+- `HMAC-SHA-256(key, "noorlife:openai-safety-identifier:v1" ‖ NUL ‖ canonical-lowercase-uuid)`,
+  emitted as `nl_osi_v1_<43-character unpadded base64url digest>`;
+- derived server-side, after JWT verification and before the quota reservation, from
+  `VerifiedClaims.userId` and nothing else;
+- under a dedicated 256-bit key that is independent of every other key NoorLife holds, imported
+  non-extractably with `sign` as its only usage;
+- validated at the outbound boundary against the **active** version specifically. The derivation module
+  can construct inactive-version identifiers so a rotation can be tested before activation, so a
+  syntactically valid `nl_osi_v2_…` is refused — before the transport, at zero fetch calls — while v1
+  is active. The adapter imports that check rather than restating the version.
+
+The client has no field, header, query parameter or configuration for it — §C.6 rejects
+`safety_identifier`, `sub`, `user_id` and `subject_id` as unknown fields — and it appears in no log
+line and in no response body. The key lifecycle, rotation and emergency procedures are in
+`NOOR_AI_B10_SAFETY_IDENTIFIER_RUNBOOK.md`. **No key has been generated or provisioned**, so the
+derivation answers `unavailable` in every environment and the handler fails closed with `503`.
 
 `prompt_cache_key` is **not** proposed. An earlier revision of that plan listed it as a second
 addition; it is now deferred out of AI-3 entirely (`NOOR_AI3_IMPLEMENTATION_PLAN.md` §4.6.1) because
@@ -1274,8 +1295,17 @@ What is logged:
 ```
 
 Token counts and `message_length` are metadata, not content: they say how much was asked, never
-what. `user_hash` is the same salted hash as `safety_identifier`, so a support case and an upstream
-abuse report can be correlated without either system holding the raw id.
+what.
+
+`user_hash` appears in the illustrative record above and is **not implemented**, deliberately. B10
+derives a per-user opaque value, and putting it in an operational log would place a stable per-user
+correlator into a store with a different retention and a different audience from the one it was
+reviewed for — re-linking every request to one account for anyone who later obtained the key and the
+uuid list. So the function logs **no** user identifier at all, which also satisfies this section's ban
+on the raw uuid by leaving nothing to get wrong. `OperationalLogRecord` has no field that could hold
+one. The operational cost is recorded honestly: a misconfigured HMAC key produces a `503`
+indistinguishable in the log from any other, and narrowing that is a reviewed addition to the record
+type rather than something to add in passing.
 
 Development is not an exception. A prompt printed to a terminal is a prompt in a scrollback buffer,
 a screen recording, and a bug report attachment.
@@ -1368,8 +1398,12 @@ question at all:
 - Protection comes from the private `noor_ai` schema, exact RPC privileges, server-only `service_role`
   invocation, retention and deletion — not from hashing.
 
-The separate **provider `safety_identifier`** decision is *not* resolved by this. §H.2's requirement
-that its salt be a function secret stands unchanged, and B10 remains open for it.
+The separate **provider `safety_identifier`** decision is *not* resolved by this, and the two must not
+be conflated: the quota store's subject column is a raw uuid inside NoorLife's own database, while the
+safety identifier is a derived value crossing to a third party. §12.6 decides the second one, and the
+requirement that its key be a function secret stands — strengthened, in fact, from "salt" to a
+dedicated 256-bit HMAC key held in one module. The **rest** of B10 — the quota store's own key
+provisioning and rotation, and the CI/local provisioning path for every key — remains open.
 
 The storage decision is genuinely open (§12.7) and has one hard constraint that must not be
 discovered later: **an Edge Function runs in ephemeral, horizontally-scaled isolates, so an
@@ -1948,19 +1982,100 @@ Until this exists, §G's boundaries rest on the instruction text plus §C's inpu
 Instruction priority is documented and real but is not a guarantee. Required before public access.
 Owner: AI-10, or earlier if any public exposure is planned sooner.
 
-### 12.6 Sending a `safety_identifier` is a privacy decision, not a technical default
+### 12.6 Sending a `safety_identifier` is a privacy decision, not a technical default — **DECIDED, 2026-08-09**
 
-The safety guide names `safety_identifier` with hashed usernames or session ids as the documented
-abuse-tracking mechanism, and it materially improves the provider's ability to act on abuse
-originating from one account. It is also a **stable pseudonymous identifier for a NoorLife user
-crossing to a third party**, which brings it close to the boundary set by the phase brief's
-instruction not to send hidden account metadata upstream.
+The safety guide names `safety_identifier` as the documented abuse-tracking mechanism, and it
+materially improves the provider's ability to act on abuse originating from one account. It is also a
+**stable pseudonymous identifier for a NoorLife user crossing to a third party**, which brings it
+close to the boundary set by the phase brief's instruction not to send hidden account metadata
+upstream. That is why this was left for a reviewer rather than for whoever wrote the fetch call.
 
-Recommendation: send a salted hash of the Supabase user id, with the salt as a function secret, never
-the raw uuid (§H.1, §H.2). Alternative if review prefers less linkage: a per-session or per-day
-rotating hash, which weakens abuse correlation in exchange for weaker linkability. Recorded as a
-decision so it is made by a reviewer rather than by whoever writes the fetch call. Owner: AI-3, with
-the §12.3 privacy review.
+**The decision: send a keyed, per-user, opaque identifier.** Implemented in
+`supabase/functions/noor-ai/safety-identifier.ts` and specified in full in
+`NOOR_AI_B10_SAFETY_IDENTIFIER_RUNBOOK.md`.
+
+#### 12.6.1 What OpenAI's documentation actually says
+
+Retrieved from `https://developers.openai.com/api/docs/guides/safety-best-practices` on **2026-08-09**:
+
+- "Safety identifiers are recommended for products where individual users interact with a model, but
+  they are not **required**."
+- "A safety identifier should be a string that uniquely identifies each user."
+- "Hash the username or email address in order to avoid sending us any identifying information."
+
+Those three statements are the whole of the official authority. OpenAI does **not** require HMAC, does
+not require a uuid input, does not specify a prefix, and has no view on NoorLife's rotation design.
+Everything in §12.6.2 is a NoorLife security decision and must not be restated as a provider
+requirement.
+
+#### 12.6.2 Why a keyed construction rather than the unkeyed hash the guidance suggests
+
+The source's wording and NoorLife's own privacy classification are kept apart here on purpose.
+
+**What the guidance says.** Hash the username or email address "in order to avoid sending us any
+identifying information" — read as a recommendation, that means: do not send the raw identifier.
+
+**What a plain digest actually achieves.** It removes the directly readable username, email address or
+uuid from the outbound value. It does **not** anonymise the person. The digest is a **stable
+pseudonymous identifier** — the same user yields the same value every request, which is exactly why a
+provider finds it useful — and it can be matched back to a person by anyone holding the candidate set:
+hash every candidate, compare. That is a dictionary attack against a known set, not a weakness of
+SHA-256.
+
+**The reverse must not be inferred.** This is not "uuids are weaker inputs than usernames or email
+addresses". Usernames and email addresses are frequently predictable and enumerable in their own
+right, and an unkeyed digest of one is matched by exactly the same candidate-list attack. The accurate
+statement is that **no unkeyed digest of any identifier resists matching once the candidate set is
+available**. The difference is not input entropy; it is who holds the list — and NoorLife's candidate
+set is available to anyone who reaches its database.
+
+**NoorLife's stricter decision.** The digest is therefore **keyed** with a secret that lives nowhere
+near the database, which prevents candidate-list matching **by parties that do not hold the HMAC key**:
+without it, holding the whole user table yields nothing to compare against. The value that results is
+still pseudonymous, not anonymous — §12.6.3 states the full classification, including that NoorLife can
+recompute it and that an attacker holding both the key and the uuid list can too.
+
+| Element          | Value                                                                              |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| Algorithm        | HMAC-SHA-256                                                                       |
+| Key              | One dedicated random 256-bit secret, `NOOR_AI_SAFETY_HMAC_KEY_V1`, used for this purpose and nothing else |
+| Input identity   | Only the canonical verified JWT `sub` uuid, lowercased                             |
+| Message          | `noorlife:openai-safety-identifier:v1` ‖ `NUL` ‖ `<canonical-lowercase-uuid>`       |
+| Output encoding  | Unpadded base64url, exactly 43 characters                                          |
+| Public value     | `nl_osi_v1_<43-character digest>`                                                   |
+
+The NUL-delimited namespace is domain separation: without it, the same key used for a second purpose
+could be made to produce a colliding digest, and NUL is the one byte a canonical uuid cannot contain.
+The version sits **inside** the message as well as in the prefix, so v1 and v2 differ even if one key
+were ever wrongly configured for both. The prefix and version are public metadata, not secrets.
+
+The **alternative** the previous revision offered — a per-session or per-day rotating hash — is
+rejected. It weakens abuse correlation, which is the only reason to send the parameter at all, in
+exchange for an unlinkability that a keyed per-user value already provides against the third party.
+
+#### 12.6.3 Privacy classification, stated exactly
+
+- The derived identifier is **pseudonymous, not anonymous**. NoorLife can recompute it while holding
+  the key and the uuid.
+- OpenAI receives **no raw uuid, email or phone number**.
+- Compromise of **both** the HMAC key and the user-uuid list permits recomputation, and therefore
+  re-identification of provider-side records.
+- Compromise of the **database alone** does not reveal the HMAC key — it is an Edge Function secret,
+  not a table, not a Vault row and not an RPC output.
+- Compromise of the **HMAC key alone** still requires a candidate uuid list to enumerate against.
+- The value is **stable across NoorLife sessions** for as long as version 1 remains active.
+- It is **account-linked personal data** for privacy-policy and store-disclosure purposes.
+- `store: false` does **not** make it anonymous and is **not** Zero Data Retention. OpenAI's
+  applicable abuse-monitoring retention remains governed by `NOOR_AI_DATA_CONTROL_DECISION.md`.
+
+#### 12.6.4 What is still not done
+
+The construction is implemented and verified against mocked transports and in-memory key fixtures.
+**No key has been generated, no secret has been provisioned, nothing has been deployed, and no request
+has been sent to OpenAI.** The absence of the key is itself a gate: the derivation answers
+`unavailable`, and the handler fails closed with `503` before a reservation is taken.
+
+Owner: AI-3 for provisioning and hosted verification, with the §12.3 privacy review.
 
 ### 12.7 The rate-limit store is unchosen, and the naive choice does not work
 

@@ -105,6 +105,21 @@ const QUOTA_ADAPTER = 'quota-rpc.ts';
  */
 const PROVIDER_ADAPTER = 'openai-provider.ts';
 
+/**
+ * The third deliberate exception — B10's safety-identifier module.
+ *
+ * Same narrowing, same reasoning, one phase later again. AI-2 could assert that no file in this
+ * directory held key material or a digest primitive; B10 requires exactly one module that reads a
+ * dedicated secret, imports it into Web Crypto and signs with it. Every affected scan becomes an
+ * exact-equality assertion naming this file, which catches a second module gaining key material just
+ * as surely as it catches this one losing it.
+ *
+ * Two absolutes are deliberately **not** narrowed here, because this module needs neither: it makes no
+ * network call and it writes no log line, so `fetch` and `console` stay pinned to the files that
+ * already have them.
+ */
+const SAFETY_MODULE = 'safety-identifier.ts';
+
 const OTHER_PRODUCTION = PRODUCTION.filter((file) => file.name !== QUOTA_ADAPTER);
 
 function offenders(pattern: RegExp, files: readonly SourceFile[]): readonly string[] {
@@ -174,10 +189,19 @@ Deno.test('§B.2 — every environment read is named, and both secrets are read 
     [],
     'no OpenAI configuration is read — in particular nothing that could retarget the origin',
   );
+  /**
+   * §12.6's *salt* still does not exist, and that is a distinction B10 kept rather than blurred.
+   *
+   * A salt is a public, per-record value that widens a digest's input space; what B10 uses is a
+   * **secret key** in an HMAC, which is a different primitive with a different threat model — an
+   * attacker who learns a salt learns nothing they could not enumerate anyway, and one who learns this
+   * key can recompute every identifier from a candidate list. Calling the key a salt in a variable
+   * name would invite exactly that confusion in the next review, so the word stays banned.
+   */
   assertEquals(
     offenders(/SAFETY_IDENTIFIER_SALT|NOOR_AI_SALT|\bSALT\b/, SCANNABLE),
     [],
-    '§12.6’s salt does not exist yet, and B10 has not been closed',
+    'B10 uses a keyed HMAC, not a salt, and nothing may describe it as one',
   );
 
   const reads = PRODUCTION.flatMap((file) =>
@@ -187,8 +211,14 @@ Deno.test('§B.2 — every environment read is named, and both secrets are read 
   );
   assertEquals(
     [...new Set(reads)].sort(),
-    ['OPENAI_API_KEY', 'SUPABASE_JWKS', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL'],
-    'exactly four environment reads, of which exactly two are secrets',
+    [
+      'NOOR_AI_SAFETY_HMAC_KEY_V1',
+      'OPENAI_API_KEY',
+      'SUPABASE_JWKS',
+      'SUPABASE_SERVICE_ROLE_KEY',
+      'SUPABASE_URL',
+    ],
+    'exactly five environment reads, of which exactly three are secrets',
   );
 
   /**
@@ -208,6 +238,41 @@ Deno.test('§B.2 — every environment read is named, and both secrets are read 
 
   // And the provider key's *name* appears nowhere else in production, not even as a constant.
   assertEquals(offenders(/OPENAI_API_KEY/, PRODUCTION), ['index.ts'], 'named in one file');
+
+  /**
+   * B10's key is owned by its own module rather than passed through the entry point.
+   *
+   * The two secrets above are *handed through* `index.ts` to a module that uses them, so the entry
+   * point is where their names belong. This one is read, validated, imported non-extractably and used
+   * inside `safety-identifier.ts` and reaches nothing else — so the name, the validation and the single
+   * use sit together, and this pins that by exact equality: no second production file may name it, and
+   * that file may not lose it.
+   */
+  assertEquals(
+    offenders(/NOOR_AI_SAFETY_HMAC_KEY/, PRODUCTION),
+    [SAFETY_MODULE],
+    'the active HMAC secret is named in exactly one server-side module',
+  );
+  const safety = PRODUCTION.find((file) => file.name === SAFETY_MODULE);
+  assert(safety !== undefined, 'the safety-identifier module is in the scan');
+  assertEquals(
+    [...safety.code.matchAll(/Deno\.env\.get\(\s*'([^']+)'/g)].map((match) => match[1]),
+    ['NOOR_AI_SAFETY_HMAC_KEY_V1'],
+    'and it reads exactly that one variable, once',
+  );
+
+  /**
+   * The version-2 name is reserved in the runbook and **not read by anything**.
+   *
+   * Rotation adds code support before a key is provisioned, and provisions before the active-version
+   * constant moves. A production module that already read a v2 secret would collapse those steps into
+   * whoever sets an environment variable, which is the property the whole design exists to prevent.
+   */
+  assertEquals(
+    offenders(/NOOR_AI_SAFETY_HMAC_KEY_V2/, SCANNABLE),
+    [],
+    'no source file, production or test, reads or names the future v2 secret',
+  );
 });
 
 Deno.test('§B.2 — no service-role or secret key is referenced or used', () => {
@@ -475,31 +540,59 @@ Deno.test('§B.2 / §H.1 — the provider adapter can only write the key to one 
     false,
     'and holds no user identity to derive one from',
   );
+
+  /**
+   * B10 — the adapter validates against the **active** version, and restates no version of its own.
+   *
+   * The derivation module can construct identifiers under an inactive version so a rotation can be
+   * built and tested before it is switched on. A second, independently written version literal in this
+   * file would be a second thing that rotation has to remember to change, and the one it forgets is the
+   * one that keeps sending the old version. So the adapter imports the check instead.
+   */
+  assertEquals(
+    /isActiveSafetyIdentifier/.test(adapter.code),
+    true,
+    'the adapter asks the active-version question rather than a shape question',
+  );
+  assertEquals(
+    /SAFETY_IDENTIFIER_PATTERN/.test(adapter.code),
+    false,
+    'and not the syntactic shape check, which accepts every version',
+  );
+  assertEquals(
+    /nl_osi|['"`]v[0-9]/.test(adapter.code),
+    false,
+    'no version literal and no identifier prefix is restated in the adapter',
+  );
 });
 
-Deno.test('B10 — production supplies no safety identifier, and none can reach the adapter', () => {
+Deno.test('B10 — the identifier is derived in one module, and nothing else can produce one', () => {
   /**
    * The gate, asserted structurally rather than described.
    *
-   * ── What the construction option is, and is not ──────────────────────────
-   * `staticSafetyIdentifier` is fixed when the adapter is built, and the production graph is built
-   * once per isolate — so any value passed there would be **one constant shared by every user**, which
-   * is not a per-user safety identifier under any reading of the official guidance. It is mocked-test
-   * scaffolding. B10 is closed by a separately reviewed **per-user derivation step**, running after
-   * JWT verification and before the provider call and carried as a new per-request field; that is a
-   * reviewed diff to `ProviderRequest`, §H.1's allow-list and the boundary test, and it does not exist.
-   *
-   * Every assertion below is about the *absence* of a shortcut, which is why they are source scans.
+   * ── What changed, and why the old assertions could not simply be kept ────
+   * This scan used to pin `staticSafetyIdentifier: undefined` in the production graph. That option was
+   * **removed**, not filled in: it was fixed at construction and the graph is built once per isolate,
+   * so any value there would have been one constant shared by every user — the application, not a
+   * person. B10 is closed by a per-user derivation step, and the assertions below pin *that* shape:
+   * one module derives, one field carries, and no shortcut exists anywhere else.
    */
   const wiring = PRODUCTION.find((file) => file.name === 'production.ts');
   const adapter = PRODUCTION.find((file) => file.name === PROVIDER_ADAPTER);
+  const safety = PRODUCTION.find((file) => file.name === SAFETY_MODULE);
   assert(wiring !== undefined && adapter !== undefined, 'both files are in the scan');
+  assert(safety !== undefined, 'and so is the derivation module');
 
-  // 1. Production always supplies nothing, and this is the only construction site in production.
+  // 1. The removed construction option has left nothing behind, in production or in a test.
   assertEquals(
-    [...wiring.code.matchAll(/staticSafetyIdentifier:\s*([A-Za-z0-9_'".]+)/g)].map((m) => m[1]),
-    ['undefined'],
-    'exactly one production construction site, and it passes undefined',
+    offenders(/staticSafetyIdentifier/, SCANNABLE),
+    [],
+    'the construction-time option is gone',
+  );
+  assertEquals(
+    offenders(/safety_identifier\s*:\s*['"`]/, PRODUCTION),
+    [],
+    'and no literal identifier is written directly into an outbound body',
   );
   // Scoped past the adapter itself, which necessarily contains the factory's own declaration.
   assertEquals(
@@ -508,67 +601,127 @@ Deno.test('B10 — production supplies no safety identifier, and none can reach 
       PRODUCTION.filter((file) => file.name !== PROVIDER_ADAPTER),
     ),
     ['production.ts'],
-    'and the adapter is constructed in exactly one production file',
+    'the adapter is constructed in exactly one production file',
   );
 
-  // 2. No static identifier literal is present anywhere in production source.
+  // 2. Exactly one production module holds a digest primitive, and it is the derivation module.
   assertEquals(
-    offenders(/staticSafetyIdentifier:\s*['"`]/, PRODUCTION),
-    [],
-    'no production file passes a literal identifier of any kind',
+    [...offenders(/crypto\.subtle|\bHMAC\b|SHA-256/, PRODUCTION)].sort(),
+    [SAFETY_MODULE, 'jwt-verifier.ts'].sort(),
+    'key material lives in the JWT verifier and in B10’s module, and nowhere else',
   );
   assertEquals(
-    offenders(/safety_identifier\s*:\s*['"`]/, PRODUCTION),
-    [],
-    'and none is written directly into an outbound body',
+    offenders(/importKey|subtle\.sign/, PRODUCTION.filter((f) => f.name !== 'jwt-verifier.ts')),
+    [SAFETY_MODULE],
+    'and only B10’s module imports or signs with a key of its own',
+  );
+  assertEquals(
+    /extractable:\s*true|['"]jwk['"]|exportKey/.test(safety.code),
+    false,
+    'the HMAC key is never exported, and never imported extractably',
+  );
+  assertEquals(
+    /console\s*\.\s*[a-z]+\s*\(|throw new/.test(safety.code),
+    false,
+    'the module that holds the key cannot log or throw a message of its own',
+  );
+  assertEquals(
+    /new Map\(|new Set\(|localStorage|Deno\.writeTextFile|Deno\.openKv/.test(safety.code),
+    false,
+    'and it persists nothing — there is no uuid-to-identifier mapping anywhere',
   );
 
-  // 3. The synthetic value the mocked tests use exists only under tests/.
-  const synthetic = ALL.filter((file) => /synthetic-opaque-test-subject/.test(file.raw));
+  // 3. No unkeyed digest of a user value exists. The whole point of B10 is that a bare SHA-256 of an
+  //    enumerable uuid space is reversible by anyone holding the uuid list.
   assertEquals(
-    synthetic.every((file) => file.isTest),
-    true,
-    `the synthetic identifier is confined to tests: ${synthetic.map((f) => f.name).join(', ')}`,
+    offenders(/crypto\.subtle\.digest/, ALL),
+    [],
+    'no unkeyed hash of anything, in production or in a test',
   );
   assertEquals(
-    offenders(/TEST_SAFETY_IDENTIFIER/, PRODUCTION),
+    offenders(/\bemail\b|phone|\bdisplayName\b/, [safety]),
     [],
-    'and no production file references the test fixture',
+    'and the derivation module names no identity attribute other than the verified subject',
   );
 
-  // 4. No identity value can flow from request JSON to the adapter. `ProviderRequest` is the only
-  //    per-request channel into it, and §C.6 rejects the three identity field names before that.
+  // 4. The identifier reaches the adapter through exactly one typed per-request channel, and no
+  //    client field can influence it. §C.6 rejects the identity field names before that.
   const ports = PRODUCTION.find((file) => file.name === 'ports.ts');
   assert(ports !== undefined, 'ports.ts is in the scan');
   const providerRequest = /export type ProviderRequest = \{([\s\S]*?)\n\};/.exec(ports.code)?.[1] ??
     '';
   assertEquals(
     [...providerRequest.matchAll(/readonly ([A-Za-z]+)[?]?:/g)].map((match) => match[1]).sort(),
-    ['instructions', 'languageHint', 'maxOutputTokens', 'store', 'userInput'],
-    'ProviderRequest still carries exactly five fields, none of them an identity',
-  );
-  assertEquals(
-    /safetyIdentifier|safety_identifier/.test(providerRequest),
-    false,
-    'and no per-request identifier field has been added without the review that requires',
+    ['instructions', 'languageHint', 'maxOutputTokens', 'safetyIdentifier', 'store', 'userInput'],
+    'ProviderRequest carries exactly six fields, of which the identifier is the only new one',
   );
   const schema = PRODUCTION.find((file) => file.name === 'request-schema.ts');
   assert(schema !== undefined, 'request-schema.ts is in the scan');
-  for (const field of ['user_id', 'subject_id', 'safety_identifier']) {
+  for (const field of ['user_id', 'subject_id', 'safety_identifier', 'sub']) {
     assertEquals(
       new RegExp(`'${field}'`).test(schema.code),
       false,
       `${field} is not an accepted request field, so a client cannot supply one`,
     );
   }
+  // The handler derives from the verified claims and from nothing else.
+  const handler = PRODUCTION.find((file) => file.name === 'handler.ts');
+  assert(handler !== undefined, 'handler.ts is in the scan');
+  assertEquals(
+    [...handler.code.matchAll(/safetyIdentifiers\.derive\(([^)]*)\)/g)].map((match) => match[1]),
+    ['auth.claims.userId'],
+    'exactly one derivation call, on exactly the verified subject',
+  );
 
-  // 5. The kill switch stays a constant, so no environment flag can open the endpoint either.
+  // 5. The active version is a source constant, and so is the kill switch. Neither can be flipped by
+  //    whoever sets an environment variable.
+  assertEquals(
+    /SAFETY_IDENTIFIER_ACTIVE_VERSION = 'v1'/.test(safety.code),
+    true,
+    'version 1 is the active construction, as a literal',
+  );
+  assertEquals(
+    /ACTIVE_VERSION[^\n]*Deno\.env/.test(safety.code),
+    false,
+    'and it is not read from the environment',
+  );
   assertEquals(/enabled:\s*false/.test(wiring.code), true, '§I.2’s kill switch is off');
   assertEquals(
     /enabled:\s*[^,\n]*Deno\.env/.test(wiring.code),
     false,
-    'and it is not read from the environment',
+    'and it is not read from the environment either',
   );
+});
+
+Deno.test('B10 — no key-shaped fixture is committed, and no test prints one', () => {
+  /**
+   * The fixture rule, enforced rather than agreed. A 32-byte base64url literal in a test file is
+   * indistinguishable at a glance from a real secret, so the suite builds its keys arithmetically or
+   * from Web Crypto and commits none.
+   *
+   * The pattern deliberately excludes this file and the `nl_osi_` identifiers, which are not keys: an
+   * identifier is public metadata plus a digest of nothing, and the synthetic fixtures spell out what
+   * they are.
+   */
+  const keyShaped = ALL.filter((file) => {
+    if (file.name === 'tests/source-scan_test.ts') {
+      return false;
+    }
+    const withoutIdentifiers = file.raw.replace(/nl_osi_v[0-9]+_[A-Za-z0-9_-]+/g, '');
+    return /['"`][A-Za-z0-9_-]{43}['"`]/.test(withoutIdentifiers);
+  });
+  assertEquals(keyShaped.map((file) => file.name), [], 'no 32-byte key literal anywhere');
+
+  // And no test prints a key, a decoded buffer or a signed message.
+  const derivationTests = ALL.filter((file) => /safety-identifier/.test(file.name));
+  assert(derivationTests.length >= 1, 'the derivation tests are in the scan');
+  for (const file of derivationTests) {
+    assertEquals(
+      /console\s*\.\s*[a-z]+\s*\(/.test(file.code),
+      false,
+      `${file.name} prints nothing`,
+    );
+  }
 });
 
 Deno.test('the two adapters are the only network capability, and there is no second transport', () => {
@@ -724,11 +877,11 @@ Deno.test('nothing selects a provider from request input or an environment flag'
   );
   assertEquals(
     offenders(
-      /Deno\.env\.get\(\s*'(?!SUPABASE_URL|SUPABASE_JWKS|SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY)/,
+      /Deno\.env\.get\(\s*'(?!SUPABASE_URL|SUPABASE_JWKS|SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY|NOOR_AI_SAFETY_HMAC_KEY_V1)/,
       PRODUCTION,
     ),
     [],
-    'and no environment read beyond the four permitted ones',
+    'and no environment read beyond the five permitted ones',
   );
 });
 

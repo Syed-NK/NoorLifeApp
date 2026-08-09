@@ -333,7 +333,7 @@ remaining gates explicitly for that reason.
 | --- | -------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | 1   | Whether OpenAI qualifies as a Play "service provider" given default abuse-monitoring retention for its own policy enforcement | The final Play "shared" answer (§6.2)  |
 | 2   | Whether the AI surface reads as chat once AI-5 ships, moving the Play data type             | The final Play data type (§6.2)                   |
-| 3   | The §12.6 `safety_identifier` decision                                                      | The Apple linkage answer (§6.3)                   |
+| 3   | ~~The §12.6 `safety_identifier` decision~~ — **resolved 2026-08-09, see §11**                | ~~The Apple linkage answer (§6.3)~~ — no longer blocked by this |
 | 4   | Whether NoorLife's own logs could re-link a prompt to a user under Apple's wording          | The Apple linkage answer (§6.3)                   |
 | 5   | The exact model scope of OpenAI's Safety Retention provision under MAM/ZDR                  | Any future claim about what ZDR would remove (§3.3) |
 | 6   | Whether NoorLife is eligible for ZDR at all                                                 | The pre-beta path in §8.2                         |
@@ -368,7 +368,7 @@ AI-3 is **not** complete, and this document closes exactly one of its gates.
 | Deployment                                           | **Not done, and prohibited at this phase**                    |
 | §J row 13b — shared rate limit                       | **Not run**                                                   |
 | §J row 18 — live smoke test                          | **Not run.** No provider call has been made                   |
-| §12.6 `safety_identifier` decision                   | **Open**                                                      |
+| §12.6 `safety_identifier` decision                   | **Decided and implemented locally, 2026-08-09 — see §11.** Key not generated, not provisioned, not deployed |
 | Platform log retention confirmed (§H.4)              | **Not done**                                                  |
 
 No API key was added, no provider connectivity was created, nothing was deployed, and no OpenAI API
@@ -413,3 +413,96 @@ adapter cannot be enabled until that reviewed derivation exists.
 
 Everything §2.2 forbids remains forbidden, every release blocker in §8.2 remains open, and the single
 synthetic smoke test §2.1 authorises has **not** been run.
+
+---
+
+## 11. Status note — 2026-08-09, B10 is implemented and unresolved fact #3 is now resolved
+
+**This decision is still unchanged in what it authorises.** Nothing below widens §2.1, and §2.2's
+prohibitions all remain in force. What changes is that one of §8.1's unresolved facts has an answer,
+and that answer moves one draft disclosure from "provisional pending a decision" to "provisional
+pending nothing but review".
+
+### 11.1 What was decided
+
+`NOOR_AI_BACKEND_CONTRACT.md` §12.6 is **decided**: NoorLife sends a `safety_identifier`, and it is a
+**keyed, per-user, opaque value** derived server-side from the verified JWT subject.
+
+```
+HMAC-SHA-256(dedicated 256-bit key,
+             "noorlife:openai-safety-identifier:v1" ‖ NUL ‖ canonical-lowercase-uuid)
+              → nl_osi_v1_<43-character unpadded base64url>
+```
+
+Implemented in `supabase/functions/noor-ai/safety-identifier.ts`; lifecycle, rotation and emergency
+response in `NOOR_AI_B10_SAFETY_IDENTIFIER_RUNBOOK.md`.
+
+The official authority is `https://developers.openai.com/api/docs/guides/safety-best-practices`,
+retrieved **2026-08-09**, which states that safety identifiers "are recommended … but they are not
+required", that one "should be a string that uniquely identifies each user", and that a developer
+should "[h]ash the username or email address in order to avoid sending us any identifying
+information".
+
+That is the source's wording. **NoorLife's own privacy classification is narrower, and the two must not
+be run together.** As a recommendation, the guidance means: do not send the raw identifier. A plain
+digest achieves that much — it removes the directly readable username, email address or uuid from the
+outbound value — but it **does not anonymise the user**. The digest is a stable pseudonymous
+identifier, and it can be matched back to a person by anyone holding the candidate set: hash every
+candidate, compare. That is a dictionary attack against a known set, and it applies to usernames and
+email addresses as much as to uuids — those are frequently enumerable too. The difference is not input
+entropy but who holds the list, and NoorLife holds its own user table.
+
+**The keyed construction is a NoorLife decision, not an OpenAI requirement.** Keying prevents
+candidate-list matching **by parties that do not hold the HMAC key**. It does not make the value
+anonymous, it is not a control against NoorLife — which holds both the key and the uuid by design — and
+it does not defeat an attacker who obtains both. §11.2 states the classification in full.
+
+### 11.2 The privacy classification, stated exactly
+
+- **Pseudonymous, not anonymous.** NoorLife can recompute the value while holding the key and the uuid.
+- **OpenAI receives no raw uuid, no email address and no phone number.**
+- **Compromise of both the HMAC key and the user-uuid list permits recomputation**, and therefore
+  re-identification of provider-side records.
+- **Compromise of the database alone does not reveal the HMAC key.** It is an Edge Function secret —
+  not a table, not a Vault row, not reachable through any RPC.
+- **Compromise of the HMAC key alone still requires a candidate uuid list** to enumerate against.
+- **The value is stable across NoorLife sessions** while version 1 remains active.
+- **It is account-linked personal data** for privacy-policy and store-disclosure purposes.
+- **`store: false` does not make it anonymous, and is not Zero Data Retention.** §4.2 is unchanged, and
+  OpenAI's applicable abuse-monitoring retention (§3.2) continues to govern.
+
+### 11.3 What this changes in this document
+
+| Item                                                | Before                                             | After                                                                        |
+| --------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| §8.1 unresolved fact **#3** — the §12.6 decision    | Open                                                | **Resolved.** A keyed per-user opaque identifier is sent                     |
+| §6.3 Apple linkage — **Linked to You**              | Provisional, partly because §12.6 was open          | **Still Linked to You, and now on firmer ground.** A stable pseudonymous identifier does cross to a third party, so the conservative draft was the right one and is no longer contingent on fact #3 |
+| §6.3 Apple **Tracking**                             | No                                                  | **Still No.** Nothing is linked with third-party data for advertising, and OpenAI is not a data broker. A safety identifier does not change that |
+| §6.2 Play **shared**                                | Provisionally yes                                   | **Unchanged.** The open question there is fact #1, the service-provider exclusion, which this does not touch |
+| §5.2 prohibited upstream — "raw user IDs, or any unhashed Supabase identifier" | In force | **Still in force, and now machine-enforced.** The adapter refuses any uuid- or email-shaped value and makes zero network calls for one |
+| §8.1 unresolved fact **#4** — NoorLife's own logs   | Open                                                | **Still open**, and narrowed in NoorLife's favour: the derived identifier is deliberately **not** logged, and `OperationalLogRecord` has no field that could hold it |
+
+### 11.4 §6.1 Draft A — the wording that must be added before user traffic
+
+Draft A does not currently mention the identifier, and it must before any real-user traffic. Proposed
+addition, **held for review and not published**:
+
+> NoorLife also sends OpenAI a code that stands for your account. It is not your name, your email
+> address or your NoorLife account number — it is an unreadable value calculated from your account
+> using a secret key that only NoorLife's server holds. OpenAI uses it to detect misuse coming from one
+> account. It stays the same for you over time, and NoorLife can work out which account it belongs to,
+> so it is treated as information linked to you.
+
+Deliberately absent, and to stay absent: any claim that the value is anonymous, and any claim that
+OpenAI cannot associate a person's requests with one another. It is designed to let them do exactly
+that, which is the point of the parameter.
+
+### 11.5 What has still not happened
+
+**No HMAC key has been generated. No secret has been provisioned. Nothing has been deployed. No
+request has ever been sent to OpenAI, synthetic or otherwise.** The absence of the key is itself a
+gate: the derivation answers `unavailable`, and the handler fails closed with `503` before a quota
+reservation is taken.
+
+Every release blocker in §8.2 remains open, §2.2's prohibitions all remain in force, and the single
+synthetic smoke test §2.1 authorises has still **not** been run.

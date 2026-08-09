@@ -60,8 +60,9 @@ import type {
  *   4. `Content-Type` → `415`, then the byte cap → `413`, then parse and schema → `400` (§C.3's
  *      cheap-first ordering).
  *   5. Kill switch → `503` (§I.2), which runs "before the provider call and before the rate-limit read".
- *   6. Per-user rate limit → `429` (§I.1).
- *   7. The provider.
+ *   6. B10's per-user safety identifier → `503` when it cannot be derived, before anything is spent.
+ *   7. Per-user rate limit → `429` (§I.1).
+ *   8. The provider.
  *
  * Validation sits ahead of the kill switch rather than behind it so that a malformed request is still
  * told it is malformed while Noor AI is disabled — a client debugging its payload against a switched-off
@@ -213,7 +214,17 @@ type LogDraft = {
 export function createNoorAIHandler(
   deps: NoorAIDependencies,
 ): (request: Request) => Promise<Response> {
-  const { verifier, provider, quota, clock, timer, requestIds, logger, config } = deps;
+  const {
+    verifier,
+    safetyIdentifiers,
+    provider,
+    quota,
+    clock,
+    timer,
+    requestIds,
+    logger,
+    config,
+  } = deps;
 
   /**
    * One provider attempt, with the upstream budget actually aborting it (§F.7).
@@ -444,6 +455,33 @@ export function createNoorAIHandler(
       }
 
       /**
+       * ── B10 — the per-user safety identifier, derived here and only here ───
+       *
+       * Four properties of this position, each of which a test pins:
+       *
+       *   • **After verification.** The only input is `auth.claims.userId`, the `sub` of a token whose
+       *     signature was checked. There is nothing else the handler could pass: §C.6 rejects `sub`,
+       *     `user_id`, `subject_id` and `safety_identifier` as unknown request fields long before this
+       *     line, so a client cannot supply, seed or override the value in any form.
+       *   • **Before the reservation.** A missing or invalid HMAC key is an operator fault, and making
+       *     a user pay a quota unit for it would spend their daily allowance on NoorLife's
+       *     misconfiguration. Deriving first means a failure costs the user nothing at all.
+       *   • **Before the provider.** The adapter refuses a request without a well-formed identifier, so
+       *     failing here means zero outbound calls rather than one that is thrown away.
+       *   • **Once.** One derivation per handler execution, reused across §F.8's retry, so the two
+       *     attempts of one question are one subject rather than two.
+       *
+       * `unavailable` collapses every cause — no secret, malformed secret, wrong key length, all-zero
+       * key, an unrecognised version, a runtime failure inside the primitive — into §I.5's stable
+       * `503`. Distinguishing them for the caller would describe the server's key configuration to
+       * whoever asked, which is §D.1's reasoning applied to a secret rather than to a token.
+       */
+      const derived = await safetyIdentifiers.derive(auth.claims.userId);
+      if (derived.kind !== 'derived') {
+        return fail('service_unavailable');
+      }
+
+      /**
        * ── §I.1 / §I.2 — reserve, before anything can be spent ────────────────
        *
        * The subject is `auth.claims.userId` and it is the only identity in scope. There is no other
@@ -574,8 +612,11 @@ export function createNoorAIHandler(
        * unmodified. §F.3's rule is that the two never mix: no templating, no delimiters, no "the user
        * asked". There is no `surface` here — §H.1 keeps the route string from travelling — no `model`
        * (§F.2 makes it the provider implementation's configuration, and AI-2 names none), no `tools`
-       * (§F.4 omits rather than empties), no conversation state (§F.6) and no `safety_identifier`
-       * (§12.6 is unresolved, so AI-2 does not implement it).
+       * (§F.4 omits rather than empties) and no conversation state (§F.6).
+       *
+       * `safetyIdentifier` is the sixth field, added by B10. It carries the already-derived opaque
+       * value from above — never the uuid it was derived from, never the key, never the message that
+       * was signed, and never anything the caller sent.
        */
       const providerRequest: ProviderRequest = {
         instructions: buildInstructions(),
@@ -583,6 +624,7 @@ export function createNoorAIHandler(
         maxOutputTokens: config.maxOutputTokens,
         store: false,
         languageHint: locale.locale,
+        safetyIdentifier: derived.identifier,
       };
 
       const run = await callProvider(

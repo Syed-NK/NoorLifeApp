@@ -1,3 +1,4 @@
+import { SAFETY_IDENTIFIER_ACTIVE_VERSION, safetyIdentifierPrefix } from '../safety-identifier.ts';
 import type {
   AIProvider,
   AttemptOutcomeClass,
@@ -15,6 +16,8 @@ import type {
   QuotaStore,
   RequestIdSource,
   ReserveOutcome,
+  SafetyIdentifierDeriver,
+  SafetyIdentifierOutcome,
   Timer,
   VerifiedClaims,
 } from '../ports.ts';
@@ -153,6 +156,8 @@ export function createCapturingLogger(): CapturingLogger {
 
 export const TEST_USER_ID = '11111111-1111-4111-8111-111111111111';
 export const TEST_SESSION_ID = '22222222-2222-4222-8222-222222222222';
+/** A second verified subject, for the assertions that two users must not share an identifier. */
+export const TEST_OTHER_USER_ID = '44444444-4444-4444-8444-444444444444';
 
 export const TEST_CLAIMS: VerifiedClaims = {
   userId: TEST_USER_ID,
@@ -176,6 +181,106 @@ export function createFakeVerifier(
       return Promise.resolve(outcome);
     },
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Safety identifier
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A synthetic opaque safety identifier under the **active** construction version.
+ *
+ * The prefix is built from `SAFETY_IDENTIFIER_ACTIVE_VERSION` rather than written out, so this
+ * fixture follows a rotation instead of silently becoming an inactive-version value that the provider
+ * boundary would then refuse — which would fail a great many tests for a reason none of them is about.
+ *
+ * The digest half is deliberately not a real digest and unmistakably synthetic when read: no key
+ * produced it, and the 43 characters spell out what they are. A fixture that also looked like a
+ * plausible digest would be one somebody eventually mistakes for a derived value.
+ *
+ * It is not a secret in either direction: an identifier is public metadata plus a digest, and a
+ * digest of nothing reveals nothing about a key that never existed.
+ */
+export const TEST_SAFETY_IDENTIFIER = `${
+  safetyIdentifierPrefix(SAFETY_IDENTIFIER_ACTIVE_VERSION)
+}synthetic_test_identifier_not_a_real_digest`;
+
+export type RecordingSafetyIdentifierDeriver = SafetyIdentifierDeriver & {
+  /** Every subject the handler asked about. The subject-binding assertions read this. */
+  readonly subjects: readonly string[];
+};
+
+/**
+ * A deriver that answers from a fixed outcome and records what it was asked.
+ *
+ * ── Why it records the subject rather than just the count ────────────────────
+ * The property under test is that the input is the **verified** `sub` and nothing else — not a body
+ * field, not a header, not the session id. A spy that counted calls could not tell those apart, so
+ * the argument is captured whole and the tests assert on it.
+ */
+export function createFakeSafetyIdentifiers(
+  outcome: SafetyIdentifierOutcome = { kind: 'derived', identifier: TEST_SAFETY_IDENTIFIER },
+): RecordingSafetyIdentifierDeriver {
+  const subjects: string[] = [];
+  return {
+    subjects,
+    derive: (verifiedSubjectUuid) => {
+      subjects.push(verifiedSubjectUuid);
+      return Promise.resolve(outcome);
+    },
+  };
+}
+
+/** The deriver that can only fail — the missing/invalid-key path, without needing a key at all. */
+export function createUnavailableSafetyIdentifiers(): RecordingSafetyIdentifierDeriver {
+  return createFakeSafetyIdentifiers({ kind: 'unavailable' });
+}
+
+/** A deriver that emits a distinct value per subject, for the two-users-two-identifiers assertions. */
+export function createPerSubjectSafetyIdentifiers(
+  mapping: Readonly<Record<string, string>>,
+): RecordingSafetyIdentifierDeriver {
+  const subjects: string[] = [];
+  return {
+    subjects,
+    derive: (verifiedSubjectUuid) => {
+      subjects.push(verifiedSubjectUuid);
+      const identifier = mapping[verifiedSubjectUuid];
+      return Promise.resolve<SafetyIdentifierOutcome>(
+        identifier === undefined ? { kind: 'unavailable' } : { kind: 'derived', identifier },
+      );
+    },
+  };
+}
+
+/**
+ * Fixture key bytes built from a small numeric formula, entirely in test memory.
+ *
+ * ── Why no base64 key literal is committed ───────────────────────────────────
+ * A 32-byte base64url string in a test file is indistinguishable at a glance from a real secret, and
+ * `source-scan_test.ts` refuses key-shaped literals anywhere in the repository including fixtures.
+ * Building the bytes arithmetically keeps the fixture deterministic — which the "same key gives the
+ * same identifier" assertions need — without anything in the diff resembling key material.
+ *
+ * These are **fixtures, not keys**. They are not cryptographically random, they exist for the lifetime
+ * of one test process, and none is ever printed.
+ */
+export function fixtureKeyBytes(seed: number, length = 32): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(length);
+  for (let index = 0; index < length; index += 1) {
+    bytes[index] = (index * 31 + seed * 97 + 13) % 256;
+  }
+  return bytes;
+}
+
+/** The same bytes in the accepted stored representation: unpadded base64url. */
+export function fixtureKey(seed: number, length = 32): string {
+  return base64Url(fixtureKeyBytes(seed, length));
+}
+
+/** A genuinely random 32-byte fixture, for the "a runtime-generated key is accepted" case. */
+export function randomFixtureKey(): string {
+  return base64Url(crypto.getRandomValues(new Uint8Array(32)));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -426,6 +531,7 @@ export function testConfig(overrides: Partial<HandlerConfig> = {}): HandlerConfi
 export type TestHarness = {
   readonly deps: NoorAIDependencies;
   readonly verifier: RecordingVerifier;
+  readonly safetyIdentifiers: RecordingSafetyIdentifierDeriver;
   readonly provider: RecordingProvider;
   readonly quota: RecordingQuotaStore;
   readonly clock: FakeClock;
@@ -441,12 +547,15 @@ export function createHarness(
     readonly quota?: RecordingQuotaStore;
     /** Shorthand for the common case: script only the reserve decision. */
     readonly reserve?: ReserveOutcome;
+    /** B10's deriver. Defaults to one that succeeds with the synthetic opaque fixture. */
+    readonly safetyIdentifiers?: RecordingSafetyIdentifierDeriver;
     readonly config?: Partial<HandlerConfig>;
     readonly timer?: FakeTimer;
   } = {},
 ): TestHarness {
   const timer = options.timer ?? createFakeTimer();
   const verifier = createFakeVerifier(options.auth);
+  const safetyIdentifiers = options.safetyIdentifiers ?? createFakeSafetyIdentifiers();
   const provider = options.provider ?? createFakeProvider(helpAnswer());
   const quota = options.quota ?? createFakeQuotaStore({ reserve: options.reserve });
   const clock = createFakeClock();
@@ -454,6 +563,7 @@ export function createHarness(
 
   return {
     verifier,
+    safetyIdentifiers,
     provider,
     quota,
     clock,
@@ -461,6 +571,7 @@ export function createHarness(
     logger,
     deps: {
       verifier,
+      safetyIdentifiers,
       provider,
       quota,
       clock,
@@ -648,15 +759,6 @@ export async function createSigningFixture(kid = 'test-key-1'): Promise<SigningF
  * transport is a mock, so the only property under test is *where the value is written*.
  */
 export const TEST_PROVIDER_KEY = 'test-provider-key-not-real-000';
-
-/**
- * A synthetic opaque safety identifier for the B10 gate.
- *
- * Obviously synthetic, and derived from nothing: not a uuid, not a hash of one, not an email, not a
- * session id. B10 is open, so no real derivation exists to imitate — and a fixture that imitated one
- * would be a design decision made in a test file.
- */
-export const TEST_SAFETY_IDENTIFIER = 'synthetic-opaque-test-subject-01';
 
 /** One captured request, with everything the outbound assertions need and nothing printed. */
 export type FetchCall = {

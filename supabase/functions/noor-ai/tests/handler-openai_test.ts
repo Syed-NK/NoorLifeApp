@@ -13,6 +13,7 @@ import {
   createFakeClock,
   createFakeQuotaStore,
   createFakeRequestIds,
+  createFakeSafetyIdentifiers,
   createFakeTimer,
   createFakeVerifier,
   createFetchMock,
@@ -65,11 +66,8 @@ function buildDeps(
     logger,
     deps: {
       verifier: createFakeVerifier(),
-      provider: createOpenAIProvider({
-        apiKey: TEST_PROVIDER_KEY,
-        staticSafetyIdentifier: TEST_SAFETY_IDENTIFIER,
-        fetchImpl: mock.impl,
-      }),
+      safetyIdentifiers: createFakeSafetyIdentifiers(),
+      provider: createOpenAIProvider({ apiKey: TEST_PROVIDER_KEY, fetchImpl: mock.impl }),
       quota,
       clock: createFakeClock(),
       timer: createFakeTimer(),
@@ -109,6 +107,10 @@ Deno.test('45 — a valid answer runs reserve → provider → register → fina
   assertEquals(body.answer.sources, [], 'with no citations, which AI-3 still cannot supply');
   assertEquals(mock.calls.length, 1, 'one provider attempt');
   assertEquals(quota.ops(), ['reserve', 'registerAttempt', 'finalize'], 'the approved lifecycle');
+
+  // B10, composed: the value the deriver returned is the value the real adapter put on the wire.
+  const outbound = JSON.parse(mock.calls[0]?.body ?? '{}') as Record<string, unknown>;
+  assertEquals(outbound.safety_identifier, TEST_SAFETY_IDENTIFIER, 'the derived value travelled');
 
   const registered = quota.calls[1];
   assert(registered?.op === 'registerAttempt', 'the attempt was registered');
@@ -405,6 +407,7 @@ Deno.test('52 — with no key the handler answers unavailable and makes zero net
     const logger = createCapturingLogger();
     const response = await createNoorAIHandler({
       verifier: createFakeVerifier(),
+      safetyIdentifiers: createFakeSafetyIdentifiers(),
       // The real adapter, constructed exactly as production constructs it.
       provider: createProductionProvider({
         supabaseUrl: PROJECT_URL,
@@ -434,23 +437,24 @@ Deno.test('52 — with no key the handler answers unavailable and makes zero net
   }
 });
 
-Deno.test('53 — B10 keeps the production provider unavailable even with a key present', async () => {
+Deno.test('53 — a request carrying no derived identifier reaches no network, even with a key', async () => {
   /**
-   * The gate that does not depend on the key. `createProductionProvider` passes `undefined`, because
-   * B10 is open and — more fundamentally — because the option it would pass is fixed at construction
-   * and this graph is built once per isolate, so no value put there could identify a user. Even a
-   * hypothetical environment with a provider key set therefore stays closed, and B10 is closed by
-   * adding a reviewed per-user derivation port, not by a deployment setting.
+   * The boundary gate that does not depend on the key. B10 is implemented, but its value is
+   * **per request**: an adapter built from an environment that has a provider key in it still sends
+   * nothing when the request it is handed cannot be vouched for. In production this path is
+   * unreachable — the handler answers `503` before the provider — and that is asserted separately;
+   * this is the second, independent lock underneath it.
    */
   const tripwire = withNetworkTripwire();
   try {
-    const request: ProviderRequest = {
+    const request = {
       instructions: 'server text',
       userInput: 'Where is Qibla?',
       maxOutputTokens: 256,
       store: false,
       languageHint: 'en',
-    };
+      safetyIdentifier: '',
+    } as ProviderRequest;
     const withKey = createProductionProvider({
       supabaseUrl: PROJECT_URL,
       jwks: undefined,

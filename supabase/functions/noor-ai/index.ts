@@ -9,10 +9,16 @@ import { createProductionDependencies } from './production.ts';
  * graph, and serves the handler. It constructs no provider itself, holds no credential beyond the two
  * secret values it hands straight on, and contains no branch on anything a caller can influence.
  *
- * This is the **only** file that reads a secret, and it reads exactly two: the platform-injected
+ * It reads exactly two secrets, and they are the two that are *handed through* it: the platform-injected
  * service-role key, which reaches `quota-rpc.ts` and nothing else, and the provider key, which reaches
  * `openai-provider.ts` and nothing else. Neither is held by the handler, logged, or returned.
  * `tests/source-scan_test.ts` pins both names to this file by exact equality.
+ *
+ * B10's HMAC key is the one secret this file deliberately does **not** read. It is not passed through
+ * anything — it is read, validated, imported non-extractably and used inside `safety-identifier.ts` —
+ * so its name lives there instead, pinned to that one file by the same scan. Splitting it out this way
+ * means the module that holds key material is also the module a reviewer reads to see where the key
+ * came from, rather than tracing it across two files.
  *
  * In particular there is **no fake provider here and no way to reach one**. `production.ts` is the only
  * module this file imports for dependencies, no request field, header, query parameter or environment
@@ -23,8 +29,9 @@ import { createProductionDependencies } from './production.ts';
  * ── What this function actually answers today ───────────────────────────────
  * An otherwise valid, authenticated request fails closed with §I.5's stable `503 service_unavailable`,
  * after authentication and validation have both run. It never returns a canned AI answer, and it makes
- * no network call: the kill switch is off, no `OPENAI_API_KEY` exists, and B10 is open so no
- * `safety_identifier` can be supplied — any one of the three is sufficient on its own.
+ * no network call: the kill switch is off, no `OPENAI_API_KEY` exists, and B10's dedicated HMAC secret
+ * exists in no environment so no identifier can be derived — any one of the three is sufficient on its
+ * own.
  *
  * ── The gateway runs before any of this ─────────────────────────────────────
  * `verify_jwt = true` is declared for this function in `supabase/config.toml`, so per the documentation
