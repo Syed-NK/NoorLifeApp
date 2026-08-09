@@ -1674,7 +1674,7 @@ check.
 | AI-1  | **This contract.** Architecture and documentation only  | Document reviewed. No function, key, dependency, migration, or UI change. **Complete on this commit.**                                |
 | AI-2  | Local Edge Function skeleton with an injected fake provider | `supabase/functions/noor-ai/` exists; `[functions.noor-ai]` declared in `config.toml` with **`verify_jwt = true` explicit**; the project's current JWT signing algorithm confirmed against the dashboard as one the gateway validates (§0.3); §D.3's boundary restated in the handler's own doc comment so it cannot be lost; every AI-2 row in §J passes, including 2c and 2d2; **at AI-2 completion no provider or HMAC key was provisioned in any environment**. **Status: met — see §K.1.** AI-2 was **local-only**: its gateway evidence was local and deployment was prohibited *for that phase*. Those two statements are historical, not current — **the present hosted state is governed by §K.2** |
 | AI-3  | Provider secret and the live Responses API connection   | §F.10's data-control decision recorded first — **done**; provider key provisioned outside the repository; model, timeouts, limits, and rate-limit store chosen and pinned; §J rows 13b/18 pass; no key in the repository, the bundle, or any log. **Status: development integration met — see §K.2.** The function is deployed and **source-disabled**, and **real-user and public traffic remain prohibited**. **Does not** include revocation work — §J.2f is not an AI-3 gate |
-| AI-4  | Mobile adapter and its states                           | An `AIOrchestrator` implementation posting to the endpoint with the session token on `Authorization` and the publishable key on `apikey` **only**; **both** error categories of §C.9 normalised — gateway platform errors and handler errors — into design-spec states 20/21/22/26, with no raw platform or provider text rendered and no fabricated `request_id`; §I.5's closed error set mapped; §12.1's and §12.11's shape gaps resolved; loading, unavailable, and error states verified on the emulator **and** the physical device |
+| AI-4  | Mobile adapter and its states                           | An `AIOrchestrator` implementation posting to the endpoint with the session token on `Authorization` and the publishable key on `apikey` **only**; **both** error categories of §C.9 normalised — gateway platform errors and handler errors — into design-spec states 20/21/22/26, with no raw platform or provider text rendered and no fabricated `request_id`; §I.5's closed error set mapped; §12.1's and §12.11's shape gaps resolved; loading, unavailable, and error states verified on the emulator **and** the physical device. **Status: the `ask` channel is implemented and locally verified — see §K.3.** "An `AIOrchestrator` implementation" is met through its formally defined ask-only subset, `AIAskOrchestrator`, which `NoorAIPort` extends: `confirmAction` is **unchanged and deliberately not implemented**, because no tool can propose an `AIActionPreview` yet (§F.4, §A.2). Composing the adapter into the full `AIOrchestrator` is **AI-9's**, in the same change that makes a confirmable action exist. The device-verification criterion is **still open** and cannot be met before AI-5 builds a surface to verify |
 | AI-5  | Noor AI text conversation UI                            | `/ai/chat/:conversationId` and `/ai/feedback` exist per workflow §6; scope shown near the composer per §06; single-turn until AI-8; only capabilities AI-1 can actually serve are enabled |
 | AI-6  | Permission-gated module reads                           | Module tables reviewed and approved with RLS (`PRE_RELEASE_BACKLOG.md` §4.1); a **server-side** grant store; `AI_GRANT_EDITING_AVAILABLE` flipped with the controls it requires; `accessed_modules` populated truthfully and displayed |
 | AI-7  | Reviewed tools and confirm-before-mutation              | Each tool reviewed individually; a mutation is unexpressible in one call; `AIActionPreview` shown before any write; `requiresConfirmation` enforced server-side |
@@ -1931,6 +1931,181 @@ further hosted provider request requires a fresh decision.
 
 ---
 
+### K.3 AI-4 status — the adapter exists; the phase does not close here
+
+**What was built: the mobile adapter and its error normalisation, and nothing else.** This was a
+local-only phase. Nothing was deployed, the hosted function was not enabled, no secret was created or
+retrieved, no user or session was created, **no hosted Supabase request and no OpenAI request was
+made**, and no UI exists. Every claim below is evidenced by tests that run against mocks.
+
+| Artefact | Path |
+| --- | --- |
+| Client contract — request, result, failure states, bounds | `src/services/ai/noor-ai.contract.ts` |
+| The adapter | `src/services/ai/noor-ai.service.ts` |
+| The ask-only orchestrator subset (§K.3.4) | `src/services/ai/ai-orchestrator.contract.ts` |
+| Behavioural tests | `src/services/ai/__tests__/noor-ai.service.test.ts` |
+| Source-level guards and mirror-parity tests | `src/services/ai/__tests__/noor-ai-adapter-guards.test.ts` |
+| Staged-boundary type and conformance tests | `src/services/ai/__tests__/ai-orchestrator-staging.test.ts` |
+
+#### K.3.1 The two error producers, normalised
+
+§C.9's split is absorbed by deciding the producer on **body shape, not status**, which is what §I.5
+asks for: "The invariant to rely on is the *absence* of `request_id`, not the shape of `code`." A
+non-2xx body carrying a string `request_id` **and** an `error.code` string is NoorLife's envelope and
+is mapped on the code; everything else — the platform's shape, an HTML page, an empty body, an
+unparseable one — is mapped on the HTTP status alone. No platform `code` or `message` is ever read, so
+the observed string-code and duplicated `msg` spellings in §K.1 are neither relied on nor treated as
+malformed.
+
+| Producer | Input | Client state |
+| --- | --- | --- |
+| Gateway | `401` | `authentication-required` |
+| Gateway | `404`, `500`, `502`, `503`, `546`, other `5xx` | `temporarily-unavailable` |
+| Gateway | `408`, `504` | `timed-out` |
+| Gateway | `429` | `temporarily-limited` |
+| Gateway | `400`, `413`, `415` | `invalid-request` |
+| Gateway | any other status | `unknown` |
+| Handler | `unauthenticated` | `authentication-required` |
+| Handler | `invalid_request`, `unsupported_contract_version`, `method_not_allowed`, `unsupported_media_type`, `payload_too_large` | `invalid-request` |
+| Handler | `rate_limited` | `temporarily-limited` |
+| Handler | `timeout` | `timed-out` |
+| Handler | `upstream_unavailable`, `service_unavailable` | `temporarily-unavailable` |
+| Handler | `forbidden`, `not_found`, `internal_error`, any unrecognised code | `unknown` |
+| Transport | recognisable network failure | `network-unavailable` |
+| Transport | abort with the caller's signal set | `cancelled` |
+| Transport | abort without it — the client deadline | `timed-out` |
+| Transport | anything else | `unknown` |
+| Response | 2xx that does not validate against §C.4 | `invalid-server-response` |
+| Local | no Supabase configuration in the build | `not-configured` |
+| Local | no session, empty/oversized/control-character input | `authentication-required` / `invalid-request` |
+
+§12.11 is satisfied: a `401` from either producer reaches one state. §I.6 is satisfied structurally
+rather than by filtering — the failure outcome has exactly one field, a state word, so there is no
+place for a platform or provider string to sit. Three deliberate collapses are recorded rather than
+hidden: `unsupported_contract_version` joins `invalid-request`, and `forbidden` and `internal_error`
+join `unknown`, because the alternatives would each tell a user something false.
+
+#### K.3.2 One invocation, and no automatic retry
+
+§I.1's quota store mints a fresh request id per handler execution, so a second invocation is a second
+reservation, a second provider attempt and a second charge. **A client retry is therefore not
+idempotent, and this adapter never performs one.** §I.5's "retryable" column describes what a person
+may choose after reading an error; it is not a licence for the adapter to act silently.
+
+Enforced three ways: local validation returns before reaching the invocation, so a rejected question
+costs zero; the behavioural suite asserts exactly one invocation for a valid request and for every
+failure class including timeout, gateway error, malformed response, `429`, `502` and `503`; and a
+source guard counts the `invoke` call sites, asserts there is one, and asserts no loop, no recursion,
+no timer and no retry construct around it. A mutation adding a second call site was confirmed to fail
+the suite.
+
+#### K.3.3 §12.1 resolved, with one deliberate divergence
+
+The **request half** is resolved exactly as §12.1 prescribes: the `ask(prompt, context)` signature is
+kept, `AIRequestContext` is used locally only, and the sole thing serialised from it is an
+allow-listed `surface` derived from `currentScreen`. A test asserts the body's key set equals §C.2's
+four fields and that neither `scope`, `permittedModules`, `grantedModules` nor `currentScreen` appears
+by name or by value.
+
+The **response half** is resolved by a third `AIResult`-style outcome carrying a closed failure state,
+so a rate limit, a timeout, a provider outage, an expired session and an oversized message are no
+longer one value.
+
+**The divergence, stated plainly:** §12.1 also proposed carrying the `request_id` as design-spec state
+21's "optional error reference". The adapter does **not** expose it, because this phase's brief
+requires that no identifier of any kind reaches a UI consumer. No security boundary moves — §I.7 says
+the id is *safe* to display, not that it must be, and withholding it is strictly narrower than showing
+it — and nothing is fabricated, which §I.7 forbids. The cost is real: **state 21's error reference
+cannot be rendered from this adapter**, and re-opening it is an AI-5 decision with its own review.
+
+#### K.3.4 The staged orchestrator boundary, stated explicitly
+
+§K's AI-4 row asks for "an `AIOrchestrator` implementation". That interface declares two channels,
+and only one of them can honestly exist yet: `confirmAction` takes an `actionId` from an
+`AIActionPreview` the user has already seen, and AI-1 has no tools, performs no mutation and issues no
+preview (§F.4, §A.2), so an implementation of it could only fail.
+
+**The resolution is a named subset, not an exemption.** `src/services/ai/ai-orchestrator.contract.ts`
+now declares:
+
+```ts
+export type AIAskOrchestrator<TResult = AIResult> = {
+  readonly ask: (prompt: string, context: AIRequestContext) => Promise<TResult>;
+};
+
+export type AIOrchestrator = AIAskOrchestrator & {
+  readonly confirmAction: (actionId: string) => Promise<AIResult>;
+};
+```
+
+and `NoorAIPort extends AIAskOrchestrator<NoorAIResult>`, so the relationship is checked by the
+compiler at the declaration rather than asserted in prose. Four properties follow, each asserted by
+`__tests__/ai-orchestrator-staging.test.ts` and each confirmed by a mutation that breaks it:
+
+- **AI-4 implements the `ask` portion of `AIOrchestrator`**, through the formally defined subset. It
+  is not "not the orchestrator", and it is not a reduced copy of one — `AIOrchestrator` is defined in
+  terms of `AIAskOrchestrator`, so the `ask` signature exists exactly once and the two cannot drift.
+  `AIAskOrchestrator` is provably identical to `Pick<AIOrchestrator, 'ask'>`.
+- **`confirmAction` is unchanged, still required, and still unavailable.** Its security property —
+  that an unconfirmed mutation is unexpressible — is intact. A test proves an ask-only value does not
+  satisfy `AIOrchestrator`, and would fail the build if the member were ever made optional or removed
+  to accommodate an adapter.
+- **`TResult` exists because §12.1 requires it.** `AIResult` cannot express a transport or server
+  failure, which is the response-half gap §12.1 records; parameterising the result lets the adapter be
+  honest without giving it a second, drifting copy of the call signature. Defaulted, the subset is
+  exactly what the orchestrator always declared.
+- **The optional third parameter does not break the subset.** A consumer holding only
+  `AIAskOrchestrator` still sees and can use the original two-argument signature. No cast — safe or
+  unsafe — is used anywhere to claim conformance.
+
+**Composition into the full `AIOrchestrator` is assigned to AI-9**, in the same change that makes a
+confirmable action exist. This is an explicit staged interface boundary, recorded here so that a
+later phase inherits a named obligation rather than a discrepancy.
+
+#### K.3.5 What the client can and cannot enforce about scope
+
+Recorded because it is easy to overstate, and because §E.2 already draws this line: *the client's
+scope objects are UI policy; the server's are authorization.*
+
+**The client enforces shape, not subject.** It restricts the request's structure to §C.2's four
+fields, its size to §C.3's limits, its `surface` to §C.5's allow-list, and it keeps `AIRequestContext`
+— `scope`, `permittedModules`, `grantedModules` — entirely local, serialising none of it. No module
+data of any kind is read or transmitted. Those are all mechanical properties, and each is asserted by
+test.
+
+**The client cannot determine what a question is about.** Runtime validation is structural; it does
+not and must not attempt to decide whether a prompt is a NoorLife help or navigation question. No
+keyword filtering exists here and none should be added — a keyword list is both trivially evaded and
+a source of wrong refusals, and treating it as a control would be exactly the "over-refusal is a
+defect, not extra safety" failure §G.4 warns about.
+
+**The server remains authoritative for semantic scope and refusal** (§E, §G). It recomputes
+authorization, applies the policy table, and answers §C.4's `refused` outcome for a question outside
+Noor AI's subject. Today, additionally, **the deployed function is source-disabled**, so no prompt of
+any kind reaches a provider and real-user traffic remains prohibited by the deployment state itself
+rather than by a client-side check.
+
+`NOOR_AI_DATA_CONTROL_DECISION.md` §5.1's "synthetic help and navigation prompts only" is therefore a
+constraint on **what this phase's authors may send during development**, not a property the adapter
+can verify about an arbitrary caller's string. This document does not claim otherwise.
+
+#### K.3.6 What this status does not mean
+
+- **AI-4 is not closed.** §K's row also requires loading, unavailable and error states verified on the
+  emulator **and** the physical device. There is no surface to verify — AI-5 builds it — so that
+  criterion is open, and this phase built no UI, no chat screen, no navigation, no copy and no
+  conversation state.
+- **Nothing was verified live.** No hosted Supabase call and no provider call was made. Every
+  gateway and handler shape above is exercised against a mock built from the bodies this contract
+  and §K.1 record, not against a running gateway.
+- **The function is still source-disabled.** `productionConfig.enabled` remains the literal `false`,
+  unchanged by this phase and asserted by two separate suites. The state an authenticated, valid
+  request reaches today is `temporarily-unavailable`.
+- **Real-user and public AI traffic remain prohibited**, and every beta and release gate in §K.2.2
+  stays open. NoorLife is not production-ready.
+
+---
+
 ## 12. Critical review — contradictions and open decisions
 
 Required by the phase brief: compare this contract against the policy code already in the repository
@@ -1945,6 +2120,14 @@ findings record the underlying decisions rather than leaving them implied by the
 ### 12.1 The client contract and the wire contract do not line up, in both directions
 
 **The most significant finding**, and it has a request half and a response half.
+
+**Status, 2026-08-09: resolved in the AI-4 adapter, with one recorded divergence on `request_id`.**
+See §K.3.3. This finding's own words — "Owner: AI-4, and it is a change to
+`src/services/ai/ai-orchestrator.contract.ts`" — are now honoured: that file declares
+`AIAskOrchestrator`, the named ask-only subset the adapter extends, and `AIOrchestrator` is defined
+in terms of it so the two cannot drift. `confirmAction` is unchanged, still required, and still
+unimplemented because nothing can propose an `AIActionPreview` yet (§F.4, §A.2); composing the
+adapter into the full interface is AI-9's. See §K.3.4 for the staged boundary and its proofs.
 
 #### Request half — it sends exactly the fields this contract forbids the client to send
 
@@ -2270,6 +2453,12 @@ construction.
 
 Owner: **AI-4** for the adapter and the state mapping; **AI-2** for declaring `verify_jwt = true`
 explicitly and for keeping the handler's own error schema intact for everything it does produce.
+
+**Status, 2026-08-09: the adapter's half is implemented and locally verified — see §K.3.1 for the
+full mapping table.** Both producers are normalised, the producer is decided by body shape rather
+than status, and the `apikey`/`Authorization` header rule above is enforced by pinning the user's
+token at invoke level and asserted by test. Verification on the emulator and the physical device is
+**still open** and belongs with AI-5's surface.
 
 ### 12.12 Deliberately not decided here
 

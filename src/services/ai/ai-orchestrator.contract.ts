@@ -64,15 +64,61 @@ export type AIOrchestratorConfig = {
   readonly endpoint: string;
 };
 
-export type AIOrchestrator = {
+/**
+ * The **ask half** of `AIOrchestrator`, named so a phase can implement it honestly.
+ *
+ * ── Why this exists ─────────────────────────────────────────────────────────
+ * `AIOrchestrator` below is the finished composition: a question channel *and* a
+ * confirmed-mutation channel. Those two arrive in different phases, because
+ * `confirmAction` cannot exist before there is a tool that can propose an
+ * `AIActionPreview` — and there is not one. Without a name for the half that can
+ * be built first, a phase delivering only `ask` has two bad options: ship a
+ * `confirmAction` that can only fail, or claim it is not implementing the
+ * orchestrator at all. This type is the third option, and it is the accurate one.
+ *
+ * It is a **staged interface boundary, not a divergence**. Nothing here is a
+ * reduced or relaxed `AIOrchestrator`: the full contract is defined in terms of
+ * this type immediately below, so the `ask` signature exists once and the two
+ * cannot drift.
+ *
+ * ── The type parameter, and why it is not a loophole ────────────────────────
+ * `TResult` defaults to `AIResult`, so `AIAskOrchestrator` with no argument is
+ * exactly what `AIOrchestrator['ask']` has always been. It is a parameter because
+ * §12.1 of `docs/NOOR_AI_BACKEND_CONTRACT.md` records that `AIResult` cannot
+ * express what the wire contract actually produces — all thirteen server error
+ * conditions and the platform's separate gateway category collapse into the bare
+ * `AIRefusal.unavailable` tag — and the resolution it prescribes is a third
+ * outcome for transport and server failure. A phase adopting that resolution
+ * needs a result type of its own; what it must **not** get is a second, drifting
+ * copy of the call signature. Parameterising the result keeps the signature
+ * single and lets the result be honest.
+ */
+export type AIAskOrchestrator<TResult = AIResult> = {
   /**
    * Sends a prompt within a scope.
    *
    * Implementations must consult `shared/permissions/ai-scope.ts` before reading
    * any module data, and must return a refusal rather than widening scope.
    */
-  readonly ask: (prompt: string, context: AIRequestContext) => Promise<AIResult>;
+  readonly ask: (prompt: string, context: AIRequestContext) => Promise<TResult>;
+};
 
+/**
+ * The full orchestrator: the ask channel plus confirmed mutation.
+ *
+ * Structurally identical to what it has always been — `AIAskOrchestrator` with no
+ * type argument is `{ ask: (prompt, context) => Promise<AIResult> }`, so this
+ * declares the same two members it declared before. `ai-orchestrator-staging.test.ts`
+ * asserts that equivalence in both directions rather than asserting it here in prose.
+ *
+ * **`confirmAction` is unchanged and is not optional.** Its security requirement is
+ * the whole reason the interface is shaped this way: it takes an `actionId` from an
+ * `AIActionPreview` the user has already seen, so an unconfirmed mutation is
+ * unexpressible rather than merely discouraged. Nothing may weaken that to make an
+ * earlier phase's adapter fit — the adapter conforms to `AIAskOrchestrator`, and
+ * composing the two into this type is the later phase's work.
+ */
+export type AIOrchestrator = AIAskOrchestrator & {
   /**
    * Applies a previously previewed action after the user confirms it.
    *
