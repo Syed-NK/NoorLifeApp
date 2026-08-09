@@ -2118,9 +2118,9 @@ not captured (the block recorded `reset_role=ok` but not the resulting `current_
 is forced by the other measurements, but a single added probe would confirm it outright, and that
 probe belongs to whichever phase implements the fix.
 
-### 13.11 Smallest candidate fix — **NOT IMPLEMENTED, pending review**
+### 13.11 Smallest candidate fix — **IMPLEMENTED AND LOCALLY VERIFIED** (see §13.13)
 
-No SQL was changed in this phase. Recorded for review only:
+Recorded here as it stood when it was still a proposal; §13.13 records what was actually done:
 
 > In the privilege-borrowing block, replace the terminal `RESET ROLE` with an explicit restore of the
 > captured identity — `execute pg_catalog.format('set local role %I', v_migrator)` — so that the role
@@ -2143,14 +2143,86 @@ by coincidence of the connection method.
 
 Until both are settled, the migration stays exactly as committed.
 
+### 13.13 The correction, implemented and locally verified — 2026-08-09
+
+Both privilege-borrowing blocks now end by restoring the captured caller instead of `RESET ROLE`:
+
+```
+execute pg_catalog.format('set local role %I', v_migrator);
+if current_user <> v_migrator then
+  raise exception using errcode = '42501',
+        message = 'noor_ai migration: role restoration did not return to the migration identity';
+end if;
+```
+
+No identity is hard-coded — `v_migrator` is whatever `current_user` was on entry — so the migration is
+identity-agnostic and does not assume the session is `postgres`. §15's hand-back block needed the same
+change and got it: it is the **last** statement in the file, so the identity it leaves behind is the one
+the CLI's appended history INSERT runs as.
+
+#### The deduced link is now directly measured
+
+§13.10 had to infer the post-`RESET ROLE` identity. A local harness reproducing the exact CLI topology
+— `session_user` a temporary passwordless login role, `current_user` the migration identity, proven to
+differ — measured it:
+
+| Pre-fix behaviour, same topology, rolled back | Result |
+| --- | --- |
+| After the block, `current_user` is the migrator | **false** |
+| After the block, `current_user` is `session_user` | **true** |
+| Migrator was granted CREATE | true |
+| Next `create type noor_ai.…` | **ERROR 42501, permission denied for schema** |
+
+That is the defect, reproduced end to end. The inference in §13.10 was correct.
+
+#### The corrected migration through the same topology
+
+| Positive run, rolled back | Result |
+| --- | --- |
+| Topology: identities differ | **true** |
+| After the migration, `current_user` is the migrator | **true** |
+| After the migration, `current_user` is `session_user` | **false** |
+| Migrator retains CREATE on the schema | **false** — handed back |
+| Appended migration-history INSERT | **succeeds** |
+| …and runs as the captured migration identity | **true** |
+| Objects created in-transaction | 6 tables, 5 public wrappers |
+
+#### The two open questions from §13.11, answered
+
+1. **Does the appended history INSERT still work?** Yes — measured above, and it runs as the migration
+   identity, not as `noor_ai_owner` and not as the session identity. The hazard the trust-boundary
+   migration warned about is avoided rather than assumed away.
+2. **Grant to `session_user` instead?** Rejected, and the rejection is now recorded in the migration's
+   own comments: it grants to an identity that is not the effective migration identity, it is broader
+   than necessary, and it would give the CLI's temporary login identity schema privileges merely for
+   opening the connection.
+
+#### Verification run
+
+Fresh `db reset` from empty on **PostgreSQL 17.6**: all 7 migrations apply, 6 tables, 5 wrappers.
+pgTAP **241 assertions pass** across the security-invariant and quota suites. The concurrency harness
+passes all three cases (distinct requests, identical replay, expired-lease race) with zero errors and
+zero deadlocks. Jest **3033 pass**, including **7 new static guards** pinning the restoration. Lint,
+typecheck, Deno `fmt`/`lint`/`check`/`test` (322) all clean.
+
+Final local ACL matrix: schema owned by `noor_ai_owner`; migration identity holds **no** CREATE;
+`service_role` has USAGE but not CREATE, EXECUTE on exactly the five private entry points and the five
+public wrappers, and **zero** table or sequence privileges; both custom roles are NOLOGIN with no
+password verifier, not superuser and not BYPASSRLS; `anon`, `authenticated`, `PUBLIC` and
+`noor_ai_runtime` have no schema USAGE and no wrapper EXECUTE; `noor_ai` is not in the Data API exposed
+schemas. The temporary login identity, its membership and every diagnostic object were dropped —
+verified zero remaining.
+
+**Hosted was not contacted in this phase and remains 6 applied / 1 pending.** The correction is ready
+for one separately approved hosted retry.
+
 ### 13.12 Remaining AI-3 blockers
 
-1. **The `db push` failure mechanism is identified (§13.10) but the fix is not implemented.** The
-   privilege-borrowing block grants CREATE to `current_user` and then returns execution to
-   `session_user` via `RESET ROLE`; those are the same principal locally and different under the CLI.
-   The smallest candidate correction is written up in §13.11 with two open questions for review, and
-   the migration remains exactly as committed until they are settled. This is the blocker between here
-   and a deployed quota store.
+1. **The `db push` failure is identified (§13.10) and corrected locally (§13.13); the hosted retry is
+   not run.** Both privilege-borrowing blocks now restore the captured migration identity instead of
+   calling `RESET ROLE`, verified against a local harness that reproduces the CLI's
+   `session_user ≠ current_user` topology, including the appended migration-history INSERT. What
+   remains is **one separately approved hosted retry** — not another local change.
 2. **No hosted quota store**, so §J's hosted rate-limit and accounting rows remain unrun.
 3. **B10's HMAC key** is neither generated nor provisioned.
 4. **The function is not deployed**, disabled or otherwise.

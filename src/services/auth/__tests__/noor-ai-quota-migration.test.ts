@@ -409,3 +409,82 @@ describe('NoorAI quota migration — configuration fails closed', () => {
     }
   });
 });
+
+/**
+ * Role restoration inside the privilege-borrowing blocks.
+ *
+ * The migration briefly becomes `noor_ai_owner` to grant itself CREATE on the private schema, then
+ * has to hand execution back. `RESET ROLE` is the obvious way to do that and is wrong here: it
+ * restores the connection's *reset* identity, which is not necessarily the identity the block
+ * captured. When a migration session arrives with `current_user` already switched away from
+ * `session_user`, the block grants CREATE to one principal and returns execution to another, and the
+ * next `create type` fails with 42501 one statement after the grant meant to enable it.
+ *
+ * These assertions pin the correction: capture the caller, restore that exact caller by safely quoted
+ * name, assert the restoration landed, and do all of it before anything is created.
+ */
+describe('NoorAI quota migration — role restoration', () => {
+  it('contains no executable RESET ROLE', () => {
+    // Comments may discuss it; no statement may perform it.
+    expect(body).not.toMatch(/execute\s+'reset role'/);
+    expect(body).not.toMatch(/^\s*reset\s+role\s*;/m);
+  });
+
+  it('captures the executing identity rather than hard-coding one', () => {
+    expect(body).toMatch(/v_migrator\s+text\s*:=\s*current_user/);
+    // No literal identity may appear in a role switch.
+    expect(body).not.toMatch(/set\s+(local\s+)?role\s+postgres/);
+    expect(body).not.toMatch(/set\s+(local\s+)?role\s+session_user/);
+  });
+
+  it('switches to the owner role and restores the captured identity, safely quoted', () => {
+    expect(body).toMatch(/execute\s+'set local role noor_ai_owner'/);
+    const restores = body.match(/execute pg_catalog\.format\('set local role %i', v_migrator\)/g);
+    // One per borrowing block: §2 borrows the privilege, §15 hands it back.
+    expect(restores).toHaveLength(2);
+  });
+
+  it('grants the temporary CREATE to the captured identity and to nobody else', () => {
+    expect(body).toMatch(
+      /execute pg_catalog\.format\('grant create, usage on schema noor_ai to %i', v_migrator\)/,
+    );
+    // The rejected alternative: granting to whoever opened the connection.
+    expect(body).not.toMatch(/grant[^;]*on schema noor_ai to session_user/);
+  });
+
+  it('asserts fail-closed that restoration landed on the captured identity', () => {
+    const assertions = body.match(/if current_user <> v_migrator then/g);
+    expect(assertions).toHaveLength(2);
+    // Raised, not warned, and carrying no identity, host or connection detail.
+    expect(body).toMatch(/raise exception[\s\S]{0,200}?errcode = '42501'/);
+    const message = /message = '([^']*)'/.exec(body)?.[1] ?? '';
+    expect(message).not.toMatch(/postgres|session_user|current_user|@|:\/\//);
+  });
+
+  it('restores and asserts before creating the first quota object', () => {
+    const restoreAt = body.indexOf("format('set local role %i', v_migrator)");
+    const assertAt = body.indexOf('if current_user <> v_migrator then');
+    const firstCreate = Math.min(
+      ...['create type noor_ai.', 'create table if not exists noor_ai.']
+        .map((needle) => body.indexOf(needle))
+        .filter((at) => at > -1),
+    );
+    expect(restoreAt).toBeGreaterThan(-1);
+    expect(assertAt).toBeGreaterThan(restoreAt);
+    expect(firstCreate).toBeGreaterThan(assertAt);
+  });
+
+  it('hands the borrowed CREATE back, so the migrator keeps nothing', () => {
+    expect(body).toMatch(
+      /execute pg_catalog\.format\('revoke create on schema noor_ai from %i', v_migrator\)/,
+    );
+    // And the hand-back block is the last thing in the file, so the CLI's appended history insert
+    // runs as the captured migration identity.
+    const handBack = body.lastIndexOf('revoke create on schema noor_ai from %i');
+    const lastCreate = Math.max(
+      body.lastIndexOf('create table if not exists noor_ai.'),
+      body.lastIndexOf('create or replace function public.noor_ai_'),
+    );
+    expect(handBack).toBeGreaterThan(lastCreate);
+  });
+});

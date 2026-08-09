@@ -68,7 +68,41 @@ alter role noor_ai_runtime set search_path = '';
 -- `noor_ai` is owned by `noor_ai_owner`, so the migration role cannot create in it. The trust-boundary
 -- migration records why a file-scope `SET ROLE ... RESET ROLE` is unsafe: the CLI appends its own
 -- INSERT into supabase_migrations to the same session and it would run under whatever role the file
--- left behind. The switch is therefore confined to this block and reset inside it.
+-- left behind. The switch is therefore confined to this block and undone inside it.
+--
+-- ── Why the block ends with SET LOCAL ROLE and not RESET ROLE ───────────────
+-- `RESET ROLE` restores the connection's *reset* identity — what the session started as, or whatever
+-- `role` was configured to default to. That is not necessarily the identity this block captured.
+--
+-- Those two can differ, and measurably do. A migration session may arrive with `current_user` already
+-- switched away from `session_user`; the block then grants CREATE to `current_user` (the identity that
+-- is actually executing the file) while `RESET ROLE` hands execution back to `session_user` (the
+-- identity that merely opened the connection). The very next statement — `create type noor_ai.metric`
+-- — then runs without CREATE on this schema and fails with SQLSTATE 42501, one statement after the
+-- grant that was supposed to enable it. The grant and the restore were aiming at different principals.
+--
+-- So the block returns execution to **the exact identity that received the temporary CREATE**, by name
+-- and safely quoted. No identity is hard-coded: `v_migrator` is whatever `current_user` was on entry,
+-- so this is correct for any migration identity, on any connection topology, and it does not assume
+-- the session is `postgres`.
+--
+-- ── What this does not leave behind ────────────────────────────────────────
+-- `SET LOCAL ROLE` lasts only for the current transaction. When the migration transaction completes,
+-- the role state disappears with it, and so does the temporary CREATE grant — §12 below revokes it
+-- explicitly rather than relying on that. The CLI's appended migration-history INSERT therefore runs
+-- as the captured migration identity: not as `noor_ai_owner`, and not as the connection's session
+-- identity.
+--
+-- This is deliberately *not* the design the trust-boundary migration rejected. That one left the
+-- session sitting as the owner role, so the appended INSERT would have run with owner rights. This one
+-- restores the caller before returning.
+--
+-- ── The alternative that was rejected ──────────────────────────────────────
+-- Granting CREATE to `session_user` instead would also make the following statements work, and it is
+-- the wrong fix on three counts: it grants to an identity that is not the effective migration identity;
+-- it is broader than necessary, because nothing needs that principal to hold schema privileges; and it
+-- would mean the CLI's temporary login identity acquires rights on this schema for no better reason
+-- than that it opened the connection. Privileges follow the executing identity here, not the connector.
 do $$
 declare
   v_migrator text := current_user;
@@ -81,7 +115,18 @@ begin
   -- The superseded runtime role loses its last reachability into this schema. Issued here because
   -- only the owner can revoke it.
   execute 'revoke all on schema noor_ai from noor_ai_runtime';
-  execute 'reset role';
+  -- Restore the captured caller — see the note above on why this is not `reset role`.
+  execute pg_catalog.format('set local role %I', v_migrator);
+  -- Fail closed if the restore did not land on the identity holding the temporary CREATE. Everything
+  -- after this block creates objects in `noor_ai`, so continuing under the wrong identity would either
+  -- fail confusingly several statements later or, worse, create them under an unintended owner. The
+  -- message carries no identity, OID, host or connection detail — only that the invariant broke.
+  if current_user <> v_migrator then
+    raise exception
+      using errcode = '42501',
+            message = 'noor_ai migration: role restoration did not return to the migration identity',
+            hint    = 'The privilege-borrowing block must return to the identity granted temporary CREATE.';
+  end if;
 end
 $$;
 
@@ -960,11 +1005,25 @@ revoke all on function public.noor_ai_status(uuid) from authenticated;
 grant execute on function public.noor_ai_status(uuid) to service_role;
 
 -- ── 15. Hand back the borrowed privilege ────────────────────────────────────
+-- Same restoration rule as §2, and for a sharper reason: this is the *last* statement in the file, so
+-- whatever identity it leaves behind is the identity the CLI's appended migration-history INSERT runs
+-- as. `RESET ROLE` would hand that to the connection's session identity rather than to the migration
+-- identity that has been executing the file. The restore is therefore explicit and safely quoted, and
+-- the same fail-closed assertion follows it.
+--
+-- `v_migrator` is re-captured here rather than carried from §2 because each `DO` block has its own
+-- scope; §2's assertion guarantees `current_user` is the same identity by the time this runs.
 do $$
 declare v_migrator text := current_user;
 begin
   execute 'set local role noor_ai_owner';
   execute pg_catalog.format('revoke create on schema noor_ai from %I', v_migrator);
-  execute 'reset role';
+  execute pg_catalog.format('set local role %I', v_migrator);
+  if current_user <> v_migrator then
+    raise exception
+      using errcode = '42501',
+            message = 'noor_ai migration: role restoration did not return to the migration identity',
+            hint    = 'The privilege-borrowing block must return to the identity granted temporary CREATE.';
+  end if;
 end
 $$;
