@@ -396,14 +396,32 @@ every user's identifier at once. Recorded plainly:
 - Source scans: no unkeyed user digest, no email or phone input, no committed key-shaped literal, no
   `extractable: true`, no key export, no mobile reference, no identifier logging, no persistence.
 
-### 10.2 Still owed, and separately gated
+### 10.2 Performed hosted — 2026-08-09
 
-- Generating the real key.
-- Provisioning it as a Supabase Edge Function secret.
-- Deployment.
-- Hosted verification.
-- The single synthetic smoke test authorised by `NOOR_AI_DATA_CONTROL_DECISION.md` §2.1, which has
-  **not** been run.
+- **Key generated** — 32 CSPRNG bytes, non-zero, canonical unpadded base64url, round-trip verified,
+  entirely inside one dedicated process.
+- **Provisioned** as the Edge Function secret `NOOR_AI_SAFETY_HMAC_KEY_V1`, through an in-memory
+  Management API body. It never entered argv, an environment file, disk, a log, or the clipboard.
+  Reconciled by authoritative secret-name inventory: present exactly once, V2 absent.
+- **Exercised once**, in the single authorised synthetic request. A per-user identifier was derived
+  from the verified synthetic subject and accepted by the provider boundary under the active version.
+  The value was never printed, logged, returned, or stored.
+- **Deployment** — the function is deployed and **source-disabled**.
 
-**B10's safety-identifier construction is implemented and locally verified. It is not operationally
-deployed and it is not production-ready.**
+Note on mechanism: the key was provisioned through the Management API rather than
+`supabase secrets set NAME=value`, deliberately and in the stricter direction — the CLI form would
+place the value in process arguments, which §5 forbids.
+
+### 10.3 Still owed, and separately gated
+
+- **Rotation** — the v2 procedure in §7 has never been executed. It is a future operational exercise,
+  not an implementation gap.
+- **Emergency response** — §8 has never been exercised, and should not be exercised for practice
+  against a live key without its own plan.
+- **Account-deletion integration** — §9's erasure path is documented and was performed manually once
+  for the synthetic subject, but it is **not wired into the account-deletion flow**. That wiring is a
+  release/privacy gate tracked in `PRE_RELEASE_BACKLOG.md` §2.4.
+- **Platform log retention confirmation** (§H.4) remains open.
+
+**B10's safety-identifier construction is implemented, provisioned, and proven once in hosted use.
+The function remains disabled, and NoorLife is not production-ready.**

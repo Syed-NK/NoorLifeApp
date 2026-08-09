@@ -1,10 +1,26 @@
 # Noor AI — AI-3 implementation plan
 
+> ## Current status — 2026-08-09
+>
+> **AI-3 development integration is complete.** See **§17** for the closure audit and the full gate
+> matrix, and `NOOR_AI_BACKEND_CONTRACT.md` **§K.2** for the criterion-by-criterion record.
+>
+> Hosted provider connectivity and accounting were verified **once**, with synthetic data. The
+> function is deployed and **source-disabled**. **Real-user and public traffic remain prohibited.**
+> Public-beta and production gates remain **open** — ZDR, measured timeouts and production ceilings,
+> the privacy policy, the Play and Apple filings, and account-deletion integration. **NoorLife is not
+> production-ready.**
+>
+> **Everything below this banner is a dated record, kept as written.** Several sections close with
+> "AI-3 is not complete"; each was accurate when written and is superseded by §17, which explains why
+> that wording conflated AI-3 criteria with release gates assigned elsewhere. Historical evidence is
+> preserved rather than rewritten.
+
 **Date:** 2026-08-06
 **Branch:** `feature/subscriptions-family-six`, written against `2fd8e73`
 **Implements the planning half of:** `NOOR_AI_BACKEND_CONTRACT.md` §K's AI-3 row
-**Status:** **Planning and critical review only. AI-3 is not complete and is not started as an
-implementation.**
+**Status at the time of writing (superseded — see the banner above):** **Planning and critical review
+only. AI-3 is not complete and is not started as an implementation.**
 
 No API key was requested, created or referenced by value. No Supabase secret was set. No provider
 connectivity was written. Nothing was deployed. No OpenAI API call was made. Real-user traffic
@@ -1779,7 +1795,7 @@ proposes how to close them.
 | AI-3 gate                                                | State after this document                                                        |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | §F.10 data-control decision recorded                     | **Satisfied earlier** by `NOOR_AI_DATA_CONTROL_DECISION.md` — development-only    |
-| Provider key provisioned via `supabase secrets set`      | **Not done. No key exists anywhere.** Sequence written (§7.2), not executed        |
+| Provider key provisioned via `supabase secrets set`      | **Not done at the time of this document. No key existed anywhere then.** Sequence written (§7.2), not executed. *(Superseded — see §17 and contract §K.2: the key is now provisioned outside the repository)* |
 | Model selected and pinned, with rationale (§F.2)          | **Recommended (R1), still not approved.** *Updated 2026-08-09:* the slug is now **pinned in code** — a module constant in `openai-provider.ts`, held to exactly one file by an exact-equality source scan — and re-verified against the live model and pricing pages on that date. Pinned is not approved: R1 and R2 remain reviewer decisions, and the deviation from §3.7 item 1 (a constant rather than an environment read) is recorded in the contract's §F.2 amendment |
 | Timeouts from measured latency (§F.7)                     | **Proposed and explicitly provisional.** No latency has been measured              |
 | Token and spend limits pinned (§I.2, §I.3)                | **Proposed (§4).** Not pinned; two of three global controls are not implemented (§9.3) |
@@ -2527,3 +2543,85 @@ spend recorded in integer micro-USD.
 
 **Live public and user traffic remains prohibited. AI-3 is not complete, and NoorLife is not
 production-ready.**
+
+> **Status superseded by §17.** That assessment was written before the closure audit, which found the
+> remaining reasons were public-beta and release gates rather than AI-3 criteria. AI-3 development
+> integration is complete; the traffic prohibition and the production-readiness statement stand.
+---
+
+## 17. AI-3 closure audit — 2026-08-09
+
+A documentation-only audit against `NOOR_AI_BACKEND_CONTRACT.md` §J and §K. No deployment, provider
+request, user creation, secret retrieval, or configuration change was made in producing it.
+
+**Outcome: AI-3 development integration is complete. No genuine `AI3_BLOCKER` remains.** The function
+is deployed and disabled, and real-user and public traffic remain prohibited.
+
+### 17.1 Why the previous "AI-3 incomplete" wording was wrong
+
+Earlier sections closed with "AI-3 is not complete" while the reasons listed were, with one exception,
+gates the contract assigns to **public beta or release** — ZDR, privacy-policy text, Play and Apple
+filings, account-deletion wiring, production ceilings. Holding a development-integration milestone open
+because release gates exist elsewhere conflates two different questions. §K assigns AI-3 exactly five
+criteria; they are itemised in the contract's new §K.2 and they are met.
+
+The one exception was §J.13b, which was genuinely open when that wording was written and has since been
+satisfied — before any provider request, as this plan's §8 required.
+
+### 17.2 Gate matrix
+
+Every open statement across the AI documents, classified exactly once.
+
+| Statement | Class | Basis |
+| --- | --- | --- |
+| §F.10 data-control decision recorded before any key or call | `COMPLETED` | Recorded 2026-08-06 |
+| Provider key kept out of repository, bundle and logs | `COMPLETED` | Owner-provisioned; never retrieved; scans clean |
+| Model selected, pinned, re-verified before traffic | `COMPLETED` | `gpt-5.6-terra`, one constant, exact-equality scan |
+| Rate-limit store chosen, deployed, ACLs verified | `COMPLETED` | 7/0 migrations; full privilege matrix checked |
+| §J row 13b — shared, not per-isolate | `COMPLETED` | 12 concurrent sessions, 1 admitted, 0 deadlocks, before any provider call |
+| §J row 18 — live smoke | `COMPLETED` | One request: 200, answer, complete, `sources: []`, 1 attempt, 1 reservation finalized |
+| B10 derivation, active-version enforcement, provisioning, one hosted use | `COMPLETED` | §16; adapter accepts only the active version |
+| Quota accounting: reservation, attempt registration, finalization, spend | `COMPLETED` | 1/1/1; 2155 micro-USD reconciles exactly to the committed price table |
+| Hosted gateway rejects unauthenticated and malformed credentials | `COMPLETED` | 401 at the gateway, handler never ran, no NoorLife request id |
+| Authenticated disabled path returns the safe 503 | `COMPLETED` | Verified before and after activation, zero quota movement |
+| Synthetic-user harness via service-role | `COMPLETED` | One-time hosted-verification device only — **not** a production runtime path; production users authenticate normally |
+| Every AI-2 §J row | `COMPLETED` | 322 Deno tests, 241 pgTAP assertions, 3033 Jest tests |
+| §J row 13b re-run against the hosted deployment | `FUTURE_OPERATIONAL_EXERCISE` | Would need a second provider request or a hosted ceiling change; neither authorised, neither required by §J |
+| B10 key rotation to v2 | `FUTURE_OPERATIONAL_EXERCISE` | §K does not require exercising rotation for AI-3 |
+| B10 emergency-response drill | `FUTURE_OPERATIONAL_EXERCISE` | Same |
+| Timeouts and ceilings set from **measured** latency | `PUBLIC_BETA_BLOCKER` | §F.7. One sample is not a measurement programme |
+| Production ceilings replacing DEV values | `PUBLIC_BETA_BLOCKER` | §I.2; plan §4.8 marks them future and unapproved |
+| ZDR applied for and outcome reviewed | `PUBLIC_BETA_BLOCKER` | Data-control decision §8.2. **Not active, not guaranteed, not assumed** |
+| Platform log retention confirmed (§H.4) | `PUBLIC_BETA_BLOCKER` | Never confirmed |
+| Privacy policy written and published | `PRODUCTION_RELEASE_BLOCKER` | `PRE_RELEASE_BACKLOG.md` §3.1 |
+| Play Data Safety declaration filed | `PRODUCTION_RELEASE_BLOCKER` | §3.3 |
+| Apple privacy labels filed | `PRODUCTION_RELEASE_BLOCKER` | §3.4 |
+| Account-deletion integration for quota rows | `PRODUCTION_RELEASE_BLOCKER` | §2.4; the erasure path is documented and was performed manually once, not wired |
+| Whole-app data inventory | `PRODUCTION_RELEASE_BLOCKER` | §3.3 |
+| Mobile adapter, §C.9 error normalisation, device states | `NOT_APPLICABLE` to AI-3 | §K assigns these to AI-4 |
+| Module data reads | `NOT_APPLICABLE` to AI-3 | §A.2 defers to AI-6 |
+| Conversation persistence | `NOT_APPLICABLE` to AI-3 | §H.5 defers to AI-8 |
+| Immediate session revocation (§J.2f) | `NOT_APPLICABLE` to AI-3 | §K states explicitly it is not an AI-3 gate |
+| "No key exists anywhere" | `SUPERSEDED` | True for AI-2; two keys are now provisioned outside the repository by design |
+| "The production graph fails closed because no key exists" | `SUPERSEDED` | It now fails closed on the source-controlled kill switch |
+| §12.6 open safety-identifier decision | `SUPERSEDED` | Decided, implemented and exercised |
+| B10 "no local/CI provisioning path" | `AI3_BLOCKER` → resolved | Hosted provisioning path proven; local/CI remains open but blocks neither AI-3 nor release |
+| A second synthetic request "for confidence" | `NOT_APPLICABLE` | §J row 18's volume note forbids it; the budget is spent |
+
+### 17.3 Evidence qualifications carried forward
+
+Three things are recorded as the kind of evidence that exists, not upgraded:
+
+- **`store: false`** is proven by type, by handler construction and by local assertion. The hosted
+  outbound body was not captured, because capturing it would mean logging a provider request.
+- **Row 13b** is behavioural against the same committed store, executed locally, not re-run hosted.
+- **Timeouts and ceilings** are proven sufficient for exactly one bounded request. Nothing about
+  production load follows from one sample.
+
+### 17.4 Status
+
+**AI-3 development integration complete.** Hosted provider connectivity and accounting verified once
+with synthetic data. The function remains **disabled**. Real-user and public traffic remain
+**prohibited**. Public-beta and production gates remain **open**, and are listed above.
+
+**NoorLife is not production-ready.**

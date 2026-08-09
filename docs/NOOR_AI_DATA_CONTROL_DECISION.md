@@ -361,15 +361,15 @@ AI-3 is **not** complete, and this document closes exactly one of its gates.
 | AI-3 gate                                            | State after this decision                                    |
 | ------------------------------------------------------ | -------------------------------------------------------------- |
 | §F.10's data-control decision recorded in writing    | **Satisfied by this document** — for development-only synthetic smoke testing |
-| Provider key provisioned via `supabase secrets set`  | **Not done.** No key exists anywhere                          |
-| Model selected and pinned, with rationale (§F.2)     | **Not done**                                                  |
-| Timeouts set from measured latency (§F.7); token and spend limits pinned (§I.2, §I.3) | **Not done**         |
-| Rate-limit store chosen (§12.7, §I.1)                | **Not done**                                                  |
-| Deployment                                           | **Not done, and prohibited at this phase**                    |
-| §J row 13b — shared rate limit                       | **Not run**                                                   |
-| §J row 18 — live smoke test                          | **Not run.** No provider call has been made                   |
-| §12.6 `safety_identifier` decision                   | **Decided and implemented locally, 2026-08-09 — see §11.** Key not generated, not provisioned, not deployed |
-| Platform log retention confirmed (§H.4)              | **Not done**                                                  |
+| Provider key provisioned outside the repository      | **Done, 2026-08-09.** Provisioned by the owner; never retrieved by this work |
+| Model selected and pinned, with rationale (§F.2)     | **Done** — `gpt-5.6-terra`, re-verified before traffic        |
+| Timeouts set from measured latency (§F.7); token and spend limits pinned (§I.2, §I.3) | **Partly.** Pinned as DEV constants and sufficient for the one bounded request; **not** set from measurement. Production values remain a public-beta gate |
+| Rate-limit store chosen (§12.7, §I.1)                | **Done** — the `noor_ai` quota store, deployed hosted         |
+| Deployment                                           | **Done, source-disabled.** The function is ACTIVE with `verify_jwt=true` and the kill switch literal `false` |
+| §J row 13b — shared rate limit                       | **Passed** — 12 concurrent sessions, exactly one admitted; run before any provider request |
+| §J row 18 — live smoke test                          | **Passed, 2026-08-09.** Exactly one synthetic request; the authorised budget in §2.1 is now **spent** |
+| §12.6 `safety_identifier` decision                   | **Decided, implemented, provisioned and exercised once** — see §11 and §16 of the plan |
+| Platform log retention confirmed (§H.4)              | **Not done** — still open                                     |
 
 No API key was added, no provider connectivity was created, nothing was deployed, and no OpenAI API
 call was made in producing this record. Real-user traffic remains prohibited.

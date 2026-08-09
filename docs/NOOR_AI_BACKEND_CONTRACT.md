@@ -642,7 +642,7 @@ them the same way.
 | Token | Gateway (`verify_jwt = true`) | Handler (§D.4 row 3) | Net result |
 | --- | --- | --- | --- |
 | Signed by the **current ES256 key** | Validated | **Verified** against the ES256 public key in the platform-injected `SUPABASE_JWKS` key set | Handled normally. This is the steady state and every new token is one of these |
-| Signed by the **previous HS256 key**, still unexpired | May be validated — `verify_jwt` is documented as validating "legacy HS256 JWTs" | **Refused.** Verifying HS256 needs the project's legacy JWT **secret**, and §K requires that "**no key exists anywhere**" in AI-2 | `401 unauthenticated` from the handler, after the gateway let it through |
+| Signed by the **previous HS256 key**, still unexpired | May be validated — `verify_jwt` is documented as validating "legacy HS256 JWTs" | **Refused.** Verifying HS256 needs the project's legacy JWT **secret**. The handler **is not provisioned with that secret and performs no legacy symmetric verification** — its verifier accepts only asymmetric algorithms against the platform-injected public key set. That is a property of this handler's key material and verification path, and it is unchanged by the unrelated `OPENAI_API_KEY` and `NOOR_AI_SAFETY_HMAC_KEY_V1` secrets, which are provisioned and are neither JWT keys nor reachable by the verifier | `401 unauthenticated` from the handler, after the gateway let it through |
 
 Five things about that second row, stated precisely because it is the kind of gap that gets
 described as either worse or better than it is:
@@ -1672,8 +1672,8 @@ check.
 | Phase | Deliverable                                             | Exit criteria                                                                                                                        |
 | ----- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | AI-1  | **This contract.** Architecture and documentation only  | Document reviewed. No function, key, dependency, migration, or UI change. **Complete on this commit.**                                |
-| AI-2  | Local Edge Function skeleton with an injected fake provider | `supabase/functions/noor-ai/` exists; `[functions.noor-ai]` declared in `config.toml` with **`verify_jwt = true` explicit**; the project's current JWT signing algorithm confirmed against the dashboard as one the gateway validates (§0.3); §D.3's boundary restated in the handler's own doc comment so it cannot be lost; every AI-2 row in §J passes, including 2c and 2d2; **no key exists anywhere**. **Status: met — see §K.1. Local gateway evidence only; deployment remains prohibited** |
-| AI-3  | Provider secret and the live Responses API connection   | §F.10's data-control decision recorded first — **done, `NOOR_AI_DATA_CONTROL_DECISION.md`, and it authorises a synthetic smoke test only**; key set via `supabase secrets set` only; model, timeouts, limits, and rate-limit store chosen and pinned; §J rows 13b/18 pass; no key in the repository, the bundle, or any log. **Every criterion other than the data-control decision is still open, and real-user traffic is prohibited.** **Does not** include revocation work — §J.2f is not an AI-3 gate |
+| AI-2  | Local Edge Function skeleton with an injected fake provider | `supabase/functions/noor-ai/` exists; `[functions.noor-ai]` declared in `config.toml` with **`verify_jwt = true` explicit**; the project's current JWT signing algorithm confirmed against the dashboard as one the gateway validates (§0.3); §D.3's boundary restated in the handler's own doc comment so it cannot be lost; every AI-2 row in §J passes, including 2c and 2d2; **at AI-2 completion no provider or HMAC key was provisioned in any environment**. **Status: met — see §K.1.** AI-2 was **local-only**: its gateway evidence was local and deployment was prohibited *for that phase*. Those two statements are historical, not current — **the present hosted state is governed by §K.2** |
+| AI-3  | Provider secret and the live Responses API connection   | §F.10's data-control decision recorded first — **done**; provider key provisioned outside the repository; model, timeouts, limits, and rate-limit store chosen and pinned; §J rows 13b/18 pass; no key in the repository, the bundle, or any log. **Status: development integration met — see §K.2.** The function is deployed and **source-disabled**, and **real-user and public traffic remain prohibited**. **Does not** include revocation work — §J.2f is not an AI-3 gate |
 | AI-4  | Mobile adapter and its states                           | An `AIOrchestrator` implementation posting to the endpoint with the session token on `Authorization` and the publishable key on `apikey` **only**; **both** error categories of §C.9 normalised — gateway platform errors and handler errors — into design-spec states 20/21/22/26, with no raw platform or provider text rendered and no fabricated `request_id`; §I.5's closed error set mapped; §12.1's and §12.11's shape gaps resolved; loading, unavailable, and error states verified on the emulator **and** the physical device |
 | AI-5  | Noor AI text conversation UI                            | `/ai/chat/:conversationId` and `/ai/feedback` exist per workflow §6; scope shown near the composer per §06; single-turn until AI-8; only capabilities AI-1 can actually serve are enabled |
 | AI-6  | Permission-gated module reads                           | Module tables reviewed and approved with RLS (`PRE_RELEASE_BACKLOG.md` §4.1); a **server-side** grant store; `AI_GRANT_EDITING_AVAILABLE` flipped with the controls it requires; `accessed_modules` populated truthfully and displayed |
@@ -1692,16 +1692,30 @@ architectural consequences, and neither may be introduced as an incidental part 
 
 ### K.1 AI-2 exit criteria — status at completion
 
+> **This section is an immutable historical snapshot of AI-2 at its completion date. Do not read it as
+> a description of the project today.**
+>
+> Its statements that **"no key exists anywhere"** and that **deployment is prohibited** were true of
+> that phase, at that date, and are **superseded as current operational facts by §K.2**. Today the
+> `OPENAI_API_KEY` and `NOOR_AI_SAFETY_HMAC_KEY_V1` secrets are provisioned outside the repository, no
+> secret **value** exists in Git, and the function is **deployed and source-disabled**.
+>
+> **The underlying AI-2 evidence below remains valid** — the gateway rows, the test counts, and the
+> source scans all still hold for what they measured. Only the "no key" and "not deployed" framing has
+> moved on, and it is preserved rather than rewritten so the record of what was true when stays intact.
+
 **AI-2's exit criteria are met.** They are itemised below rather than summarised, because the last
 one to close — §J.2b — was reported unmeetable in the previous revision of this section, and a
 criterion that changes from "blocked" to "met" has to show what changed. What changed is the signing
 arrangement, not the rule: §B.2 still holds, and no key material entered this repository.
 
-Two boundaries hold at the same time as this completion, and neither is a formality. The gateway
-evidence is **local**, at the CLI and runtime versions named below, and is not proof of the hosted
-project's behaviour. **Production deployment remains prohibited at this phase** — AI-2 is a local
-skeleton, there is no provider key, and the production graph answers `503 service_unavailable` by
-construction. Completing AI-2 unblocks AI-3's *entry*, and nothing else.
+Two boundaries held at the same time as this completion, and neither was a formality. The gateway
+evidence is **local**, at the CLI and runtime versions named below, and was not proof of the hosted
+project's behaviour. **Production deployment was prohibited at that phase** — AI-2 was a local
+skeleton, there was no provider key, and the production graph answered `503 service_unavailable` by
+construction. Completing AI-2 unblocked AI-3's *entry*, and nothing else. *(Current state: §K.2. The
+function is now deployed and source-disabled, and it still answers `503` — by the source-controlled
+kill switch rather than by the absence of a key.)*
 
 | Exit criterion | Status | Evidence |
 | --- | --- | --- |
@@ -1710,7 +1724,7 @@ construction. Completing AI-2 unblocks AI-3's *entry*, and nothing else.
 | The project's current JWT signing algorithm confirmed against the dashboard | **Met — ECC P-256 / ES256** | §0.4. Confirmed as CURRENT; `ES256` is on the handler verifier's allow-list and is verified against real cryptography in `jwt-verifier_test.ts`. The transitional previous-HS256 case is documented in §D.6 and is a known limitation, not an open question |
 | §D.3's boundary restated in the handler's doc comment | **Met** | `handler.ts`, asserted by `source-scan_test.ts` |
 | Every AI-2 row in §J passes, including 2c and 2d2 | **Met** | All four gateway rows now execute against a real local Edge gateway — see the table below. Every other AI-2 row passes in the pure tier: 156 tests, 0 failed, **0 ignored** |
-| **No key exists anywhere** | **Met** | `source-scan_test.ts`; no provider key, no service-role key, no legacy JWT secret, and no committed private key or token in any test. §J.2b's signing secret belonged to a stack created and destroyed inside a single test run, existed only in process memory, and `gateway-integration_test.ts` asserts mechanically that it can never become a literal |
+| **No key exists anywhere** *(as at AI-2 completion — see the banner; superseded by §K.2)* | **Met at that date** | `source-scan_test.ts`; no provider key, no service-role key, no legacy JWT secret, and no committed private key or token in any test. §J.2b's signing secret belonged to a stack created and destroyed inside a single test run, existed only in process memory, and `gateway-integration_test.ts` asserts mechanically that it can never become a literal. **The enduring half of this criterion still holds today: no secret value exists in this repository.** What has changed is only that secrets are now provisioned *outside* it |
 
 #### The gateway rows
 
@@ -1850,9 +1864,11 @@ Three consequences follow, and none of them is softened by the rows now being gr
 - **This is evidence for the tested CLI and runtime versions, not proof of hosted production
   behaviour.** A hosted gateway at a different version may answer differently, and the documented
   numeric `code` versus the observed string one shows that is not hypothetical.
-- **Production deployment remains prohibited at this phase.** AI-2 ships nothing. No key exists, the
-  production graph fails closed with `503`, and no `functions deploy`, `secrets set`, `link` or
-  `db push` has been run.
+- **Production deployment was prohibited at that phase.** AI-2 shipped nothing. No key existed, the
+  production graph failed closed with `503`, and no `functions deploy`, `secrets set`, `link` or
+  `db push` had been run. *(Historical, as at AI-2 completion. All four of those operations have since
+  been performed under AI-3 authorisation — see §K.2. The function is deployed and source-disabled,
+  and real-user traffic remains prohibited.)*
 - **AI-3 is now unblocked for entry only**, and remains gated on its own criteria — §F.10's
   data-control decision recorded first, then a key set via `supabase secrets set`. Nothing in AI-2
   authorises that, and none of §J's AI-3 rows (13b, 18) has been run.
@@ -1861,6 +1877,57 @@ Three consequences follow, and none of them is softened by the rows now being gr
 `NOOR_AI_GATEWAY_URL` is unset — and §J.2b is additionally ignored when the disposable stack's signing
 secret is absent, which is every machine not actively running the harness. A row that cannot be run
 honestly is never counted as run.
+
+---
+
+### K.2 AI-3 exit criteria — status at completion
+
+**AI-3's development-integration criteria are met.** They are itemised rather than summarised, for the
+same reason §K.1 is: several were reported open in earlier revisions, and a criterion that moves to
+"met" has to show what changed and what did not.
+
+| §K AI-3 criterion | Status | Evidence |
+| --- | --- | --- |
+| §F.10 data-control decision recorded **first** | **Met** | `NOOR_AI_DATA_CONTROL_DECISION.md`, recorded 2026-08-06, before any key or call |
+| Provider key kept out of the repository | **Met** | Owner provisioned `OPENAI_API_KEY` directly into the project. It was **never retrieved** by this work at any point; source scans find no key-shaped literal anywhere |
+| Model chosen and pinned | **Met** | `gpt-5.6-terra`, one constant, exact-equality source scan, re-verified against `developers.openai.com` immediately before traffic |
+| Rate-limit store chosen and pinned | **Met** | The `noor_ai` quota store, deployed hosted, 7/0 migrations, ACL matrix verified |
+| Timeouts and limits chosen and pinned | **Met for development integration only** | Pinned as source constants and seeded DEV ceilings. They are **not** production values — see the qualification below |
+| §J row 13b — shared rate limit | **Met** | Concurrency harness, 12 genuinely separate sessions against the shared store with `global_minute = 1`: exactly 1 admitted, 11 limited, 0 errors, 0 deadlocks; plus the identical-replay and expired-lease-race cases. Run **before** any provider request, as the plan required |
+| §J row 18 — live smoke | **Met** | One synthetic handler request, hosted: `200`, `outcome: answer`, `finish: complete`, `sources: []`, one provider attempt, one reservation finalized, 555/64/0 tokens, 2155 micro-USD reconciling exactly to the committed price table |
+| No key in the repository, the bundle, or any log | **Met** | Counts-only scans across every commit; the mobile guard asserts the app names no key, host, endpoint or SDK |
+
+#### K.2.1 What "met" does not mean
+
+Four qualifications, each load-bearing:
+
+- **The deployed function is source-disabled.** `productionConfig.enabled` is the literal `false`, the
+  hosted deployment was made from the disabled commit, and an authenticated request returns §I.5's
+  stable `503`. Development connectivity is proven; it is not switched on.
+- **Timeouts, token bounds and spend ceilings are proven sufficient for one bounded request and
+  nothing more.** §F.7 asks for values set against *measured* latency; one sample is not a measurement
+  programme. Production values remain open and are a public-beta gate, not an AI-3 defect.
+- **`store: false` is proven structurally, not observed on the wire.** The field is typed as the
+  literal `false`, the handler sets it on every request, and tests assert it on the constructed body —
+  but the outbound body of the hosted request was not captured, because doing so would mean logging a
+  provider request. This is recorded as evidence of the kind available, not upgraded to observation.
+- **Row 13b's evidence is behavioural against the same committed store, executed locally.** It was not
+  re-run against the hosted deployment, which would require either a second provider request or a
+  hosted ceiling change; neither is authorised. Re-running it hosted is an operational exercise, not a
+  missing implementation test.
+
+#### K.2.2 What AI-3 completion is not
+
+**"AI-3 development integration complete" is not "approved for real-user traffic."** They are different
+statements and this document keeps them apart deliberately. Public beta and production remain gated on
+work this phase does not touch: ZDR applied for and its outcome reviewed (approval must not be
+assumed), the privacy policy written and published, the Play Data Safety declaration and Apple privacy
+labels filed, account-deletion integration for the quota store, and production ceilings set from
+measurement. Those are release gates the contract assigns elsewhere — they are not AI-3 implementation
+defects, and AI-3 is not held open because they exist.
+
+The synthetic budget authorised by `NOOR_AI_DATA_CONTROL_DECISION.md` §2.1 is now **spent**. Any
+further hosted provider request requires a fresh decision.
 
 ---
 
