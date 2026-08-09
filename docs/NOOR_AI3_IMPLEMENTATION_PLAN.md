@@ -1824,3 +1824,343 @@ verbatim: no API key was requested, created, stored, printed or referenced by va
 was set; no migration, table, RLS policy or SQL was written; no dependency was added; nothing was
 deployed; no OpenAI API call was made; and real-user traffic remains prohibited. The kill switch is
 still off, and **NoorLife is not production-ready.**
+
+---
+
+## 13. Hosted deployment attempt — 2026-08-09 — **BLOCKED, and the first diagnosis was wrong**
+
+An owner-authorized, bounded hosted run was attempted: deploy the database foundation, deploy the
+disabled function, provision the B10 HMAC secret, and perform **one** synthetic OpenAI smoke request.
+
+**It stopped at the first phase. Nothing was deployed, nothing was provisioned, and no provider
+request was made.** A follow-up diagnosis phase then **retracted the original explanation**. Both the
+failure and the retraction are recorded, because the retraction is the more useful record.
+
+### 13.1 What was verified before mutating anything
+
+| Preflight gate | Result |
+| --- | --- |
+| Branch / HEAD / parent / clean tree / live-remote equality / ahead 0 behind 0 | **Pass** |
+| Linked project identity, via Management API, reference not recorded | **Pass** |
+| Supabase CLI resolved (2.113.0, via `npx`, not a repository dependency) | **Pass** |
+| `OPENAI_API_KEY` exists — by secret-name inventory only, value never retrieved | **Present** |
+| `NOOR_AI_SAFETY_HMAC_KEY_V1` / `_V2` exist | **Absent**, as expected |
+| Any temporary smoke-test function or temporary authorization secret | **None** |
+| `noor-ai` deployed hosted | **Not deployed** |
+| Kill switch is a literal source constant, not an environment toggle | **Pass** |
+| `verify_jwt = true` for the function | **Pass** |
+| §F.2 model re-verified against `developers.openai.com` before any traffic | **Pass** — `gpt-5.6-terra`, Responses supported, structured outputs supported, 128,000 max output tokens, $2/M input and $12/M output, matching the committed constants |
+
+### 13.2 The observed failure
+
+`supabase db push` failed, repeatably and identically, with the database left unmodified:
+
+```
+permission denied for schema noor_ai (SQLSTATE 42501)
+At statement: 3
+```
+
+Migration history was read authoritatively before and after every attempt and never changed: 6
+applied, 1 pending. `db push --dry-run` succeeds, so connectivity, authentication and history
+comparison all work.
+
+### 13.3 RETRACTED — the original explanation was wrong
+
+The first report concluded that the hosted **migration role is not superuser and therefore cannot
+`SET ROLE` to the schema owner**, and that the migration's privilege-borrowing block encodes an
+assumption that only holds locally.
+
+**Every part of that causal chain has since been disproved by direct measurement.** It was a
+plausible story fitted to one error string, not a tested hypothesis, and it should not have been
+recorded as a finding.
+
+### 13.4 What the measurements actually show
+
+All probes ran read-only or inside transactions ending in explicit `ROLLBACK`. Hosted state was
+re-verified unchanged afterwards.
+
+All predicates below were evaluated through the Management API read-write query endpoint, whose
+session reports `current_user = session_user = postgres`. **That is hosted `postgres`; it is not proof
+that `supabase db push` connects with the same effective identity or by the same route.** Nothing here
+should be read as measuring "the CLI's migration identity" — see §13.5.
+
+| Predicate, evaluated as hosted `postgres` via the query endpoint | Result |
+| --- | --- |
+| `current_user = session_user` | **True** (both `postgres`) |
+| `rolsuper` | **False** |
+| `rolcreaterole` / `rolinherit` / `rolbypassrls` | True / True / True |
+| `pg_has_role(current_user,'noor_ai_owner','MEMBER')` | **True** |
+| `pg_has_role(current_user,'noor_ai_owner','USAGE')` | **False** (membership is `NOINHERIT`) |
+| `pg_has_role(current_user,'noor_ai_owner','SET')` | **True** |
+| ADMIN OPTION on `noor_ai_owner` | **True** |
+| Schema `noor_ai` exists, owned by `noor_ai_owner` | **True / True** |
+| Migrator CREATE / USAGE on `noor_ai` before the migration | **False / True** |
+| Memberships into `noor_ai_owner` | `postgres` only, two grants: (inherit=false, set=false, admin=true) and (inherit=false, set=true, admin=false) |
+
+Operation-level results, each in its own rolled-back transaction:
+
+| Operation | Result |
+| --- | --- |
+| `SET LOCAL ROLE noor_ai_owner` (top level) | **Succeeds**; `current_user` becomes `noor_ai_owner`, `session_user` stays `postgres` |
+| `SET LOCAL ROLE` inside a `DO` block via `EXECUTE` | **Succeeds** |
+| `GRANT CREATE, USAGE ON SCHEMA noor_ai` to the migrator, as owner | **Succeeds** |
+| The same grant via `pg_catalog.format('… %I', v_migrator)` | **Succeeds** |
+| `GRANT USAGE ON SCHEMA noor_ai TO service_role`, as owner | **Succeeds** |
+| `REVOKE ALL ON SCHEMA noor_ai FROM noor_ai_runtime`, as owner | **Succeeds** |
+| `RESET ROLE` | **Succeeds**; identity returns to `postgres` |
+| **The entire migration file, wrapped in `BEGIN … ROLLBACK`** | **Applies with no error** — 6 `noor_ai` tables, 5 `public` wrappers, `service_role` USAGE true, and migrator CREATE on the schema **false** at the end, i.e. the temporary privilege is correctly surrendered |
+
+So the migration SQL is valid against the real hosted database **when executed by hosted `postgres`**,
+and it leaves exactly the intended ACLs. Hosted `postgres` has every authority the migration needs.
+Whether the CLI push path executes as that same identity, by the same route, is **not** established by
+any of this.
+
+**Two intermediate readings during diagnosis were themselves test artifacts, and are also
+retracted.** A first pass appeared to show `SET LOCAL ROLE` failing with 42501. It had not. The role
+switch had succeeded, and the *next* statement — an `INSERT` into a `postgres`-owned temporary table,
+now executing as `noor_ai_owner` — was what was denied; a catch-all handler then attributed the
+failure to the wrong operation. A diagnostic harness that logs through objects owned by the
+pre-switch identity cannot observe a role switch correctly.
+
+### 13.5 Corrected classification
+
+**`REPORT_MISATTRIBUTED_STATEMENT`.**
+
+Three statements, kept deliberately separate because collapsing them is what produced the first wrong
+diagnosis:
+
+1. **The migration SQL succeeds under hosted `postgres`.** Proven, by applying the whole file inside
+   `BEGIN … ROLLBACK` through the Management API query endpoint.
+2. **The actual CLI push identity and connection route remain unproven.** The query endpoint reporting
+   `postgres` says what *that* endpoint uses; it is not evidence about what `supabase db push` uses.
+   Sampling `pg_stat_activity` during `db push --dry-run` captured only platform background
+   connections, so the CLI's own short-lived connection was never observed.
+3. **The earlier non-superuser / `SET ROLE` diagnosis is retracted.** Hosted `postgres` holds `MEMBER`,
+   `SET` and `ADMIN OPTION` on `noor_ai_owner`, and `SET LOCAL ROLE noor_ai_owner` succeeds.
+
+**The remaining unknown is therefore specific to the CLI execution path** — its effective database
+identity, its connection route, or its statement/transaction handling — and **not** the migration SQL,
+the schema ownership model, or a missing role membership. That mechanism is not guessed at here.
+
+> **Resolved in §13.10.** Instrumenting the real `db push` transaction showed the CLI arrives with
+> `current_user = postgres` but `session_user ≠ postgres`, and that the reported statement ordinal is
+> 0-based. The first guess in this section — "connection route" — was the wrong half; it is the
+> **effective identity**, specifically the one `RESET ROLE` restores.
+
+### 13.6 Consequences for the design
+
+- **No repository correction is justified by the current evidence**, so none was made. Changing the
+  migration to fix a fault it does not have would have been a second wrong move after the first
+  wrong diagnosis.
+- **No owner bootstrap is justified yet.** The condition for one — "the migration identity lacks every
+  authority needed to establish a safe transactional path" — is false *for hosted `postgres`*, which
+  holds `MEMBER` + `SET` + `ADMIN OPTION` on `noor_ai_owner` and can complete the whole migration.
+  Whether it is also false for whatever identity the CLI actually uses is unknown, so a bootstrap is
+  neither performed nor ruled out.
+- **No privilege was granted, and none persists.** Every diagnostic transaction ended in `ROLLBACK`,
+  and migration history was confirmed unchanged at 6 applied / 1 pending afterwards.
+- The trust boundary is untouched: `noor_ai` is still owned by `noor_ai_owner`, the migrator holds no
+  CREATE on it, and no platform role gained persistent membership.
+
+### 13.7 State after the attempt and the diagnosis
+
+| | |
+| --- | --- |
+| Hosted migrations applied / pending | 6 / 1 — unchanged throughout |
+| Quota-store migration applied | **No** |
+| `noor-ai` deployed hosted | **No** |
+| `NOOR_AI_SAFETY_HMAC_KEY_V1` provisioned | **No — not generated, not provisioned** |
+| `OPENAI_API_KEY` | Present, provisioned by the owner, **never retrieved or used** |
+| OpenAI requests made | **Zero** |
+| Synthetic Auth user created | **No** |
+| Temporary functions, secrets, roles or grants created | **None** |
+| Kill switch | Literal `false`, unchanged |
+
+### 13.8 Controlled hosted retry — 2026-08-09 — **one attempt, failed identically**
+
+A single, ordinary `supabase db push` was authorized and run against the linked project. **Exactly one
+attempt. No `--debug`, no automatic retry, no second mutation, no history repair.** Both streams were
+captured separately into memory and never rendered.
+
+| | |
+| --- | --- |
+| Retries run | **1** |
+| Exit code | **1** |
+| SQLSTATE | **42501** |
+| Statement ordinal | **3** |
+| Error classification | `SCHEMA_ACL_DENIED_AT_BORROW_BLOCK_UNDER_CLI_PATH` |
+| Connection material in output | **None** — checked, and no raw output was rendered |
+
+The failure is byte-identical to the first attempt, so it is deterministic rather than transient.
+
+**Correction, established in §13.10:** the reported ordinal is **0-based**, so "statement 3" is the
+*fourth* statement — the enumerated-domains `DO` block that issues `create type noor_ai.metric` — and
+**not** the privilege-borrowing block, which is statement 2. Earlier notes that named the borrow block
+here were counting from one.
+
+**Everything rolled back.** Reconciled authoritatively afterwards by read-only catalog predicates:
+
+| Predicate | Value |
+| --- | --- |
+| Migration history applied / pending | **6 / 1** — unchanged |
+| History rows for `20260808180000` | **0** |
+| `noor_ai` relations / enums / private routines / sequences | **0 / 0 / 0 / 0** |
+| `public` `noor_ai_*` wrappers | **0** |
+| `service_role` USAGE on `noor_ai` | **False** — the block's grant did not persist |
+| `postgres` CREATE on `noor_ai` | **False** — the borrowed privilege did not persist |
+| `noor_ai_runtime` USAGE on `noor_ai` | **True** — the block's revoke did not persist |
+| `noor_ai_runtime` is NOLOGIN | **False** — statement 1 did not persist either |
+| Schema still owned by `noor_ai_owner` | **True** |
+| `anon` / `authenticated` USAGE on `noor_ai` | **False / False** |
+
+The last four rows are the useful ones. Statements 1 and 2 execute *before* the failing statement and
+their effects are absent afterwards, which proves the CLI wraps the migration file in a **single
+transaction** that aborted wholesale. Nothing partial was left behind, and the pre-existing trust
+boundary is intact.
+
+**Unrelated hosted state is unchanged:** `noor-ai` still not deployed, `OPENAI_API_KEY` still present
+by name only and never retrieved, `NOOR_AI_SAFETY_HMAC_KEY_V1` still absent, zero provider requests.
+
+### 13.9 What this retry adds, and what it does not
+
+It **confirms determinism** and **confirms clean rollback**. It does **not** identify the mechanism.
+
+The evidence now stands as a clean contradiction with the two halves clearly separated:
+
+- the same migration file, executed by **hosted `postgres`** through the Management API query endpoint,
+  applies with no error;
+- the same file, executed through the **`supabase db push` client path**, is denied on schema
+  `noor_ai` at statement 3, deterministically.
+
+Since the SQL is constant across both, the difference lies in the execution path — its effective
+database identity, its connection route, or its session handling. **Which of those it is remains
+unproven at this point**, and this phase deliberately stopped rather than guessing a third time.
+
+**§13.10 answers it:** the effective identity. The CLI's `session_user` is not `postgres`, so the
+temporary grant and the statements that need it land on different principals.
+
+### 13.10 CLI-path instrumentation — 2026-08-09 — **the cause, finally measured**
+
+A debug dry-run (`db push --dry-run --debug`) was run first. It emitted no connection material at all,
+so all four fixed fields came back **unknown**: `debug_connection_route`,
+`debug_database_identity_is_postgres`, `debug_uses_temporary_login_role`, `debug_transport_tls`. It
+proved nothing, so the experiment below was needed.
+
+One diagnostic `DO` block was temporarily inserted as the **first** statement of the pending migration.
+It creates nothing, tests each operation under an independent handler, and **deliberately raises a
+fixed marker before any original statement can run**, so the whole transaction aborts. Exactly one
+ordinary `db push` was run with it, streams captured separately and not rendered. The file was
+restored byte-identically afterwards (blob and SHA-256 both re-verified against the committed baseline)
+and the working tree returned clean.
+
+#### The measured session, inside the real `db push` transaction
+
+| Fixed field | Value |
+| --- | --- |
+| `current_user = session_user` | **0 — they differ** |
+| `current_user = 'postgres'` | **1** |
+| `session_user = 'postgres'` | **0** |
+| superuser / createrole / inherit / bypassrls | 0 / 1 / 1 / 1 |
+| MEMBER of the owner role | **1** |
+| effective USAGE of the owner role | 0 (membership is `NOINHERIT`) |
+| SET capability for the owner role | **1** |
+| ADMIN OPTION on the owner role | **1** |
+| CREATE / USAGE on the private schema, before the block | 0 / 1 |
+
+**The CLI does not connect as `postgres`.** It connects as some other session role and arrives with the
+role already switched to `postgres`. Every previous probe — including the Management API query endpoint,
+where `current_user = session_user = postgres` — missed this, which is exactly why it could not
+reproduce the failure.
+
+#### Every borrow-block stage succeeds
+
+| Stage | Result |
+| --- | --- |
+| `set_role` (switch to the owner role) | **ok**, and `current_user` becomes the owner (`cu_owner=1`) |
+| `su_same` (session_user unchanged by the switch) | 0 — because the captured identity was `current_user`, not `session_user` |
+| `grant_mig` (owner grants CREATE/USAGE to the captured identity) | **ok** |
+| `grant_svc` (owner grants USAGE to the service role) | **ok** |
+| `revoke_rt` (owner revokes from the superseded runtime role) | **ok** |
+| `mid_create` (captured identity now holds CREATE) | **1 — yes** |
+| `reset_role` | **ok** |
+
+So no stage fails. The block does exactly what it was written to do.
+
+#### The deduction
+
+The diagnostic block was the file's first statement, and its deliberate exception was reported at
+**"At statement: 0"**. The ordinal is therefore **0-based**, which re-reads the real failure:
+
+| Ordinal | Statement |
+| --- | --- |
+| 0 | `alter role … nologin …` |
+| 1 | `alter role … set search_path …` |
+| 2 | the privilege-borrowing `DO` block |
+| **3** | **the enumerated-domains `DO` block — `create type noor_ai.metric …`** |
+
+"Permission denied for schema" is precisely what `CREATE TYPE` raises without CREATE on the schema, and
+statement 3 is that `CREATE TYPE`. Yet `grant_mig=ok` and `mid_create=1` prove `postgres` **does** hold
+CREATE inside this very transaction, granted one statement earlier.
+
+Both can only be true if **the identity executing statement 3 is not `postgres`**. The only thing
+between the grant and the failure is the block's terminal `RESET ROLE`, which restores `role` to its
+session reset value — reverting the effective identity to `session_user`, which is **not** `postgres`
+(measured: `su_pg=0`) and was never granted anything.
+
+**Classification: `CLI_RESET_ROLE_RESTORES_SESSION_USER_NOT_GRANT_TARGET`.**
+
+The block grants CREATE to `current_user` and then hands execution back to `session_user`. Those are
+the same principal locally and under the Management API, and different principals under the CLI — which
+is why this reproduces only through `db push`.
+
+**One link is deduced rather than directly measured:** the effective identity *after* `RESET ROLE` was
+not captured (the block recorded `reset_role=ok` but not the resulting `current_user`). The deduction
+is forced by the other measurements, but a single added probe would confirm it outright, and that
+probe belongs to whichever phase implements the fix.
+
+### 13.11 Smallest candidate fix — **NOT IMPLEMENTED, pending review**
+
+No SQL was changed in this phase. Recorded for review only:
+
+> In the privilege-borrowing block, replace the terminal `RESET ROLE` with an explicit restore of the
+> captured identity — `execute pg_catalog.format('set local role %I', v_migrator)` — so that the role
+> holding the temporary grant is also the role that executes the following statements.
+
+Why this is the smallest correction: it changes one statement, it grants nothing new, it keeps
+`noor_ai_owner` as the schema owner, it leaves the temporary CREATE still surrendered at the end of the
+transaction, and it makes the block's exit identity equal its grant target by construction rather than
+by coincidence of the connection method.
+
+**Two things review must settle before it is written:**
+
+1. The migration's own comment warns that the CLI appends its `supabase_migrations` insert to the same
+   session, and that the file must not leave a surprising role behind. `SET LOCAL ROLE` ends with the
+   transaction, and the restored role would be `postgres` — which is what already happens locally — but
+   this must be confirmed rather than assumed, since it is the exact hazard that comment names.
+2. Whether granting to `session_user` as well (or instead) is preferable to restoring the role. That is
+   a wider grant and probably the worse option, but it should be rejected explicitly rather than
+   silently.
+
+Until both are settled, the migration stays exactly as committed.
+
+### 13.12 Remaining AI-3 blockers
+
+1. **The `db push` failure mechanism is identified (§13.10) but the fix is not implemented.** The
+   privilege-borrowing block grants CREATE to `current_user` and then returns execution to
+   `session_user` via `RESET ROLE`; those are the same principal locally and different under the CLI.
+   The smallest candidate correction is written up in §13.11 with two open questions for review, and
+   the migration remains exactly as committed until they are settled. This is the blocker between here
+   and a deployed quota store.
+2. **No hosted quota store**, so §J's hosted rate-limit and accounting rows remain unrun.
+3. **B10's HMAC key** is neither generated nor provisioned.
+4. **The function is not deployed**, disabled or otherwise.
+5. **No synthetic smoke test has been run**; `NOOR_AI_DATA_CONTROL_DECISION.md` §2.1's single
+   authorized synthetic request remains unused.
+6. **No compliant path exists to create a synthetic authenticated caller.** The Supabase Management
+   API documents no auth-user endpoint across its 115 paths, so creating *and deleting* a temporary
+   user requires the service-role key through the Auth Admin API — a credential outside the approved
+   Management-API-session-token path, and the one §B.2 confines to the Edge Function environment.
+   This must be resolved before any authenticated hosted verification, and not by using a real user.
+7. Timeouts and ceilings still unpinned against measured latency; ZDR still not applied for.
+
+**AI-3 is not complete, and NoorLife is not production-ready.**
