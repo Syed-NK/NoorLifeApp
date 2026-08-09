@@ -2238,10 +2238,10 @@ for one separately approved hosted retry.
 **AI-3 is not complete, and NoorLife is not production-ready.**
 ---
 
-## 14. Hosted database foundation � 2026-08-09 � **DEPLOYED**
+## 14. Hosted database foundation — 2026-08-09 — **DEPLOYED**
 
 The corrected migration was pushed and applied to the linked project. **One ordinary `supabase db push`,
-no debug mode, no retry, no history repair. It succeeded.** This closes the blocker recorded in �13.
+no debug mode, no retry, no history repair. It succeeded.** This closes the blocker recorded in §13.
 
 Nothing else was deployed: no Edge Function, no secret was provisioned or changed, no user was created,
 and **no request has ever been sent to OpenAI**.
@@ -2256,7 +2256,7 @@ and **no request has ever been sent to OpenAI**.
 | Migration history after | **7 applied / 0 pending** |
 | History row for the target version | **exactly 1** |
 
-The fix under test was �13.13's: both privilege-borrowing blocks restore the captured migration
+The fix under test was §13.13's: both privilege-borrowing blocks restore the captured migration
 identity instead of calling `RESET ROLE`. The failure that had blocked every previous attempt did not
 recur.
 
@@ -2275,14 +2275,14 @@ recur.
 
 | | |
 | --- | --- |
-| Migration identity CREATE on `noor_ai` | **false** � the borrowed privilege was handed back |
+| Migration identity CREATE on `noor_ai` | **false** — the borrowed privilege was handed back |
 | `service_role` USAGE / CREATE | **true / false** |
 | `service_role` EXECUTE on private lifecycle entry points | **5** |
 | `service_role` EXECUTE on public wrappers | **5** |
 | `service_role` table or sequence privileges | **0** |
 | `anon` / `authenticated` / `noor_ai_runtime` schema USAGE | **false / false / false** |
 | `anon` / `authenticated` / `noor_ai_runtime` wrapper EXECUTE | **0 / 0 / 0** |
-| `PUBLIC` wrapper EXECUTE | **0** � a `PUBLIC` grant would surface as `anon` holding EXECUTE, and it does not |
+| `PUBLIC` wrapper EXECUTE | **0** — a `PUBLIC` grant would surface as `anon` holding EXECUTE, and it does not |
 | `noor_ai_owner` NOLOGIN / no verifier / not superuser / not BYPASSRLS | true / true / true / true |
 | `noor_ai_runtime` NOLOGIN / no verifier / not superuser / not BYPASSRLS | true / true / true / true |
 
@@ -2299,7 +2299,7 @@ Seeded configuration is exactly the approved DEV set, and **no production ceilin
 | `max_attempts` | 2 |
 | `max_input_tokens` / `max_output_tokens` | 12000 / 2000 |
 | `daily_spend_micros` / `monthly_spend_micros` | 500000 / 2000000 (integer micro-USD) |
-| `enabled` | 1 � the store's own switch; the Edge Function kill switch is separate and remains `false` |
+| `enabled` | 1 — the store's own switch; the Edge Function kill switch is separate and remains `false` |
 
 Every quota table is empty before any request: reservations **0**, user counters **0**, global counters
 **0**, provider attempts **0**. No subject identifier exists in the store.
@@ -2307,8 +2307,8 @@ Every quota table is empty before any request: reservations **0**, user counters
 ### 14.5 What was deliberately not run hosted
 
 The committed pgTAP suites are written for a freshly reset **local** database and would require
-installing the `pgtap` extension on the hosted project � a persistent change this phase does not
-authorise. They were run locally against the same migration (241 assertions, all passing, �13.13). The
+installing the `pgtap` extension on the hosted project — a persistent change this phase does not
+authorise. They were run locally against the same migration (241 assertions, all passing, §13.13). The
 hosted claims above are therefore read-only catalog predicates, not pgTAP.
 
 ### 14.6 State after this phase
@@ -2327,7 +2327,7 @@ hosted claims above are therefore read-only catalog predicates, not pgTAP.
 approved step. AI-3 is not complete, and NoorLife is not production-ready.
 ---
 
-## 15. Disabled Edge Function deployed � 2026-08-09
+## 15. Disabled Edge Function deployed — 2026-08-09
 
 The Phase 1 result documentation was pushed, and the `noor-ai` function was deployed from the exact
 committed remote HEAD **with its kill switch off**. Only credential-free gateway checks were run.
@@ -2343,13 +2343,13 @@ synthetic OpenAI request is still unused.
 | Deploy exit code | **0** |
 | Status | **ACTIVE** |
 | Version | **1** |
-| `verify_jwt` | **true** � gateway verification on, `--no-verify-jwt` never passed |
+| `verify_jwt` | **true** — gateway verification on, `--no-verify-jwt` never passed |
 | Temporary verifier or diagnostic function | **none deployed** |
 | Secrets created or updated | **none** |
 
 The source is the pushed commit: local HEAD matched the live remote and the function tree was clean at
 deploy time. The kill switch was confirmed a **literal source constant** (`enabled: false`) before
-deployment � not read from the environment, a database, request data, headers, query strings or any
+deployment — not read from the environment, a database, request data, headers, query strings or any
 remote configuration, and the handler gates on it directly.
 
 ### 15.2 Credential-free gateway verification
@@ -2363,30 +2363,167 @@ No key, token or credential was retrieved or sent. Each probe reports only its s
 | `POST`, clearly malformed bearer | **401** | no | no | no |
 
 Both rejections came from the platform gateway before NoorLife's handler ran, which is why no
-`noorai_req_�` identifier appears in either body � exactly what �C.9 of the contract predicts, and the
+`noorai_req_…` identifier appears in either body — exactly what §C.9 of the contract predicts, and the
 reason AI-4 must still normalise gateway rejections against handler rejections.
 
 ### 15.3 State after the checks
 
 | | |
 | --- | --- |
-| Reservations / user counters / global counters / provider attempts | **0 / 0 / 0 / 0** � unchanged |
+| Reservations / user counters / global counters / provider attempts | **0 / 0 / 0 / 0** — unchanged |
 | Migration history | 7 applied / 0 pending |
 | `OPENAI_API_KEY` | present by name only, **never retrieved or used** |
 | `NOOR_AI_SAFETY_HMAC_KEY_V1` / `_V2` | **absent** |
 | Temporary secrets or functions | **none** |
 | OpenAI requests | **zero** |
-| Kill switch | literal `false` � the function is deployed and cannot serve |
+| Kill switch | literal `false` — the function is deployed and cannot serve |
 
 ### 15.4 What is still pending
 
 - **The authenticated fail-closed test has not been run.** Confirming that an authenticated caller
   receives the safe `503` while disabled requires a synthetic authenticated caller, and no compliant
   way to create *and delete* one exists yet: the Management API documents no auth-user endpoint, so it
-  would need the service-role key through the Auth Admin API � outside the approved credential path,
+  would need the service-role key through the Auth Admin API — outside the approved credential path,
   and never with a real user account. This is the next gate.
 - B10's HMAC secret remains unprovisioned.
 - The single authorized synthetic OpenAI request remains unused.
+
+**Live public and user traffic remains prohibited. AI-3 is not complete, and NoorLife is not
+production-ready.**
+---
+
+## 16. The synthetic smoke test — 2026-08-09 — **run once, and the endpoint is disabled again**
+
+The single synthetic request authorised by `NOOR_AI_DATA_CONTROL_DECISION.md` §2.1 has now been used.
+**Exactly one handler request reached OpenAI. It succeeded. The function finished disabled.**
+
+No real-user account or content was involved at any point.
+
+### 16.1 What was provisioned
+
+| | |
+| --- | --- |
+| `NOOR_AI_SAFETY_HMAC_KEY_V1` | **provisioned** — 32 CSPRNG bytes, non-zero, canonical unpadded base64url, round-trip verified, sent in an in-memory Management API body; never in argv, an env file, disk, a log or the clipboard |
+| `NOOR_AI_SAFETY_HMAC_KEY_V2` | absent |
+| `OPENAI_API_KEY` | present by name only — **never retrieved** at any point in this run |
+| Temporary secrets or functions | none created |
+
+The generated key is retained, as authorised. Its value was never displayed, exported or persisted, and
+no claim of cryptographic zeroization is made for the immutable strings the runtime produced.
+
+### 16.2 The synthetic caller
+
+| | |
+| --- | --- |
+| Synthetic user created | **true** — randomised local part under `example.invalid`, random password held in memory only, confirmed administratively so no email was sent |
+| Profile row auto-created by the existing trigger | **true** |
+| Session created | **true** |
+| Real-user data used | **none** |
+
+The service-role key was retrieved into one dedicated process, used only for this user's lifecycle, and
+never displayed, exported, persisted, or passed to a subprocess.
+
+### 16.3 Disabled-path check, before activation
+
+An authenticated request while the source was `enabled: false`:
+
+| | |
+| --- | --- |
+| Status | **503** |
+| NoorLife error code | `service_unavailable` |
+| Gateway accepted the JWT / handler executed | **true** |
+| Secret or configuration detail returned | **false** |
+| Reservations / provider attempts / counters | **0 / 0 / 0** — the kill switch stops the request before the reservation |
+
+### 16.4 The single smoke request
+
+Deployed from activation commit A (kill switch literal `true`), gateway JWT verification on.
+
+| | |
+| --- | --- |
+| Handler requests | **1** |
+| HTTP status | **200** |
+| NoorLife outcome | **answer**, finish **complete** |
+| `sources` | **empty**, as AI-3 requires — no citation was fabricated |
+| Provider attempts | **1** (no transient retry occurred) |
+| Quota reservations | **1**, final state **finalized** |
+| Attempts registered | 1, exactly once |
+| Input / output / reasoning tokens | **555 / 64 / 0** |
+| Micro-USD recorded | **2155** |
+| User counters | `requests/minute=1`, `requests/hour=1`, `requests/day=1` |
+| Global counters | `requests/minute=1`, `requests/day=1`, `spend_micros/day=2155`, `spend_micros/month=2155` |
+| Raw identity, safety identifier, or provider response id in the body | **false** |
+
+The cost reconciles exactly against the committed price table (version 1, 2,500,000 micro-USD per
+million input tokens and 12,000,000 per million output): `⌊555 × 2.5⌋ + 64 × 12 = 1387 + 768 = 2155`.
+That is roughly **$0.0022** — well inside every configured guard.
+
+### 16.5 Immediate disable
+
+| | |
+| --- | --- |
+| Redeployed from disabled commit B | **exit 0** |
+| Deployed source verified `enabled: false` | **true** |
+| Post-disable authenticated check | **503**, `service_unavailable` |
+| Additional provider attempts or quota movement | **none** |
+
+### 16.6 Cleanup
+
+| | |
+| --- | --- |
+| Synthetic Auth user deleted | **true** |
+| Auto-created profile row deleted | **true** |
+| Auth users / profiles totals | **6 / 6** — back to the pre-test baseline |
+| Synthetic users remaining | **0** |
+| Subject reservations / provider attempts / user counters | **0 / 0 / 0** |
+| Global spend aggregates | **preserved, not deleted** — 4 rows retained |
+| Temporary functions or secrets | none |
+
+Two points of substance:
+
+- The subject-linked rows could **not** be deleted by the migration identity: it holds no table
+  privileges on the private schema, and the attempt returned HTTP 400. That is the trust boundary
+  behaving exactly as designed — all access is via definer functions owned by the schema owner. The
+  deletion was therefore performed as the schema owner in a single transaction. No privilege was
+  granted to accomplish it, and none persists.
+- The **global counters were deliberately left in place.** They carry no subject and they are the
+  honest record that one request was made and 2155 micro-USD was spent. Deleting them to make the test
+  disappear would have falsified spend history, which the accounting design exists to prevent.
+
+### 16.7 Final hosted state
+
+| | |
+| --- | --- |
+| Migrations | 7 applied / 0 pending |
+| `noor-ai` | **ACTIVE**, `verify_jwt=true`, deployed from the disabled commit |
+| Kill switch | literal **`false`** |
+| `NOOR_AI_SAFETY_HMAC_KEY_V1` / `_V2` | present / absent |
+| `OPENAI_API_KEY` | present, never retrieved |
+| Further OpenAI requests possible | **no** — the switch is a source constant and the branch sits at the disabled commit |
+
+### 16.8 What this does and does not establish
+
+It establishes that the whole path works end to end: gateway JWT, handler validation, kill switch,
+B10 derivation from the verified subject, quota reservation before the provider, a real Responses API
+call under the reviewed model and structured-output contract, per-attempt accounting, finalization, and
+spend recorded in integer micro-USD.
+
+**It does not complete AI-3, and connectivity working is not the standard.** Remaining:
+
+1. **§J's full acceptance tier has not been re-run against the hosted deployment** — one successful
+   request is one row of it.
+2. **Timeouts, token ceilings and spend ceilings are still the DEV placeholders**, not values measured
+   against real latency (§F.7, §I.2).
+3. **ZDR is not applied for**, and `NOOR_AI_DATA_CONTROL_DECISION.md` §8.2 makes that a pre-beta
+   blocker.
+4. **The privacy policy, Play declaration and Apple labels remain unwritten and unfiled**
+   (`PRE_RELEASE_BACKLOG.md` §3.1, §3.3, §3.4).
+5. **No compliant path exists to create a synthetic authenticated caller without the service-role key**,
+   so repeatable authenticated hosted verification still depends on a credential the contract confines
+   to the Edge Function environment.
+6. **Rotation, emergency response and account-deletion integration for B10 remain procedures on paper**,
+   never exercised.
+7. The authorised synthetic budget is now **spent**; any further hosted request needs a new decision.
 
 **Live public and user traffic remains prohibited. AI-3 is not complete, and NoorLife is not
 production-ready.**
