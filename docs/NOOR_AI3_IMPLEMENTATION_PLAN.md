@@ -2236,3 +2236,92 @@ for one separately approved hosted retry.
 7. Timeouts and ceilings still unpinned against measured latency; ZDR still not applied for.
 
 **AI-3 is not complete, and NoorLife is not production-ready.**
+---
+
+## 14. Hosted database foundation — 2026-08-09 — **DEPLOYED**
+
+The corrected migration was pushed and applied to the linked project. **One ordinary `supabase db push`,
+no debug mode, no retry, no history repair. It succeeded.** This closes the blocker recorded in §13.
+
+Nothing else was deployed: no Edge Function, no secret was provisioned or changed, no user was created,
+and **no request has ever been sent to OpenAI**.
+
+### 14.1 Deployment
+
+| | |
+| --- | --- |
+| Pushes run | **1** |
+| Exit code | **0** |
+| Migration history before | 6 applied / 1 pending |
+| Migration history after | **7 applied / 0 pending** |
+| History row for the target version | **exactly 1** |
+
+The fix under test was §13.13's: both privilege-borrowing blocks restore the captured migration
+identity instead of calling `RESET ROLE`. The failure that had blocked every previous attempt did not
+recur.
+
+### 14.2 Object inventory
+
+| | |
+| --- | --- |
+| Quota relations | **6** |
+| Enums | **4** |
+| Private routines and helpers | **17** |
+| Public wrappers | **5** |
+| Schema owner is `noor_ai_owner` | **true** |
+| `noor_ai` in the Data API exposed schemas | **false** |
+
+### 14.3 Privilege matrix
+
+| | |
+| --- | --- |
+| Migration identity CREATE on `noor_ai` | **false** — the borrowed privilege was handed back |
+| `service_role` USAGE / CREATE | **true / false** |
+| `service_role` EXECUTE on private lifecycle entry points | **5** |
+| `service_role` EXECUTE on public wrappers | **5** |
+| `service_role` table or sequence privileges | **0** |
+| `anon` / `authenticated` / `noor_ai_runtime` schema USAGE | **false / false / false** |
+| `anon` / `authenticated` / `noor_ai_runtime` wrapper EXECUTE | **0 / 0 / 0** |
+| `PUBLIC` wrapper EXECUTE | **0** — a `PUBLIC` grant would surface as `anon` holding EXECUTE, and it does not |
+| `noor_ai_owner` NOLOGIN / no verifier / not superuser / not BYPASSRLS | true / true / true / true |
+| `noor_ai_runtime` NOLOGIN / no verifier / not superuser / not BYPASSRLS | true / true / true / true |
+
+### 14.4 Configuration and data
+
+Seeded configuration is exactly the approved DEV set, and **no production ceiling was invented**:
+
+| Key | Value |
+| --- | --- |
+| `per_user_minute` / `per_user_hour` / `per_user_day` | 1 / 1 / 1 |
+| `global_minute` / `global_day` | 1 / 1 |
+| `concurrency_lease` | 1 |
+| `lease_ttl_seconds` | 90 |
+| `max_attempts` | 2 |
+| `max_input_tokens` / `max_output_tokens` | 12000 / 2000 |
+| `daily_spend_micros` / `monthly_spend_micros` | 500000 / 2000000 (integer micro-USD) |
+| `enabled` | 1 — the store's own switch; the Edge Function kill switch is separate and remains `false` |
+
+Every quota table is empty before any request: reservations **0**, user counters **0**, global counters
+**0**, provider attempts **0**. No subject identifier exists in the store.
+
+### 14.5 What was deliberately not run hosted
+
+The committed pgTAP suites are written for a freshly reset **local** database and would require
+installing the `pgtap` extension on the hosted project — a persistent change this phase does not
+authorise. They were run locally against the same migration (241 assertions, all passing, §13.13). The
+hosted claims above are therefore read-only catalog predicates, not pgTAP.
+
+### 14.6 State after this phase
+
+| | |
+| --- | --- |
+| Hosted quota store | **Deployed** |
+| `noor-ai` Edge Function | **Not deployed** |
+| `OPENAI_API_KEY` | Present by name only, **never retrieved or used** |
+| `NOOR_AI_SAFETY_HMAC_KEY_V1` / `_V2` | **Absent** |
+| Temporary secrets, functions or users | **None** |
+| OpenAI requests | **Zero** |
+| Edge Function kill switch | Literal `false`, unchanged |
+
+**Phase 1 is complete.** The disabled Edge Function deployment is unblocked and is the next separately
+approved step. AI-3 is not complete, and NoorLife is not production-ready.
