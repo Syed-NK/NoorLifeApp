@@ -10,6 +10,7 @@ import { useModule } from '../module-context';
 import { comingSoon } from '../module-routes';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
+import { NOOR_AI_CHAT_ROUTE } from './noor-ai-chat-routes';
 import { NoorAIHero } from './noor-ai-hero';
 import { noorAIHomeFixture } from './noor-ai-view-model';
 
@@ -25,10 +26,17 @@ import { noorAIHomeFixture } from './noor-ai-view-model';
  * Suggestions, Recent Conversations, and the privacy card. No placeholder copy survives.
  *
  * ── On the input and the chips ──────────────────────────────────────────────
- * No AI provider is installed and no key exists in the app, so the field is a button that opens
- * the conversation surface rather than a live `TextInput` that would accept a question and
- * silently fail. It is labelled as such for a screen reader. That is the same honesty rule the
- * module AI screens follow.
+ * The field is a button that opens the conversation surface rather than a live `TextInput` on this
+ * screen. It is labelled as such for a screen reader.
+ *
+ * As of AI-5 that surface exists: the field and the send control both open `/ai/chat/new`, which is
+ * **the one approved entry point** to Noor AI's conversation screen. Nothing else in the
+ * application opens it — no module screen gained a Noor AI button, the centre navigation control
+ * still goes to this home as it always has, and no deep link was registered.
+ *
+ * The microphone is unchanged and still opens the "coming soon" screen: voice input needs a
+ * capability AI-1's server does not have, and §12.8's rule is that AI-5 enables only what can
+ * actually be served.
  */
 export function NoorAIHomeContent() {
   const router = useRouter();
@@ -67,7 +75,7 @@ export function NoorAIHomeContent() {
         testID="noor-ai-ask"
       >
         <PressableScale
-          onPress={soon('Ask Noor AI')}
+          onPress={go(NOOR_AI_CHAT_ROUTE)}
           accessibilityRole="button"
           accessibilityLabel={`${model.prompt.placeholder}. Opens the conversation screen.`}
           style={styles.askField}
@@ -89,9 +97,9 @@ export function NoorAIHomeContent() {
         </PressableScale>
 
         <PressableScale
-          onPress={soon('Ask Noor AI')}
+          onPress={go(NOOR_AI_CHAT_ROUTE)}
           accessibilityRole="button"
-          accessibilityLabel="Send question"
+          accessibilityLabel="Ask Noor AI a question"
           style={[
             styles.send,
             {

@@ -1351,11 +1351,20 @@ and no deletion request to honour — because there is nothing to delete.
 `noorAIHomeFixture`. They must not begin showing real conversations before AI-8 supplies a reviewed
 schema, an RLS policy, a retention period, and an export and deletion path.
 
-Two routes `NOORLIFE_PRODUCTION_WORKFLOW.md` §6 requires do not exist yet:
-`/ai/chat/:conversationId` (AI-5's to add) and `/ai/feedback`, which backs §6's "Report or rate
-response" screen. The latter is the user's route for reporting a bad answer — the reporting mechanism
-the safety guide calls for — so it is AI-5's too, not AI-8's, and the `request_id` from §I.7 is what
-a report should carry.
+Two routes `NOORLIFE_PRODUCTION_WORKFLOW.md` §6 requires did not exist when this section was
+written: `/ai/chat/:conversationId` (AI-5's to add) and `/ai/feedback`, which backs §6's "Report or
+rate response" screen. The latter is the user's route for reporting a bad answer — the reporting
+mechanism the safety guide calls for — so it is AI-5's too, not AI-8's, and the `request_id` from
+§I.7 is what a report should carry.
+
+**Both routes now exist (AI-5), and neither changes anything above.** `/ai/chat/:conversationId` is
+instantiated with the fixed literal segment `new`: it identifies nothing, nothing is stored under
+it, and it is a placeholder for an unbuilt persistence model rather than a conversation id. The
+screen holds one question and one outcome in component state and loses both on unmount.
+`/ai/feedback` is **inert** — it accepts nothing, sends nothing and stores nothing — because a
+report needs storage, a privacy classification and a retention period that are not approved, and
+because the `request_id` a report should carry is one the AI-4 adapter deliberately does not expose
+(§K.3.3). Whether to re-open that identifier for reporting remains an open decision. See §K.4.
 
 ---
 
@@ -1675,7 +1684,7 @@ check.
 | AI-2  | Local Edge Function skeleton with an injected fake provider | `supabase/functions/noor-ai/` exists; `[functions.noor-ai]` declared in `config.toml` with **`verify_jwt = true` explicit**; the project's current JWT signing algorithm confirmed against the dashboard as one the gateway validates (§0.3); §D.3's boundary restated in the handler's own doc comment so it cannot be lost; every AI-2 row in §J passes, including 2c and 2d2; **at AI-2 completion no provider or HMAC key was provisioned in any environment**. **Status: met — see §K.1.** AI-2 was **local-only**: its gateway evidence was local and deployment was prohibited *for that phase*. Those two statements are historical, not current — **the present hosted state is governed by §K.2** |
 | AI-3  | Provider secret and the live Responses API connection   | §F.10's data-control decision recorded first — **done**; provider key provisioned outside the repository; model, timeouts, limits, and rate-limit store chosen and pinned; §J rows 13b/18 pass; no key in the repository, the bundle, or any log. **Status: development integration met — see §K.2.** The function is deployed and **source-disabled**, and **real-user and public traffic remain prohibited**. **Does not** include revocation work — §J.2f is not an AI-3 gate |
 | AI-4  | Mobile adapter and its states                           | An `AIOrchestrator` implementation posting to the endpoint with the session token on `Authorization` and the publishable key on `apikey` **only**; **both** error categories of §C.9 normalised — gateway platform errors and handler errors — into design-spec states 20/21/22/26, with no raw platform or provider text rendered and no fabricated `request_id`; §I.5's closed error set mapped; §12.1's and §12.11's shape gaps resolved; loading, unavailable, and error states verified on the emulator **and** the physical device. **Status: the `ask` channel is implemented and locally verified — see §K.3.** "An `AIOrchestrator` implementation" is met through its formally defined ask-only subset, `AIAskOrchestrator`, which `NoorAIPort` extends: `confirmAction` is **unchanged and deliberately not implemented**, because no tool can propose an `AIActionPreview` yet (§F.4, §A.2). Composing the adapter into the full `AIOrchestrator` is **AI-9's**, in the same change that makes a confirmable action exist. The device-verification criterion is **still open** and cannot be met before AI-5 builds a surface to verify |
-| AI-5  | Noor AI text conversation UI                            | `/ai/chat/:conversationId` and `/ai/feedback` exist per workflow §6; scope shown near the composer per §06; single-turn until AI-8; only capabilities AI-1 can actually serve are enabled |
+| AI-5  | Noor AI text conversation UI                            | `/ai/chat/:conversationId` and `/ai/feedback` exist per workflow §6; scope shown near the composer per §06; single-turn until AI-8; only capabilities AI-1 can actually serve are enabled. **Status: implemented and locally verified against injected fixtures; device verification pending — see §K.4.** Both routes exist, the scope block sits directly above the composer, the surface is single-turn by construction, and the module-data capabilities stay unwired. The emulator and physical-device criterion AI-4 left open (§K.3.6) is **still open**, and §K.4.4 records why it could not be closed inside this phase's constraints rather than treating it as done |
 | AI-6  | Permission-gated module reads                           | Module tables reviewed and approved with RLS (`PRE_RELEASE_BACKLOG.md` §4.1); a **server-side** grant store; `AI_GRANT_EDITING_AVAILABLE` flipped with the controls it requires; `accessed_modules` populated truthfully and displayed |
 | AI-7  | Reviewed tools and confirm-before-mutation              | Each tool reviewed individually; a mutation is unexpressible in one call; `AIActionPreview` shown before any write; `requiresConfirmation` enforced server-side |
 | AI-8  | Conversation history, retention, export, deletion       | Reviewed schema with RLS; a stated retention period; working export and deletion; `AI_CONVERSATION_STORAGE_EXISTS` flipped and its source-scan assertion updated; privacy copy updated in the same change |
@@ -2106,6 +2115,141 @@ can verify about an arbitrary caller's string. This document does not claim othe
 
 ---
 
+### K.4 AI-5 status — the interface exists and is locally verified; the device gate is still open
+
+**What was built: the user-facing Noor AI surface, and nothing else.** This was a local-only phase.
+Nothing was deployed, the hosted function was not enabled, no secret was created or retrieved, no
+user or session was created, **no hosted Supabase request and no OpenAI request was made**, and no
+server source changed. Every claim below is evidenced by tests that run against injected fakes.
+
+| Artefact | Path |
+| --- | --- |
+| The conversation route (§6's `/ai/chat/:conversationId`) | `src/app/ai/chat/[conversationId].tsx` |
+| The inert reporting route (§6's `/ai/feedback`) | `src/app/ai/feedback.tsx` |
+| The screen | `src/features/modules/noor-ai/noor-ai-chat-screen.tsx` |
+| The composer | `src/features/modules/noor-ai/noor-ai-composer.tsx` |
+| The outcome renderer — answer, refusal, failure | `src/features/modules/noor-ai/noor-ai-outcome-view.tsx` |
+| The scope block (§06) | `src/features/modules/noor-ai/noor-ai-scope-note.tsx` |
+| All user-facing copy | `src/features/modules/noor-ai/noor-ai-chat-copy.ts` |
+| Local draft rules, mirrored from the adapter | `src/features/modules/noor-ai/noor-ai-message-draft.ts` |
+| Route constants and the ephemeral segment's lifecycle | `src/features/modules/noor-ai/noor-ai-chat-routes.ts` |
+| The inert reporting screen | `src/features/modules/noor-ai/noor-ai-feedback-screen.tsx` |
+| Test-only fixtures for every state | `src/test-support/noor-ai-fixtures.ts` |
+| Rendered-state and behaviour tests | `src/features/modules/__tests__/noor-ai-chat-screen.test.tsx` |
+| Source-level guards and adapter parity | `src/features/modules/__tests__/noor-ai-ui-source-scan.test.ts` |
+
+#### K.4.1 Routes, entry points, and the segment that identifies nothing
+
+`/ai/chat/:conversationId` is a real route, instantiated with the fixed literal segment `new`. Its
+lifecycle is exact and worth stating because the route's name implies otherwise: the segment is
+written once at build time, is never minted, stored, read, sent or logged, and does not vary between
+sessions. Navigating twice produces the same URL and two independent empty screens. **It is a
+placeholder for an unbuilt persistence model, not a conversation id** (§H.5), and no user content
+ever enters the path — the screen reads no route parameter at all.
+
+The **one** approved entry point is Noor AI's home composer (`/ai`), whose field and send control
+both open the conversation screen. Nothing else opens it: no module screen gained a Noor AI button,
+the centre navigation control still goes to `/ai` as it always has, and no scheme, intent filter or
+associated domain was registered — `app.json`'s linking configuration is untouched.
+
+`/ai/feedback` exists and is inert. See §H.5 for the four things a report needs and does not have.
+
+#### K.4.2 The rendered state matrix
+
+Every state is produced by an injected fake implementing `NoorAIPort` and nothing else. The union is
+covered exhaustively: the outer branch is a `switch` over `NoorAIResult`'s three outcomes with no
+`default`, and the two inner mappings are total `Record`s, so an eleventh failure state or a fourth
+refusal kind is a compile error in the copy table rather than a silently generic screen.
+
+| Result | Rendered as |
+| --- | --- |
+| *(before any request)* | Empty state, scope block, composer; no request on mount |
+| *(draft empty / blank / oversized / control characters)* | Send disabled, with a NoorLife-authored reason; zero invocations |
+| *(request in flight)* | Polite live-region progress line, Stop control, composer read-only, Send disabled |
+| `answer`, `finish: complete` | Answer card, plain text only |
+| `answer`, `finish: length` | The same, above a NoorLife-authored "may be incomplete" notice |
+| `answer.sources` (always `[]`) | **No citation section at all** — no heading, no empty list |
+| `refused: out-of-scope` / `safety-boundary` / `permission-required` | Informational refusal card, copy keyed by `kind` |
+| `failed: authentication-required` | Warning banner **plus** the app's existing sign-in destination |
+| `failed: invalid-request` | Warning banner: rewrite the question |
+| `failed: temporarily-limited` | Warning banner: temporarily limited, no quota internals |
+| `failed: temporarily-unavailable` | Warning banner: unavailable — **the state this deployment reaches** |
+| `failed: network-unavailable` | Warning banner: offline, check the connection |
+| `failed: timed-out` | Warning banner: took too long |
+| `failed: cancelled` | Informational banner, question still editable |
+| `failed: invalid-server-response` | Error banner, generic |
+| `failed: not-configured` | Warning banner, no configuration name |
+| `failed: unknown` | Error banner, generic |
+
+Two deliberate narrowings are recorded rather than hidden. **The refusal's `explanation` is not
+rendered** — the copy is keyed off `kind` alone, which is strictly narrower than passing through a
+server string and makes "no server-supplied text is displayed" a property a render test can assert.
+And **no hand-off is offered**, because §C.4 pins `suggested_handoff` to `null` until AI-9 and the
+adapter does not carry it; a control leading nowhere would be worse than its absence.
+
+Only `authentication-required` carries an action. Every other failure's remedy is waiting or editing
+the question, and a "Try Again" button beside them would imply the same request could be replayed —
+§I.1 says it cannot. Re-sending is the composer's own Send, pressed deliberately, with a hint that
+says it is a new request. **No automatic retry exists anywhere**, asserted behaviourally and by a
+source scan that counts the `port.ask` call sites, finds one, and finds no loop, timer or retry
+construct around it.
+
+#### K.4.3 Scope, privacy and the boundaries this surface does not move
+
+- The §06 scope pill (`NoorLife questions only`) sits directly above the composer, with the plan's
+  subject limits, the professional-advice boundary, and a **"No module access"** state.
+- That state is a fact about this build, not a placeholder: there is no grant store
+  (`AI_GRANT_EDITING_AVAILABLE` is `false`), `NoorAIAnswer` has no `accessed_modules` field, and the
+  function performs no retrieval. The screen never implies a module was read.
+- The scope panel is explanatory UI only, and says so: *"What Noor AI will actually answer is decided
+  on the server"* (§E.2). Nothing from `AIRequestContext` is serialised — the screen passes the
+  context the adapter already takes and adds nothing to it.
+- **No module records are read, no prompt or answer is persisted, and nothing is logged.** The
+  screen imports no Supabase client, invokes no function, opens no connection, touches no storage
+  API, emits no analytics and contains no `console` call. All asserted by source scan across the
+  feature and both route files.
+- **Conversation persistence remains absent** and is AI-8's, behind a reviewed schema, an RLS policy,
+  a retention period and an export and deletion path (§H.5).
+- **`AIOrchestrator.confirmAction` remains unimplemented and remains AI-9's** (§K.3.4). The UI
+  neither implements nor calls it, and no action preview is fabricated.
+- The fixture mechanism is test-only. It lives outside `src/app` and `src/features`, Expo Router
+  cannot route to it, no application file may import it, and there is no environment variable, route
+  parameter, remote flag or debug menu that could select it. **Production composition never falls
+  back to a fixture**: the route renders the screen with no port, so it resolves the real adapter,
+  and a failed real request renders a failure state rather than a fabricated answer.
+
+#### K.4.4 What this status does not mean
+
+- **AI-5 is not closed, and neither is AI-4's device criterion.** §K's AI-4 row requires loading,
+  unavailable and error states verified on the emulator **and** the physical device. Neither was
+  performed in this phase, and the reason is structural rather than an oversight: no emulator or
+  device was attached (`adb devices` listed none), and even with one attached, driving these states
+  on a device would require either a fixture selectable from the running app — which this repository
+  deliberately removed in Phase 6C-3B and which this phase was told not to reintroduce — or a live
+  request to the hosted, source-disabled function, which is prohibited. **Emulator verification:
+  unavailable, not passed. Physical Honor verification: unavailable, not passed.** No screenshots
+  were produced and none are claimed.
+- **How that gate should be closed** is therefore a decision, not just an errand: either an approved
+  development-only fixture mechanism that does not ship in the release bundle, or authorisation for
+  a bounded live request against an enabled function. Both are outside this phase.
+- **Nothing was verified live.** No hosted Supabase call and no provider call was made. Every state
+  above is exercised against an in-memory fake, and the suite asserts `fetch` was never called.
+- **The function is still source-disabled.** `productionConfig.enabled` remains the literal `false`,
+  unchanged by this phase and asserted by three separate suites. The state an authenticated, valid
+  request reaches today is `temporarily-unavailable`, and the copy is written for that being the
+  ordinary case.
+- **`NOOR_AI_DATA_CONTROL_DECISION.md` §8.1 fact 2 is now answerable and is left open deliberately.**
+  It asks whether the AI surface "reads as chat" once AI-5 ships, which would move the Play data type
+  from *Other user-generated content* to *Messages → Other in-app messages*. What shipped is a
+  single-turn question-and-answer screen with no history, no threading, no saved messages and no
+  second turn — which points away from the chat reading — but the route is named `/ai/chat` and that
+  classification is a review decision, not one this phase may take. It stays unresolved and is
+  recorded here so the dependency is visible.
+- **Real-user and public AI traffic remain prohibited**, and every beta and release gate in §K.2.2
+  stays open. NoorLife is not production-ready.
+
+---
+
 ## 12. Critical review — contradictions and open decisions
 
 Required by the phase brief: compare this contract against the policy code already in the repository
@@ -2357,6 +2501,12 @@ cannot give.
 It becomes one in AI-5 if the chips are wired up wholesale. AI-5 must enable only the capabilities
 AI-1's server can serve and leave the module-data ones visibly unavailable until AI-6.
 
+**AI-5 did not wire them.** The four capability cards and the suggestion rows on Noor AI's home are
+unchanged; the conversation screen exposes no chips at all, and its empty state offers "finding a
+feature, your account, or what your plan includes" rather than the module-data invitations in
+`moduleRegistry['noor-ai'].stateCopy.empty`. The one entry point added is the home composer, which
+opens the conversation screen and nothing else. Voice input still opens the "coming soon" screen.
+
 ### 12.9 "Authenticated" is currently weaker than it reads
 
 `enable_confirmations = false` in `supabase/config.toml` — a documented development setting, flagged
@@ -2460,6 +2610,12 @@ than status, and the `apikey`/`Authorization` header rule above is enforced by p
 token at invoke level and asserted by test. Verification on the emulator and the physical device is
 **still open** and belongs with AI-5's surface.
 
+**Update, AI-5:** the surface now exists and renders all ten failure states plus the three refusal
+kinds from injected fakes — see §K.4.2 for the matrix. The device criterion is **still not met**:
+§K.4.4 records that no emulator or device was attached and that driving these states on one would
+need either a fixture selectable from the running app or a live request to the disabled function,
+neither of which is available or authorised. It remains open.
+
 ### 12.12 Deliberately not decided here
 
 Recorded so their absence is visible rather than looking like an omission: the model id and its
@@ -2467,6 +2623,14 @@ pricing tier; the concrete timeout, rate-limit, and spend numbers; the final use
 every refusal and error in §I.5; whether `/ai/chat/:conversationId` is a real route or a modal in
 AI-5; and whether NoorLife ever proxies more than one provider. Each needs data or a product decision
 that AI-1 does not have.
+
+**Two of these are now answered by AI-5**, and only these two. `/ai/chat/:conversationId` is a
+**real Expo Router route**, not a modal — §6 declares it as a route, every other screen in this
+application is one, and a route gives the surface the module header, back destination and five-slot
+navigation the rest of Noor AI has. And the user-facing copy for every §I.5 outcome now exists, in
+`src/features/modules/noor-ai/noor-ai-chat-copy.ts`; it is NoorLife-authored, keyed by the adapter's
+closed failure union, and is the copy a later phase should review rather than re-derive. The model
+id, the production ceilings and the multi-provider question are untouched by this phase.
 
 ---
 
