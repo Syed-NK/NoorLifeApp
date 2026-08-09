@@ -102,6 +102,7 @@ Deno.test('the production graph answers 503 to a genuinely authenticated request
       supabaseUrl: PROJECT_URL,
       jwks: keys.jwks,
       serviceRoleKey: undefined,
+      openaiApiKey: undefined,
     });
     const logger = createCapturingLogger();
     const handler = createNoorAIHandler({
@@ -150,6 +151,7 @@ Deno.test('the production graph refuses an anon-role token even with a valid sig
     supabaseUrl: PROJECT_URL,
     jwks: keys.jwks,
     serviceRoleKey: undefined,
+    openaiApiKey: undefined,
   });
   const logger = createCapturingLogger();
   const handler = createNoorAIHandler({
@@ -176,6 +178,7 @@ Deno.test('the production graph fails closed when the platform supplies no verif
     supabaseUrl: PROJECT_URL,
     jwks: undefined,
     serviceRoleKey: undefined,
+    openaiApiKey: undefined,
   });
   const logger = createCapturingLogger();
   const handler = createNoorAIHandler({
@@ -207,6 +210,7 @@ Deno.test('nothing in the production graph is a fake, and nothing in it can be t
     supabaseUrl: PROJECT_URL,
     jwks: keys.jwks,
     serviceRoleKey: undefined,
+    openaiApiKey: undefined,
   });
   const handler = createNoorAIHandler({
     ...production,

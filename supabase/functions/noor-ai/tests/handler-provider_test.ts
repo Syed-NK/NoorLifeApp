@@ -347,6 +347,10 @@ Deno.test('§F.8 — no deterministic or policy outcome is ever retried', async 
     { label: 'malformed output', outcome: { kind: 'malformed' } as const },
     { label: 'an unrequested tool call', outcome: { kind: 'unexpected-tool-call' } as const },
     { label: 'quota exhaustion', outcome: { kind: 'quota-exhausted' } as const },
+    {
+      label: 'a refused credential',
+      outcome: { kind: 'provider-configuration-error' } as const,
+    },
     { label: 'an unavailable provider', outcome: { kind: 'unavailable' } as const },
     { label: 'an ordinary answer', outcome: helpAnswer() },
   ];
@@ -357,6 +361,46 @@ Deno.test('§F.8 — no deterministic or policy outcome is ever retried', async 
     await ask(harness);
     assertEquals(provider.calls.length, 1, `${label} must be called exactly once`);
   }
+});
+
+Deno.test('§I.5 — a refused provider credential is a 503 the client cannot distinguish', async () => {
+  /**
+   * The port-level half of the 401/403 correction, driven through an injected outcome so it holds for
+   * any provider implementation rather than only for the OpenAI adapter.
+   *
+   * `provider-configuration-error` differs from `unavailable` **only** in accounting and in the
+   * operator signal. What the client sees is §I.5's stable `503` with nothing that says whether a key
+   * was missing, wrong, revoked or merely unpermitted — §D.1's reasoning, applied to the provider
+   * credential.
+   */
+  const refused = createHarness({
+    provider: createFakeProvider({ kind: 'provider-configuration-error' }),
+  });
+  const { response, body } = await ask(refused);
+
+  assertEquals(response.status, 503, 'the stable service_unavailable');
+  assertEquals(body.error.code, 'service_unavailable', 'and its stable code');
+  assertEquals('answer' in body, false, 'never an answer');
+  assertEquals(
+    refused.logger.records[0]?.operator_alert,
+    'provider_configuration',
+    '§F.8 — a wrong key must page a human',
+  );
+  assertEquals(
+    refused.logger.records[0]?.upstream_malformed,
+    false,
+    'and it is not a malformed-upstream problem, which needs a different investigation',
+  );
+
+  // Byte-identical to the absent-provider body, request id aside.
+  const absent = createHarness({ provider: createFakeProvider({ kind: 'unavailable' }) });
+  const { response: absentResponse, body: absentBody } = await ask(absent);
+  assertEquals(response.status, absentResponse.status, 'the same status as an absent provider');
+  assertEquals(
+    { ...body, request_id: '<id>' },
+    { ...absentBody, request_id: '<id>' },
+    'and the same body',
+  );
 });
 
 Deno.test('§F.8 — authentication and validation failures make no provider call at all', async () => {

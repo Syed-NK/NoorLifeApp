@@ -89,6 +89,22 @@ const SCANNABLE = ALL.filter((file) => file.name !== 'tests/source-scan_test.ts'
  * `OTHER_PRODUCTION` below keeps the original absolute over everything else.
  */
 const QUOTA_ADAPTER = 'quota-rpc.ts';
+
+/**
+ * The second deliberate exception — the AI-3 OpenAI Responses adapter.
+ *
+ * Same narrowing, same reasoning, one phase later. AI-2 could assert that nothing in this directory
+ * names `api.openai.com`, names a model, or calls `fetch`; AI-3 implements the provider, so exactly
+ * one more module must do all three. Each affected scan becomes an **exact-equality** assertion
+ * naming this file, which is strictly stronger than the absolute it replaces: a second file gaining
+ * the provider host, the model slug or network access fails, and so does this file losing them.
+ *
+ * Two of AI-2's absolutes are deliberately **not** narrowed, because the provider needs neither:
+ * `service_role` stays absent from every file but the three that already name it, and the
+ * environment-read allow-list stays an exact list rather than becoming a prefix rule.
+ */
+const PROVIDER_ADAPTER = 'openai-provider.ts';
+
 const OTHER_PRODUCTION = PRODUCTION.filter((file) => file.name !== QUOTA_ADAPTER);
 
 function offenders(pattern: RegExp, files: readonly SourceFile[]): readonly string[] {
@@ -141,25 +157,27 @@ Deno.test('no file contains anything shaped like a provider secret', () => {
   assertEquals(offenders(/eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/, ALL), [], 'no embedded JWT');
 });
 
-Deno.test('§B.2 — nothing reads an OpenAI key, and no AI-2 file reads any secret from the environment', () => {
+Deno.test('§B.2 — every environment read is named, and both secrets are read in one place', () => {
   /**
-   * §K: AI-2 completes with "**no key exists anywhere**", and AI-3 is the phase that sets one — "key set via
-   * `supabase secrets set` only".
+   * §K: AI-2 completed with "**no key exists anywhere**", and AI-3 is the phase that would set one — "key
+   * set via `supabase secrets set` only". **No key has been set.** `OPENAI_API_KEY` is now *named* by the
+   * entry point so the provider can be constructed from the real environment and observed to refuse; the
+   * variable is unset in every environment and no value for it appears in this repository (the
+   * key-shape scan above is what asserts the second half).
    *
-   * The second half of this scan is the one that matters more: not just that `OPENAI_API_KEY` is unread, but
-   * that the *only* environment variables this function reads at all are the two platform-injected non-secret
-   * ones. A list of permitted reads is a stronger claim than a list of forbidden ones.
+   * The claim that matters is unchanged in kind and narrowed in scope: the *only* environment variables
+   * this function reads are the four below, and each secret is read in exactly one file. A list of
+   * permitted reads is a stronger claim than a list of forbidden ones.
    */
-  assertEquals(offenders(/OPENAI_API_KEY/, SCANNABLE), [], 'no OpenAI key is read');
   assertEquals(
     offenders(/OPENAI_ORG|OPENAI_PROJECT|OPENAI_BASE_URL/, SCANNABLE),
     [],
-    'nor any OpenAI configuration',
+    'no OpenAI configuration is read — in particular nothing that could retarget the origin',
   );
   assertEquals(
     offenders(/SAFETY_IDENTIFIER_SALT|NOOR_AI_SALT|\bSALT\b/, SCANNABLE),
     [],
-    '§12.6’s salt does not exist yet',
+    '§12.6’s salt does not exist yet, and B10 has not been closed',
   );
 
   const reads = PRODUCTION.flatMap((file) =>
@@ -169,26 +187,27 @@ Deno.test('§B.2 — nothing reads an OpenAI key, and no AI-2 file reads any sec
   );
   assertEquals(
     [...new Set(reads)].sort(),
-    ['SUPABASE_JWKS', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL'],
-    'exactly three environment reads, all platform-injected and exactly one a secret',
+    ['OPENAI_API_KEY', 'SUPABASE_JWKS', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL'],
+    'exactly four environment reads, of which exactly two are secrets',
   );
 
   /**
-   * And the secret is read in one place only.
+   * And each secret is read in one place only.
    *
-   * `index.ts` reads it and hands it straight to `production.ts`, which gives it to the adapter and
-   * to nothing else — so the *read* is in the entry point and the *name* appears in only those three
-   * files. No handler, verifier, policy or response module can see it, which is what makes "it cannot
-   * reach a log line or a response body" structural rather than careful.
+   * `index.ts` reads both and hands each straight to `production.ts`, which gives one to
+   * `quota-rpc.ts` and the other to `openai-provider.ts` and to nothing else. No handler, verifier,
+   * policy or response module can see either, which is what makes "it cannot reach a log line or a
+   * response body" structural rather than careful.
    */
-  const secretReaders = PRODUCTION.filter((file) =>
-    /Deno\.env\.get\(\s*'SUPABASE_SERVICE_ROLE_KEY'/.test(file.code)
-  );
-  assertEquals(
-    secretReaders.map((file) => file.name),
-    ['index.ts'],
-    'read in the entry point only',
-  );
+  for (const secret of ['SUPABASE_SERVICE_ROLE_KEY', 'OPENAI_API_KEY']) {
+    const readers = PRODUCTION.filter((file) =>
+      new RegExp(`Deno\\.env\\.get\\(\\s*'${secret}'`).test(file.code)
+    );
+    assertEquals(readers.map((file) => file.name), ['index.ts'], `${secret}: entry point only`);
+  }
+
+  // And the provider key's *name* appears nowhere else in production, not even as a constant.
+  assertEquals(offenders(/OPENAI_API_KEY/, PRODUCTION), ['index.ts'], 'named in one file');
 });
 
 Deno.test('§B.2 — no service-role or secret key is referenced or used', () => {
@@ -241,9 +260,9 @@ Deno.test('AI-3 — the quota adapter is the only thing that can reach the netwo
    * Matching the identifier catches the capability however it is spelled.
    */
   assertEquals(
-    offenders(/\bfetch\b/, PRODUCTION),
-    [QUOTA_ADAPTER],
-    'exactly one production file references fetch, and it is the quota adapter',
+    [...offenders(/\bfetch\b/, PRODUCTION)].sort(),
+    [PROVIDER_ADAPTER, QUOTA_ADAPTER].sort(),
+    'exactly two production files reference fetch: the quota adapter and the provider adapter',
   );
   assertEquals(
     offenders(
@@ -317,53 +336,258 @@ Deno.test('AI-3 — the adapter calls the five approved wrappers and can reach n
 // No provider SDK, no provider endpoint, no network
 // ─────────────────────────────────────────────────────────────────────────────
 
-Deno.test('§F.1 — nothing imports an OpenAI SDK or names the provider endpoint', () => {
+Deno.test('§F.1 — the provider adapter is the only module that names the provider, and it uses no SDK', () => {
   /**
-   * Scoped to production. The test tier names `api.openai.com` in one place — the §I.6 assertion that a provider
-   * host never appears in a response body — and a scan that failed on that would be a scan that punished the test
-   * for checking the thing.
+   * Narrowed from AI-2's absolute to an exact equality naming the adapter, for the reason given at
+   * `PROVIDER_ADAPTER`: one module implements the boundary, and pinning it by name catches both a
+   * second module gaining provider reach and this one losing it.
+   *
+   * No SDK, still absolute. §F.1 needs `POST /v1/responses` and nothing else, and a package would add a
+   * dependency, a transitive supply chain, its own retry policy and its own idea of what to log — all
+   * for one `fetch`.
    */
-  assertEquals(offenders(/api\.openai\.com/, PRODUCTION), [], 'no OpenAI host');
+  assertEquals(offenders(/api\.openai\.com/, PRODUCTION), [PROVIDER_ADAPTER], 'one OpenAI host');
+  assertEquals(
+    offenders(/v1\/(responses|chat\/completions|assistants|moderations)/, PRODUCTION),
+    [PROVIDER_ADAPTER],
+    'one provider route, and it is the Responses API',
+  );
   assertEquals(offenders(/from\s+['"](npm:)?openai/, SCANNABLE), [], 'no OpenAI package import');
   assertEquals(
     offenders(/@ai-sdk|langchain|@anthropic-ai|@google\/gen(erative-)?ai/, SCANNABLE),
     [],
     'no other SDK, in production or in a test',
   );
+
+  /**
+   * The origin is a literal, and there is no way to point it somewhere else.
+   *
+   * `quota-rpc.ts` needs a URL validator because `SUPABASE_URL` genuinely comes from the environment.
+   * The provider origin does not come from anywhere, and this asserts that: no environment read, no
+   * config field, no parameter and no template can reach it.
+   */
+  const adapter = PRODUCTION.find((file) => file.name === PROVIDER_ADAPTER);
+  assert(adapter !== undefined, 'the provider adapter is in the scan');
   assertEquals(
-    offenders(/v1\/(responses|chat\/completions|assistants|moderations)/, PRODUCTION),
-    [],
-    'no provider route',
+    /OPENAI_ORIGIN = 'https:\/\/api\.openai\.com'/.test(adapter.code),
+    true,
+    'the origin is a fixed HTTPS literal',
   );
+  assertEquals(
+    /Deno\.env/.test(adapter.code),
+    false,
+    'the adapter reads no environment variable at all',
+  );
+  assertEquals(
+    [...adapter.code.matchAll(/https?:\/\/[^'"`\s]*/g)].map((match) => match[0]),
+    ['https://api.openai.com'],
+    'and it names exactly one URL',
+  );
+  assertEquals(
+    /baseUrl|baseURL|origin\s*[:=]\s*(config|options|environment)/.test(adapter.code),
+    false,
+    'no configurable origin of any spelling',
+  );
+  // A redirect would replay the Authorization header to a host the provider chose.
+  assertEquals(/redirect:\s*'error'/.test(adapter.code), true, 'redirects are refused');
 });
 
-Deno.test('§F.2 — no model is named anywhere', () => {
+Deno.test('§F.2 — the model is named in exactly one place', () => {
   /**
-   * §F.2: "This document deliberately does **not** name a model", and AI-3 "selects it and records the
-   * selection with its rationale". A model name in AI-2 would be that selection made by whoever typed it.
+   * §F.2: AI-3 "selects it and records the selection with its rationale". It is selected, and it is a
+   * **controlled reviewed alias** — no dated snapshot is published for the GPT-5.6 family, so there is
+   * nothing else to pin. The control that replaces immutability is that the slug lives in one file, so
+   * changing it is a one-line diff a reviewer sees and §F.2's re-run of §J attaches to.
    */
-  assertEquals(offenders(/\bgpt-[0-9a-z.]/i, PRODUCTION), [], 'no GPT model');
+  assertEquals(offenders(/\bgpt-[0-9a-z.]/i, PRODUCTION), [PROVIDER_ADAPTER], 'one GPT model');
   assertEquals(offenders(/\bo[1-9](-(mini|preview|pro))?\b/, PRODUCTION), [], 'no reasoning model');
   assertEquals(
     offenders(/omni-moderation|text-embedding-|claude-|gemini-/i, PRODUCTION),
     [],
     'no other model id',
   );
+
+  const adapter = PRODUCTION.find((file) => file.name === PROVIDER_ADAPTER);
+  assert(adapter !== undefined, 'the provider adapter is in the scan');
+  assertEquals(
+    [...new Set([...adapter.code.matchAll(/'(gpt-[0-9a-z.-]+)'/gi)].map((match) => match[1]))],
+    ['gpt-5.6-terra'],
+    'exactly the selected slug, and no second candidate left behind',
+  );
 });
 
-Deno.test('nothing in the production graph can make a network call', () => {
+Deno.test('§B.2 / §H.1 — the provider adapter can only write the key to one header, and B10 gates it', () => {
+  const adapter = PRODUCTION.find((file) => file.name === PROVIDER_ADAPTER);
+  assert(adapter !== undefined, 'the provider adapter is in the scan');
+
   /**
-   * The strongest single statement this phase makes. There is no `fetch`, no `XMLHttpRequest`, no WebSocket, no
-   * `Deno.connect`, and no dynamic import in any production file — so "it must never call the network except
-   * the reviewed Supabase/JWT authentication mechanism" is not a policy the code follows, it is a capability the
-   * code does not have.
+   * The credential is written once, to the `Authorization` header, and the identifier that holds it is
+   * never interpolated anywhere else. A template that put it in a URL, a body field or a message would
+   * add a second `${key}` site, which this counts.
+   */
+  const interpolations = [...adapter.code.matchAll(/\$\{key\}/g)];
+  assertEquals(interpolations.length, 1, 'the key is interpolated in exactly one place');
+  assertEquals(/Bearer \$\{key\}/.test(adapter.code), true, 'and that place is the bearer header');
+  assertEquals(
+    /console|log\s*\(|throw new/.test(adapter.code),
+    false,
+    'the module that holds the key cannot log or throw a message of its own',
+  );
+
+  /**
+   * §H.1's closed allow-list, asserted against the source rather than only against a captured request.
+   * A field added here is a contract change requiring privacy review, and this is where the diff shows.
+   */
+  for (
+    const forbidden of [
+      'tools',
+      'tool_choice',
+      'previous_response_id',
+      'conversation',
+      'background',
+      'stream',
+      'metadata',
+      'temperature',
+      'top_p',
+      'prompt_cache_key',
+      'include',
+    ]
+  ) {
+    assertEquals(
+      new RegExp(`['"\`]?\\b${forbidden}\\b['"\`]?\\s*:`).test(adapter.code),
+      false,
+      `§F.4 / §F.6 / §H.1 — the outbound body must not carry ${forbidden}`,
+    );
+  }
+
+  /**
+   * B10 — the safety identifier is **accepted**, never **derived**. Plan §6.5: nobody may route around
+   * the review by computing it inside the provider implementation. There is no hash, no key material
+   * and no user value in scope here, and this asserts none appears.
+   */
+  assertEquals(
+    /crypto\.subtle|createHmac|\bhmac\b|sha256|digest\s*\(/i.test(adapter.code),
+    false,
+    'the adapter derives no identifier of its own',
+  );
+  assertEquals(
+    /userId|sessionId|\bemail\b|subjectId/.test(adapter.code),
+    false,
+    'and holds no user identity to derive one from',
+  );
+});
+
+Deno.test('B10 — production supplies no safety identifier, and none can reach the adapter', () => {
+  /**
+   * The gate, asserted structurally rather than described.
    *
-   * The JWT authentication mechanism needs no call: the platform injects `SUPABASE_JWKS`, so the verification
-   * keys are already in the environment. That is why this scan can be an absolute rather than an exception.
+   * ── What the construction option is, and is not ──────────────────────────
+   * `staticSafetyIdentifier` is fixed when the adapter is built, and the production graph is built
+   * once per isolate — so any value passed there would be **one constant shared by every user**, which
+   * is not a per-user safety identifier under any reading of the official guidance. It is mocked-test
+   * scaffolding. B10 is closed by a separately reviewed **per-user derivation step**, running after
+   * JWT verification and before the provider call and carried as a new per-request field; that is a
+   * reviewed diff to `ProviderRequest`, §H.1's allow-list and the boundary test, and it does not exist.
+   *
+   * Every assertion below is about the *absence* of a shortcut, which is why they are source scans.
+   */
+  const wiring = PRODUCTION.find((file) => file.name === 'production.ts');
+  const adapter = PRODUCTION.find((file) => file.name === PROVIDER_ADAPTER);
+  assert(wiring !== undefined && adapter !== undefined, 'both files are in the scan');
+
+  // 1. Production always supplies nothing, and this is the only construction site in production.
+  assertEquals(
+    [...wiring.code.matchAll(/staticSafetyIdentifier:\s*([A-Za-z0-9_'".]+)/g)].map((m) => m[1]),
+    ['undefined'],
+    'exactly one production construction site, and it passes undefined',
+  );
+  // Scoped past the adapter itself, which necessarily contains the factory's own declaration.
+  assertEquals(
+    offenders(
+      /createOpenAIProvider\s*\(/,
+      PRODUCTION.filter((file) => file.name !== PROVIDER_ADAPTER),
+    ),
+    ['production.ts'],
+    'and the adapter is constructed in exactly one production file',
+  );
+
+  // 2. No static identifier literal is present anywhere in production source.
+  assertEquals(
+    offenders(/staticSafetyIdentifier:\s*['"`]/, PRODUCTION),
+    [],
+    'no production file passes a literal identifier of any kind',
+  );
+  assertEquals(
+    offenders(/safety_identifier\s*:\s*['"`]/, PRODUCTION),
+    [],
+    'and none is written directly into an outbound body',
+  );
+
+  // 3. The synthetic value the mocked tests use exists only under tests/.
+  const synthetic = ALL.filter((file) => /synthetic-opaque-test-subject/.test(file.raw));
+  assertEquals(
+    synthetic.every((file) => file.isTest),
+    true,
+    `the synthetic identifier is confined to tests: ${synthetic.map((f) => f.name).join(', ')}`,
+  );
+  assertEquals(
+    offenders(/TEST_SAFETY_IDENTIFIER/, PRODUCTION),
+    [],
+    'and no production file references the test fixture',
+  );
+
+  // 4. No identity value can flow from request JSON to the adapter. `ProviderRequest` is the only
+  //    per-request channel into it, and §C.6 rejects the three identity field names before that.
+  const ports = PRODUCTION.find((file) => file.name === 'ports.ts');
+  assert(ports !== undefined, 'ports.ts is in the scan');
+  const providerRequest = /export type ProviderRequest = \{([\s\S]*?)\n\};/.exec(ports.code)?.[1] ??
+    '';
+  assertEquals(
+    [...providerRequest.matchAll(/readonly ([A-Za-z]+)[?]?:/g)].map((match) => match[1]).sort(),
+    ['instructions', 'languageHint', 'maxOutputTokens', 'store', 'userInput'],
+    'ProviderRequest still carries exactly five fields, none of them an identity',
+  );
+  assertEquals(
+    /safetyIdentifier|safety_identifier/.test(providerRequest),
+    false,
+    'and no per-request identifier field has been added without the review that requires',
+  );
+  const schema = PRODUCTION.find((file) => file.name === 'request-schema.ts');
+  assert(schema !== undefined, 'request-schema.ts is in the scan');
+  for (const field of ['user_id', 'subject_id', 'safety_identifier']) {
+    assertEquals(
+      new RegExp(`'${field}'`).test(schema.code),
+      false,
+      `${field} is not an accepted request field, so a client cannot supply one`,
+    );
+  }
+
+  // 5. The kill switch stays a constant, so no environment flag can open the endpoint either.
+  assertEquals(/enabled:\s*false/.test(wiring.code), true, '§I.2’s kill switch is off');
+  assertEquals(
+    /enabled:\s*[^,\n]*Deno\.env/.test(wiring.code),
+    false,
+    'and it is not read from the environment',
+  );
+});
+
+Deno.test('the two adapters are the only network capability, and there is no second transport', () => {
+  /**
+   * The narrowed form of AI-2's absolute. There is no `XMLHttpRequest`, no WebSocket, no `Deno.connect`
+   * and no dynamic import in any production file, and the only two modules that can reach the network
+   * are the two reviewed adapters — so "no other module can call out" is a capability the code does not
+   * have rather than a policy it follows.
+   *
+   * The JWT authentication mechanism still needs no call: the platform injects `SUPABASE_JWKS`, so the
+   * verification keys are already in the environment.
    *
    * `Deno.serve` is the inbound listener rather than an outbound call, and it is confined to `index.ts`.
    */
-  assertEquals(offenders(/\bfetch\s*\(/, PRODUCTION), [], 'no fetch call');
+  assertEquals(
+    offenders(/\bfetch\s*\(/, PRODUCTION),
+    [],
+    'neither adapter calls global fetch directly',
+  );
   assertEquals(
     offenders(/XMLHttpRequest|WebSocket|EventSource/, PRODUCTION),
     [],
@@ -375,10 +599,16 @@ Deno.test('nothing in the production graph can make a network call', () => {
     'no socket',
   );
   assertEquals(offenders(/\bimport\s*\(/, PRODUCTION), [], 'no dynamic import');
+  /**
+   * Exactly one URL literal in the whole function, and it is the provider origin.
+   *
+   * The quota adapter deliberately has none — it builds its base from the validated, platform-injected
+   * `SUPABASE_URL` — so this stays a near-absolute: any new hard-coded destination fails here.
+   */
   assertEquals(
     offenders(/https?:\/\//, PRODUCTION),
-    [],
-    'no URL literal of any kind in executable code',
+    [PROVIDER_ADAPTER],
+    'one URL literal in executable code, and it is the fixed provider origin',
   );
   assertEquals(
     offenders(/Deno\.serve/, PRODUCTION),
@@ -494,11 +724,11 @@ Deno.test('nothing selects a provider from request input or an environment flag'
   );
   assertEquals(
     offenders(
-      /Deno\.env\.get\(\s*'(?!SUPABASE_URL|SUPABASE_JWKS|SUPABASE_SERVICE_ROLE_KEY)/,
+      /Deno\.env\.get\(\s*'(?!SUPABASE_URL|SUPABASE_JWKS|SUPABASE_SERVICE_ROLE_KEY|OPENAI_API_KEY)/,
       PRODUCTION,
     ),
     [],
-    'and no environment read beyond the three permitted ones',
+    'and no environment read beyond the four permitted ones',
   );
 });
 
@@ -571,6 +801,9 @@ Deno.test('§H.3 — the modules that touch a credential or the message log noth
       'policy.ts',
       'responses.ts',
       'handler.ts',
+      // The two adapters hold a credential and the outbound prompt. Neither has a logger at all.
+      'quota-rpc.ts',
+      'openai-provider.ts',
     ]
   ) {
     const file = PRODUCTION.find((candidate) => candidate.name === name);

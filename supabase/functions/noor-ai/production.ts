@@ -1,5 +1,6 @@
 import type { ClaimsPolicy } from './claims.ts';
 import { createJwtClaimsVerifier } from './jwt-verifier.ts';
+import { createOpenAIProvider } from './openai-provider.ts';
 import { createQuotaRpcStore } from './quota-rpc.ts';
 import type {
   AIProvider,
@@ -12,6 +13,9 @@ import type {
   Timer,
 } from './ports.ts';
 
+/** Defined next to the adapter that returns it, and re-exported so the graph reads in one place. */
+export { unavailableProvider } from './openai-provider.ts';
+
 /**
  * The production dependency graph.
  *
@@ -22,43 +26,59 @@ import type {
  * environment flag chooses a different provider, because there is only one provider in this module
  * graph and it is the one that declines.
  *
- * ── The three independent reasons AI-2 is unavailable in production ──────────
- * Layered deliberately, so that flipping any single one of them in AI-3 cannot accidentally open the
- * endpoint:
+ * ── The four independent reasons Noor AI is unavailable in production ────────
+ * Layered deliberately, so that flipping any single one of them cannot accidentally open the endpoint:
  *
  *   1. **The kill switch is off** (§I.2). Noor AI is not enabled for this deployment, because there is
  *      nothing behind it to enable.
- *   2. **The rate limiter cannot answer** (§I.1, §12.7). No shared store has been selected, and an
- *      in-memory counter in an ephemeral isolate is not a rate limit, so it fails closed.
- *   3. **The provider is unavailable** (§K). No provider is configured, so there is nothing to call.
+ *   2. **The quota store has no credential.** No `SUPABASE_SERVICE_ROLE_KEY` is set anywhere, so the
+ *      adapter degrades to the store that can only refuse, and an unmetered AI endpoint is worse than
+ *      an unavailable one (§I.1).
+ *   3. **No provider key exists.** `OPENAI_API_KEY` is unset in every environment, so
+ *      `createOpenAIProvider` yields the provider that can only refuse.
+ *   4. **B10 is open** — see `createProductionProvider`. There is no reviewed **per-user**
+ *      `safety_identifier` derivation, and the adapter's construction-time option cannot be one, so
+ *      nothing can be supplied and the provider refuses on that ground *alone*, whatever happens to
+ *      the key.
  *
  * A request therefore fails closed with §I.5's stable `503 service_unavailable` *after* authentication
- * and validation have run — which is what makes the AI-2 skeleton useful: the whole request path is
- * exercised and nothing is answered.
+ * and validation have run — the whole request path is exercised and nothing is answered.
  */
 
 /**
- * The provider that is not there.
+ * The production provider — the OpenAI adapter, constructed so that it refuses.
  *
- * ── An `unavailable` provider rather than a stub that answers ────────────────
- * The temptation in a skeleton phase is a provider that returns "Hello from Noor AI", and it is exactly
- * the wrong thing to ship: a canned answer in the production graph is a canned answer one misconfigured
- * deployment away from a user reading it and believing it. So the production provider's only behaviour is
- * to report that there is no provider.
+ * ── Why this function exists rather than a bare `unavailableProvider` ────────
+ * The adapter is now real code that could contact `api.openai.com`, so "it is disabled" has to be a
+ * property of the *graph* a test can build and drive, not a sentence in a comment. This constructs the
+ * real thing from the real environment and lets its own gates decide — and today they both refuse.
  *
- * It performs no network call. It imports nothing. `signal` is accepted because the port requires it and
- * ignored because there is no operation to abort — noted here so its absence reads as deliberate rather
- * than forgotten.
+ * ── B10, stated where the wiring is ──────────────────────────────────────────
+ * `staticSafetyIdentifier: undefined` is not an omission, and it is **not a slot waiting for a value**.
+ * B10 — the key provisioning and rotation lifecycle (`NOOR_AI3_QUOTA_STORE_SECURITY_REVIEW.md` §11.5)
+ * — is **open**, and the thing it is open *about* cannot be expressed here at all: this graph is built
+ * once per isolate, so anything passed on that line would be a single constant shared by every user
+ * the isolate serves. A safety identifier is defined as identifying each user. One constant is not
+ * that, and no better constant fixes it.
  *
- * §F.1's boundary — `POST https://api.openai.com/v1/responses`, the Responses API — is what AI-3
- * implements behind this port once §F.10's data-control decision is on record and a key exists. Nothing
- * in this file names, imports or reaches it, and `tests/source-scan_test.ts` asserts that for the whole
- * directory.
+ * **Closing B10 therefore does not mean filling this in.** It means a separately reviewed **per-user
+ * derivation step** — server-side, after JWT verification and before the provider call, emitting an
+ * opaque identifier and nothing else — carried as a new per-request field. That is a reviewed diff to
+ * `ProviderRequest`, to §H.1's allow-list and to the boundary test (plan §6.5), plus an answer to the
+ * Apple linkage question in `NOOR_AI_DATA_CONTROL_DECISION.md` §6.3. A raw uuid, an email, a phone
+ * number, a session id and an unkeyed uuid hash all remain prohibited as input or output, and the
+ * mobile client may never supply one.
+ *
+ * Until that port exists, the `undefined` below keeps live provider execution unavailable **by
+ * itself**, whatever happens to the API key. `tests/source-scan_test.ts` pins the literal so removing
+ * it is a visible failure rather than a quiet one.
  */
-export const unavailableProvider: AIProvider = {
-  // deno-lint-ignore require-await
-  generate: async () => ({ kind: 'unavailable' }),
-};
+export function createProductionProvider(environment: ProductionEnvironment): AIProvider {
+  return createOpenAIProvider({
+    apiKey: environment.openaiApiKey,
+    staticSafetyIdentifier: undefined,
+  });
+}
 
 /**
  * The quota timeout, and why it is well inside the handler budget.
@@ -223,6 +243,20 @@ export type ProductionEnvironment = {
    * set — the adapter degrades to the store that can only refuse, and the handler answers `503`.
    */
   readonly serviceRoleKey: string | undefined;
+  /**
+   * `OPENAI_API_KEY` — the provider credential, and the second secret this function may read.
+   *
+   * **No such key exists.** None has been created, none is set in any environment, none appears in
+   * this repository, and this phase is not authorised to create one. The name is here so the adapter
+   * can be constructed from the real environment and observed to refuse, which is a stronger claim
+   * than not wiring it at all.
+   *
+   * It is read once, in `index.ts`, and handed straight to `openai-provider.ts`. It reaches no
+   * handler, no logger and no response, and it must never appear in mobile source, in `.env`, in any
+   * `EXPO_PUBLIC_*` variable or in the app bundle — `EXPO_PUBLIC_*` in particular is inlined into the
+   * shipped bundle, which is the specific mistake §B.2 exists to prevent.
+   */
+  readonly openaiApiKey: string | undefined;
 };
 
 /**
@@ -242,7 +276,7 @@ export function createProductionDependencies(
       claims: claimsPolicyFor(environment.supabaseUrl),
       nowSeconds: () => Math.floor(systemClock.now() / 1000),
     }),
-    provider: unavailableProvider,
+    provider: createProductionProvider(environment),
     quota: createQuotaRpcStore({
       supabaseUrl: environment.supabaseUrl,
       serviceRoleKey: environment.serviceRoleKey,

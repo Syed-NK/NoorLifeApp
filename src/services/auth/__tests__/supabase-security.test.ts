@@ -200,6 +200,75 @@ describe('no secrets in the repository', () => {
     ).toEqual([]);
   });
 
+  /**
+   * Added 2026-08-09 by the AI-3 provider adapter.
+   *
+   * That phase introduces exactly one module that may contact OpenAI — the Edge Function's
+   * `supabase/functions/noor-ai/openai-provider.ts`, which runs on the server and is never bundled.
+   * The mobile app must not name the provider key, the provider host, the endpoint, or any SDK: an
+   * `EXPO_PUBLIC_*` variable is inlined into the shipped bundle, so a provider credential reaching
+   * `src/` at all is the specific mistake §B.2 exists to prevent.
+   *
+   * `supabase/functions/` is deliberately out of scope here, exactly as for the service-role guard:
+   * it is server code, and its own containment is asserted by `tests/source-scan_test.ts`, which pins
+   * both the host and the key name to a single file by exact equality.
+   */
+  it('the mobile app names no OpenAI key, host, endpoint or SDK', () => {
+    expect(
+      scanSrc(
+        /OPENAI_API_KEY|OPENAI_ORG|OPENAI_PROJECT|OPENAI_BASE_URL|api\.openai\.com|\/v1\/responses|from\s+['"](npm:)?openai|@ai-sdk|langchain/i,
+        { shippedOnly: true, stripComments: true },
+      ),
+    ).toEqual([]);
+  });
+
+  it('embeds no OpenAI-shaped key anywhere under src, tests included', () => {
+    // No exclusion and no comment stripping: a key pasted into a fixture is committed key material.
+    expect(
+      scanSrc(/sk-[A-Za-z0-9_-]{16,}|sk-proj-[A-Za-z0-9_-]{8,}/, {
+        shippedOnly: false,
+        stripComments: false,
+      }),
+    ).toEqual([]);
+  });
+
+  it('the Edge Function keeps provider reach in one file, and the production gate stays shut', () => {
+    /**
+     * The complement of the scan above, read from the other side of the boundary. It is a coarse
+     * check on purpose — `tests/source-scan_test.ts` owns the exact-equality assertions — but it runs
+     * in the Jest suite, which is the one a developer runs by habit, so a second file gaining provider
+     * reach is caught even if nobody provisions Deno that day.
+     */
+    const fn = join(ROOT, 'supabase', 'functions', 'noor-ai');
+    const named = readdirSync(fn)
+      .filter((f) => f.endsWith('.ts'))
+      .filter((f) =>
+        /api\.openai\.com/.test(
+          readFileSync(join(fn, f), 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/^\s*\/\/.*$/gm, ''),
+        ),
+      );
+    expect(named).toEqual(['openai-provider.ts']);
+
+    /**
+     * B10 is open, so the production graph constructs the provider with no safety identifier — which
+     * makes it unavailable regardless of whether a key is ever set.
+     *
+     * The option it declines is `staticSafetyIdentifier`, and the name is the point: it is fixed at
+     * construction, the graph is built once per isolate, so any value there would be one constant
+     * shared by every user. It is mocked-test scaffolding, not a future B10 slot. B10 needs a reviewed
+     * per-user derivation carried as a per-request field, which does not exist.
+     */
+    const wiring = readFileSync(join(fn, 'production.ts'), 'utf8');
+    expect(wiring).toMatch(/staticSafetyIdentifier:\s*undefined/);
+    // Never a literal, in any production file.
+    expect(wiring).not.toMatch(/staticSafetyIdentifier:\s*['"`]/);
+    // And §I.2's kill switch is a constant, not an environment lookup.
+    expect(wiring).toMatch(/enabled:\s*false/);
+    expect(wiring).not.toMatch(/enabled:\s*.*Deno\.env/);
+  });
+
   it('the mobile app reaches no Noor AI quota RPC and no private schema', () => {
     /**
      * The quota wrappers are executable by `service_role` alone, so the app could not call them even

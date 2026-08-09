@@ -635,6 +635,158 @@ export async function createSigningFixture(kid = 'test-key-1'): Promise<SigningF
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Mocked provider transport
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A synthetic provider credential.
+ *
+ * Deliberately not key-shaped: `source-scan_test.ts` refuses anything matching `sk-…` anywhere in the
+ * repository including fixtures, and a placeholder that looked like the real thing would be a
+ * placeholder somebody eventually mistakes for one. **No real key exists** and none is needed — the
+ * transport is a mock, so the only property under test is *where the value is written*.
+ */
+export const TEST_PROVIDER_KEY = 'test-provider-key-not-real-000';
+
+/**
+ * A synthetic opaque safety identifier for the B10 gate.
+ *
+ * Obviously synthetic, and derived from nothing: not a uuid, not a hash of one, not an email, not a
+ * session id. B10 is open, so no real derivation exists to imitate — and a fixture that imitated one
+ * would be a design decision made in a test file.
+ */
+export const TEST_SAFETY_IDENTIFIER = 'synthetic-opaque-test-subject-01';
+
+/** One captured request, with everything the outbound assertions need and nothing printed. */
+export type FetchCall = {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Headers;
+  readonly body: string;
+  readonly redirect: RequestRedirect | undefined;
+  readonly signal: AbortSignal | undefined;
+};
+
+/** A scripted step: a response to return, or a thunk that throws to simulate a transport failure. */
+export type FetchStep = Response | (() => Response);
+
+export type FetchMock = {
+  readonly impl: typeof fetch;
+  readonly calls: readonly FetchCall[];
+};
+
+/**
+ * A `fetch` that answers from a script and records what it was asked.
+ *
+ * ── Why it throws when the script runs out ───────────────────────────────────
+ * "The adapter performs no internal retry" is asserted by scripting exactly one step and letting a
+ * second call fail loudly. A mock that repeated its last answer would let a retry loop pass silently,
+ * which is the one behaviour this boundary must not have.
+ */
+export function createFetchMock(...steps: readonly FetchStep[]): FetchMock {
+  const calls: FetchCall[] = [];
+  let index = 0;
+  const impl = ((input: URL | RequestInfo, init?: RequestInit) => {
+    calls.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      headers: new Headers(init?.headers),
+      body: typeof init?.body === 'string' ? init.body : '',
+      redirect: init?.redirect,
+      signal: init?.signal ?? undefined,
+    });
+    const step = steps[index];
+    index += 1;
+    if (step === undefined) {
+      throw new Error(`the transport was called ${index} times; ${steps.length} were scripted`);
+    }
+    return Promise.resolve(typeof step === 'function' ? step() : step);
+  }) as unknown as typeof fetch;
+  return { impl, calls };
+}
+
+/** A JSON response with an explicit status. `body` may be a value to encode or raw text. */
+export function jsonResponse(body: unknown, status = 200, headers: HeadersInit = {}): Response {
+  const merged = new Headers(headers);
+  merged.set('content-type', 'application/json');
+  return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
+    status,
+    headers: merged,
+  });
+}
+
+/** The structured payload the model is asked to emit, with the three fields the schema requires. */
+export function structuredAnswer(
+  overrides: Partial<
+    { answer_text: string; safety_category: string; citation_required: boolean }
+  > = {},
+): string {
+  return JSON.stringify({
+    answer_text: 'Open Faith, then Prayer Settings, then Reminders.',
+    safety_category: 'none',
+    citation_required: false,
+    ...overrides,
+  });
+}
+
+/** A Responses API `usage` object, in the provider's own shape. `output_tokens` is the total. */
+export function providerUsage(
+  inputTokens = 137,
+  outputTokens = 61,
+  reasoningTokens = 19,
+): Record<string, unknown> {
+  return {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    output_tokens_details: { reasoning_tokens: reasoningTokens },
+    input_tokens_details: { cached_tokens: 0 },
+  };
+}
+
+/** A complete, well-formed Responses API envelope. Every field is one the documentation names. */
+export function providerEnvelope(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: 'resp_synthetic_0123456789',
+    object: 'response',
+    status: 'completed',
+    model: 'a-model-the-adapter-must-ignore',
+    output: [
+      { type: 'reasoning', id: 'rs_synthetic', summary: [] },
+      {
+        type: 'message',
+        id: 'msg_synthetic',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: structuredAnswer(), annotations: [] }],
+      },
+    ],
+    usage: providerUsage(),
+    ...overrides,
+  };
+}
+
+/** An envelope whose single message carries `text`, leaving everything else well-formed. */
+export function envelopeWithText(
+  text: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return providerEnvelope({
+    output: [
+      {
+        type: 'message',
+        id: 'msg_synthetic',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text, annotations: [] }],
+      },
+    ],
+    ...overrides,
+  });
+}
+
 /** A claim set that satisfies every §D.4 row, so a test can break exactly one thing at a time. */
 export function validClaimSet(
   nowSeconds: number,

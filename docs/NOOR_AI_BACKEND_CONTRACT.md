@@ -792,8 +792,26 @@ Rules that do belong in the contract:
 **Status: proposed, not pinned — `NOOR_AI3_IMPLEMENTATION_PLAN.md` §3.** That document records the
 selection with its rationale, verified pricing, and the reason the slug must temporarily be treated
 as a controlled reviewed alias rather than a dated snapshot. It is a recommendation awaiting review;
-no model is configured, and the `temperature` question above is answered there (not documented as
-supported for the recommended model, so none is sent).
+the `temperature` question above is answered there (not documented as supported for the recommended
+model, so none is sent).
+
+**Amended 2026-08-09 — "read from function configuration" is not what was built, and this records
+why.** The provider adapter now exists locally, and the slug is a **module constant** in
+`supabase/functions/noor-ai/openai-provider.ts` rather than a `Deno.env.get` read. Three of the four
+rules above are unaffected: the request body still cannot influence it, a change is still a
+configuration change plus a re-run of §J, and sampling parameters are still server-owned and unsent.
+What changes is the fourth — staging and production cannot read *different* slugs from configuration,
+because there is no configuration to read.
+
+The trade was made deliberately. An environment-read slug is a second value that anything able to set
+an environment variable could retarget, with no validator possible — the same class of risk
+`quota-rpc.ts` needs `resolveQuotaOrigin` for. A constant pinned by an exact-equality source scan
+gives §F.2's actual requirement, "the choice is made in one reviewable place", without adding that
+surface. If a later phase genuinely needs per-environment models, this returns as its own reviewed
+change with a validated allow-list of permitted slugs, not a bare environment read.
+
+**Owner decision, 2026-08-09: approved.** The fixed constant stands; there is no model environment
+variable, and the pinning tests are the control.
 
 ### F.3 Instructions are server-owned and never concatenated with user text
 
@@ -909,6 +927,30 @@ than the billing/quota cases), `500`, `502`, `503`, and connection resets.
 One retry, not five. The client is a person waiting on a phone, and a long server-side retry chain
 turns a fast honest error into a slow one. `x-ratelimit-*` response headers are read and recorded as
 metrics so §I.2's ceilings are tuned against the provider's actual accounting rather than guesses.
+
+**Amended 2026-08-09 — two owner decisions, both approved.**
+
+1. **`408` and `504` join the retried-narrowly class.** The enumeration above names `500`, `502`,
+   `503` and connection resets; a request timeout and a gateway timeout are the same category of
+   provider-side transient failure. They receive the **single existing deadline-bound retry** and no
+   more — the attempt cap, the budget rule and the delay policy are unchanged — and **both incurred
+   attempts are registered and cost-accounted separately**, exactly as for a `500`.
+2. **`401` and `403` are incurred terminal configuration failures.** Still never retried, as the
+   never-retried list above already requires. What changes is the accounting: they get their own
+   `ProviderOutcome` member, `provider-configuration-error`, rather than reusing `unavailable`.
+   `unavailable` means *no outbound request occurred*, and the handler treats it as free — releasing
+   the reservation as unused and registering nothing. A `401` is a reply, which proves a request was
+   made, so it is registered once with its ordinal and a `terminal` coarse class, uses whatever
+   documented `usage` the response carries and zero tokens when it carries none, and is **finalized,
+   never released**. §I.2's ceilings are enforced from recorded spend, so an unrecorded incurred
+   attempt is the error that actually costs money.
+
+   The client's view is unchanged and must stay so: §I.5's stable `503 service_unavailable`, with a
+   body byte-identical to the absent-provider case. Nothing reveals whether the key was missing,
+   invalid, revoked or unpermitted — §D.1's reasoning applies to the provider credential exactly as it
+   does to the caller's token. §H.3's `operator_alert` gains `provider_configuration` alongside
+   `quota_exhausted`: a coarse closed-enum state, never a message, because a wrong key and an
+   exhausted budget need different humans doing different things.
 
 ### F.9 Provider identifiers are not NoorLife identifiers
 

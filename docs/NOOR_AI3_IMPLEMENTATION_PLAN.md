@@ -1561,6 +1561,120 @@ fake provider; **no deployment, no secret operation and no provider connectivity
 remains the one that reports itself unavailable and the kill switch remains **off**, so no user can
 reach NoorAI. **AI-3 remains incomplete.**
 
+**OpenAI Responses provider adapter — implemented locally and disabled, 2026-08-09.** The step above
+is now followed by §10 step 7. `supabase/functions/noor-ai/openai-provider.ts` implements the
+existing `AIProvider` port against `POST https://api.openai.com/v1/responses`, verified entirely with
+a mocked `fetch`. **No API key was created or read, no OpenAI request was made, nothing was deployed,
+and no real-user path was enabled.**
+
+- **Documentation pinned.** Every field, status, response shape and price was re-read on **2026-08-09**
+  from `developers.openai.com` — the Responses create reference, the structured-outputs, reasoning,
+  rate-limits, error-codes, safety-best-practices and your-data guides, the models page and the Terra
+  model page. The retrieval date is recorded in the adapter's own header comment so it travels with
+  the code.
+- **Pricing re-verified, and unchanged.** Terra is **$2.00** uncached input, **$0.20** cached input,
+  **$2.50** cache write (the documented 1.25×) and **$12.00** output, per 1M tokens. §3.2's table and
+  the database price table both still hold, and **no production price approval is created by this
+  step** — the seeded ceilings remain the §4.8 dev-smoke values.
+- **The request, field by field.** `model` (R1's alias), server `instructions` verbatim from
+  `buildInstructions()`, `input` as a `developer` language-hint message plus one `user` message,
+  `store: false`, `max_output_tokens` from `HandlerConfig`, `reasoning: { effort: 'low' }` (R2, with
+  `mode` omitted), `text.format` as a **strict** `json_schema`, and `safety_identifier` — which is
+  never populated in production; see B10 below. Absent by construction: `tools`, `tool_choice`,
+  `previous_response_id`, `conversation`, `background`, `stream`, `metadata`, `temperature`, `top_p`,
+  `prompt_cache_key`. §F.3 holds structurally: instructions and user text occupy separate API
+  channels and are never concatenated, and the language hint is a third channel built only from the
+  two-entry locale allow-list.
+- **Structured output rather than prose parsing.** The model returns `answer_text`, `safety_category`
+  from a **closed enum** derived from the `SafetyCategory` union, and `citation_required`. The enum is
+  a `Record` over the union, so adding a category is a compile error rather than a drift. The model
+  cannot invent a category, and one outside the set fails closed. **Server policy is unchanged and
+  still authoritative** — the provider classifies, `policy.ts` decides, and no provider string ever
+  becomes user-facing copy.
+- **Owner decision, approved: the model stays a fixed constant.** The slug is a module constant pinned
+  by an exact-equality source scan, **not** a `Deno.env.get` read and not a model environment variable.
+  This supersedes §3.7 item 1; the reason and the cost are recorded in the contract's §F.2 amendment.
+- **Owner decision, approved: `408` and `504` join the transient class.** §F.8 enumerates `429`
+  (non-billing), `500`, `502`, `503` and connection resets. `408` and `504` are the same category of
+  provider-side timeout and map alongside them, receiving the **single existing deadline-bound retry**
+  and no more. Both attempts are registered and cost-accounted separately, exactly as for a `500`.
+- **Error mapping.** `429` splits on the documented `error.type` / `error.code` enums: billing and
+  spend-limit codes become `quota-exhausted` (never retried, operator alert), everything else becomes
+  `rate-limited` with a validated, capped `Retry-After`. `400`, `404`, `422` and every unexpected
+  status become `malformed`, which records the attempt as incurred — the right bias when it is unknown
+  whether the request was billed. A handler abort is `timeout`; a transport failure or refused redirect
+  is `transient-server-error`. **No provider message, body, status text or response id ever crosses the
+  boundary.**
+- **`401` and `403` are incurred terminal configuration failures, not "unavailable".** Corrected
+  2026-08-09 after the first draft mapped them onto `unavailable`. The handler defines `unavailable`
+  as *no provider configured and no outbound request made*, and `attemptWasIncurred` reads it that
+  way — so the original mapping registered no attempt and **released the reservation as unused**,
+  asserting that a request the provider had received and answered was free. Since §I.2's ceilings are
+  enforced from recorded spend, that is the failure mode that costs money.
+
+  `ProviderOutcome` therefore gains a distinct member, `provider-configuration-error`. It is terminal
+  and never retried (§F.8 lists `401`/`403` among the outcomes a second identical request cannot fix);
+  it is counted as incurred, registered once with its ordinal and a `terminal` coarse class, using
+  whatever documented `usage` the body carries and zero tokens when it carries none; and the
+  reservation is **finalized, never released**. `OperationalLogRecord.operator_alert` widens from
+  `'quota_exhausted' | null` to add `'provider_configuration'` — a coarse closed-enum state, never a
+  message — because §F.8 says a wrong key must page a human and the remedy differs from a spend
+  ceiling's. The **client** sees §I.5's stable `503` and a body byte-identical to the absent-provider
+  case, so nothing reveals whether the key was missing, invalid, revoked or merely unpermitted.
+- **Usage mapping, and one correction the API shape forces.** The API's `output_tokens` is the
+  **total** and `output_tokens_details.reasoning_tokens` is a breakdown of it, while the database adds
+  its two columns when pricing an attempt. The adapter therefore sends the *visible* share as
+  `outputTokens` and the reasoning share separately, so the two sum to what the provider reported.
+  Passing the API total through unchanged would have double-counted reasoning into recorded spend.
+  Invalid usage — negative, fractional, string, `NaN`, over the database bound, or a breakdown larger
+  than its total — is discarded, and the attempt is recorded with zero tokens rather than an estimate.
+- **B10 is not implemented, and the adapter's construction option is not a future B10 boundary.**
+  Corrected 2026-08-09. An earlier draft of this entry described the adapter as accepting "an
+  already-derived opaque value through a typed server-only parameter", which read as though B10 were
+  solved down to supplying one. **It is not, and that framing is withdrawn.**
+
+  The option — now named `staticSafetyIdentifier` — is fixed when the adapter is constructed, and the
+  production graph is constructed **once per isolate**. Any value passed there would be a single
+  constant shared by every user that isolate serves. Official guidance asks for "a string that
+  uniquely identifies each user"; one constant identifies the application, which §6.4 already noted
+  "would merge every user into one abuse subject". No better constant fixes this — the gap is
+  structural. The option exists **only** so the mocked tests can exercise how the request is built and
+  parsed when the field is populated, and the synthetic value they use is confined to `tests/` by a
+  source assertion.
+
+  **What B10 actually requires**, recorded so the next phase does not reach for the shortcut: a
+  separately reviewed **per-user derivation step**, server-side, running *after* JWT verification and
+  *before* provider invocation, whose output is an **opaque identifier and nothing else**, carried as a
+  new per-request field. That is a new port plus a reviewed diff to `ProviderRequest`, to §H.1's
+  allow-list and to the boundary test (§6.5), and an answer to the Apple linkage question in
+  `NOOR_AI_DATA_CONTROL_DECISION.md` §6.3. A raw uuid, an email, a phone number, a session id and an
+  unkeyed uuid hash are prohibited as input and as output. The mobile client may never supply one;
+  §C.6 rejects `sub`, `user_id` and `subject_id` as unknown fields, and a source assertion keeps
+  `safety_identifier` off the accepted list too.
+
+  R10's synthetic constant and R11's per-user HMAC both remain **unimplemented**. Production passes
+  `undefined`, which keeps the live provider unavailable **on its own**, whatever happens to the key —
+  and **the adapter cannot be enabled until B10 supplies the reviewed per-user opaque identifier.**
+- **The guards were narrowed, not deleted** (§9.2). `fetch` is now asserted by exact equality over
+  *two* files, the quota adapter and the provider adapter; `api.openai.com`, `/v1/responses` and the
+  `gpt-…` slug are each asserted to appear in exactly one; the environment-read allow-list grew from
+  three names to four with each secret pinned to `index.ts`; and new assertions cover the fixed
+  origin, the absence of any environment read in the adapter, `redirect: 'error'`, the single `${key}`
+  interpolation site, the absent request fields, and the closed B10 gate. The Jest guard now also
+  asserts that no shipped `src/` file names the provider key, host, endpoint or any SDK.
+- **Verified with:** 42 focused adapter tests over a mocked transport, 19 handler/provider integration
+  tests over the fake quota store, 275 Deno tests in total, and the full Jest suite. No SQL changed, no
+  dependency was added, and no Docker, PostgreSQL or pgTAP run was needed.
+
+**Owner decisions recorded 2026-08-09.** Two, both approved: (1) `gpt-5.6-terra` remains a module
+constant pinned by tests rather than a model environment variable; (2) provider `408` and `504` map to
+the existing transient class and receive the single existing deadline-bound retry, with both incurred
+attempts registered. Neither approves a model change, a ceiling, a deployment or any traffic.
+
+**The next step is B10 — a reviewed per-user safety-identifier derivation — and only then a separately
+approved single synthetic hosted smoke test (§7.2, §7.3).** Neither is authorised by this step, and
+the provider cannot be enabled before the first of them lands.
+
 ### 11.3 Provisional, or open, until evidence exists
 
 `max_output_tokens` (production), `upstreamTimeoutMs` and `handlerBudgetMs` (production), the
@@ -1606,11 +1720,11 @@ proposes how to close them.
 | -------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | §F.10 data-control decision recorded                     | **Satisfied earlier** by `NOOR_AI_DATA_CONTROL_DECISION.md` — development-only    |
 | Provider key provisioned via `supabase secrets set`      | **Not done. No key exists anywhere.** Sequence written (§7.2), not executed        |
-| Model selected and pinned, with rationale (§F.2)          | **Recommended (R1), not approved and not pinned.** No configuration value is set   |
+| Model selected and pinned, with rationale (§F.2)          | **Recommended (R1), still not approved.** *Updated 2026-08-09:* the slug is now **pinned in code** — a module constant in `openai-provider.ts`, held to exactly one file by an exact-equality source scan — and re-verified against the live model and pricing pages on that date. Pinned is not approved: R1 and R2 remain reviewer decisions, and the deviation from §3.7 item 1 (a constant rather than an environment read) is recorded in the contract's §F.2 amendment |
 | Timeouts from measured latency (§F.7)                     | **Proposed and explicitly provisional.** No latency has been measured              |
 | Token and spend limits pinned (§I.2, §I.3)                | **Proposed (§4).** Not pinned; two of three global controls are not implemented (§9.3) |
 | Rate-limit store chosen (§12.7, §I.1)                     | **Architecture chosen 2026-08-08 (review §19: D2); still `Blocked` for implementation** (§11.2.1). A dedicated least-privilege `LOGIN` role over transaction-mode Supavisor, credential as an Edge Function secret only, objects in a private `noor_ai` schema, no `service_role`, atomic and server-only, failing closed. *Supersedes "Postgres + definer RPC is the direction" and "not chosen".* The Postgres client is **selected and pinned in planning** 2026-08-08 — `jsr:@db/postgres@0.19.5`, with `tls.enforce: true`, structured options rather than a connection string, and pool size 1 (review §20). Still unsettled: the credential and HMAC key lifecycle (B10), the end-to-end TLS verification proof (B14 — conditionally approved, still blocking), the pooler custom-role test (B15 — specified, unrun). **No migration, no role, no schema, no dependency, no salt, no secret** |
-| §12.6 `safety_identifier` decision                        | **Recommended (R10, R11), not approved.** No salt generated, no field implemented  |
+| §12.6 `safety_identifier` decision                        | **Recommended (R10, R11), not approved. B10 open and blocking.** No salt generated, no identifier derived, and neither R10's synthetic constant nor R11's HMAC implemented. *Corrected 2026-08-09:* the adapter's `staticSafetyIdentifier` construction option is **mocked-test scaffolding, not a future B10 boundary** — it is fixed per adapter instance and the graph is built once per isolate, so it could only ever be one constant shared by every user. B10 needs a separately reviewed **per-user** derivation running after JWT verification and before the provider call, emitting an opaque identifier and nothing else, carried as a new per-request field. Production passes `undefined`, and **the adapter cannot be enabled until that exists** |
 | Platform log retention confirmed (§H.4)                   | **Not done** — step 6b                                                            |
 | Previous HS256 signing key no longer listed (§D.6.5)      | **Not confirmed** — step 6b                                                       |
 | §J row 13b — shared rate limit                            | **Not run.** No store exists                                                      |
@@ -1631,3 +1745,13 @@ changed. Real-user traffic remains prohibited.
 
 The diff for this step is this document, and a cross-reference in the contract where §9.1 found the
 contract incomplete.
+
+**Superseded in part, 2026-08-09.** §12.1 is an accurate record of the **planning** step of 2026-08-06
+and is deliberately not rewritten. Two of its sentences no longer describe the current tree: provider
+connectivity **is** implemented locally, and `production.ts` no longer ships a bare
+`unavailableProvider` — it constructs the real adapter, which refuses. Everything else in §12.1 still
+holds today and is restated because it is what a reader checks: **no API key was requested, created,
+stored, printed or referenced by value; no Supabase secret was set; no migration, table, RLS policy or
+SQL was written; no dependency was added; no salt was generated; nothing was deployed; no OpenAI API
+call was made; and real-user traffic remains prohibited.** The kill switch is off, B10 is open, and
+**NoorLife is not production-ready.**

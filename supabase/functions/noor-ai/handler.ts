@@ -112,8 +112,13 @@ function isRetryable(outcome: ProviderOutcome): boolean {
  *
  * `unavailable` is the single exception, and it is exact rather than conservative: it means no
  * provider is configured, so the port returned without anything leaving the process. Every other
- * outcome — including `timeout`, and including the connection-level throw that `attemptProvider`
- * converts into `transient-server-error` — means a request was issued and the answer is unknown.
+ * outcome — including `timeout`, including `provider-configuration-error`, and including the
+ * connection-level throw that `attemptProvider` converts into `transient-server-error` — means a
+ * request was issued and the answer is unknown.
+ *
+ * `provider-configuration-error` is worth naming here because it is the one that looks like it
+ * belongs with `unavailable` and does not. A `401` is a *reply*: the request was built, sent and
+ * answered. Whether the provider billed for it is unknown, and unknown resolves toward recording.
  *
  * The bias is deliberate and one-directional. Recording an attempt that turned out to be free costs a
  * zero-token row; *not* recording one that was billed means recorded spend drifts below real spend,
@@ -202,7 +207,7 @@ type LogDraft = {
   provider_outcome: ProviderOutcomeKind | null;
   provider_attempts: number;
   upstream_malformed: boolean;
-  operator_alert: 'quota_exhausted' | null;
+  operator_alert: OperationalLogRecord['operator_alert'];
 };
 
 export function createNoorAIHandler(
@@ -770,11 +775,26 @@ export function createNoorAIHandler(
           draft.upstream_malformed = true;
           return fail('upstream_unavailable');
 
+        case 'provider-configuration-error':
+          /**
+           * §F.8 / §J.13d — the provider refused the credential. **No retry**, because a wrong or
+           * unpermitted key is not a condition a second identical request improves, and an alert,
+           * because §F.8 says a `401` "must page a human".
+           *
+           * The client's answer is byte-identical to the `unavailable` case below: §I.5's stable
+           * `503`, with nothing that distinguishes a missing key from an invalid one, a revoked one
+           * or a region restriction. What differs is entirely internal — the attempt was registered
+           * as incurred above, the reservation is settled rather than released, and the log carries
+           * a coarse alert an operator can route on.
+           */
+          draft.operator_alert = 'provider_configuration';
+          return fail('service_unavailable');
+
         case 'unavailable':
           /**
-           * The AI-2 production path. No provider is configured, so there is nothing to call, and the
-           * request fails closed with §I.5's stable `503` after authentication and validation have both
-           * run. It is never a canned answer.
+           * No provider is configured, so **nothing left the process** — see `attemptWasIncurred`,
+           * which reads this member as "free". The request fails closed with §I.5's stable `503`
+           * after authentication and validation have both run, and it is never a canned answer.
            */
           return fail('service_unavailable');
       }

@@ -331,7 +331,32 @@ export type ProviderOutcome =
   | { readonly kind: 'malformed' }
   /** §F.4 — a tool or function call was returned though none was requested. Never executed. */
   | { readonly kind: 'unexpected-tool-call' }
-  /** No provider is configured. The AI-2 production path (§K). Never retried. */
+  /**
+   * §F.8 — the provider rejected the credential or the caller. A `401` or a `403`.
+   *
+   * ── Why this is not `unavailable` ────────────────────────────────────────
+   * `unavailable` means *no request left the process*, and `attemptWasIncurred` in `handler.ts`
+   * depends on that being exactly true: it is the one outcome the handler treats as free, releasing
+   * the reservation as unused and registering nothing. A `401` proves the opposite — a request was
+   * issued, reached the provider and was answered — so recording it as `unavailable` would assert
+   * something false about spend, and §I.2's ceilings are enforced from recorded spend.
+   *
+   * The distinction is only in the accounting and the operator signal. The **client** cannot tell the
+   * two apart: both answer §I.5's stable `503 service_unavailable`, and neither reveals whether the
+   * key was missing, wrong, revoked or merely not permitted here — §D.1's reasoning applies to the
+   * provider credential just as it does to the caller's token.
+   *
+   * Terminal, and **never** retried: §F.8 lists `401` and `403` among the outcomes a second identical
+   * request cannot fix, and adds that a wrong key "must page a human".
+   */
+  | { readonly kind: 'provider-configuration-error' }
+  /**
+   * No provider is configured, so **no outbound request was made**. Never retried.
+   *
+   * The definition is load-bearing rather than descriptive: `handler.ts` reads this member as "nothing
+   * could have been billed". Any outcome that involved a request — including one the provider refused
+   * — belongs somewhere else in this union.
+   */
   | { readonly kind: 'unavailable' };
 
 export type ProviderOutcomeKind = ProviderOutcome['kind'];
@@ -491,8 +516,19 @@ export type OperationalLogRecord = {
   readonly provider_attempts: number;
   /** §I.5 — recorded distinctly from a 503 because it is a different engineering problem. */
   readonly upstream_malformed: boolean;
-  /** §F.8 / §J.13d — a quota failure "must page a human", so it is flagged, not just counted. */
-  readonly operator_alert: 'quota_exhausted' | null;
+  /**
+   * §F.8 / §J.13d — the failures that "must page a human", flagged rather than just counted.
+   *
+   * A closed enum of **coarse states**, not a message. Neither member can carry a provider string, a
+   * status code, a header or any hint about which credential was involved — an operator needs to know
+   * *which of two known conditions* occurred, and a free-text field would be the one place provider
+   * wording could reach a log.
+   *
+   * `provider_configuration` is the `401`/`403` case. It is distinct from `quota_exhausted` because
+   * the remedies are different — rotate or re-scope a key against top up or raise a limit — and both
+   * are distinct from an ordinary `503`, which mostly needs nobody woken.
+   */
+  readonly operator_alert: 'quota_exhausted' | 'provider_configuration' | null;
   readonly duration_ms: number;
 };
 

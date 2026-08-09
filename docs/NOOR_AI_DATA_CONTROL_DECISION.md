@@ -373,3 +373,43 @@ AI-3 is **not** complete, and this document closes exactly one of its gates.
 
 No API key was added, no provider connectivity was created, nothing was deployed, and no OpenAI API
 call was made in producing this record. Real-user traffic remains prohibited.
+
+---
+
+## 10. Status note — 2026-08-09, the provider adapter exists and nothing it governs has changed
+
+**This decision is unchanged. It is neither widened nor superseded by the code written on this date,
+and it must not be read as authorising anything new.**
+
+`supabase/functions/noor-ai/openai-provider.ts` now implements the Responses API boundary this
+document was written about. It is verified entirely against a **mocked HTTP transport**: no API key
+was created or read, **no request has ever been sent to OpenAI**, and nothing was deployed. §5's data
+boundary has therefore not been exercised at all — not even synthetically.
+
+What the code does do is make three of this document's requirements machine-checked rather than
+promised:
+
+- **§4.1's `store: false`** is now asserted on the constructed outbound body, not only on the port
+  type.
+- **§5.2's prohibited-upstream list** is enforced structurally: the adapter has no `metadata` field to
+  stash an identifier in, no user identity in scope, and no way to derive one.
+- **§6.3's linkage question stays open, and is now gated.** B10 is unresolved, so no
+  `safety_identifier` can be supplied and the production provider is unavailable for that reason
+  alone. Unresolved fact #3 in §8.1 is therefore **unchanged** — no stable pseudonymous identifier
+  crosses to a third party, the Apple **Linked to You** draft in §6.3 stands as drafted, and adopting
+  one is a separate change that must update this document in the same diff.
+
+**One clarification, because the first draft of this note could be misread.** The adapter has a
+construction-time option that can carry an opaque string, and the mocked tests populate it. **That is
+not a solved B10 and it is not a future B10 boundary.** It is fixed when the adapter is built, and the
+production graph is built once per isolate, so any value there would be a single constant shared by
+every user — which identifies the application, not a person. B10 requires a separately reviewed
+**per-user derivation**, running server-side after JWT verification and before the provider call,
+emitting an opaque identifier and nothing else, carried as a new per-request field with its own
+allow-list review. A raw uuid, an email, a phone number, a session id and an unkeyed uuid hash remain
+prohibited as input and as output, and the mobile client may never supply one. **Nothing in this
+document may be read as authorising a stable pseudonymous identifier to cross to OpenAI**, and the
+adapter cannot be enabled until that reviewed derivation exists.
+
+Everything §2.2 forbids remains forbidden, every release blocker in §8.2 remains open, and the single
+synthetic smoke test §2.1 authorises has **not** been run.
