@@ -2325,3 +2325,68 @@ hosted claims above are therefore read-only catalog predicates, not pgTAP.
 
 **Phase 1 is complete.** The disabled Edge Function deployment is unblocked and is the next separately
 approved step. AI-3 is not complete, and NoorLife is not production-ready.
+---
+
+## 15. Disabled Edge Function deployed — 2026-08-09
+
+The Phase 1 result documentation was pushed, and the `noor-ai` function was deployed from the exact
+committed remote HEAD **with its kill switch off**. Only credential-free gateway checks were run.
+
+**No authenticated request, no provider request, and no secret change.** The single authorized
+synthetic OpenAI request is still unused.
+
+### 15.1 Deployment
+
+| | |
+| --- | --- |
+| Deployed function | `noor-ai`, and only that |
+| Deploy exit code | **0** |
+| Status | **ACTIVE** |
+| Version | **1** |
+| `verify_jwt` | **true** — gateway verification on, `--no-verify-jwt` never passed |
+| Temporary verifier or diagnostic function | **none deployed** |
+| Secrets created or updated | **none** |
+
+The source is the pushed commit: local HEAD matched the live remote and the function tree was clean at
+deploy time. The kill switch was confirmed a **literal source constant** (`enabled: false`) before
+deployment — not read from the environment, a database, request data, headers, query strings or any
+remote configuration, and the handler gates on it directly.
+
+### 15.2 Credential-free gateway verification
+
+No key, token or credential was retrieved or sent. Each probe reports only its status class.
+
+| Probe | Status | Handler executed | NoorLife request id in body | Secret detail returned |
+| --- | --- | --- | --- | --- |
+| CORS preflight (`OPTIONS`) | **204** | no | no | no |
+| `POST`, no `Authorization` | **401** | no | no | no |
+| `POST`, clearly malformed bearer | **401** | no | no | no |
+
+Both rejections came from the platform gateway before NoorLife's handler ran, which is why no
+`noorai_req_…` identifier appears in either body — exactly what §C.9 of the contract predicts, and the
+reason AI-4 must still normalise gateway rejections against handler rejections.
+
+### 15.3 State after the checks
+
+| | |
+| --- | --- |
+| Reservations / user counters / global counters / provider attempts | **0 / 0 / 0 / 0** — unchanged |
+| Migration history | 7 applied / 0 pending |
+| `OPENAI_API_KEY` | present by name only, **never retrieved or used** |
+| `NOOR_AI_SAFETY_HMAC_KEY_V1` / `_V2` | **absent** |
+| Temporary secrets or functions | **none** |
+| OpenAI requests | **zero** |
+| Kill switch | literal `false` — the function is deployed and cannot serve |
+
+### 15.4 What is still pending
+
+- **The authenticated fail-closed test has not been run.** Confirming that an authenticated caller
+  receives the safe `503` while disabled requires a synthetic authenticated caller, and no compliant
+  way to create *and delete* one exists yet: the Management API documents no auth-user endpoint, so it
+  would need the service-role key through the Auth Admin API — outside the approved credential path,
+  and never with a real user account. This is the next gate.
+- B10's HMAC secret remains unprovisioned.
+- The single authorized synthetic OpenAI request remains unused.
+
+**Live public and user traffic remains prohibited. AI-3 is not complete, and NoorLife is not
+production-ready.**
