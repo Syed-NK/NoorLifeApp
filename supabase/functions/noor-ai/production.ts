@@ -186,7 +186,7 @@ export const structuredLogger: Logger = {
  * them.
  */
 export const productionConfig: HandlerConfig = {
-  enabled: false,
+  enabled: true,
   maxOutputTokens: 512,
   upstreamTimeoutMs: 20_000,
   handlerBudgetMs: 25_000,
