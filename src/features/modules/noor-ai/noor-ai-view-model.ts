@@ -1,43 +1,34 @@
-import type { IconName } from '@shared/models/icon';
-
 /**
- * Noor AI's home-screen view model and its fixture.
+ * Noor AI's home-screen copy.
  *
- * Content is verbatim from `02-noor-ai.png`. Typed fixtures rather than a table, because no
- * production conversation store exists yet and its schema has not been reviewed.
+ * ── What this file used to be, and why it shrank ────────────────────────────
+ * It was a typed *fixture* of the whole reference screen: four capability cards, three "Today's
+ * Suggestions" rows, and a "Recent Conversations" list of three invented questions with invented
+ * timestamps. AI-5's emulator pass captured that screen and the fabrication was plain in the
+ * screenshot: a list headed **Recent Conversations** reading "How can I improve my productivity? —
+ * Yesterday, 9:21 PM", one tap from a chat surface whose own caption says *"Nothing here is saved."*
+ *
+ * Nothing produced those rows. There is no conversation store — `AI_CONVERSATION_STORAGE_EXISTS` is
+ * `false`, conversation persistence is **AI-8's** behind a reviewed schema, an RLS policy, a
+ * retention period and an export and deletion path — so the list was not an empty state waiting for
+ * data, it was three sentences that had never been asked, presented as the user's own history.
+ *
+ * The suggestions and three of the four capability cards failed the same rule from the opposite
+ * direction: "Explain my progress", "Help me plan", "Review my day", "Balance my week" and "Family
+ * activity idea" all describe Noor AI reading module records, and AI-1 reads none. §12.8's rule is
+ * that AI-5 enables **only capabilities AI-1's server can actually serve**, and those were promises
+ * dressed as controls.
+ *
+ * ── What is left ────────────────────────────────────────────────────────────
+ * The two things this build can honestly offer: the entry into the single-turn chat, and a truthful
+ * statement of what Noor AI can and cannot reach. There is no history section, no fake empty state
+ * claiming a history exists but is empty, no conversation id, and no storage of any kind. Anything
+ * that returns here needs the capability behind it to exist first.
  */
 
-export type NoorAICapability = {
-  readonly key: string;
-  readonly label: string;
-  readonly icon: IconName;
-};
-
-export type NoorAISuggestion = {
-  readonly key: string;
-  readonly title: string;
-  readonly detail: string;
-  readonly icon: IconName;
-};
-
-export type NoorAIConversation = {
-  readonly key: string;
-  readonly question: string;
-  readonly timestamp: string;
-};
-
-export type NoorAIHomeViewModel = {
+export type NoorAIHomeCopy = {
   readonly prompt: {
     readonly placeholder: string;
-  };
-  readonly capabilities: readonly NoorAICapability[];
-  readonly suggestions: {
-    readonly title: string;
-    readonly items: readonly NoorAISuggestion[];
-  };
-  readonly conversations: {
-    readonly title: string;
-    readonly items: readonly NoorAIConversation[];
   };
   readonly privacy: {
     readonly title: string;
@@ -46,62 +37,21 @@ export type NoorAIHomeViewModel = {
   };
 };
 
-export const noorAIHomeFixture: NoorAIHomeViewModel = {
+export const noorAIHomeCopy: NoorAIHomeCopy = {
   prompt: {
     placeholder: 'Ask me anything about NoorLife…',
   },
-  capabilities: [
-    { key: 'find-feature', label: 'Find a feature', icon: 'search' },
-    { key: 'explain-progress', label: 'Explain my progress', icon: 'insights' },
-    { key: 'help-plan', label: 'Help me plan', icon: 'calendar' },
-    { key: 'app-settings', label: 'App settings', icon: 'settings' },
-  ],
-  suggestions: {
-    title: 'Today’s Suggestions',
-    items: [
-      {
-        key: 'review-day',
-        title: 'Review my day',
-        detail: 'Get a summary of today’s activities',
-        icon: 'today',
-      },
-      {
-        key: 'balance-week',
-        title: 'Balance my week',
-        detail: 'See where to improve your time',
-        icon: 'clock',
-      },
-      {
-        key: 'family-activity',
-        title: 'Family activity idea',
-        detail: 'Suggest a fun, meaningful activity',
-        icon: 'family',
-      },
-    ],
-  },
-  conversations: {
-    title: 'Recent Conversations',
-    items: [
-      {
-        key: 'productivity',
-        question: 'How can I improve my productivity?',
-        timestamp: 'Yesterday, 9:21 PM',
-      },
-      {
-        key: 'dinner',
-        question: 'Best healthy dinner ideas for family',
-        timestamp: 'Yesterday, 6:08 PM',
-      },
-      {
-        key: 'weekend',
-        question: 'Plan a balanced weekend schedule',
-        timestamp: 'May 18, 10:45 AM',
-      },
-    ],
-  },
+  /**
+   * The scope card, stated as the fact it is rather than as a control that does not exist.
+   *
+   * The previous wording — "You control what Noor AI can access" / "Manage your data and permissions
+   * anytime" — promised management that is not built: `AI_GRANT_EDITING_AVAILABLE` is `false` and
+   * granting a module is AI-6's. What is true today is narrower and worth saying plainly, and it is
+   * the same sentence the conversation screen's scope block uses, so the two cannot drift apart.
+   */
   privacy: {
-    title: 'You control what Noor AI can access',
-    body: 'Manage your data and permissions anytime.',
-    actionLabel: 'Manage Permissions',
+    title: 'Noor AI reads no module records',
+    body: 'Nothing you have saved in a module is sent with your question.',
+    actionLabel: 'What Noor AI can access',
   },
 };

@@ -451,8 +451,22 @@ export const moduleLayout = {
   faithHeroDateGap: 6,
   /** Clear air before the action, so the button never touches the prayer text. */
   faithHeroButtonGap: 9,
-  /** Noor AI's four capability cards. */
-  noorAICapabilityHeight: 62,
+  /**
+   * The Noor AI composer's input, and therefore the visible field's height.
+   *
+   * This is the **`TextInput`'s** minimum height, not the wrapper's, and that distinction is the
+   * whole point of the token. The wrapper used to carry an 84 dp `minHeight` while the input sat at
+   * its natural single-line height inside it, so roughly the lower two thirds of a box that looked
+   * like a text field did not respond to a tap — found on the API 36 emulator during AI-5's
+   * verification pass, where a tap at the bottom of the field left it unfocused.
+   *
+   * The input now carries the height and its own padding, so it fills the field to the border and
+   * every part of the visible box is the input. It is a floor, never a fixed height: a long question
+   * still grows the input and the field rather than scrolling or clipping inside them.
+   *
+   * 82 + the wrapper's 1 dp border top and bottom = the 84 dp field the reference draws.
+   */
+  noorAIComposerInputHeight: 82,
   /**
    * Faith's eight approved submenu tiles: 4 columns, 9 dp gaps.
    *

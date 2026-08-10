@@ -61,5 +61,19 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs + 2,
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
+    /**
+     * A pill states a scope or a status, so it keeps its own width.
+     *
+     * Without this it is an ordinary flex child with `flexShrink: 1`, and a sibling carrying
+     * `flex: 1` — a card heading, for instance — takes the room first and squeezes the pill below
+     * its content, at which point the label's single line ellipsizes. AI-5's emulator pass caught
+     * exactly that at a **1.30 Android font scale**: `NoorLife questions only`, the wording §06
+     * requires, rendered as `NoorLife questions …`. A truncated scope badge misstates the scope, so
+     * the pill holds its width and the flexible sibling wraps instead.
+     *
+     * Callers whose row can run out of horizontal space should let that row wrap; see
+     * `noor-ai-scope-note.tsx`.
+     */
+    flexShrink: 0,
   },
 });

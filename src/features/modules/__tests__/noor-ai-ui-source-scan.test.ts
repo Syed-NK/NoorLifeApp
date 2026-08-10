@@ -350,6 +350,71 @@ describe('the local draft rules mirror the adapter exactly', () => {
   });
 });
 
+/**
+ * The two defects AI-5's API 36 emulator pass found, guarded at the source level.
+ *
+ * Every assertion here runs against `strip()`ped source, so it examines **executable code only** — a
+ * comment describing the old arrangement, including the ones in these very files explaining what was
+ * removed, cannot satisfy or break a single expectation below.
+ */
+describe('the emulator-discovered defects cannot return', () => {
+  const composer = UI_SOURCE.find((file) => file.path.endsWith('noor-ai-composer.tsx'));
+  const viewModel = UI_SOURCE.find((file) => file.path.endsWith('noor-ai-view-model.ts'));
+  const home = UI_SOURCE.find((file) => file.path.endsWith('noor-ai-home-content.tsx'));
+
+  it('finds the three files these guards are about', () => {
+    expect(composer).toBeDefined();
+    expect(viewModel).toBeDefined();
+    expect(home).toBeDefined();
+  });
+
+  it('keeps the composer field height on the input, expressed as the token', () => {
+    const code = composer?.code ?? '';
+    // The input's floor comes from the token, so the field and its touch target cannot diverge.
+    expect(code).toMatch(/minHeight:\s*dp\(moduleLayout\.noorAIComposerInputHeight\)/);
+    // And the wrapper's old literal height — the cause of the inert lower field — is gone.
+    expect(code).not.toMatch(/minHeight:\s*dp\(84\)/);
+    // A fixed height would clip a long question instead of growing.
+    expect(code).not.toMatch(/\bheight:\s*dp\(/);
+    expect(code).not.toMatch(/\bmaxHeight:/);
+  });
+
+  it('keeps no fabricated conversation, suggestion or capability data in the home view model', () => {
+    const code = viewModel?.code ?? '';
+    for (const key of ['conversations', 'suggestions', 'capabilities']) {
+      expect({ key, matched: new RegExp(`\\b${key}\\s*:`).test(code) }).toEqual({
+        key,
+        matched: false,
+      });
+    }
+    // No invented question, and nothing shaped like a timestamp.
+    expect(code).not.toMatch(/productivity|dinner ideas|weekend schedule/i);
+    expect(code).not.toMatch(/\b\d{1,2}:\d{2}\s?(AM|PM)\b/i);
+    expect(code).not.toMatch(/Yesterday/);
+  });
+
+  it('offers no "coming soon" destination and no voice control anywhere on the surface', () => {
+    for (const { path, code } of UI_SOURCE) {
+      expect({ path, matched: /comingSoon\s*\(|module-coming-soon/.test(code) }).toEqual({
+        path,
+        matched: false,
+      });
+      expect({ path, matched: /microphone|'Ask by voice'/.test(code) }).toEqual({
+        path,
+        matched: false,
+      });
+    }
+  });
+
+  it('routes the home to nothing that claims a module read', () => {
+    const code = home?.code ?? '';
+    // The two destinations whose card labels implied AI analysis of module records.
+    expect(code).not.toMatch(/'\/insights'|'\/planner'/);
+    // And the history list's own "View All".
+    expect(code).not.toMatch(/'\/ai\/history'/);
+  });
+});
+
 describe('what this phase left untouched', () => {
   it('leaves the Edge Function kill switch as the literal false', () => {
     const wiring = strip(readFileSync(join(FUNCTION_DIR, 'production.ts'), 'utf8'));

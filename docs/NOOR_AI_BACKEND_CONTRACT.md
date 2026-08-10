@@ -1684,7 +1684,7 @@ check.
 | AI-2  | Local Edge Function skeleton with an injected fake provider | `supabase/functions/noor-ai/` exists; `[functions.noor-ai]` declared in `config.toml` with **`verify_jwt = true` explicit**; the project's current JWT signing algorithm confirmed against the dashboard as one the gateway validates (§0.3); §D.3's boundary restated in the handler's own doc comment so it cannot be lost; every AI-2 row in §J passes, including 2c and 2d2; **at AI-2 completion no provider or HMAC key was provisioned in any environment**. **Status: met — see §K.1.** AI-2 was **local-only**: its gateway evidence was local and deployment was prohibited *for that phase*. Those two statements are historical, not current — **the present hosted state is governed by §K.2** |
 | AI-3  | Provider secret and the live Responses API connection   | §F.10's data-control decision recorded first — **done**; provider key provisioned outside the repository; model, timeouts, limits, and rate-limit store chosen and pinned; §J rows 13b/18 pass; no key in the repository, the bundle, or any log. **Status: development integration met — see §K.2.** The function is deployed and **source-disabled**, and **real-user and public traffic remain prohibited**. **Does not** include revocation work — §J.2f is not an AI-3 gate |
 | AI-4  | Mobile adapter and its states                           | An `AIOrchestrator` implementation posting to the endpoint with the session token on `Authorization` and the publishable key on `apikey` **only**; **both** error categories of §C.9 normalised — gateway platform errors and handler errors — into design-spec states 20/21/22/26, with no raw platform or provider text rendered and no fabricated `request_id`; §I.5's closed error set mapped; §12.1's and §12.11's shape gaps resolved; loading, unavailable, and error states verified on the emulator **and** the physical device. **Status: the `ask` channel is implemented and locally verified — see §K.3.** "An `AIOrchestrator` implementation" is met through its formally defined ask-only subset, `AIAskOrchestrator`, which `NoorAIPort` extends: `confirmAction` is **unchanged and deliberately not implemented**, because no tool can propose an `AIActionPreview` yet (§F.4, §A.2). Composing the adapter into the full `AIOrchestrator` is **AI-9's**, in the same change that makes a confirmable action exist. The device-verification criterion is **still open** and cannot be met before AI-5 builds a surface to verify |
-| AI-5  | Noor AI text conversation UI                            | `/ai/chat/:conversationId` and `/ai/feedback` exist per workflow §6; scope shown near the composer per §06; single-turn until AI-8; only capabilities AI-1 can actually serve are enabled. **Status: implemented and locally verified against injected fixtures; device verification pending — see §K.4.** Both routes exist, the scope block sits directly above the composer, the surface is single-turn by construction, and the module-data capabilities stay unwired. The emulator and physical-device criterion AI-4 left open (§K.3.6) is **still open**, and §K.4.4 records why it could not be closed inside this phase's constraints rather than treating it as done |
+| AI-5  | Noor AI text conversation UI                            | `/ai/chat/:conversationId` and `/ai/feedback` exist per workflow §6; scope shown near the composer per §06; single-turn until AI-8; only capabilities AI-1 can actually serve are enabled. **Status: implemented; verified against injected fixtures locally and on the Android emulator; physical-device verification still pending — see §K.4.** Both routes exist, the scope block sits directly above the composer, the surface is single-turn by construction, and the module-data capabilities stay unwired. Of the emulator-and-physical-device criterion AI-4 left open (§K.3.6), the **emulator half is now met** — API 36, evidence in `design-reference/ai-5-noor-ai-interface/`, via a temporary harness since removed and proven byte-identical — while the **physical Honor half remains unavailable, not passed**, so the row stays open. §K.4.4 records both halves, and that RTL/Arabic is unreachable and unverified |
 | AI-6  | Permission-gated module reads                           | Module tables reviewed and approved with RLS (`PRE_RELEASE_BACKLOG.md` §4.1); a **server-side** grant store; `AI_GRANT_EDITING_AVAILABLE` flipped with the controls it requires; `accessed_modules` populated truthfully and displayed |
 | AI-7  | Reviewed tools and confirm-before-mutation              | Each tool reviewed individually; a mutation is unexpressible in one call; `AIActionPreview` shown before any write; `requiresConfirmation` enforced server-side |
 | AI-8  | Conversation history, retention, export, deletion       | Reviewed schema with RLS; a stated retention period; working export and deletion; `AI_CONVERSATION_STORAGE_EXISTS` flipped and its source-scan assertion updated; privacy copy updated in the same change |
@@ -2120,7 +2120,10 @@ can verify about an arbitrary caller's string. This document does not claim othe
 **What was built: the user-facing Noor AI surface, and nothing else.** This was a local-only phase.
 Nothing was deployed, the hosted function was not enabled, no secret was created or retrieved, no
 user or session was created, **no hosted Supabase request and no OpenAI request was made**, and no
-server source changed. Every claim below is evidenced by tests that run against injected fakes.
+server source changed. Every claim below is evidenced by tests that run against injected fakes; the
+rendered states in §K.4.2 have since also been observed on the Android emulator (API 36) against the
+same fakes, still without any hosted Supabase or provider request — see
+`design-reference/ai-5-noor-ai-interface/`.
 
 | Artefact | Path |
 | --- | --- |
@@ -2221,17 +2224,78 @@ construct around it.
 #### K.4.4 What this status does not mean
 
 - **AI-5 is not closed, and neither is AI-4's device criterion.** §K's AI-4 row requires loading,
-  unavailable and error states verified on the emulator **and** the physical device. Neither was
-  performed in this phase, and the reason is structural rather than an oversight: no emulator or
-  device was attached (`adb devices` listed none), and even with one attached, driving these states
-  on a device would require either a fixture selectable from the running app — which this repository
-  deliberately removed in Phase 6C-3B and which this phase was told not to reintroduce — or a live
-  request to the hosted, source-disabled function, which is prohibited. **Emulator verification:
-  unavailable, not passed. Physical Honor verification: unavailable, not passed.** No screenshots
-  were produced and none are claimed.
-- **How that gate should be closed** is therefore a decision, not just an errand: either an approved
-  development-only fixture mechanism that does not ship in the release bundle, or authorisation for
-  a bounded live request against an enabled function. Both are outside this phase.
+  unavailable and error states verified on the emulator **and** the physical device. **The emulator
+  half has since been performed; the physical-device half has not.** **Emulator verification:
+  performed — see `design-reference/ai-5-noor-ai-interface/`. Physical Honor verification:
+  unavailable, not passed.** No physical device was attached at any point, so the standing
+  both-targets rule stays unmet and AI-5 stays open.
+- **How the emulator half was closed, and why it left no residue.** The states were driven on a
+  Pixel 7 / **API 36 (Android 16)** AVD, serial `emulator-5554`, 1080 × 2400 at 420 dpi, from a debug
+  build with Metro on port 8099, signed out, against injected fixtures. The selector was a
+  **temporary harness in `src/app/ai/chat/[conversationId].tsx` alone**, choosing a fixture port from
+  a source constant — no environment variable, remote flag, route parameter or debug menu — and it was
+  **removed afterwards and proven byte-identical** to blob `765b052e…` / SHA-256 `BD936D2C…47AD`.
+  While it was applied, `noor-ai-ui-source-scan.test.ts` failed on exactly the two guards written to
+  catch such a harness; after removal that suite is green. So the Phase 6C-3B rule this section cites
+  is intact: **no fixture mechanism is selectable from a shipped build**, and production composition
+  still resolves the real adapter with no fallback.
+- **What the emulator pass did not settle.** RTL/Arabic layout is **still unverified** — it is not
+  reachable at all, because `allowRTL`/`forceRTL` appear nowhere in `src/` and no message catalogue
+  exists, so neither the force-RTL developer option nor a per-app `ar-SA` locale mirrors the layout.
+- **The two defects the emulator pass found, and how they were fixed.** Both were real, both were in
+  production code, and both are corrected rather than documented and shipped.
+  1. **The composer's visible field was mostly inert.** The wrapper `View` carried
+     `minHeight: dp(84)` while the `TextInput` kept its natural single-line height inside it, so the
+     native `EditText` occupied only ~50 px of an ~84 dp box: measured on the device, a tap at y=1294
+     left the field `focused="false"` while y=1232 focused it. The height **and** the text inset now
+     sit on the input (`moduleLayout.noorAIComposerInputHeight`) and the wrapper carries neither, so
+     the input fills the bordered box. Re-measured after the fix the `EditText` spans 216 px — the
+     full field — and the previously dead y=1294 and y=1340 both focus it. `minHeight` remains a
+     floor with no `height` or `maxHeight` anywhere, so a long question still grows the field.
+     Guarded by `noor-ai-composer-geometry.test.tsx` from the rendered styles, plus a source guard
+     that reads comment-stripped executable styling.
+  2. **The home screen showed fabricated conversation history.** `noorAIHomeFixture` supplied a
+     "Recent Conversations" card with three invented questions and invented timestamps, rendered as
+     the user's own history while `AI_CONVERSATION_STORAGE_EXISTS` is `false` and persistence is
+     AI-8's. The section, its data and its types are **removed** — not replaced with an empty state,
+     because an empty history still claims a history exists. **Conversation persistence remains
+     absent and AI-8 still owns it.**
+- **The home screen's capability boundary was corrected in the same change.** §12.8 requires that
+  only capabilities AI-1 can serve are enabled, and five controls failed it. Removed: the
+  **microphone** (voice input does not exist; it was an enabled button opening "coming soon", and it
+  is removed rather than shown permanently disabled), **"Explain my progress"** and **"Help me
+  plan"** (worded as AI analysis of module records), **"Find a feature"** (routed to "coming soon"
+  while the chat already answers it), and the whole **"Today's Suggestions"** section with its "View
+  All" ("Review my day", "Balance my week", "Family activity idea" — each describing a module read).
+  **"App settings"** went with the capability grid: it was honest navigation but duplicated the
+  five-slot bar's own Settings destination. The **access card** is retained as navigation to scope
+  information, with its copy narrowed from "You control what Noor AI can access / Manage your data
+  and permissions anytime" — which promised management AI-6 has not built — to "Noor AI reads no
+  module records / Nothing you have saved in a module is sent with your question". What remains is
+  the hero, the ask entry, and that card. **Voice input remains unavailable and module reads remain
+  unavailable**, and nothing on the screen implies otherwise.
+- **A third defect: two labels ellipsized at a large Android font scale.** Re-tested at
+  `font_scale 1.30` on the same API 36 emulator at its own 1080 × 2400 / 420 dpi width, the §06 scope
+  badge rendered `NoorLife questions …` instead of `NoorLife questions only`, and the composer's Send
+  control rendered `Se…`. A truncated scope badge misstates the scope. Both sat beside a sibling
+  carrying `flex: 1` and kept flexbox's default `flexShrink: 1`, so the greedy sibling took the width
+  and compressed them below their content size. `Pill` and the composer's Send and Stop controls now
+  set `flexShrink: 0`, and the scope heading row wraps, so the badge drops to its own row rather than
+  compressing. **No font size was reduced**: the locked type ramp is untouched, `allowFontScaling`
+  stays on, and Back, Help and Profile remain 44 dp on both axes (measured 116 px at 2.625).
+  The header title measured **complete** at that scale. Guarded by
+  `noor-ai-responsive-chrome.test.tsx` from the rendered style objects. The post-fix badge width was
+  confirmed by measurement (433 px → 477 px, its content size) rather than by a screenshot, because
+  the emulator's renderer stopped producing frames in that instance; no post-fix screenshot is
+  claimed.
+- **Two adjacent overclaims are recorded, not fixed, because they are outside this correction's
+  bounds.** `/ai/history` still says *"Every question you have asked … Reopen a conversation, or pick
+  up where one left off."* and `/ai/permissions` still says *"Grant a module, or withdraw it, at any
+  time."* Both describe capabilities that do not exist. They are section screens reached from the
+  five-slot bar and from the access card respectively, and correcting them is its own bounded change.
+- **How the remaining gate should be closed** is a decision, not just an errand: the physical-device
+  half needs either the same reviewed development-only harness applied and removed under supervision,
+  or authorisation for a bounded live request against an enabled function. Both are outside this phase.
 - **Nothing was verified live.** No hosted Supabase call and no provider call was made. Every state
   above is exercised against an in-memory fake, and the suite asserts `fetch` was never called.
 - **The function is still source-disabled.** `productionConfig.enabled` remains the literal `false`,
@@ -2611,10 +2675,11 @@ token at invoke level and asserted by test. Verification on the emulator and the
 **still open** and belongs with AI-5's surface.
 
 **Update, AI-5:** the surface now exists and renders all ten failure states plus the three refusal
-kinds from injected fakes — see §K.4.2 for the matrix. The device criterion is **still not met**:
-§K.4.4 records that no emulator or device was attached and that driving these states on one would
-need either a fixture selectable from the running app or a live request to the disabled function,
-neither of which is available or authorised. It remains open.
+kinds from injected fakes — see §K.4.2 for the matrix. The device criterion is **partly met**: the
+**emulator** half was performed on API 36 through a temporary harness that was removed afterwards and
+proven byte-identical, with screenshots in `design-reference/ai-5-noor-ai-interface/`. The **physical
+device** half is **still not met** — no phone was attached — so the criterion remains open. §K.4.4
+records both halves.
 
 ### 12.12 Deliberately not decided here
 

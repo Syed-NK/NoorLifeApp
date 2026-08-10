@@ -58,7 +58,15 @@ export function NoorAIScopeNote({ context, limited, testID }: NoorAIScopeNotePro
   return (
     <ModuleCard tinted accentBorder testID={testID}>
       <View style={{ rowGap: dp(7) }}>
-        <View style={[styles.row, { columnGap: dp(8) }]}>
+        {/*
+          Wraps, so the scope badge is never squeezed into an ellipsis.
+
+          The badge holds its own width (`Pill` sets `flexShrink: 0`) because a truncated scope
+          badge misstates the scope. At a large Android font scale the heading beside it grows and
+          wraps to two lines, and if the two no longer fit on one row the badge drops onto its own
+          row instead of shrinking. Verified at a 1.30 font scale on API 36.
+        */}
+        <View style={[styles.headingRow, { columnGap: dp(8), rowGap: dp(6) }]}>
           <ModuleText token="cardHeading" numberOfLines={2} style={styles.flex}>
             {noorAIChatCopy.scope.heading}
           </ModuleText>
@@ -134,6 +142,12 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  /** The heading-and-badge row. Wraps rather than compressing the badge. */
+  headingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
   },
   flex: {
     flex: 1,

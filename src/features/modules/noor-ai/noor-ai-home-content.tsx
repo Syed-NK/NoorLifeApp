@@ -2,65 +2,67 @@ import { useRouter, type Href } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
-import { minimumHitSlop } from '@shared/utils/a11y';
 
-import { ModuleCard, ModuleCardHeading } from '../components/module-card';
+import { ModuleCard } from '../components/module-card';
 import { ModuleText } from '../components/module-text';
 import { useModule } from '../module-context';
-import { comingSoon } from '../module-routes';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { NOOR_AI_CHAT_ROUTE } from './noor-ai-chat-routes';
 import { NoorAIHero } from './noor-ai-hero';
-import { noorAIHomeFixture } from './noor-ai-view-model';
+import { noorAIHomeCopy } from './noor-ai-view-model';
 
 /**
- * Noor AI's home screen, composed to `02-noor-ai.png`.
+ * Noor AI's home screen.
  *
- * ── What this replaces ──────────────────────────────────────────────────────
- * A placeholder reading "Noor AI arrives in Phase 2" / "Phase 1 placeholder". Noor AI is not a
- * future feature — it has an approved reference, its own five-slot navigation and its own hero
- * asset, so it is a core module and is now registered as the eighth.
+ * ── Only what AI-1 can serve is on this screen ──────────────────────────────
+ * The screen composed to `02-noor-ai.png` carried five things this build cannot do, and AI-5's API 36
+ * emulator pass photographed them. They are gone, and this is the record of what went and why —
+ * §12.8's rule is that AI-5 enables **only capabilities AI-1's server can actually serve**.
  *
- * Sections follow the reference top to bottom: hero, ask-input, four capability cards, Today's
- * Suggestions, Recent Conversations, and the privacy card. No placeholder copy survives.
+ *   • **Recent Conversations** — three invented questions with invented timestamps, rendered as the
+ *     user's own history while no conversation store exists. Removed outright, not replaced with an
+ *     empty state: an empty history still claims a history. Persistence is **AI-8's**.
+ *   • **Today's Suggestions** ("Review my day", "Balance my week", "Family activity idea") and its
+ *     "View All" — every one describes Noor AI reading a day, a week or a family. It reads none.
+ *   • **"Explain my progress"** and **"Help me plan"** — worded as AI analysis of module records.
+ *     They navigated to `/insights` and `/planner`, so the wording was the defect rather than the
+ *     destination, and both screens remain reachable from their own modules.
+ *   • **"Find a feature"** — routed to the "coming soon" screen, while finding a feature is exactly
+ *     what the chat below already answers. A second, dead entry point to a live capability.
+ *   • **The microphone** — voice input does not exist. It was an enabled button that opened "coming
+ *     soon", which is the shape §12.8 forbids: presented as active, backed by nothing. Removed
+ *     rather than shown disabled, because the reference does not require a visible disabled control
+ *     and a permanently greyed microphone still advertises a feature.
  *
- * ── On the input and the chips ──────────────────────────────────────────────
+ * **"App settings"** went with the capability grid. It was ordinary navigation and honestly labelled,
+ * so it broke no rule — but it duplicated the five-slot bar's own Settings destination, and leaving
+ * one card in a four-column grid to say so would have been worse than the bar that already says it.
+ *
+ * ── What remains ───────────────────────────────────────────────────────────
+ * The hero, the ask row, and the scope card. Nothing here claims a module read, a saved answer or a
+ * capability that arrives later.
+ *
+ * ── On the input ────────────────────────────────────────────────────────────
  * The field is a button that opens the conversation surface rather than a live `TextInput` on this
- * screen. It is labelled as such for a screen reader.
- *
- * As of AI-5 that surface exists: the field and the send control both open `/ai/chat/new`, which is
- * **the one approved entry point** to Noor AI's conversation screen. Nothing else in the
- * application opens it — no module screen gained a Noor AI button, the centre navigation control
- * still goes to this home as it always has, and no deep link was registered.
- *
- * The microphone is unchanged and still opens the "coming soon" screen: voice input needs a
- * capability AI-1's server does not have, and §12.8's rule is that AI-5 enables only what can
- * actually be served.
+ * screen, and it is labelled as such for a screen reader. The field and the send control both open
+ * `/ai/chat/new`, and together they remain **the one approved entry point** to the conversation
+ * screen: nothing else in the application opens it, no module screen gained a Noor AI button, the
+ * centre navigation control still goes to this home, and no deep link was registered.
  */
 export function NoorAIHomeContent() {
   const router = useRouter();
   const module = useModule();
-  const { dp, contentWidth } = useModuleMetrics();
-  const model = noorAIHomeFixture;
+  const { dp } = useModuleMetrics();
+  const copy = noorAIHomeCopy;
 
   const go = (href: Href) => () => router.push(href);
-  const soon = (label: string) => () => router.push(comingSoon('noor-ai', label));
-  const gap = dp(moduleLayout.featureGap);
-  const cardWidth = (contentWidth - gap * 3) / 4;
-
-  /** The four capability cards' real destinations, where one exists. */
-  const CAPABILITY_HREF: Partial<Record<string, Href>> = {
-    'explain-progress': '/insights',
-    'help-plan': '/planner',
-    'app-settings': '/settings',
-  };
 
   return (
     <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
       <NoorAIHero testID="noor-ai-hero" />
 
-      {/* ── Ask input ─────────────────────────────────────────────────────── */}
+      {/* ── Ask input — the one approved entry to the chat ─────────────────── */}
       <View
         style={[
           styles.askRow,
@@ -77,23 +79,13 @@ export function NoorAIHomeContent() {
         <PressableScale
           onPress={go(NOOR_AI_CHAT_ROUTE)}
           accessibilityRole="button"
-          accessibilityLabel={`${model.prompt.placeholder}. Opens the conversation screen.`}
+          accessibilityLabel={`${copy.prompt.placeholder}. Opens the conversation screen.`}
           style={styles.askField}
           testID="noor-ai-ask-field"
         >
           <ModuleText token="body" color={moduleNeutrals.textTertiary} numberOfLines={1}>
-            {model.prompt.placeholder}
+            {copy.prompt.placeholder}
           </ModuleText>
-        </PressableScale>
-
-        <PressableScale
-          onPress={soon('Voice input')}
-          accessibilityRole="button"
-          accessibilityLabel="Ask by voice"
-          hitSlop={minimumHitSlop(dp(24))}
-          testID="noor-ai-ask-mic"
-        >
-          <AppIcon name="microphone" size={dp(20)} color={module.theme.ink} />
         </PressableScale>
 
         <PressableScale
@@ -115,113 +107,12 @@ export function NoorAIHomeContent() {
         </PressableScale>
       </View>
 
-      {/* ── Four capability cards ─────────────────────────────────────────── */}
-      <View style={[styles.grid, { columnGap: gap, rowGap: gap }]} testID="noor-ai-capabilities">
-        {model.capabilities.map((capability) => {
-          const href = CAPABILITY_HREF[capability.key];
-          return (
-            <PressableScale
-              key={capability.key}
-              onPress={href === undefined ? soon(capability.label) : go(href)}
-              accessibilityRole="button"
-              accessibilityLabel={capability.label}
-              style={[
-                styles.capability,
-                {
-                  width: cardWidth,
-                  minHeight: dp(moduleLayout.noorAICapabilityHeight),
-                  borderRadius: dp(moduleLayout.radiusSmall),
-                  rowGap: dp(5),
-                  paddingHorizontal: dp(4),
-                  paddingVertical: dp(8),
-                },
-              ]}
-              testID={`noor-ai-capability-${capability.key}`}
-            >
-              <AppIcon name={capability.icon} size={dp(22)} color={module.theme.ink} />
-              <ModuleText
-                token="tileLabel"
-                align="center"
-                numberOfLines={2}
-                maxFontSizeMultiplier={1.2}
-                style={styles.stretch}
-              >
-                {capability.label}
-              </ModuleText>
-            </PressableScale>
-          );
-        })}
-      </View>
-
-      {/* ── Today's Suggestions ───────────────────────────────────────────── */}
-      <ModuleCard testID="noor-ai-suggestions">
-        <ModuleCardHeading
-          title={model.suggestions.title}
-          actionLabel="View All"
-          onAction={soon('All suggestions')}
-          testID="noor-ai-suggestions-viewall"
-        />
-        <View style={{ rowGap: dp(4) }}>
-          {model.suggestions.items.map((item) => (
-            <PressableScale
-              key={item.key}
-              onPress={soon(item.title)}
-              accessibilityRole="button"
-              accessibilityLabel={`${item.title}. ${item.detail}`}
-              style={[styles.row, { columnGap: dp(8), minHeight: dp(34) }]}
-              testID={`noor-ai-suggestion-${item.key}`}
-            >
-              <AppIcon name={item.icon} size={dp(18)} color={module.theme.ink} />
-              <View style={styles.flex}>
-                <ModuleText token="rowLabel" numberOfLines={1}>
-                  {item.title}
-                </ModuleText>
-                <ModuleText token="rowMeta" numberOfLines={1}>
-                  {item.detail}
-                </ModuleText>
-              </View>
-              <AppIcon name="chevron-forward" size={dp(14)} color={moduleNeutrals.textTertiary} />
-            </PressableScale>
-          ))}
-        </View>
-      </ModuleCard>
-
-      {/* ── Recent Conversations ──────────────────────────────────────────── */}
-      <ModuleCard testID="noor-ai-conversations">
-        <ModuleCardHeading
-          title={model.conversations.title}
-          actionLabel="View All"
-          onAction={go('/ai/history')}
-          testID="noor-ai-conversations-viewall"
-        />
-        <View style={{ rowGap: dp(4) }}>
-          {model.conversations.items.map((item) => (
-            <PressableScale
-              key={item.key}
-              onPress={soon(item.question)}
-              accessibilityRole="button"
-              accessibilityLabel={`${item.question}, ${item.timestamp}`}
-              style={[styles.row, { columnGap: dp(8), minHeight: dp(30) }]}
-              testID={`noor-ai-conversation-${item.key}`}
-            >
-              <AppIcon name="history" size={dp(16)} color={moduleNeutrals.textSecondary} />
-              <ModuleText token="rowLabel" numberOfLines={1} style={styles.flex}>
-                {item.question}
-              </ModuleText>
-              <ModuleText token="rowMeta" numberOfLines={1}>
-                {item.timestamp}
-              </ModuleText>
-            </PressableScale>
-          ))}
-        </View>
-      </ModuleCard>
-
-      {/* ── Privacy and access ────────────────────────────────────────────── */}
+      {/* ── Scope and access ──────────────────────────────────────────────── */}
       <ModuleCard
         tinted
         accentBorder
         onPress={go('/ai/permissions')}
-        accessibilityLabel={`${model.privacy.title}. ${model.privacy.body}. ${model.privacy.actionLabel}`}
+        accessibilityLabel={`${copy.privacy.title}. ${copy.privacy.body}. ${copy.privacy.actionLabel}`}
         testID="noor-ai-privacy"
       >
         <View style={[styles.row, { columnGap: dp(10) }]}>
@@ -240,10 +131,10 @@ export function NoorAIHomeContent() {
           </View>
           <View style={styles.flex}>
             <ModuleText token="cardHeading" numberOfLines={2}>
-              {model.privacy.title}
+              {copy.privacy.title}
             </ModuleText>
             <ModuleText token="rowMeta" numberOfLines={2}>
-              {model.privacy.body}
+              {copy.privacy.body}
             </ModuleText>
             <ModuleText
               token="cardAction"
@@ -251,7 +142,7 @@ export function NoorAIHomeContent() {
               numberOfLines={1}
               style={{ marginTop: dp(3) }}
             >
-              {model.privacy.actionLabel} ›
+              {copy.privacy.actionLabel} ›
             </ModuleText>
           </View>
           <AppIcon name="chevron-forward" size={dp(16)} color={moduleNeutrals.textTertiary} />
@@ -270,9 +161,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  stretch: {
-    alignSelf: 'stretch',
-  },
   askRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -290,17 +178,6 @@ const styles = StyleSheet.create({
   send: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  capability: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: moduleNeutrals.surface,
-    borderWidth: 1,
-    borderColor: moduleNeutrals.border,
   },
   privacyMark: {
     alignItems: 'center',

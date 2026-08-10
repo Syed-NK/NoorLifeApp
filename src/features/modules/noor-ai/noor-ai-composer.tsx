@@ -59,6 +59,14 @@ export type NoorAIComposerProps = {
  * multiline with a minimum height and no maximum, so long input wraps and grows rather than
  * scrolling inside a fixed box or clipping. The height is not a hard-coded pixel count in disguise:
  * `minHeight` is the floor, and content decides the rest.
+ *
+ * ── The height belongs to the input, not to the wrapper ─────────────────────
+ * That floor is set on the `TextInput` itself, together with the text inset, so the input fills the
+ * bordered box to its edge. It was previously set on the wrapper while the input kept its natural
+ * single-line height, which left a box that looked like a text field with roughly its lower two
+ * thirds inert — a tap there did not focus anything. AI-5's API 36 emulator pass found it by hitting
+ * it. `noor-ai-composer-geometry.test.tsx` now asserts the arrangement from the rendered styles, so
+ * moving the height back onto the wrapper fails a test rather than shipping.
  */
 export function NoorAIComposer({
   value,
@@ -100,17 +108,23 @@ export function NoorAIComposer({
         {noorAIChatCopy.composer.label}
       </ModuleText>
 
+      {/*
+        The wrapper draws the border and nothing else — it deliberately carries no height.
+
+        Its only child is the input, which carries both the minimum height and the text inset, so the
+        field's visible box *is* the input and a tap anywhere inside it focuses the field. Putting a
+        height here instead is what produced the dead lower two thirds that AI-5's emulator pass
+        found; see `noorAIComposerInputHeight`.
+      */}
       <View
         style={[
           styles.field,
           {
             borderRadius: dp(moduleLayout.radiusSmall),
             borderColor: message === null ? moduleNeutrals.border : moduleNeutrals.error,
-            paddingHorizontal: dp(12),
-            paddingVertical: dp(8),
-            minHeight: dp(84),
           },
         ]}
+        testID={`${prefix}-field`}
       >
         <TextInput
           value={value}
@@ -128,7 +142,17 @@ export function NoorAIComposer({
           accessibilityHint={noorAIChatCopy.composer.accessibilityHint}
           accessibilityLabelledBy={`${prefix}-label`}
           accessibilityState={{ disabled: pending }}
-          style={[styles.input, { fontSize: dp(13), lineHeight: dp(19) }]}
+          style={[
+            styles.input,
+            {
+              fontSize: dp(13),
+              lineHeight: dp(19),
+              // A floor, not a fixed height: long input still grows the field rather than clipping.
+              minHeight: dp(moduleLayout.noorAIComposerInputHeight),
+              paddingHorizontal: dp(12),
+              paddingVertical: dp(8),
+            },
+          ]}
           testID={`${prefix}-input`}
         />
       </View>
@@ -222,8 +246,13 @@ const styles = StyleSheet.create({
   input: {
     fontFamily: fontFamilies.regular,
     color: moduleNeutrals.textPrimary,
-    // No fixed height: the box grows with the question rather than clipping it.
-    padding: 0,
+    /**
+     * Fills the wrapper, so the whole visible field is the touch target.
+     *
+     * The height and the text inset are applied at the call site from `moduleLayout`, and there is
+     * deliberately no `height` here: a fixed one would clip a long question instead of growing.
+     */
+    alignSelf: 'stretch',
   },
   actions: {
     flexDirection: 'row',
@@ -244,10 +273,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: moduleNeutrals.surface,
     borderWidth: 1,
+    // Stop and Send are the two controls in this row; neither may be compressed into an ellipsis.
+    flexShrink: 0,
   },
   send: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    /**
+     * Keeps its own width, so the label stays the whole word.
+     *
+     * The row is `[flexible spacer or progress line][Stop?][Send]`. As an ordinary flex child Send
+     * carried `flexShrink: 1`, and at a large Android font scale the row ran short and compressed
+     * it until `Send` rendered as `Se…` — caught on API 36 at a 1.30 font scale. The flexible
+     * sibling gives up its room first now.
+     */
+    flexShrink: 0,
   },
 });

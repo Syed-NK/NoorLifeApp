@@ -85,24 +85,25 @@ describe('3 — Noor AI renders no placeholder copy', () => {
     expect(screen.queryByText(/Phase 1 placeholder/i)).toBeNull();
     expect(screen.queryByText(/Phase 2/i)).toBeNull();
 
-    // And the approved sections are present instead.
-    for (const testID of [
-      'noor-ai-hero',
-      'noor-ai-ask',
-      'noor-ai-capabilities',
-      'noor-ai-suggestions',
-      'noor-ai-conversations',
-      'noor-ai-privacy',
-    ]) {
+    // And the sections this build can honestly serve are present instead.
+    for (const testID of ['noor-ai-hero', 'noor-ai-ask', 'noor-ai-privacy']) {
       expect(screen.getByTestId(testID)).toBeTruthy();
     }
   });
 
-  it('offers the four approved capability cards', async () => {
+  /**
+   * The capability grid, the suggestions and the conversation list were removed after AI-5's emulator
+   * pass: four of those controls described Noor AI reading module records it cannot read, one routed
+   * to "coming soon", and the conversation list was three invented questions with invented
+   * timestamps. `noor-ai-home-capability-boundary.test.tsx` is where that boundary is now asserted in
+   * full; this row only records that the phase-4b placeholder removal still holds without them.
+   */
+  it('offers the ask entry and the access card, and no capability grid', async () => {
     await render(<ModuleHomeScreen moduleId="noor-ai" />);
-    for (const label of ['Find a feature', 'Explain my progress', 'Help me plan', 'App settings']) {
-      expect(screen.getByText(label)).toBeTruthy();
-    }
+
+    expect(screen.getByTestId('noor-ai-ask-field')).toBeTruthy();
+    expect(screen.getByTestId('noor-ai-ask-send')).toBeTruthy();
+    expect(screen.queryByTestId('noor-ai-capabilities')).toBeNull();
   });
 
   it('labels its navigation as the reference does', () => {
