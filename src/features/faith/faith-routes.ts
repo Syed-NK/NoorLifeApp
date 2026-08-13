@@ -35,21 +35,99 @@ export const faithRoutes = {
   calendar: '/faith/calendar',
 
   // ── Reached from cards on the home screen ─────────────────────────────────
-  /** "Continue Quran" — resumes at the stored position. */
-  reader: '/faith/reader',
   /** The Daily Ayah card, opened full-screen with its translation and actions. */
   dailyAyah: '/faith/daily-ayah',
   /** The "Upcoming" card — Ramadan and other observances. */
   events: '/faith/events',
 
+  /**
+   * Prayer reminder preferences.
+   *
+   * Its own screen so the approved dashboard's action row has a real destination — a chevron that
+   * led nowhere would be the same kind of claim the reminders themselves are careful not to make.
+   */
+  reminders: '/faith/reminders',
+
+  /**
+   * Where the coordinate every prayer time is calculated from is chosen.
+   *
+   * Its own destination rather than a sheet on the Prayer screen: it holds a mode selection, a
+   * validated coordinate form and a timezone preview, and it has to be reachable from the location
+   * card on Prayer Times and from Faith Home's prayer surfaces alike.
+   */
+  location: '/faith/location',
+
   // ── Supporting screens ────────────────────────────────────────────────────
   search: '/faith/search',
   bookmarks: '/faith/bookmarks',
+  /** Real reading progress: the daily goal, the recorded week, per-surah completion. */
+  progress: '/faith/progress',
   /** Translation, reciter and prayer-notification preferences. */
   preferences: '/faith/preferences',
+  /**
+   * The two catalogue selectors, deliberately separate destinations.
+   *
+   * They used to be two sections of `preferences`, which meant every translation edition in every
+   * language *and* every reciter shared one unfiltered scroll. Splitting the route is what makes
+   * each one able to carry its own search, its own filters and its own virtualized list — a single
+   * screen could not have a language filter that meant anything for reciters.
+   */
+  translations: '/faith/translations',
+  reciters: '/faith/reciters',
+  /**
+   * Where Faith's attribution lives.
+   *
+   * Reached from More rather than pinned above the scripture. The badge this replaced read
+   * `Source: Quran Foundation Content API` at the top of three reading surfaces — see
+   * `UnverifiedSourceNotice` for why that was the wrong place for it.
+   */
+  contentInfo: '/faith/content-info',
 } as const satisfies Record<string, Href>;
 
 export type FaithRouteKey = keyof typeof faithRoutes;
+
+/**
+ * The reader, for a specific surah and optionally a specific verse.
+ *
+ * ── Why the reader is a parameterised route and not a fixed one ─────────────
+ * It used to be `/faith/reader`, a single address that showed whatever position happened to be in
+ * storage. Every one of the 114 surah rows pushed that same address, so tapping Al-Baqarah opened
+ * whatever the user last read — and a bookmark could not open its verse at all, because there was
+ * nowhere to say which verse it meant. Both were the same missing thing: the reader had no way to be
+ * *told* what to show.
+ *
+ * `ayah` is a hint rather than a filter. The reader still renders the surah from its first page; the
+ * verse is scrolled to and announced. A reader that showed one verse alone would make a bookmark a
+ * dead end rather than a way in.
+ */
+export function readerHref(surah: number, ayah?: number): Href {
+  return {
+    pathname: '/faith/reader/[surah]',
+    params:
+      ayah === undefined ? { surah: String(surah) } : { surah: String(surah), ayah: String(ayah) },
+  };
+}
+
+/**
+ * Noor AI, optionally opened **about** a specific verse.
+ *
+ * ── Why a reference travels and never a copy of the verse ───────────────────
+ * The reader's action sheet can hand a verse to the assistant, and what it hands over is the
+ * citation — a surah number and an ayah number — not the Arabic and not the translation. The AI
+ * screen resolves those two numbers back through `QuranContentRepository`, which is the same
+ * approved boundary the reader itself reads from and the only one attribution is attached to.
+ *
+ * The alternative would be passing the scripture through the route. That is how a second, unsourced
+ * copy of the Qur'an comes into existence inside an app: it would arrive at the AI screen with no
+ * `ContentSource` behind it, no way to tell it apart from generated text, and no way to notice if
+ * something had altered it in transit. A pair of integers cannot be corrupted into a wrong verse
+ * without becoming a different, visibly wrong citation.
+ */
+export function faithAiHref(surah?: number, ayah?: number): Href {
+  return surah === undefined || ayah === undefined
+    ? faithRoutes.ai
+    : { pathname: '/faith/ai', params: { surah: String(surah), ayah: String(ayah) } };
+}
 
 /**
  * The five bottom-navigation slots, by their `ModuleNavigation` key.

@@ -6,7 +6,7 @@ import { AppIcon, PressableScale } from '@ds/components';
 import { AI_NAV_INDEX, type NavItem } from '@shared/models/module-theme';
 
 import { useModule } from '../module-context';
-import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import { moduleLayout, moduleNavigationHeight, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleAICenterButton } from './module-ai-center-button';
 import { ModuleText } from './module-text';
@@ -64,7 +64,16 @@ export function ModuleBottomNavigation({
 
   return (
     <View
-      style={[styles.root, { height: barHeight + insets.bottom, paddingBottom: insets.bottom }]}
+      style={[
+        styles.root,
+        {
+          // The same arithmetic everything that has to clear this bar uses — see the note on
+          // `moduleNavigationHeight`. The bar states its height through the shared helper rather
+          // than computing its own, so a panel docked above it cannot be told a different number.
+          height: moduleNavigationHeight(dp, insets.bottom),
+          paddingBottom: insets.bottom,
+        },
+      ]}
       accessibilityRole="tablist"
       testID={testID}
     >

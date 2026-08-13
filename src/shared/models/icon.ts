@@ -24,6 +24,8 @@ export type IconName =
   | 'search'
   | 'chevron-forward'
   | 'chevron-back'
+  | 'chevron-up'
+  | 'chevron-down'
   | 'more'
   // ── Actions ──────────────────────────────────────────────────────────────
   | 'add'
@@ -35,6 +37,9 @@ export type IconName =
   | 'microphone'
   | 'play'
   | 'pause'
+  // Track-step controls, distinct from the chevrons: the reader's player steps whole ayat.
+  | 'skip-previous'
+  | 'skip-next'
   | 'bookmark'
   | 'star'
   // ── Status and feedback ──────────────────────────────────────────────────
@@ -96,6 +101,25 @@ export type IconName =
   | 'tasbih'
   | 'crescent'
   | 'share'
+  /**
+   * Offline recitation management, on the reciter catalogue and in the reader's player.
+   *
+   * Three glyphs rather than one state-dependent glyph: a download that has not started, one that is
+   * running, and one that can be removed are three different actions, and drawing them all as an
+   * arrow would make the destructive one look like the additive one.
+   */
+  | 'download'
+  | 'downloading'
+  | 'delete'
+  /**
+   * The two verse actions the reader's action sheet added, and neither reuses an existing name.
+   *
+   * `note` is the user's own writing about an ayah and `document` already means a stored record
+   * elsewhere; `playlist` is an ordered listening queue and `library` already means a catalogue.
+   * Reusing either would make two different actions draw the same glyph in the same sheet.
+   */
+  | 'note'
+  | 'playlist'
   // ── Health module surfaces (Phase 4A, from 04-health.png) ────────────────
   | 'medication'
   | 'weight'

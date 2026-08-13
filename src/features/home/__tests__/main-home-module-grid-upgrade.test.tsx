@@ -286,16 +286,19 @@ describe('a locked module tile on a free plan', () => {
 // ── Unresolved ──────────────────────────────────────────────────────────────
 
 describe('a module tile before the entitlement resolves', () => {
-  it.each(PAID_MODULES)('defaults $name to the sheet rather than the module', async ({ id, name, route }) => {
-    const user = userEvent.setup();
-    await unresolved();
+  it.each(PAID_MODULES)(
+    'defaults $name to the sheet rather than the module',
+    async ({ id, name, route }) => {
+      const user = userEvent.setup();
+      await unresolved();
 
-    await user.press(screen.getByTestId(`module-card-${id}-locked`));
+      await user.press(screen.getByTestId(`module-card-${id}-locked`));
 
-    expect(screen.getByText(sheetBodyFor(name, name))).toBeTruthy();
-    expect(mockRouter.push).not.toHaveBeenCalledWith(route);
-    expect(mockRouter.push).not.toHaveBeenCalledWith(subscriptionRoutes.welcome);
-  });
+      expect(screen.getByText(sheetBodyFor(name, name))).toBeTruthy();
+      expect(mockRouter.push).not.toHaveBeenCalledWith(route);
+      expect(mockRouter.push).not.toHaveBeenCalledWith(subscriptionRoutes.welcome);
+    },
+  );
 
   it('still opens Faith', async () => {
     const user = userEvent.setup();

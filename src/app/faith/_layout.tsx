@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 
 import { FaithRepositoryProvider } from '@features/faith/di/faith-repository-context';
+import { RecitationAudioProvider } from '@features/faith/di/recitation-audio-context';
 
 /**
  * The Faith module navigator (workflow §3.2: a module owns its own stack).
@@ -13,7 +14,16 @@ import { FaithRepositoryProvider } from '@features/faith/di/faith-repository-con
 export default function Layout() {
   return (
     <FaithRepositoryProvider>
-      <Stack screenOptions={{ headerShown: false }} />
+      {/*
+        The recitation audio service is Faith-scoped and deliberately not mounted at application
+        startup: it sweeps a cache directory and reads the download index, which is work no launch
+        that never opens the Qur'an should do. Mounting it here means one service for the whole
+        module, so the in-flight map that deduplicates transfers survives navigation between the
+        reader, the reciter catalogue and the player.
+      */}
+      <RecitationAudioProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+      </RecitationAudioProvider>
     </FaithRepositoryProvider>
   );
 }

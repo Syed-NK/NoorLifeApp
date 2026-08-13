@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
-import { ModuleText } from '@features/modules/components';
+import { ModuleStatusBanner, ModuleText } from '@features/modules/components';
 import { fontFamilies } from '@ds/tokens';
 import { useModuleTheme } from '@features/modules/module-context';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
@@ -10,9 +10,11 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
+import { FaithNoResultsState } from '../components/faith-states';
+import type { FaithResult } from '../data/faith-result';
 import { useFaithRepositories } from '../di/faith-repository-context';
 import { faithNavKeys } from '../faith-routes';
-import { useFaithPreferences } from '../hooks/use-faith-preferences';
+import { useTranslationPreference } from '../hooks/use-translation-preference';
 import { useFaithResource } from '../hooks/use-faith-resource';
 
 type SearchHits = {
@@ -26,6 +28,20 @@ type SearchHits = {
 };
 
 /**
+ * What one search produced, and whether part of it could not run.
+ *
+ * The flag travels with the results rather than being derived at render time, because "can this build
+ * search the Qur'an?" is a property of the repository that is wired in, and asking it is what running
+ * the search does.
+ */
+type SearchOutcome = {
+  readonly hits: SearchHits;
+  readonly total: number;
+  /** True when the Qur'an repository reported that search is not available to it. */
+  readonly quranSearchUnsupported: boolean;
+};
+
+/**
  * Search across Qur'an translations, Hadith and duas.
  *
  * ── Why the query is committed rather than live ─────────────────────────────
@@ -34,9 +50,15 @@ type SearchHits = {
  * no-results state on the way to a valid query, which reads as "nothing found" for a term
  * that was only half typed.
  *
- * Arabic is not searched: the fixtures carry too little of it for the results to mean
- * anything, and a search that silently only covered translations while appearing to
- * cover scripture would be misleading. The caption says what is searched.
+ * ── Qur'an search may be unavailable, and the screen says so ────────────────
+ * Quran Foundation's approval covers the **Content** APIs; their Search APIs are a separate scope
+ * NoorLife does not have. When the approved Qur'an repository is wired in it reports search as
+ * unsupported, and this screen states that above the results rather than rendering an empty Qur'an
+ * section — an absent section reads as "no verse matched", which would be a claim this build cannot
+ * make. Hadith and dua search are NoorLife's own data and are unaffected.
+ *
+ * Arabic is not searched even where search works: a search that silently only covered translations
+ * while appearing to cover scripture would be misleading. The caption says what is searched.
  */
 export function SearchScreen() {
   return (
@@ -56,21 +78,27 @@ function SearchBody() {
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
   const { quran, hadith, dua } = useFaithRepositories();
-  const { preferences } = useFaithPreferences();
+  const { translation } = useTranslationPreference();
 
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
 
   const results = useFaithResource(
     `faith.search.${query}`,
-    useCallback(async () => {
+    useCallback(async (): Promise<FaithResult<SearchOutcome>> => {
       const trimmed = query.trim();
       if (trimmed.length < 2) {
         return { kind: 'no-results' as const, query: trimmed };
       }
 
       const [ayat, narrations, supplications] = await Promise.all([
-        quran.searchTranslations(trimmed, preferences.translationId),
+        /*
+          Searching translations needs an edition to search in. With none resolved the Qur'an strand
+          is skipped and the other two still run, so search degrades rather than failing.
+        */
+        translation === null
+          ? Promise.resolve({ kind: 'no-results' as const, query: trimmed })
+          : quran.searchTranslations(trimmed, translation.id),
         hadith.search(trimmed),
         dua.search(trimmed),
       ]);
@@ -103,11 +131,21 @@ function SearchBody() {
       };
 
       const total = hits.ayat.length + hits.hadith.length + hits.duas.length;
-      if (total === 0) {
-        return { kind: 'no-results' as const, query: trimmed };
-      }
-      return { kind: 'ok' as const, data: hits };
-    }, [query, quran, hadith, dua, preferences.translationId]),
+      /**
+       * `unsupported` is the repository saying it has no approved search source, which is different
+       * from a search that ran and matched nothing — and different again from a search that failed.
+       * Only the first produces the notice.
+       */
+      const quranSearchUnsupported = ayat.kind === 'error' && ayat.code === 'unsupported';
+
+      /**
+       * An empty result is returned as `ok` rather than as `no-results` so the notice above it
+       * survives. The no-results *presentation* is still rendered — by the screen, from the same
+       * component the framework would have used — because "nothing matched" and "we could not search
+       * part of this" are two facts a user needs at once, and the result union carries one at a time.
+       */
+      return { kind: 'ok' as const, data: { hits, total, quranSearchUnsupported } };
+    }, [query, quran, hadith, dua, translation]),
   );
 
   return (
@@ -173,8 +211,18 @@ function SearchBody() {
         loadingRows={3}
         testID="faith-search-results"
       >
-        {(hits) => (
+        {({ hits, total, quranSearchUnsupported }) => (
           <View style={{ rowGap: dp(moduleLayout.cardGap) }}>
+            {quranSearchUnsupported ? (
+              <ModuleStatusBanner
+                tone="info"
+                message="Qur’an search is not available yet. These results cover narrations and duas only."
+                testID="faith-search-quran-unsupported"
+              />
+            ) : null}
+            {total === 0 ? (
+              <FaithNoResultsState query={query} testID="faith-search-results" />
+            ) : null}
             {hits.ayat.length === 0 ? null : (
               <FaithRowGroup title="Qur’an" testID="faith-search-ayat">
                 {hits.ayat.map((item) => (

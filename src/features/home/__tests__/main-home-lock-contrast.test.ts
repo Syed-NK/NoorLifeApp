@@ -2,13 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { modulePalettes, navigationColors, neutralColors, semanticColors } from '@ds/tokens';
-import {
-  AA_TEXT,
-  AA_UI,
-  composite,
-  contrastRatio,
-  formatRatio,
-} from '@features/modules/contrast';
+import { AA_TEXT, AA_UI, composite, contrastRatio, formatRatio } from '@features/modules/contrast';
 
 import { LOCKED, LOCKED_TYPE } from '../main-home-metrics';
 import {
@@ -108,18 +102,24 @@ describe('a locked module tile', () => {
     );
   });
 
-  it.each(TILE_MODULES)('would have failed AA if the scrim washed over the %s label', (moduleId) => {
-    // The shipped defect, asserted as a defect. If the scrim ever returns to being the last child,
-    // the test above fails — and this one documents what the failure would have measured.
-    const washed = composite(scrimColour(), scrimAlpha(), neutralColors.textPrimary);
-    expect(contrastRatio(washed, scrimmedTile(moduleId))).toBeLessThan(AA_TEXT);
-  });
+  it.each(TILE_MODULES)(
+    'would have failed AA if the scrim washed over the %s label',
+    (moduleId) => {
+      // The shipped defect, asserted as a defect. If the scrim ever returns to being the last child,
+      // the test above fails — and this one documents what the failure would have measured.
+      const washed = composite(scrimColour(), scrimAlpha(), neutralColors.textPrimary);
+      expect(contrastRatio(washed, scrimmedTile(moduleId))).toBeLessThan(AA_TEXT);
+    },
+  );
 
-  it.each(TILE_MODULES)('keeps its %s padlock recognisable against the scrimmed tile', (moduleId) => {
-    // The glyph sits directly on the tile now — the near-white disc behind it was dropped, so this
-    // is the ratio that has to hold on its own.
-    expectRatio(MODULE_LOCK_INK, scrimmedTile(moduleId), AA_UI, `${moduleId} tile padlock`);
-  });
+  it.each(TILE_MODULES)(
+    'keeps its %s padlock recognisable against the scrimmed tile',
+    (moduleId) => {
+      // The glyph sits directly on the tile now — the near-white disc behind it was dropped, so this
+      // is the ratio that has to hold on its own.
+      expectRatio(MODULE_LOCK_INK, scrimmedTile(moduleId), AA_UI, `${moduleId} tile padlock`);
+    },
+  );
 
   it('desaturates the tile without hiding its module identity', () => {
     // "Keep module identity colours visible beneath the restrained lock treatment": each scrimmed
@@ -165,14 +165,18 @@ describe('a locked timeline row', () => {
    * here as the measured baseline so a future "muted" treatment cannot quietly dip below it, and
    * called out in the phase report rather than silently tolerated.
    */
-  it.each(PAID_MODULES)('records what a %s-accented label measures at full strength', (moduleId) => {
-    const accent = modulePalettes[moduleId].primary;
-    const atFullStrength = contrastRatio(accent, neutralColors.surface);
-    // Anything dimmed lands below this, which is the check that has teeth.
-    expect(contrastRatio(composite(accent, 0.85, neutralColors.surface), neutralColors.surface)).
-      toBeLessThan(atFullStrength);
-    expect(atFullStrength).toBeGreaterThan(1);
-  });
+  it.each(PAID_MODULES)(
+    'records what a %s-accented label measures at full strength',
+    (moduleId) => {
+      const accent = modulePalettes[moduleId].primary;
+      const atFullStrength = contrastRatio(accent, neutralColors.surface);
+      // Anything dimmed lands below this, which is the check that has teeth.
+      expect(
+        contrastRatio(composite(accent, 0.85, neutralColors.surface), neutralColors.surface),
+      ).toBeLessThan(atFullStrength);
+      expect(atFullStrength).toBeGreaterThan(1);
+    },
+  );
 });
 
 // ── The rule, enforced against the source ───────────────────────────────────

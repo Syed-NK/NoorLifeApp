@@ -91,10 +91,42 @@ export type ModuleTwoColumnProps = {
  * `minWidth: 0`, without which a long word in one column expands it and squeezes the
  * other, the same collapse that has bitten this project twice.
  */
+/**
+ * A pair of cards side by side — or stacked, when side by side would cost content.
+ *
+ * ── Why this component owns the decision ────────────────────────────────────
+ * Both of Faith Home's pairs and every future one ask the same question, and the answer has to be
+ * the same for all of them: two cards that stack independently would leave a half-width card beside
+ * a full-width one. `stackTwoColumns` is resolved once in `useModuleMetrics` from the measured
+ * half-column and the OS text size, so the rule lives in one place and can be asserted directly.
+ *
+ * ── What changes and what does not ──────────────────────────────────────────
+ * Only the axis. The cards keep their padding, colours, borders, icon sizes and internal hierarchy,
+ * and the gap between them keeps its value — it simply becomes a row gap. Stacked cards are no
+ * longer forced to equal heights either, which is the point: each one takes the height its own copy
+ * needs, so a heading, a prayer label or an observance date renders in full instead of ellipsising
+ * into a column too narrow to hold it.
+ */
 export function ModuleTwoColumn({ left, right, testID }: ModuleTwoColumnProps) {
-  const { dp } = useModuleMetrics();
+  const { dp, stackTwoColumns } = useModuleMetrics();
+  const gap = dp(moduleLayout.twoColumnGap);
+
+  if (stackTwoColumns) {
+    return (
+      <View style={{ rowGap: gap }} testID={testID}>
+        {/*
+          No `styles.column` here. `flex: 1` on a column child of a *vertical* stack would make the
+          two cards share the available height rather than each taking what its content needs, which
+          is the opposite of why the pair stacked.
+        */}
+        <View>{left}</View>
+        <View>{right}</View>
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.row, { columnGap: dp(moduleLayout.twoColumnGap) }]} testID={testID}>
+    <View style={[styles.row, { columnGap: gap }]} testID={testID}>
       <View style={styles.column}>{left}</View>
       <View style={styles.column}>{right}</View>
     </View>
@@ -121,9 +153,19 @@ export function ModuleCardHeading({
 
   return (
     <View style={[styles.headingRow, { marginBottom: dp(6), columnGap: dp(6) }]}>
+      {/*
+        Two lines, because one truncated the heading that names the card. Inside a half-width column
+        "Today’s worship" beside a "View All" link rendered "Today’s w…" at 411 dp and font scale 1.3,
+        and a heading is the last thing a screen should abbreviate — it is what tells the reader what
+        the rows beneath it are. The heading row is content-height, so a second line grows it.
+
+        Still capped rather than unbounded: the pairing with a trailing action means an unlimited
+        heading could push the link into a column too narrow to read, and no heading in the app is
+        long enough to need a third line.
+      */}
       <ModuleText
         token="cardHeading"
-        numberOfLines={1}
+        numberOfLines={2}
         accessibilityRole="header"
         style={styles.flex}
       >

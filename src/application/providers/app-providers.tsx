@@ -1,5 +1,6 @@
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { QuranCatalogueWarmup } from '@features/faith/di/quran-warmup';
 import { EntitlementProvider } from '@features/subscription/services/entitlement-context';
 
 import { AccessibilityProvider } from './accessibility-provider';
@@ -49,7 +50,19 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
             <FontProvider>
               <AuthCallbackProvider>
                 <AuthProvider>
-                  <EntitlementProvider>{children}</EntitlementProvider>
+                  <EntitlementProvider>
+                    {/*
+                      Renders nothing. It loads the Qur'an's 114-surah catalogue once a session
+                      exists, so the Qur'an tab reads it synchronously instead of awaiting storage
+                      on the frame it is opened — see `quran-catalogue-warmup.ts` for why a
+                      three-millisecond await still costs a visible skeleton.
+
+                      Inside Auth because the approved adapter needs an authenticated invocation,
+                      and warming before sign-in would spend a call that can only be refused.
+                    */}
+                    <QuranCatalogueWarmup />
+                    {children}
+                  </EntitlementProvider>
                 </AuthProvider>
               </AuthCallbackProvider>
             </FontProvider>

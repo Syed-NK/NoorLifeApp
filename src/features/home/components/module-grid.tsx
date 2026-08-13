@@ -147,9 +147,7 @@ function ModuleTile({ theme, tileWidth, tileHeight, pictogram, onSelectModule }:
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? theme.name}
       accessibilityHint={
-        isLocked
-          ? 'Explains what NoorLife Premium includes'
-          : `Opens the ${theme.name} module`
+        isLocked ? 'Explains what NoorLife Premium includes' : `Opens the ${theme.name} module`
       }
       style={[
         styles.tile,

@@ -42,6 +42,35 @@ unzips the APK, even though visiting it redirects.
 | `src/app/module-gallery.tsx` | Module Gallery | Open |
 | `src/app/hero-audit.tsx` | Hero audit harness | Open |
 | ~~`src/app/profile/privacy-security/fixtures.tsx`~~ | Privacy & Security fixtures | **Fixed in 6C-3B** — route and screen deleted; the states moved to `src/test-support/account-security-fixtures.ts`, which is outside the production import graph and asserted to be un-importable from `src/app` and `src/features` |
+| ~~`src/app/typography-probe.tsx`~~ | Typography probe | **Fixed in the Faith Phase 0 repair** — route deleted, so the screen is no longer reachable from any bundle root. Asserted by `src/features/modules/__tests__/typography-probe-route.test.ts`, which pins both halves the `__DEV__` guard conflated: no route file names it, and no production module imports it |
+
+### The typography probe — fully removed
+
+The probe arrived after this document was written and repeated the pattern exactly, which is the
+argument for the procedure rather than for a better guard.
+
+Both the route and the screen are gone:
+
+| Removed | Was |
+|---|---|
+| `src/app/typography-probe.tsx` | The route. Deleting it is what takes the path out of the manifest and the screen out of Metro's graph. |
+| `src/features/modules/screens/typography-probe-screen.tsx` | The diagnostic itself — measured height from `onLayout` against painted height from `onTextLayout`, to make a `ModuleText` measure/paint mismatch a number on screen. |
+
+It was not moved to `src/test-support/` as step 2 suggests, because there was nothing left to
+preserve for: no test imported it, so a relocation would have parked a 230-line unused screen in a
+second directory. The defect it was built to diagnose is now covered by assertions rather than by a
+harness somebody has to look at — `module-two-column-stacking.test.tsx` and the hero geometry suites
+pin the measurements it used to display.
+
+`use-module-metrics.ts` no longer cites it. The `fontScale` field it read stays exposed on its own
+merit: `shouldStackTwoColumn` divides the measured half-column by it.
+
+**If a measure/paint mismatch is ever suspected again,** rebuild the probe under `src/test-support/`
+rather than under `src/features` — and note that the scan in
+`src/features/profile/__tests__/privacy-security-source-scan.test.ts` forbids any file under
+`src/app` or `src/features` from so much as naming `test-support`, so a comment pointing at it from
+production code will fail that scan. Narrowing that rule from "mentions" to "imports" is the
+prerequisite, and is a decision about the scan, not a mechanical move.
 
 ## Why the Privacy & Security one was treated as urgent and these two are not
 

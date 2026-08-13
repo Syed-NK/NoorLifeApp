@@ -37,6 +37,11 @@ export {
   type ModuleBottomNavigationProps,
 } from './module-bottom-navigation';
 export { ModuleAICenterButton, type ModuleAICenterButtonProps } from './module-ai-center-button';
+export {
+  ModuleButton,
+  type ModuleButtonProps,
+  type ModuleButtonVariant,
+} from './module-button';
 export { ModuleEmptyState, type ModuleEmptyStateProps } from './module-empty-state';
 export { ModuleLoadingState, type ModuleLoadingStateProps } from './module-loading-state';
 export { ModuleErrorState, type ModuleErrorStateProps } from './module-error-state';

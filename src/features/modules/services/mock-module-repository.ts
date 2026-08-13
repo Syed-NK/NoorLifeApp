@@ -48,27 +48,38 @@ const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
     activity: [],
     insight: 'Ask me about a feature, your progress, or how to plan your week.',
   },
+  /**
+   * Faith presents as empty here, deliberately, and it is the only module that does.
+   *
+   * ── What was here ───────────────────────────────────────────────────────────
+   * Two metrics — "4 of 5" prayers and "12 pages" of Qur'an with "3 more than last week" — four
+   * prayer rows carrying `5:12 am`, `1:04 pm`, `4:12 pm` and `7:38 pm` with `done`, `done`, `due` and
+   * `upcoming` completion states, and the insight "You have kept every Fajr this week. Asr is the one
+   * you most often miss."
+   *
+   * Every one of those is a statement about a specific user's worship, rendered to whoever opened the
+   * screen. The times were fabricated, and so were the *completions*: `done` on Fajr and Dhuhr told a
+   * user they had prayed. That is a worse class of claim than a wrong clock — a fabricated prayer time
+   * is checkable, a fabricated record of worship is not, and it is the user's own record being
+   * asserted back at them. `You have kept every Fajr this week` is the same fabrication in prose.
+   *
+   * ── Why empty rather than corrected ─────────────────────────────────────────
+   * This repository has no access to the worship log or to the prayer-times calculation — it is a
+   * fixture set for the module gallery, reachable from `/module-gallery` and `/hero-audit`. There is
+   * no honest value it can put here, because the honest values live in Faith's own repositories and
+   * are already rendered by Faith's own screens. An empty overview is true, and it exercises the
+   * gallery's empty path, which nothing else did.
+   *
+   * The insight describes what the module does rather than what the reader has done. The other seven
+   * modules are untouched: their fixtures are outside this brief, and their remaining clock literals
+   * are recorded against `DATE_ALLOWED` in `faith-no-fabrication-scan.test.ts` as a later pass.
+   */
   faith: {
-    metrics: [
-      { key: 'prayers', label: 'Prayers', value: '4', unit: 'of 5', icon: 'worship' },
-      {
-        key: 'quran',
-        label: 'Qur’an',
-        value: '12',
-        unit: 'pages',
-        icon: 'quran',
-        trend: 'up',
-        trendLabel: '3 more than last week',
-      },
-    ],
-    activity: [
-      { key: 'fajr', title: 'Fajr', meta: '5:12 am', icon: 'worship', status: 'done' },
-      { key: 'dhuhr', title: 'Dhuhr', meta: '1:04 pm', icon: 'worship', status: 'done' },
-      { key: 'asr', title: 'Asr', meta: '4:12 pm', icon: 'worship', status: 'due' },
-      { key: 'maghrib', title: 'Maghrib', meta: '7:38 pm', icon: 'worship', status: 'upcoming' },
-    ],
+    metrics: [],
+    activity: [],
     insight:
-      'You have kept every Fajr this week. Asr is the one you most often miss — a reminder 20 minutes earlier might help.',
+      'Faith tracks the prayers you mark yourself and the reading you record. Nothing is counted ' +
+      'until you mark it.',
   },
   health: {
     metrics: [

@@ -237,12 +237,35 @@ describe('preferences', () => {
   });
 
   it('persists a partial update without dropping the other fields', async () => {
-    await writeFaithPreferences({ translationId: 'mock.en.plain' });
+    await writeFaithPreferences({
+      translation: {
+        id: '20',
+        language: 'english',
+        name: 'Saheeh International',
+        translator: 'Saheeh International',
+      },
+      translationChosenByUser: true,
+    });
     const prefs = await readFaithPreferences();
 
-    expect(prefs.translationId).toBe('mock.en.plain');
+    expect(prefs.translation?.id).toBe('20');
     expect(prefs.reciterId).toBe(defaultFaithPreferences.reciterId);
     expect(prefs.calculationMethod).toBe(defaultFaithPreferences.calculationMethod);
+  });
+
+  it('corrects a fixture-era reciter id, once, without touching a real choice', async () => {
+    /**
+     * Preferences persist. A device that ran the fixture-only build has `mock.ar.reciter` in
+     * storage, and that string is not a recitation the approved Quran Foundation source has ever
+     * heard of — sending it would earn a `404`, so playback would fail for a user who chose nothing
+     * wrong.
+     */
+    await writeFaithPreferences({ reciterId: 'mock.ar.reciter' });
+    expect((await readFaithPreferences()).reciterId).toBe(defaultFaithPreferences.reciterId);
+
+    // And a reciter the user actually picked is left exactly as they picked it.
+    await writeFaithPreferences({ reciterId: '7' });
+    expect((await readFaithPreferences()).reciterId).toBe('7');
   });
 
   it('merges a stored blob over the defaults so a newly added field is never undefined', async () => {

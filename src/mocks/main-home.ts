@@ -20,21 +20,27 @@ export const mockMainHomeDashboard: MainHomeDashboard = {
   },
 
   /**
-   * Source: Planner (events, tasks) merged with Faith (prayer times).
+   * Source: Planner (events, tasks). The Faith row is **not** here any more.
    *
-   * Rows, order, times and titles are locked by implementation-lock §9. Accents match
-   * the four hues in 04-today-timeline-reference.png — green, blue, purple, amber —
-   * each taken from an existing module palette.
+   * ── What was removed, and why the lock did not protect it ───────────────────
+   * The first entry was `{ id: 'dhuhr', time: '12:35 PM', title: 'Dhuhr Prayer' }`. Rows, order, times
+   * and titles are locked by implementation-lock §9, and that lock is what kept the value in place
+   * after the prayer-times fixture it came from had been deleted — so Main Home went on stating
+   * 12:35 PM while the Faith module calculated 1:14 PM for the same place.
+   *
+   * The lock protects a *composition*: four rows, in this order, with these accents. It was never
+   * meant to certify a prayer time as correct, and a design reference cannot make one true. The row is
+   * still first and still Faith-accented; it is now supplied by `usePrayerTimelineEntry`, which reads
+   * the same calculation the Faith home hero does. Everything the lock actually describes is intact.
+   *
+   * The remaining three rows are Planner and Family fixtures with no equivalent live source yet, and
+   * they stay. Their times are not claims about a calculation — they are placeholder events for
+   * modules that own no data at all on the free plan.
+   *
+   * Accents match the four hues in 04-today-timeline-reference.png — green, blue, purple, amber —
+   * each taken from an existing module palette. The green one now lives on the live row.
    */
   timeline: [
-    {
-      id: 'dhuhr',
-      time: '12:35 PM',
-      title: 'Dhuhr Prayer',
-      icon: 'mosque',
-      sourceModule: 'faith',
-      accent: modulePalettes.faith.primary,
-    },
     {
       id: 'school-drop-off',
       time: '8:00 AM',

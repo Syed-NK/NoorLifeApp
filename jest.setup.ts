@@ -41,6 +41,18 @@
  * variable declarations, and Jest only permits a factory to close over an
  * out-of-scope variable when its name starts with `mock`.
  */
+
+/**
+ * The one feature import in this file, and it is here because it is a *process-wide* cache.
+ *
+ * Everything else mocked below is a native boundary. This is not: it is NoorLife's own startup
+ * snapshot of the surah catalogue, which lives at module scope because it must be readable during a
+ * component's first render. That makes it survive between tests in the same worker, which is a leak
+ * no individual suite can be relied on to clean up — so it is cleared centrally, exactly like the
+ * router and the audio doubles.
+ */
+import { resetSurahCatalogueWarmup } from '@features/faith/data/quran-catalogue-warmup';
+
 const mockRouterInstance = {
   push: jest.fn(),
   replace: jest.fn(),
@@ -60,6 +72,21 @@ const mockRouterInstance = {
   canDismiss: jest.fn(() => true),
   setParams: jest.fn(),
 };
+
+/**
+ * Route parameters the `useLocalSearchParams` double returns.
+ *
+ * ── Why this became settable ────────────────────────────────────────────────
+ * It was a fixed `{}`, which was adequate while no screen read a parameter. The Qur'an reader now
+ * lives at `/faith/reader/[surah]` with an optional `?ayah=` — it was a single parameterless route
+ * that showed whatever position happened to be in storage, so every surah row opened the same
+ * verses and a bookmark could not open its own.
+ *
+ * Mutable rather than a `jest.fn` per suite, because the mock factory is hoisted and cannot close
+ * over a suite-local value. `setRouteParams` in `beforeEach` keeps one test's parameters out of the
+ * next, and the reset below is unconditional so a suite that never sets them still starts empty.
+ */
+const mockRouteParams: Record<string, string | string[]> = {};
 
 // Fonts: in tests the faces are always "loaded", so components render with their
 // real styles instead of being gated behind a readiness flag.
@@ -120,6 +147,534 @@ jest.mock('expo-device', () => ({
  * Which matters more here than usual — "the copied diagnostics contain no token and no email
  * address" is only a real assertion if the test can inspect the string that was actually written.
  */
+/**
+ * The recitation player.
+ *
+ * ── Why a hand-written double rather than jest-expo's ───────────────────────
+ * `expo-audio` reaches for a native module at import time and throws in this environment, so the
+ * suites that render the reader cannot even load without one. More usefully: the states worth
+ * testing — buffering, a load that failed, a verse finishing so auto-advance fires — are states no
+ * real player will reach in Jest, and a double is the only way to reach them at all.
+ *
+ * `mockAudioPlayerState` is the seam. A test sets it, renders, and asserts what the transport says;
+ * `mockAudioPlayer` records the calls so "does pressing pause actually pause" is answerable.
+ */
+const mockAudioPlayerState = {
+  isLoaded: true,
+  playing: false,
+  isBuffering: false,
+  didJustFinish: false,
+  currentTime: 0,
+  duration: 0,
+};
+
+/**
+ * The recorded calls, shared across every player instance the double creates.
+ *
+ * Separate from the instances themselves because the interesting assertion is almost always "was
+ * pause called", not "was pause called on this particular native object" — and because the double
+ * now creates a **new** instance per source, which would otherwise make every existing
+ * `mockAudio.player.pause` assertion depend on which verse happened to be loaded.
+ */
+const mockAudioPlayerInstance = {
+  play: jest.fn(),
+  pause: jest.fn(),
+  seekTo: jest.fn(),
+  remove: jest.fn(),
+  /**
+   * Modelled because the reader now sets a playback rate on every loaded verse.
+   *
+   * A double that lacked it made `setPlaybackRate` throw `TypeError`, which the hook could only read
+   * as "this platform will not change the rate" — so the double was asserting a capability gap that
+   * does not exist on the device. `shouldCorrectPitch` is a settable property rather than a method,
+   * so it is recorded through a setter below.
+   */
+  setPlaybackRate: jest.fn(),
+};
+
+/**
+ * One native player, with the lifetime the real one has.
+ *
+ * ── Why the double models release at all ────────────────────────────────────
+ * It did not, and that is precisely why a crash that fired on **every** close of the reader reached
+ * a device. The previous double returned one immortal singleton from `useAudioPlayer`, so
+ * `player.pause()` in an unmount cleanup was a call on a live object in Jest and a call on a freed
+ * one on Android. A double that cannot express "this object is gone" cannot fail the test that
+ * matters.
+ *
+ * So a released instance throws what `expo-modules-core` throws: `ERR_USING_RELEASED_SHARED_OBJECT`,
+ * wrapped in the same `Call to function 'AudioPlayer.<name>' has been rejected` wording the device
+ * reports, so a failing test reads like the logcat line it stands for.
+ */
+type MockAudioPlayer = {
+  readonly id: number;
+  readonly play: () => void;
+  readonly pause: () => void;
+  readonly seekTo: (seconds: number) => void;
+  readonly remove: () => void;
+  readonly setPlaybackRate: (rate: number, quality?: string) => void;
+  shouldCorrectPitch: boolean;
+  /** Test-only. Marks the object dead, as `useReleasingSharedObject` does. */
+  readonly __release: () => void;
+  readonly __isReleased: () => boolean;
+};
+
+let mockAudioPlayerSerial = 0;
+
+function mockCreateAudioPlayer(): MockAudioPlayer {
+  mockAudioPlayerSerial += 1;
+  const id = mockAudioPlayerSerial;
+  let released = false;
+
+  const guarded =
+    (name: string, record: jest.Mock) =>
+    (...args: unknown[]): void => {
+      if (released) {
+        const error = new Error(
+          `Call to function 'AudioPlayer.${name}' has been rejected.\n` +
+            '→ Caused by: Cannot use shared object that was already released',
+        ) as Error & { code?: string };
+        error.code = 'ERR_USING_RELEASED_SHARED_OBJECT';
+        throw error;
+      }
+      record(...args);
+    };
+
+  return {
+    id,
+    play: guarded('play', mockAudioPlayerInstance.play),
+    pause: guarded('pause', mockAudioPlayerInstance.pause),
+    seekTo: guarded('seekTo', mockAudioPlayerInstance.seekTo) as (seconds: number) => void,
+    remove: guarded('remove', mockAudioPlayerInstance.remove),
+    setPlaybackRate: guarded('setPlaybackRate', mockAudioPlayerInstance.setPlaybackRate) as (
+      rate: number,
+      quality?: string,
+    ) => void,
+    shouldCorrectPitch: false,
+    __release: () => {
+      released = true;
+      mockAudioReleaseCount += 1;
+    },
+    __isReleased: () => released,
+  };
+}
+
+/** The most recent source `useAudioPlayer` was pointed at. `null` when the player was released. */
+let mockAudioSource: { readonly uri: string } | null = null;
+/** How many instances have been released, so a test can assert against a double release. */
+let mockAudioReleaseCount = 0;
+/** The instance the most recent render returned, for tests that need its identity. */
+let mockAudioCurrentPlayer: MockAudioPlayer | null = null;
+/** Which instance the current `didJustFinish` belongs to. A completion is not transferable. */
+let mockAudioFinishedForPlayer: number | null = null;
+/**
+ * When true, the completion flag is reported to **every** player, not just the one that earned it.
+ *
+ * ── Why the double has to be able to do this ────────────────────────────────
+ * The note below used to claim that a completion leaking across a source change was "a property of
+ * the double, not of the device". That claim was wrong, and believing it is what let a skipping
+ * player reach a physical device with a green suite behind it.
+ *
+ * On the device, `useAudioPlayerStatus` holds its status in React state. When the source changes
+ * there is at least one commit where `player` is the **new** instance and the status in state is
+ * still the **old** one — carrying `didJustFinish: true`. The consumer sees a new player and a
+ * finished status in the same render. The double removed that commit entirely by scoping the flag
+ * to an instance id, so the race it produces could not be written down, let alone tested.
+ *
+ * The scoping stays the default, because a well-behaved sequence really does look like that. This
+ * flag is how a test asks for the other, real, commit.
+ */
+let mockAudioFinishLeaks = false;
+
+/**
+ * Components currently reading the status, so a change re-renders them.
+ *
+ * ── Why a subscription and not a mutable object ─────────────────────────────
+ * The first version of this double let a test assign `mockAudio.state.playing = true` and assert the
+ * label changed. It never did: React has no way to know a plain object was mutated, so the component
+ * kept rendering the previous status and the test was really asserting nothing. Wrapping the read in
+ * `useState` and notifying makes "the player started buffering" an event the tree actually sees —
+ * which is the whole point, since buffering and load failure are states no real player reaches under
+ * Jest.
+ */
+type MockAudioStatus = typeof mockAudioPlayerState;
+
+const mockAudioListeners = new Set<(status: MockAudioStatus) => void>();
+
+jest.mock('expo-audio', () => {
+  const react = jest.requireActual<typeof import('react')>('react');
+  return {
+    /**
+     * `useAudioPlayer`, modelled on `expo-modules-core`'s `useReleasingSharedObject`.
+     *
+     * Three behaviours are copied from the real implementation because the bugs live in them:
+     *
+     *   1. **A new instance per source.** The player is keyed on the serialised source, exactly as
+     *      the SDK keys `useReleasingSharedObject` on `JSON.stringify(initialSource)`.
+     *   2. **The previous instance is released when the source changes**, in an effect rather than
+     *      during render.
+     *   3. **The instance is released on unmount, from a cleanup registered here** — inside the
+     *      hook. That placement is the load-bearing part: React runs cleanups in the order their
+     *      effects were declared, so this one runs before any cleanup the *consumer* registers
+     *      after calling `useAudioPlayer`. A consumer that touches the player on unmount therefore
+     *      touches a released object, which is the defect this double now reproduces.
+     */
+    useAudioPlayer: (source: { uri: string } | null = null) => {
+      const key = JSON.stringify(source ?? null);
+      const instance = react.useRef<MockAudioPlayer | null>(null);
+      const pendingRelease = react.useRef<MockAudioPlayer | null>(null);
+      const previousKey = react.useRef<string>(key);
+
+      if (instance.current === null) {
+        instance.current = mockCreateAudioPlayer();
+        mockAudioSource = source;
+      }
+
+      const player = react.useMemo(() => {
+        if (previousKey.current !== key) {
+          pendingRelease.current = instance.current;
+          instance.current = mockCreateAudioPlayer();
+          previousKey.current = key;
+        }
+        mockAudioSource = source;
+        return instance.current as MockAudioPlayer;
+      }, [key]);
+
+      mockAudioCurrentPlayer = player;
+
+      react.useEffect(() => {
+        if (pendingRelease.current !== null) {
+          pendingRelease.current.__release();
+          pendingRelease.current = null;
+        }
+      }, [player]);
+
+      react.useEffect(() => {
+        return () => {
+          instance.current?.__release();
+        };
+      }, []);
+
+      return player;
+    },
+    /**
+     * `useAudioPlayerStatus`, including the part that resets when the player changes.
+     *
+     * The real hook is `useEvent(player, PLAYBACK_STATUS_UPDATE, player.currentStatus)`, and its
+     * fallback is memoised on `player.id`. A **new** player therefore starts from that player's own
+     * status — not loaded, not playing, and emphatically **not** just finished.
+     *
+     * Modelling that matters because `didJustFinish` is sticky in this double: without the reset, a
+     * verse finishing would leave the flag set across the swap to the next verse, the auto-advance
+     * effect would see a completion that belongs to the player before last, and one finish would
+     * walk the whole surah. That is a property of the double, not of the device, and a test tuned to
+     * it would be tuned to a lie.
+     */
+    useAudioPlayerStatus: (player: { id: number }) => {
+      const [status, setStatus] = react.useState(() => ({ ...mockAudioPlayerState }));
+      react.useEffect(() => {
+        const listener = (next: MockAudioStatus): void => setStatus({ ...next });
+        mockAudioListeners.add(listener);
+        // Re-sync on mount, so a status set before this component rendered is not missed.
+        listener(mockAudioPlayerState);
+        return () => {
+          mockAudioListeners.delete(listener);
+        };
+      }, []);
+
+      /**
+       * A completion belongs to the instance that reported it.
+       *
+       * `mockAudioFinishedForPlayer` is stamped when a test sets `didJustFinish`, and the flag is
+       * only reported to the player it was stamped for. Without this the flag is sticky and global:
+       * a verse finishing would still read as finished on the *next* verse's player, so a single
+       * completion would walk the whole surah — an artefact of the double that a test tuned to it
+       * would enshrine.
+       */
+      const belongsHere = mockAudioFinishLeaks || mockAudioFinishedForPlayer === player.id;
+      return status.didJustFinish && !belongsHere ? { ...status, didJustFinish: false } : status;
+    },
+    setAudioModeAsync: jest.fn(async () => undefined),
+  };
+});
+
+const MOCK_AUDIO_DEFAULTS = {
+  isLoaded: true,
+  playing: false,
+  isBuffering: false,
+  didJustFinish: false,
+  currentTime: 0,
+  duration: 0,
+};
+
+/** Exposed so a test can drive the player's reported state. */
+export const mockAudio = {
+  /**
+   * The recorded calls, aggregated across every instance.
+   *
+   * `mockAudio.player.pause` still answers "was pause called", which is what almost every assertion
+   * wants. When a test needs to know *which* instance, or whether one is dead, use the two helpers
+   * below.
+   */
+  player: mockAudioPlayerInstance,
+  /** The URI currently loaded, or null. Lets a test assert *what* is being played. */
+  currentUri: (): string | null => mockAudioSource?.uri ?? null,
+  /** The instance the last render returned. Its identity changes when the source does. */
+  currentPlayer: (): MockAudioPlayer | null => mockAudioCurrentPlayer,
+  /** How many native instances have been released. A second release of one would show here. */
+  releaseCount: (): number => mockAudioReleaseCount,
+  /** Reports a new player status to every mounted consumer. */
+  setStatus(patch: Partial<typeof MOCK_AUDIO_DEFAULTS>): void {
+    if (patch.didJustFinish === true) {
+      // Stamped with the instance that is loaded now, so the flag cannot outlive it.
+      mockAudioFinishedForPlayer = mockAudioCurrentPlayer?.id ?? null;
+    }
+    Object.assign(mockAudioPlayerState, patch);
+    for (const listener of mockAudioListeners) {
+      listener(mockAudioPlayerState);
+    }
+  },
+
+  /**
+   * Reports a completion that is visible to **whatever player is current**, including a new one.
+   *
+   * This is the device's real behaviour across a source change, and it is what reproduces the
+   * skip: the consumer observes a fresh player and a still-finished status in one commit. Every
+   * subsequent `setStatus` keeps leaking until `reset` or `stopLeaking` — a stale flag does not
+   * un-stale itself, which is the point.
+   */
+  emitLeakedFinish(): void {
+    mockAudioFinishLeaks = true;
+    // `isLoaded` is deliberately left as it stands: a leak arriving while the replacement source is
+    // still buffering is a distinct case from one arriving after it has loaded, and a test must be
+    // able to ask for either.
+    Object.assign(mockAudioPlayerState, { didJustFinish: true });
+    for (const listener of mockAudioListeners) {
+      listener(mockAudioPlayerState);
+    }
+  },
+
+  /**
+   * Re-notifies subscribers with the status exactly as it stands, changing nothing.
+   *
+   * This is a **duplicate observation of one completion**, which is what a re-render produces:
+   * `didJustFinish` is a status flag, so it is still set and still belongs to the same source.
+   * Distinct from calling `setStatus({ didJustFinish: true })` again, which re-stamps the flag to
+   * whatever player is current and is therefore a *new* completion for a *new* source.
+   */
+  replayStatus(): void {
+    for (const listener of mockAudioListeners) {
+      listener(mockAudioPlayerState);
+    }
+  },
+
+  /** Ends the leak and clears the flag, as the platform does once the new source reports in. */
+  stopLeaking(): void {
+    mockAudioFinishLeaks = false;
+    Object.assign(mockAudioPlayerState, { didJustFinish: false });
+    for (const listener of mockAudioListeners) {
+      listener(mockAudioPlayerState);
+    }
+  },
+  reset(): void {
+    mockAudioFinishLeaks = false;
+    Object.assign(mockAudioPlayerState, MOCK_AUDIO_DEFAULTS);
+    mockAudioSource = null;
+    mockAudioCurrentPlayer = null;
+    mockAudioFinishedForPlayer = null;
+    mockAudioReleaseCount = 0;
+    mockAudioListeners.clear();
+    mockAudioPlayerInstance.play.mockClear();
+    mockAudioPlayerInstance.pause.mockClear();
+    mockAudioPlayerInstance.seekTo.mockClear();
+    mockAudioPlayerInstance.setPlaybackRate.mockClear();
+    mockAudioPlayerInstance.remove.mockClear();
+  },
+};
+
+/**
+ * `expo-file-system`, as an in-memory filesystem.
+ *
+ * ── Why a real double rather than a stub of the store ───────────────────────
+ * The Qur'an reader now writes recitation audio to disk, and the parts of that worth testing are
+ * precisely the parts a stubbed `AudioStore` would skip: that a transfer writes to `<name>.part` and
+ * is only renamed onto the playable name after its bytes validate, that an aborted transfer leaves
+ * nothing behind, and that a body which is not audio is deleted rather than cached. Those are
+ * properties of `expo-audio-store.ts`, so the thing that has to be doubled is the filesystem
+ * underneath it.
+ *
+ * The model is a flat `Map` from URI to bytes. Directories exist only as a prefix, which is enough:
+ * nothing in the app nests, and `list()` is a prefix scan.
+ */
+const mockFsFiles = new Map<string, { bytes: Uint8Array; lastModified: number }>();
+
+/** What a download of a given URL produces. Replaced per test; the default is valid MP3 bytes. */
+let mockFsResponder: (url: string) => Uint8Array | Error = () => mockAudioBytes(4096);
+
+/** Free space the double reports, so the low-storage branch is reachable. */
+let mockFsFreeBytes = 8 * 1024 * 1024 * 1024;
+
+/** A buffer that begins with an ID3 tag, which is what `isPlausibleAudio` accepts. */
+function mockAudioBytes(size: number): Uint8Array {
+  const bytes = new Uint8Array(size);
+  bytes[0] = 0x49;
+  bytes[1] = 0x44;
+  bytes[2] = 0x33;
+  return bytes;
+}
+
+/** Exposed so a test can seed files, script a transfer, and read what was written. */
+export const mockFileSystem = {
+  files: mockFsFiles,
+  /** Bytes that pass validation, of any length. */
+  audioBytes: mockAudioBytes,
+  /** Every URI currently present, including partials. */
+  uris: (): string[] => [...mockFsFiles.keys()],
+  /** Scripts what the next downloads return: bytes, or an `Error` to reject with. */
+  respondWith(responder: (url: string) => Uint8Array | Error): void {
+    mockFsResponder = responder;
+  },
+  setFreeBytes(value: number): void {
+    mockFsFreeBytes = value;
+  },
+  /** Places a file directly, bypassing the transfer. `lastModified` drives expiry tests. */
+  seed(uri: string, bytes: Uint8Array, lastModified: number = Date.now()): void {
+    mockFsFiles.set(uri, { bytes, lastModified });
+  },
+  reset(): void {
+    mockFsFiles.clear();
+    mockFsResponder = () => mockAudioBytes(4096);
+    mockFsFreeBytes = 8 * 1024 * 1024 * 1024;
+  },
+};
+
+jest.mock('expo-file-system', () => {
+  /**
+   * Joins path segments without touching the scheme's own `//`.
+   *
+   * Written as a fold that trims the seam rather than as a join-then-collapse, because collapsing
+   * runs of slashes afterwards turns `file:///cache` into `file://cache` — a malformed URI that
+   * every assertion built on `toContain` would still pass against.
+   */
+  const join = (parts: (string | { uri: string })[]): string =>
+    parts
+      .map((part) => (typeof part === 'string' ? part : part.uri))
+      .filter((part) => part.length > 0)
+      .reduce(
+        (accumulated, part) =>
+          accumulated === ''
+            ? part
+            : `${accumulated.replace(/\/+$/, '')}/${part.replace(/^\/+/, '')}`,
+        '',
+      );
+
+  class MockDirectory {
+    readonly uri: string;
+    constructor(...uris: (string | { uri: string })[]) {
+      this.uri = join(uris);
+    }
+    get exists(): boolean {
+      // A directory exists once anything has been written under it, or once `create` marked it.
+      return [...mockFsFiles.keys()].some((uri) => uri.startsWith(`${this.uri}/`));
+    }
+    create(): void {
+      // Nothing to do: the flat map needs no directory entry, and `create` is idempotent by design.
+    }
+    list(): MockFile[] {
+      return [...mockFsFiles.keys()]
+        .filter((uri) => uri.startsWith(`${this.uri}/`))
+        .map((uri) => new MockFile(uri));
+    }
+    delete(): void {
+      for (const uri of [...mockFsFiles.keys()]) {
+        if (uri.startsWith(`${this.uri}/`)) {
+          mockFsFiles.delete(uri);
+        }
+      }
+    }
+  }
+
+  class MockFile {
+    readonly uri: string;
+    constructor(...uris: (string | { uri: string })[]) {
+      this.uri = join(uris);
+    }
+    get name(): string {
+      return this.uri.slice(this.uri.lastIndexOf('/') + 1);
+    }
+    get exists(): boolean {
+      return mockFsFiles.has(this.uri);
+    }
+    get size(): number {
+      return mockFsFiles.get(this.uri)?.bytes.length ?? 0;
+    }
+    get lastModified(): number | null {
+      return mockFsFiles.get(this.uri)?.lastModified ?? null;
+    }
+    delete(): void {
+      if (!mockFsFiles.has(this.uri)) {
+        throw new Error('ENOENT');
+      }
+      mockFsFiles.delete(this.uri);
+    }
+    open(): { readBytes: (length: number) => Uint8Array; close: () => void } {
+      const entry = mockFsFiles.get(this.uri);
+      if (entry === undefined) {
+        throw new Error('ENOENT');
+      }
+      return {
+        readBytes: (length: number) => entry.bytes.slice(0, length),
+        close: () => undefined,
+      };
+    }
+    moveSync(destination: MockFile): void {
+      const entry = mockFsFiles.get(this.uri);
+      if (entry === undefined) {
+        throw new Error('ENOENT');
+      }
+      mockFsFiles.delete(this.uri);
+      mockFsFiles.set(destination.uri, entry);
+    }
+    static async downloadFileAsync(
+      url: string,
+      destination: MockFile,
+      options?: { signal?: AbortSignal },
+    ): Promise<MockFile> {
+      // Awaited once so the transfer is genuinely asynchronous: a synchronous double would let a
+      // test pass that depends on two preparations overlapping when they never could.
+      await Promise.resolve();
+      if (options?.signal?.aborted === true) {
+        const error = new Error('Aborted');
+        error.name = 'AbortError';
+        throw error;
+      }
+      const produced = mockFsResponder(url);
+      if (produced instanceof Error) {
+        throw produced;
+      }
+      mockFsFiles.set(destination.uri, { bytes: produced, lastModified: Date.now() });
+      return destination;
+    }
+  }
+
+  return {
+    File: MockFile,
+    Directory: MockDirectory,
+    FileMode: { ReadOnly: 'r', ReadWrite: 'rw', WriteOnly: 'w', Append: 'wa', Truncate: 'wt' },
+    Paths: {
+      get cache(): MockDirectory {
+        return new MockDirectory('file:///cache');
+      },
+      get document(): MockDirectory {
+        return new MockDirectory('file:///documents');
+      },
+      get availableDiskSpace(): number {
+        return mockFsFreeBytes;
+      },
+    },
+  };
+});
+
 jest.mock('expo-clipboard', () => {
   let contents = '';
   return {
@@ -348,7 +903,9 @@ const mockLinkingInstance = {
   canOpenURL: jest.fn<Promise<boolean>, [string]>(() => Promise.resolve(true)),
   openURL: jest.fn<Promise<boolean>, [string]>(() => Promise.resolve(true)),
   openSettings: jest.fn<Promise<void>, []>(() => Promise.resolve()),
-  createURL: jest.fn<string, [string]>((path: string) => `noorlifeapp://${path.replace(/^\//, '')}`),
+  createURL: jest.fn<string, [string]>(
+    (path: string) => `noorlifeapp://${path.replace(/^\//, '')}`,
+  ),
   /** Delivers a warm-start URL to every registered handler. */
   emit(url: string) {
     for (const handler of mockLinkingInstance.urlHandlers) {
@@ -389,8 +946,8 @@ jest.mock('expo-apple-authentication', () => ({
 // Router: navigation is asserted by inspecting the shared double above.
 jest.mock('expo-router', () => ({
   useRouter: () => mockRouterInstance,
-  useLocalSearchParams: () => ({}),
-  useGlobalSearchParams: () => ({}),
+  useLocalSearchParams: () => ({ ...mockRouteParams }),
+  useGlobalSearchParams: () => ({ ...mockRouteParams }),
   usePathname: () => '/home',
   useSegments: () => [],
   useFocusEffect: () => undefined,
@@ -423,10 +980,39 @@ jest.mock('expo-router', () => ({
 /** Exposed so tests can assert navigation. */
 export const mockRouter = mockRouterInstance;
 
+/**
+ * Sets the route parameters the next render will read. Cleared between tests.
+ *
+ * Call before rendering a screen that lives at a parameterised route — the reader at
+ * `/faith/reader/[surah]` is the first of them.
+ */
+export function setRouteParams(params: Readonly<Record<string, string | string[]>>): void {
+  for (const key of Object.keys(mockRouteParams)) {
+    delete mockRouteParams[key];
+  }
+  Object.assign(mockRouteParams, params);
+}
+
 beforeEach(() => {
   for (const value of Object.values(mockRouterInstance)) {
     value.mockClear();
   }
+  // Unconditional, so a suite that never sets parameters cannot inherit another's.
+  setRouteParams({});
+  mockAudio.reset();
+  // The filesystem is process-wide, so a file written by one test would otherwise be found by the
+  // next one's cache read — which is exactly the kind of cross-test leak an audio cache invites.
+  mockFileSystem.reset();
+  /**
+   * The Qur'an catalogue snapshot is a module-level singleton, by design.
+   *
+   * It has to be, because the whole point of it is to be readable during a component's first render,
+   * before any provider effect has run — see `quran-catalogue-warmup.ts`. That makes it process-wide,
+   * and a process-wide cache is exactly the thing that leaks between tests: a suite injecting its own
+   * Qur'an repository would otherwise be served the catalogue a previous suite's repository produced,
+   * and would assert against data it never supplied.
+   */
+  resetSurahCatalogueWarmup();
   // The profile row is writable, so it is restored between tests.
   Object.assign(mockProfileRow, MOCK_PROFILE_DEFAULTS);
 
@@ -445,3 +1031,38 @@ beforeEach(() => {
   mockLinkingInstance.openSettings.mockClear();
   mockLinkingInstance.urlHandlers.clear();
 });
+
+/**
+ * `expo-notifications`: a stand-in, because the real module needs a native runtime.
+ *
+ * ── Why the whole module and not just the scheduling calls ──────────────────
+ * `expo-notifications.port.ts` registers a notification handler at module scope — deliberately, so a
+ * prayer alert arriving on a cold start is presented with NoorLife's settings rather than the
+ * platform's. That means the module is evaluated the moment anything imports the DI context, which
+ * in Jest is almost every Faith suite. Without this, importing a screen fails before a test runs.
+ *
+ * The behaviour under test is exercised through `createFakeNotificationPort`, which is a real
+ * stateful implementation. This mock exists only so the import graph resolves; it deliberately
+ * grants nothing and schedules nothing, so a test that reached the real port by accident would fail
+ * visibly rather than appear to pass.
+ */
+jest.mock('expo-notifications', () => ({
+  setNotificationHandler: jest.fn(),
+  getPermissionsAsync: jest.fn(async () => ({
+    granted: false,
+    canAskAgain: true,
+    status: 'undetermined',
+  })),
+  requestPermissionsAsync: jest.fn(async () => ({
+    granted: false,
+    canAskAgain: true,
+    status: 'undetermined',
+  })),
+  setNotificationChannelAsync: jest.fn(async () => undefined),
+  scheduleNotificationAsync: jest.fn(async () => 'jest-notification-id'),
+  cancelScheduledNotificationAsync: jest.fn(async () => undefined),
+  getAllScheduledNotificationsAsync: jest.fn(async () => []),
+  PermissionStatus: { UNDETERMINED: 'undetermined', GRANTED: 'granted', DENIED: 'denied' },
+  AndroidImportance: { DEFAULT: 3, HIGH: 4 },
+  SchedulableTriggerInputTypes: { DATE: 'date', TIME_INTERVAL: 'timeInterval' },
+}));

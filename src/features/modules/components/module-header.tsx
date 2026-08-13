@@ -7,9 +7,62 @@ import { profileAvatar } from '@features/home/module-pictograms';
 import { iconButtonA11y } from '@shared/utils/a11y';
 
 import { useModule } from '../module-context';
-import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import { moduleLayout, moduleNeutrals, moduleScale } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
+
+/**
+ * How much room each side of the title is reserved for the control clusters.
+ *
+ * The **larger** of the two sides, applied to both. Back is one 44 dp control; Help and Profile are
+ * two of them plus the gap. Reserving the wider cluster on both sides is what keeps the title band
+ * symmetric about the screen's centre — reserving each side its own width would centre the band on
+ * the *gap between the controls*, which is not the same point and is the very thing the centred
+ * title exists to avoid.
+ */
+export function headerControlReserve(scaled: (value: number) => number): number {
+  const target = scaled(moduleLayout.minTouchTarget);
+  return Math.max(target, target * 2 + scaled(moduleLayout.headerControlGap));
+}
+
+/**
+ * The width the title is given, at a screen width — computed, never measured.
+ *
+ * ── The defect this replaces ────────────────────────────────────────────────
+ * The title used to be a **content-sized** box: the layer spanned the header, and the `Text` inside
+ * it shrank to whatever its own string measured. That is fine whenever the measurement is right,
+ * and on a **cold deep link into a module screen it is not**. The root navigator mounts immediately
+ * rather than waiting on font readiness — a deliberate choice, recorded in `app/_layout.tsx`,
+ * because gating it put a two-second blank between the native splash and the branded one — so a
+ * linked screen can lay out before Poppins is registered. Yoga measures the title in the system
+ * fallback face, the box is sized to that, Poppins arrives and draws wider glyphs into a box that
+ * never re-measures, and `numberOfLines={1}` ellipsises the difference.
+ *
+ * Measured on the emulator, opening `noorlifeapp://faith/reader/4` from a force-stopped app: the
+ * title node came out 141 px wide and drew `Rea…`, where the same screen reached by tapping through
+ * measured 164 px and drew `Reader`. Nothing recovers from it, because nothing invalidates the
+ * layout once the font lands.
+ *
+ * So the box no longer depends on a measurement at all. The title fills a band whose width is
+ * arithmetic on the screen width and the control geometry, and the string is centred inside it by
+ * `textAlign`. A stale font metric can no longer clip anything, because nothing is asking the font
+ * how wide the string is in order to decide how wide the box should be.
+ *
+ * ── What this changes for long titles ───────────────────────────────────────
+ * A title too long for the band now truncates at the band's edge instead of drawing *underneath*
+ * the Help and Profile controls, which is what a content-sized box did with a long string on a
+ * narrow screen. Both are compromises; only one of them puts text under a tappable control.
+ *
+ * The band is generous for the titles this app actually uses. At the narrowest supported width it
+ * is 140 dp against a `Reader` that measures about 48 dp — and about 63 dp with the header's
+ * 1.3× font-scale cap applied. `reader-header-title.test.tsx` asserts that headroom rather than
+ * leaving it as arithmetic in a comment.
+ */
+export function headerTitleBandWidth(screenWidth: number): number {
+  const scale = moduleScale(screenWidth);
+  const scaled = (value: number): number => Math.round(value * scale);
+  return screenWidth - 2 * scaled(moduleLayout.pagePadding) - 2 * headerControlReserve(scaled);
+}
 
 export type ModuleHeaderProps = {
   /** Overrides the module name — used on sub-screens ("Prayer Times"). */
@@ -72,6 +125,8 @@ export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: Mod
    * them keeps the 44 dp target while the drawn circle matches the design.
    */
   const disc = dp(moduleLayout.headerControl);
+  /** Room kept clear each side of the title. Symmetric, so the band centres on the screen. */
+  const reserve = headerControlReserve(dp);
   const prefix = testID ?? 'module-header';
 
   return (
@@ -82,13 +137,30 @@ export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: Mod
       ]}
       testID={testID}
     >
-      {/* Centred on the whole header, independent of how wide the control clusters are. */}
-      <View style={styles.titleLayer} pointerEvents="none">
+      {/*
+        The title band: inset from both edges by the wider control cluster, so it is centred on the
+        screen and can never reach under a control. `alignItems: 'stretch'` is the load-bearing
+        part — the `Text` fills the band rather than shrinking to its own measured string, which is
+        what makes the title independent of when the font finished loading. See
+        `headerTitleBandWidth`.
+      */}
+      <View
+        style={[styles.titleLayer, { left: reserve, right: reserve }]}
+        pointerEvents="none"
+        testID={`${prefix}-title-band`}
+      >
         <ModuleText
           token="headerTitle"
           align="center"
+          /*
+            Kept, and it is a wrap guard rather than a truncation policy. The header has a fixed
+            height, so a title allowed to run to two lines would grow past it and push the screen
+            down. With the band above, a short fixed title like `Reader` has more than twice the
+            width it needs — so the only strings this can ever shorten are long descriptive ones on
+            the narrowest devices, which previously ran under the controls instead.
+          */
           numberOfLines={1}
-          // Caps growth so a large OS text size cannot push the title under the controls.
+          // Caps growth so a large OS text size cannot outgrow the band.
           maxFontSizeMultiplier={1.3}
           accessibilityRole="header"
           testID={`${prefix}-title`}
@@ -170,14 +242,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: 'transparent',
   },
-  /** Spans the header so the title centres on the screen, not on the leftover space. */
+  /**
+   * The band the title occupies. `left` and `right` are supplied per render from the control
+   * geometry; what is fixed here is that the child **stretches** across it rather than centring at
+   * its own measured width, and that the band is centred vertically in the header.
+   */
   titleLayer: {
     position: 'absolute',
-    left: 0,
-    right: 0,
     top: 0,
     bottom: 0,
-    alignItems: 'center',
+    alignItems: 'stretch',
     justifyContent: 'center',
   },
   rightCluster: {

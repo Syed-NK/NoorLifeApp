@@ -44,6 +44,9 @@ export const iconRegistry = {
   search: mci('magnify'),
   'chevron-forward': mci('chevron-right'),
   'chevron-back': mci('chevron-left'),
+  // Vertical pair, for a panel that expands and collapses in place — the reader's docked transport.
+  'chevron-up': mci('chevron-up'),
+  'chevron-down': mci('chevron-down'),
   more: mci('dots-horizontal'),
 
   // ── Actions ───────────────────────────────────────────────────────────────
@@ -56,6 +59,10 @@ export const iconRegistry = {
   microphone: mci('microphone'),
   play: mci('play'),
   pause: mci('pause'),
+  // The transport's ayah steps. Deliberately not the chevrons, which mean "navigate" everywhere
+  // else in the app — a media control that looks like a list affordance reads as one.
+  'skip-previous': mci('skip-previous'),
+  'skip-next': mci('skip-next'),
   bookmark: mci('bookmark'),
   star: mci('star'),
 
@@ -126,6 +133,14 @@ export const iconRegistry = {
   tasbih: mci('circle-multiple-outline'),
   crescent: mci('moon-waning-crescent'),
   share: mci('share-variant-outline'),
+  // Offline recitation. `progress-download` is the family's own in-flight variant, so a download
+  // that is running is not drawn with the same glyph as one that has not started.
+  download: mci('download-outline'),
+  downloading: mci('progress-download'),
+  delete: mci('trash-can-outline'),
+  // The reader's verse actions. Outline weights, to match the Faith set around them.
+  note: mci('note-text-outline'),
+  playlist: mci('playlist-music-outline'),
 
   // ── Health module surfaces (Phase 4A) ─────────────────────────────────────
   medication: mci('pill'),

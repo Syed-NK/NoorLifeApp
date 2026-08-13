@@ -148,7 +148,11 @@ function WorshipRow({
       onPress={onCycle}
       accessibilityRole="checkbox"
       accessibilityState={{ checked: entry.status === 'completed' }}
-      accessibilityLabel={statusLabel(`${entry.label}, ${entry.detail}`, STATUS_WORD[entry.status])}
+      // Spoken with its time only when one was calculated — see `WorshipEntry.detail`.
+      accessibilityLabel={statusLabel(
+        entry.detail === undefined ? entry.label : `${entry.label}, ${entry.detail}`,
+        STATUS_WORD[entry.status],
+      )}
       accessibilityHint="Changes how this act is marked."
       testID={`faith-worship-entry-${entry.key}`}
     >

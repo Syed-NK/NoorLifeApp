@@ -1,4 +1,5 @@
 import type { FaithResult } from '../faith-result';
+import { MAX_TASBIH_TARGET, MIN_TASBIH_TARGET } from '../tasbih.repository';
 import type {
   DhikrPreset,
   TasbihHistoryEntry,
@@ -124,16 +125,44 @@ async function archive(session: TasbihSession): Promise<void> {
 }
 
 export function createMockTasbihRepository(): TasbihRepository {
+  /**
+   * Mutations run one at a time, in the order they were requested.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── The race this closes, and why it is the important one here ──────────────
+   * Every mutation is a read-modify-write across an `await`: load the session, apply the change,
+   * write it back. Two taps arriving before the first write lands both read the *same* stored
+   * session, both compute a count of one, and both write it. The second tap is silently lost.
+   *
+   * Which is exactly the defining use of a tasbih. Somebody counting a hundred repetitions taps as
+   * fast as their thumb moves — that is not an edge case, it is the feature — and a counter that
+   * drops beads under fast tapping is a counter that miscounts an act of worship. It was found by a
+   * test that pressed the target stepper thirty-two times without waiting, and it applies equally to
+   * `increment`, where it matters far more.
+   *
+   * A serial queue is the smallest fix that is actually correct: each mutation awaits the previous
+   * one, so every one of them reads what the last one wrote. Ordering is preserved, no work is
+   * dropped, and nothing needs to know about anything else.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  let pending: Promise<unknown> = Promise.resolve();
+
   async function mutate(
     change: (session: TasbihSession) => TasbihSession,
   ): Promise<FaithResult<TasbihSession>> {
-    const current = (await loadSession()) ?? freshSession(PRESETS[0]!.id);
-    const next = change(current);
-    const written = await writeChecked(faithStorageKeys.tasbihSession, next);
-    if (!written) {
-      return { kind: 'error', code: 'unavailable', detail: 'tasbih write failed' };
-    }
-    return { kind: 'ok', data: next };
+    const run = pending.then(async (): Promise<FaithResult<TasbihSession>> => {
+      const current = (await loadSession()) ?? freshSession(PRESETS[0]!.id);
+      const next = change(current);
+      const written = await writeChecked(faithStorageKeys.tasbihSession, next);
+      if (!written) {
+        return { kind: 'error', code: 'unavailable', detail: 'tasbih write failed' };
+      }
+      return { kind: 'ok', data: next };
+    });
+    // The queue must survive a failed mutation, so the chain is advanced by a promise that cannot
+    // reject. A rejection here would wedge every later tap.
+    pending = run.catch(() => undefined);
+    return run;
   }
 
   return {
@@ -181,6 +210,27 @@ export function createMockTasbihRepository(): TasbihRepository {
       return mutate((session) => ({
         ...session,
         count: Math.max(0, session.count - 1),
+        updatedAt: nowIso(),
+      }));
+    },
+
+    async adjustTarget(delta: number): Promise<FaithResult<TasbihSession>> {
+      if (!Number.isFinite(delta)) {
+        return { kind: 'error', code: 'unknown' };
+      }
+      /*
+        The count survives a target change. The taps already made were real, and discarding them
+        because somebody adjusted their intention mid-session would be the counter deciding their
+        dhikr did not happen. A target set below the current count simply completes the round on the
+        next tap.
+      */
+      return mutate((session) => ({
+        ...session,
+        // Clamped after applying, so pressing past a bound stops there rather than failing.
+        target: Math.min(
+          Math.max(Math.round(session.target + delta), MIN_TASBIH_TARGET),
+          MAX_TASBIH_TARGET,
+        ),
         updatedAt: nowIso(),
       }));
     },

@@ -175,11 +175,20 @@ const faith: ModuleDefinition = {
   heroCopySide: 'left',
   routes: { home: '/faith', ai: '/faith/ai', help: '/settings/help' },
   navigation: moduleThemes.faith.navigation,
+  /**
+   * Static copy, true in every state — because this is what the hero draws when it has no live data.
+   *
+   * It used to read `Dhuhr 12:35 PM / May 19, 2025 / 21 Dhul-Qa'dah 1446 AH`, which was the design
+   * reference's day rendered to every user on every day as though it were theirs. `FaithHero` now
+   * takes the next prayer, the date and the Hijri date as props from `useFaithHome`, and falls back
+   * to these three lines while that is loading or when no location has been granted — which is the
+   * only job static hero copy can honestly do for a screen about *today*.
+   */
   hero: {
-    eyebrow: 'Next Prayer',
-    headline: 'Dhuhr 12:35 PM',
-    support: 'May 19, 2025',
-    supportSecondary: '21 Dhul-Qa‘dah 1446 AH',
+    eyebrow: 'Prayer times',
+    headline: 'Times for where you are',
+    support: 'Set your location to see today’s times',
+    supportSecondary: '',
     actionLabel: 'View Prayer Times',
     artworkAccessibilityLabel: '',
   },
@@ -199,20 +208,14 @@ const faith: ModuleDefinition = {
     { key: 'quran', label: 'Qur’an', icon: 'quran', href: '/faith/quran', available: true },
     { key: 'today', label: 'Today', icon: 'today', href: '/faith', available: true },
     { key: 'more', label: 'More', icon: 'more', href: '/faith/more', available: true },
-    {
-      key: 'qibla',
-      label: 'Qibla',
-      icon: 'mosque',
-      available: false,
-      unavailableReason: 'Qibla direction needs location access and arrives in a later release.',
-    },
-    {
-      key: 'dhikr',
-      label: 'Dhikr',
-      icon: 'leaf',
-      available: false,
-      unavailableReason: 'Dhikr counter arrives with the Faith module’s full release.',
-    },
+    /*
+      Both of these read `available: false` with "arrives in a later release", while the Faith home
+      linked to both screens from its feature grid and both had been shipped. Two statements about
+      the same feature, and the registry's was the wrong one — a capability list that disagrees with
+      the app is worse than no capability list, because it is the thing a reviewer checks.
+    */
+    { key: 'qibla', label: 'Qibla', icon: 'qibla', href: '/faith/qibla', available: true },
+    { key: 'dhikr', label: 'Tasbih', icon: 'tasbih', href: '/faith/tasbih', available: true },
   ],
   permissions: [
     {

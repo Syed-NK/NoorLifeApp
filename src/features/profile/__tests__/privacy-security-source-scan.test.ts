@@ -26,7 +26,28 @@ function sourceFiles(directory: string): readonly string[] {
 }
 
 const ALL_SOURCE = sourceFiles(SRC_ROOT);
-const PRESENTATION_SOURCE = PRESENTATION_ROOTS.flatMap((root) => sourceFiles(root));
+
+/**
+ * Presentation, and the one thing inside a feature folder that is not.
+ *
+ * ── Why `data/` is excluded, and why that is a narrowing rather than a hole ──
+ * The rule this scope serves is "no screen touches the Supabase client". It was written when every
+ * backend call lived under `src/services`, so "everything in `features` and `app`" was an exact
+ * statement of it. This repository's own architecture then put a feature's repositories inside the
+ * feature — `src/features/faith/data/*.repository.ts` — and the Quran Foundation adapter is one of
+ * them: a data-layer module that invokes an Edge Function, sitting in the directory the architecture
+ * says data-layer modules sit in.
+ *
+ * Excluding `data/` keeps the rule aimed at what it was aimed at. Screens, components, hooks and
+ * route files are all still in scope, and so is every other directory of every feature — a screen
+ * importing the client fails exactly as before. What is no longer flagged is a repository doing the
+ * job repositories do, and `quran-foundation-contract.test.ts` holds *that* directory to a stricter
+ * standard than this scan ever did: one invocation call site, no `fetch`, no URL construction, no
+ * vendor hostname and no logging.
+ */
+const PRESENTATION_SOURCE = PRESENTATION_ROOTS.flatMap((root) => sourceFiles(root)).filter(
+  (file) => !file.includes(`${sep}data${sep}`),
+);
 
 function relative(file: string): string {
   return file.replace(SRC_ROOT, '');
@@ -325,8 +346,18 @@ describe('the deletion architecture', () => {
    */
   const FUNCTIONS_ROOT = join(SRC_ROOT, '..', 'supabase', 'functions');
 
-  /** The Edge Functions this repository has reviewed and approved. AI-2 added the only entry. */
-  const APPROVED_FUNCTIONS = ['noor-ai'];
+  /**
+   * The Edge Functions this repository has reviewed and approved.
+   *
+   * `noor-ai` was AI-2's. `quran-content` is the server side of the Quran Foundation Content API
+   * integration, added after production Content API access was approved on 2026-08-10: it holds the
+   * vendor credential so the app cannot, proxies seven fixed content reads and nothing else, and is
+   * declared with `verify_jwt = true` in `supabase/config.toml`. Its own scans live in
+   * `supabase/functions/quran-content/tests/source-scan_test.ts`; the two assertions below still
+   * apply to it, and it satisfies them by having no database client, no privileged role and no
+   * destructive verb of any kind.
+   */
+  const APPROVED_FUNCTIONS = ['noor-ai', 'quran-content'];
 
   function functionDirectories(): readonly string[] {
     try {

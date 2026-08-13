@@ -249,8 +249,18 @@ describe('Main Home timeline', () => {
     expect(screen.getByText('Today at a Glance')).toBeTruthy();
   });
 
+  /**
+   * The three fixture rows. The prayer row is deliberately absent from this list.
+   *
+   * It used to be first, as `['Dhuhr Prayer', '12:35 PM']` — a time and a prayer name pinned by a test
+   * that could only pass while the value was fabricated. The row is calculated now, so a test asserting
+   * a literal for it would either be wrong or would have to reproduce the calculation. Its content is
+   * covered by `main-home-prayer-row.test.tsx`, which asserts the *agreement* with Faith rather than a
+   * number.
+   *
+   * These three remain fixtures: Planner and Family own no live data yet.
+   */
   it.each([
-    ['Dhuhr Prayer', '12:35 PM'],
     ['School drop-off', '8:00 AM'],
     ['Work focus time', '10:00 AM'],
     ['Family dinner', '5:30 PM'],
@@ -259,6 +269,16 @@ describe('Main Home timeline', () => {
     await settleReady();
     expect(screen.getByText(title)).toBeTruthy();
     expect(screen.getByText(time)).toBeTruthy();
+  });
+
+  it('renders a prayer row that states no time it has not calculated', async () => {
+    await renderMainHome();
+    await settleReady();
+
+    expect(screen.getByTestId('timeline-row-next-prayer')).toBeTruthy();
+    // The fabricated value, gone from the screen as well as from the fixture.
+    expect(screen.queryByText('12:35 PM')).toBeNull();
+    expect(screen.queryByText('Dhuhr Prayer')).toBeNull();
   });
 });
 
@@ -415,7 +435,7 @@ describe('Main Home navigation actions', () => {
     await renderMainHome();
     await settleReady();
 
-    await user.press(screen.getByTestId('timeline-row-dhuhr'));
+    await user.press(screen.getByTestId('timeline-row-next-prayer'));
     expect(mockRouter.push).toHaveBeenCalledWith('/faith');
   });
 

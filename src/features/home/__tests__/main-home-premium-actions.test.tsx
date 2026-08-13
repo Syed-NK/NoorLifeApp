@@ -519,10 +519,13 @@ describe('the quick actions on a free plan', () => {
 });
 
 describe('the quick actions before the entitlement resolves', () => {
-  it.each(QUICK_ACTIONS)('defaults $label to locked rather than flashing it open', async ({ key }) => {
-    await unresolved();
-    expect(screen.getByTestId(`quick-action-lock-${key}`)).toBeTruthy();
-  });
+  it.each(QUICK_ACTIONS)(
+    'defaults $label to locked rather than flashing it open',
+    async ({ key }) => {
+      await unresolved();
+      expect(screen.getByTestId(`quick-action-lock-${key}`)).toBeTruthy();
+    },
+  );
 });
 
 describe('the quick actions on a paid plan', () => {
@@ -568,7 +571,9 @@ describe('the quick-action geometry', () => {
   it('keeps the label at the same shrink allowance in both states', async () => {
     await free();
     // Scoped to the row: "Family Check-in" is also the Family summary card's heading.
-    const label = within(screen.getByTestId('main-home-quick-actions')).getByText('Family Check-in');
+    const label = within(screen.getByTestId('main-home-quick-actions')).getByText(
+      'Family Check-in',
+    );
     // The locked tile must not steal width from the label — which is why the padlock is out of flow.
     expect(label.props.minimumFontScale).toBe(LOCKED.quickAction.minimumFontScale);
     expect(label.props.numberOfLines).toBe(1);
@@ -870,12 +875,12 @@ describe('every locked surface shares the one provider', () => {
 // ── Regression ─────────────────────────────────────────────────────────────
 
 describe('what this phase must not have changed', () => {
-  it('leaves Dhuhr Prayer active and unbadged on a free plan', async () => {
+  it('leaves the Faith prayer row active and unbadged on a free plan', async () => {
     const user = userEvent.setup();
     await free();
 
-    expect(screen.queryByTestId('timeline-lock-dhuhr')).toBeNull();
-    await user.press(screen.getByTestId('timeline-row-dhuhr'));
+    expect(screen.queryByTestId('timeline-lock-next-prayer')).toBeNull();
+    await user.press(screen.getByTestId('timeline-row-next-prayer'));
     expect(mockRouter.push).toHaveBeenCalledWith('/faith');
     expect(screen.queryByTestId('main-home-upgrade-sheet')).toBeNull();
   });
@@ -887,7 +892,7 @@ describe('what this phase must not have changed', () => {
     // The controller refuses a non-premium module, so a caller that got it wrong could not produce
     // one either. Faith's tile and its timeline row are the two surfaces that could try.
     await user.press(screen.getByTestId('module-card-faith'));
-    await user.press(screen.getByTestId('timeline-row-dhuhr'));
+    await user.press(screen.getByTestId('timeline-row-next-prayer'));
     expect(screen.queryByTestId('main-home-upgrade-sheet')).toBeNull();
     expect(screen.queryByText(sheetBodyFor('Faith', 'Faith'))).toBeNull();
   });

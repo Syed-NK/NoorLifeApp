@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Switch, View } from 'react-native';
 
@@ -8,21 +9,16 @@ import { moduleLayout } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
-import { FaithResourceView, FaithScreen, FaithSuccessBanner } from '../components/faith-screen';
-import { hasData, type FaithResult } from '../data/faith-result';
+import { FaithScreen, FaithSuccessBanner } from '../components/faith-screen';
+import { hasData } from '../data/faith-result';
 import type { CalculationMethod } from '../data/prayer-times.repository';
-import type { ReciterEdition, TranslationEdition } from '../data/quran-content.repository';
 
 import { useFaithRepositories } from '../di/faith-repository-context';
-import { faithNavKeys } from '../faith-routes';
+import { faithNavKeys, faithRoutes } from '../faith-routes';
+import { DEFAULT_RECITER_NAME } from '../storage/faith-preferences';
 import { useFaithPreferences } from '../hooks/use-faith-preferences';
 import { useFaithResource } from '../hooks/use-faith-resource';
-
-/** The two edition lists the preferences screen renders together. */
-type EditionSets = {
-  readonly translations: readonly TranslationEdition[];
-  readonly reciters: readonly ReciterEdition[];
-};
+import { useTranslationPreference } from '../hooks/use-translation-preference';
 
 const METHODS: readonly { readonly id: CalculationMethod; readonly label: string }[] = [
   { id: 'muslim-world-league', label: 'Muslim World League' },
@@ -50,36 +46,52 @@ export function PreferencesScreen() {
 
 /** Split out so it renders inside the scaffold's `ModuleProvider`. */
 function PreferencesBody() {
+  const router = useRouter();
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
   const { quran } = useFaithRepositories();
   const { preferences, update } = useFaithPreferences();
+  const { translation, status } = useTranslationPreference();
   const [saved, setSaved] = useState<string | null>(null);
 
-  const editions = useFaithResource(
-    'faith.editions',
-    useCallback(async (): Promise<FaithResult<EditionSets>> => {
-      const [translations, reciters] = await Promise.all([
-        quran.availableTranslations(),
-        quran.availableReciters(),
-      ]);
-      if (!hasData(translations)) {
-        return translations;
-      }
-      return {
-        kind: 'ok' as const,
-        data: {
-          translations: translations.data,
-          reciters: reciters.kind === 'ok' ? reciters.data : [],
-        },
-      };
-    }, [quran]),
+  /**
+   * The reciter's name for the summary row.
+   *
+   * Its own small resource rather than part of a combined edition fetch: this screen no longer
+   * renders either catalogue, and pulling several hundred rows to render one name would be the
+   * defect this change exists to remove, in miniature. A catalogue failure costs the name and
+   * nothing else — the row still opens the selector.
+   */
+  const reciters = useFaithResource(
+    'faith.preferences.reciter-name',
+    useCallback(() => quran.availableReciters(), [quran]),
   );
+  const reciterName =
+    reciters.status === 'settled' && hasData(reciters.result)
+      ? (reciters.result.data.find((entry) => entry.id === preferences.reciterId)?.name ?? null)
+      : null;
 
   const save = async (patch: Parameters<typeof update>[0], message: string) => {
     await update(patch);
     setSaved(message);
   };
+
+  /**
+   * What the Translation row says beneath its title.
+   *
+   * Every branch is a real state rather than a placeholder. `resolving` is the genuine gap between
+   * opening the app and the catalogue answering, and saying so is better than showing a name that
+   * has not been confirmed — which is precisely how a Bosnian edition came to look like a setting
+   * somebody had chosen.
+   */
+  const translationDetail =
+    translation !== null
+      ? `${translation.language} • ${translation.translator}`
+      : status === 'resolving'
+        ? 'Choosing an English translation…'
+        : status === 'catalogue-unavailable'
+          ? 'Translations could not be loaded — tap to try again'
+          : 'No English translation is available — tap to choose another';
 
   return (
     <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
@@ -91,64 +103,53 @@ function PreferencesBody() {
         />
       )}
 
-      <ModuleStatusBanner
-        tone="info"
-        message="Sample editions only. Licensed translations and reciters arrive with approved Quran Foundation access."
-        testID="faith-preferences-banner"
-      />
+      {/*
+        The banner names the catalogue the *selectors* will show, and reads it from the repository
+        rather than asserting one. It stays here rather than on the selection screens themselves,
+        where the brief asks for no technical source notice above the list.
+      */}
+      {quran.source.verified ? null : (
+        <ModuleStatusBanner
+          tone="warning"
+          message="Sample editions only. Licensed translations and reciters arrive with the approved Quran Foundation source."
+          testID="faith-preferences-banner"
+        />
+      )}
 
-      <FaithResourceView
-        resource={editions}
-        empty={{ title: 'No editions', body: 'Editions could not be loaded.' }}
-        loadingRows={3}
-        testID="faith-preferences-editions"
-      >
-        {(value) => (
-          <View style={{ rowGap: dp(moduleLayout.cardGap) }}>
-            <FaithRowGroup title="Translation" testID="faith-preferences-translations">
-              {value.translations.map((edition) => (
-                <FaithRow
-                  key={edition.id}
-                  title={edition.name}
-                  subtitle={`${edition.language} • ${edition.translator}`}
-                  onPress={() =>
-                    void save({ translationId: edition.id }, `Translation set to ${edition.name}.`)
-                  }
-                  trailing={
-                    preferences.translationId === edition.id ? (
-                      <AppIcon name="check-circle" size={dp(20)} color={theme.ink} />
-                    ) : undefined
-                  }
-                  accessibilityLabel={`${edition.name} by ${edition.translator}${preferences.translationId === edition.id ? ', selected' : ''}`}
-                  testID={`faith-preference-translation-${edition.id}`}
-                />
-              ))}
-            </FaithRowGroup>
-
-            {value.reciters.length === 0 ? null : (
-              <FaithRowGroup title="Reciter" testID="faith-preferences-reciters">
-                {value.reciters.map((reciter) => (
-                  <FaithRow
-                    key={reciter.id}
-                    title={reciter.name}
-                    subtitle={reciter.style}
-                    onPress={() =>
-                      void save({ reciterId: reciter.id }, `Reciter set to ${reciter.name}.`)
-                    }
-                    trailing={
-                      preferences.reciterId === reciter.id ? (
-                        <AppIcon name="check-circle" size={dp(20)} color={theme.ink} />
-                      ) : undefined
-                    }
-                    accessibilityLabel={`${reciter.name}${preferences.reciterId === reciter.id ? ', selected' : ''}`}
-                    testID={`faith-preference-reciter-${reciter.id}`}
-                  />
-                ))}
-              </FaithRowGroup>
-            )}
-          </View>
-        )}
-      </FaithResourceView>
+      {/*
+        ── Two rows, two screens ──────────────────────────────────────────────────
+        This group used to be the two catalogues themselves, rendered one after the other in a
+        single scroll. Each row now states the current choice and opens a screen that can filter and
+        search its own catalogue.
+      */}
+      <FaithRowGroup title="Qur’an" testID="faith-preferences-quran">
+        {[
+          <FaithRow
+            key="translation"
+            title="Translation"
+            subtitle={translation?.name ?? 'Not chosen yet'}
+            meta={undefined}
+            icon="library"
+            onPress={() => router.push(faithRoutes.translations)}
+            accessibilityLabel={`Translation, ${translation?.name ?? 'not chosen yet'}, ${translationDetail}. Opens the translation list`}
+            testID="faith-preferences-translation-row"
+          />,
+          <FaithRow
+            key="translation-detail"
+            title={translationDetail}
+            testID="faith-preferences-translation-detail"
+          />,
+          <FaithRow
+            key="reciter"
+            title="Qur’an reciter"
+            subtitle={reciterName ?? DEFAULT_RECITER_NAME}
+            icon="play"
+            onPress={() => router.push(faithRoutes.reciters)}
+            accessibilityLabel={`Qur’an reciter, ${reciterName ?? DEFAULT_RECITER_NAME}. Opens the reciter list`}
+            testID="faith-preferences-reciter-row"
+          />,
+        ]}
+      </FaithRowGroup>
 
       <FaithRowGroup title="Prayer calculation" testID="faith-preferences-methods">
         {METHODS.map((method) => (

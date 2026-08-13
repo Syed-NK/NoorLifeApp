@@ -230,11 +230,19 @@ function TimelineRow({ entry, rowHeight, dotSize, onSelectEntry }: TimelineRowPr
   const { isLocked } = useModuleLock(entry.sourceModule, moduleName);
   const { requestUpgrade } = useUpgradeSheetActions();
 
-  // The restriction is part of the accessible name rather than a hint, so a screen reader
-  // announces it in the same breath as the activity — a hint is easily skipped.
-  const accessibilityLabel = isLocked
-    ? `${entry.time}, ${entry.title}, Premium feature`
-    : `${entry.time}, ${entry.title}`;
+  /*
+    The restriction is part of the accessible name rather than a hint, so a screen reader announces it
+    in the same breath as the activity — a hint is easily skipped.
+
+    An empty `time` is dropped rather than read. The live prayer row has no time while the calculation
+    is running and none at all when there is no location, and its title is then an instruction — "Set
+    your location to see prayer times". Joining a blank time onto that produced a leading comma, which
+    a screen reader renders as a pause before the sentence or, with an em dash in its place, as the
+    word "dash". Filtering is layout-neutral: the visible time column is unaffected.
+  */
+  const accessibilityLabel = [entry.time, entry.title, isLocked ? 'Premium feature' : null]
+    .filter((part): part is string => typeof part === 'string' && part.length > 0)
+    .join(', ');
 
   return (
     <PressableScale

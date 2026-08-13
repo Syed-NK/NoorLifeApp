@@ -84,6 +84,37 @@ enabled = false
 # handler re-verifies the claims it depends on regardless (§D.2 mechanism 2), because the
 # documentation describes what the gateway does in one sentence and does not enumerate which claims
 # it checks.
+# ── Qur'an content Edge Function ────────────────────────────────────────────
+# The server side of the approved Quran Foundation Content API integration. Quran Foundation approved
+# production Content API access on 2026-08-10; Search, the OAuth user APIs and every user-feature
+# endpoint remain unapproved and are unreachable from the function by construction.
+#
+# `verify_jwt` is declared explicitly even though `true` is the documented default, for the same
+# reason it is declared on `noor-ai`: this endpoint spends a *vendor* credential rather than money, so
+# "the platform validates the JWT before your handler runs" must be a version-controlled fact that
+# `config push` can report drift against, not a default someone could change in the dashboard without
+# a diff. A public `quran-content` would be NoorLife's approved Quran Foundation credential proxied
+# for the open internet.
+#
+# Leaving it on creates the two-producer error split the mobile adapter normalises: a missing or
+# malformed JWT is refused by the gateway in Supabase's platform shape with no NoorLife `request_id`,
+# and only errors raised after the handler starts use NoorLife's own schema. The handler re-verifies
+# the claims it depends on regardless, because the documentation describes what the gateway does in
+# one sentence and does not enumerate which claims it checks.
+#
+# The two credential values this function needs are named only in the function's own source and are
+# deliberately absent from this file and from the whole repository. They are provisioned with
+# `supabase secrets set` and read only inside the deployed function's environment.
+#
+# ── Why this table sits above `[functions.noor-ai]` ─────────────────────────
+# `noor-ai/tests/repo-parity_test.ts` reads its own section as "everything from `[functions.noor-ai]`
+# to the end of the file", which was exact while that table was last. Declaring a second function
+# after it would have folded this commentary into that assertion. Ordering the tables this way keeps
+# the existing test reading exactly what it was written to read, without editing it.
+[functions.quran-content]
+enabled = true
+verify_jwt = true
+
 [functions.noor-ai]
 enabled = true
 verify_jwt = true

@@ -23,10 +23,12 @@ export type UseTasbih = {
   readonly presets: readonly DhikrPreset[];
   /** Set when a write failed, so the screen can warn rather than lie. */
   readonly error: string | null;
-  readonly increment: () => Promise<void>;
+  /** Returns the session the write produced, so a caller can see what changed. */
+  readonly increment: () => Promise<TasbihSession | null>;
   readonly decrement: () => Promise<void>;
   readonly reset: () => Promise<void>;
   readonly choosePreset: (presetId: string) => Promise<void>;
+  readonly adjustTarget: (delta: number) => Promise<void>;
 };
 
 export function useTasbih(): UseTasbih {
@@ -68,25 +70,53 @@ export function useTasbih(): UseTasbih {
     };
   }, [tasbih]);
 
-  const run = useCallback(async (operation: () => Promise<FaithResult<TasbihSession>>) => {
-    const result = await operation();
-    if (result.kind === 'ok') {
-      setSession(result.data);
-      setError(null);
-      return;
-    }
-    setError(result.kind === 'error' ? result.code : 'unknown');
-  }, []);
+  /**
+   * Runs one mutation and renders whatever it produced.
+   *
+   * ── Why it returns the session rather than void ─────────────────────────────
+   * The Tasbih screen needs to know whether a tap *completed a round*, because the haptic for the
+   * strand coming round is deliberately different from the one for a bead. It used to work that out
+   * by stashing the previous count in a ref and writing to it during render — which is a ref access
+   * in render, the pattern the React Compiler rejects and ESLint fails the build on.
+   *
+   * Handing the caller the resulting session removes the need for any of that: it compares the
+   * rounds it had against the rounds it got, from two ordinary values.
+   */
+  const run = useCallback(
+    async (operation: () => Promise<FaithResult<TasbihSession>>): Promise<TasbihSession | null> => {
+      const result = await operation();
+      if (result.kind === 'ok') {
+        setSession(result.data);
+        setError(null);
+        return result.data;
+      }
+      setError(result.kind === 'error' ? result.code : 'unknown');
+      return null;
+    },
+    [],
+  );
 
   return {
     session,
     presets,
     error,
     increment: useCallback(() => run(() => tasbih.increment()), [run, tasbih]),
-    decrement: useCallback(() => run(() => tasbih.decrement()), [run, tasbih]),
-    reset: useCallback(() => run(() => tasbih.reset()), [run, tasbih]),
+    decrement: useCallback(async () => {
+      await run(() => tasbih.decrement());
+    }, [run, tasbih]),
+    reset: useCallback(async () => {
+      await run(() => tasbih.reset());
+    }, [run, tasbih]),
     choosePreset: useCallback(
-      (presetId: string) => run(() => tasbih.startSession(presetId)),
+      async (presetId: string) => {
+        await run(() => tasbih.startSession(presetId));
+      },
+      [run, tasbih],
+    ),
+    adjustTarget: useCallback(
+      async (delta: number) => {
+        await run(() => tasbih.adjustTarget(delta));
+      },
       [run, tasbih],
     ),
   };

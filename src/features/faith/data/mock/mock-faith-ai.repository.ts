@@ -8,7 +8,7 @@ import type {
   FaithQuote,
 } from '../faith-ai.repository';
 import type { FaithResult } from '../faith-result';
-import { MOCK_HADITH_SOURCE, MOCK_SOURCE, delay, matches, nowIso } from './mock-support';
+import { delay, matches, nowIso } from './mock-support';
 
 /**
  * Faith AI, as a mock.
@@ -22,10 +22,12 @@ import { MOCK_HADITH_SOURCE, MOCK_SOURCE, delay, matches, nowIso } from './mock-
  *
  * ── Every rule from the phase brief, and where it lives ─────────────────────
  *   "Answer only Faith-module questions"      → `classify` → `out-of-scope` / `refused`
- *   "Never invent or rewrite Quran verses"    → `QUOTES` is the only source of scripture,
- *                                                and it is a frozen constant
- *   "Never present generated text as Quran"   → quotes are a separate field from `answer`
- *   "Require source metadata"                 → `FaithQuote.source` is required
+ *   "Never invent or rewrite Quran verses"    → no reply carries a quote at all; there is no
+ *                                                scripture literal in this file
+ *   "Never present generated text as Quran"   → quotes are a separate field from `answer`, and it
+ *                                                is always empty here
+ *   "Require source metadata"                 → `FaithQuote.source` is required, so an unsourced
+ *                                                quote cannot be constructed even by mistake
  *   "Display a limitation for rulings"        → `ruling` only ever yields `qualified`
  *   "Handoff only after confirmation"         → `ask` returns an offer; `confirmHandoff`
  *                                                is a separate call
@@ -33,27 +35,31 @@ import { MOCK_HADITH_SOURCE, MOCK_SOURCE, delay, matches, nowIso } from './mock-
  */
 
 /**
- * The only scripture this assistant can produce.
+ * This assistant quotes nothing. There is no scripture in this file, and that is the point.
  *
- * Frozen so a bug cannot mutate a verse in place, and small so it is auditable by eye. A
- * real implementation must retrieve from `QuranContentRepository` rather than hold its
- * own copy — but the constraint is the same: quotes come from a repository, never from
- * generation.
+ * ── What was here, and why an allow-list was not enough ─────────────────────
+ * A frozen two-entry `QUOTES` constant: Qur'an 94:6 in Arabic with the reference "Surah Ash-Sharh
+ * 94:6", and the narration "The deeds most beloved to Allah are those done consistently, even if
+ * they are few." attributed to "Sahih al-Bukhari 6464". Both were stamped `verified: false` and both
+ * were rendered under a "not a verified source" warning.
+ *
+ * The warning was not the problem and the freezing was not the protection. Both entries **named a
+ * real source** — one a surah and ayah, the other a collection and hadith number — and neither had
+ * been checked against a critical edition by anybody. A reference is a provenance claim regardless of
+ * the badge beside it: a user reads "Sahih al-Bukhari 6464" and reasonably concludes NoorLife looked
+ * it up. The Arabic was the more serious of the two, because it is text a user may recite.
+ *
+ * The old boundary rule was "the assistant may only quote from a frozen set". The rule now is
+ * stronger and needs no set to police: **a mock reply carries no quotes at all.** `quotes` is `[]` on
+ * every path, so there is no literal here for a future edit to extend and no allow-list entry in the
+ * fabrication scan to keep in step. When Faith AI is wired to `QuranContentRepository` it will quote
+ * approved scripture retrieved at request time, with real attribution — which is the only arrangement
+ * in which a quote in this module is honest.
+ *
+ * A mock reply may still describe what NoorLife can do, and may say that verified religious content
+ * is not configured. It may not name a collection, a narrator, a scholar or a scripture reference.
  */
-const QUOTES: Readonly<Record<string, FaithQuote>> = Object.freeze({
-  ease: Object.freeze({
-    kind: 'quran',
-    verbatim: 'إِنَّ مَعَ الْعُسْرِ يُسْرًا',
-    reference: 'Surah Ash-Sharh 94:6',
-    source: MOCK_SOURCE,
-  }),
-  consistency: Object.freeze({
-    kind: 'hadith',
-    verbatim: 'The deeds most beloved to Allah are those done consistently, even if they are few.',
-    reference: 'Sahih al-Bukhari 6464',
-    source: MOCK_HADITH_SOURCE,
-  }),
-});
+const NO_QUOTES: readonly FaithQuote[] = Object.freeze([]);
 
 /** Terms that place a question in another module. Ordered most specific first. */
 const OTHER_MODULE_TERMS: readonly (readonly [FrameworkModuleId, readonly string[]])[] = [
@@ -107,10 +113,15 @@ const UNRELATED_TERMS: readonly string[] = [
   'recipe for',
 ];
 
+/*
+  The second clause used to read "I can explain what the commonly-cited sources say". With the
+  fabricated narration removed it cannot, so the promise had to go with it — a limitation notice that
+  overstates the capability it is limiting is its own small untruth.
+*/
 const RULING_LIMITATION =
   'Scholars differ on questions like this, and a ruling depends on your circumstances. ' +
-  'I can explain what the commonly-cited sources say, but for a decision that applies to ' +
-  'you, please ask a qualified scholar.';
+  'NoorLife does not have verified scholarly sources configured, so for a decision that applies ' +
+  'to you, please ask a qualified scholar.';
 
 export function classifyFaithQuestion(text: string): FaithAiReply {
   const query = text.trim();
@@ -148,45 +159,95 @@ export function classifyFaithQuestion(text: string): FaithAiReply {
         kind: 'qualified',
         topic: 'ruling',
         limitation: RULING_LIMITATION,
+        /*
+          It no longer offers "what the commonly-cited sources address on this subject" and then
+          attaches a narration, because it has no sources: naming one was the fabrication. Saying
+          that verified material is not configured is the honest version of the same reply, and it
+          keeps the qualified/refused distinction the boundary rules depend on.
+        */
+        /*
+          Worded to avoid "what the sources say", which the fabrication scan now rejects on sight —
+          even in this negative construction. That is the scan being blunt rather than wrong: the
+          phrase is the one a reintroduced fabrication would use, and the reply reads better without
+          it.
+        */
         answer:
-          'Here is what the commonly-cited sources address on this subject. Treat it as ' +
-          'background reading rather than a ruling for your situation.',
-        quotes: [QUOTES.consistency!],
+          'NoorLife does not have verified scholarly material configured, so it cannot set out the ' +
+          'scholarly position on this. A qualified scholar is the right place for a question of ' +
+          'this kind.',
+        quotes: NO_QUOTES,
       };
     }
   }
 
   if (matches(query, 'prayer') || matches(query, 'salah') || matches(query, 'next')) {
+    /**
+     * It points at the times; it does not state one.
+     *
+     * This used to answer "Your next prayer is Dhuhr at 12:35 PM, based on the times shown on your
+     * Faith home" — a specific time, to every user, whatever the hour and wherever they were. It was
+     * not even the time the Faith home was showing, because this repository and that screen shared
+     * nothing but a design reference.
+     *
+     * An assistant with no access to the user's resolved location cannot answer this, and the honest
+     * reply is to say where the answer is. When Faith AI is genuinely wired to the prayer-times
+     * repository it can read one; until then, naming a time would be the assistant inventing the
+     * single most checkable fact in the module.
+     */
     return {
       kind: 'answer',
       topic: 'factual',
       answer:
-        'Your next prayer is Dhuhr at 12:35 PM, based on the times shown on your Faith home. ' +
-        'You can change the calculation method in Faith preferences.',
-      quotes: [],
+        'Your prayer times are on the Faith home and on the Prayer times screen, calculated for ' +
+        'the location you have set. You can change the calculation method and the Asr convention ' +
+        'in Faith preferences.',
+      quotes: NO_QUOTES,
     };
   }
 
   if (matches(query, 'verse') || matches(query, 'ayah') || matches(query, 'surah')) {
+    /**
+     * It points at the reader; it does not quote.
+     *
+     * This used to answer with an interpretation — "widely read as a reassurance that relief
+     * accompanies hardship" — and attach Qur'an 94:6 in Arabic. Two separate problems in one reply:
+     * the interpretation was a generated exegetical claim about a specific ayah, and the ayah itself
+     * was a local literal rather than text retrieved from the approved repository.
+     *
+     * The reader already holds the real thing: approved Uthmani text with a named translation and
+     * translator. Sending the user there is both honest and more useful than a quote this file cannot
+     * source.
+     */
     return {
       kind: 'answer',
       topic: 'explanation',
       answer:
-        'This ayah is widely read as a reassurance that relief accompanies hardship rather ' +
-        'than merely following it. The wording below is the verse itself.',
-      quotes: [QUOTES.ease!],
+        'NoorLife cannot quote or explain scripture yet. The Qur’an reader has the approved Arabic ' +
+        'text with your chosen translation and its translator named, and you can open any ayah from ' +
+        'the surah list.',
+      quotes: NO_QUOTES,
     };
   }
 
   if (matches(query, 'week') || matches(query, 'summar') || matches(query, 'progress')) {
+    /**
+     * It says where the record is; it does not summarise it.
+     *
+     * This used to answer "Fajr has been your most consistent prayer and Asr the one most often left
+     * unmarked", and called that "a description of your own record". It was not: this classifier
+     * reads no storage, so the sentence was invented and would have been stated to a user who had
+     * never marked a single prayer. It also attached the fabricated narration.
+     *
+     * A reply that names a specific prayer as the user's weakest is a judgement about their worship
+     * built from nothing, which is the most personal fabrication available to this module.
+     */
     return {
       kind: 'answer',
       topic: 'factual',
       answer:
-        'From what you have marked in Today’s Worship, Fajr has been your most consistent ' +
-        'prayer and Asr the one most often left unmarked. That is a description of your own ' +
-        'record, not a judgement.',
-      quotes: [QUOTES.consistency!],
+        'NoorLife cannot summarise your week yet. Your own marks are on the Worship screen, and the ' +
+        'Progress screen shows the reading you have recorded — both are kept on this device.',
+      quotes: NO_QUOTES,
     };
   }
 
@@ -196,7 +257,7 @@ export function classifyFaithQuestion(text: string): FaithAiReply {
     answer:
       'I can help with prayer times, Qur’an and Hadith references, duas, and your own ' +
       'worship record. Try one of the suggestions above.',
-    quotes: [],
+    quotes: NO_QUOTES,
   };
 }
 
@@ -256,4 +317,3 @@ export function createMockFaithAiRepository(): FaithAiRepository {
 }
 
 export const faithAiSuggestionsForTest = SUGGESTIONS;
-export const faithAiQuotesForTest = QUOTES;

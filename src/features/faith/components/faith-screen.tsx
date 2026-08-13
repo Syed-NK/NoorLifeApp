@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
-import type { ReactNode } from 'react';
-import { View } from 'react-native';
+import type { ReactNode, RefObject } from 'react';
+import { ScrollView, View } from 'react-native';
 
 import {
   ModuleEmptyState,
@@ -17,7 +17,7 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import type { FaithNavKey } from '../faith-routes';
 import type { UseFaithResource } from '../hooks/use-faith-resource';
-import { FaithNoResultsState, FaithStaleBanner } from './faith-states';
+import { FaithNoResultsState, FaithRefreshingNotice, FaithStaleBanner } from './faith-states';
 
 /**
  * The frame every Faith sub-screen is built in.
@@ -48,6 +48,34 @@ export type FaithScreenProps = {
   /** Overrides Back. Defaults to the shared "return to Main Home" behaviour. */
   readonly onBack?: () => void;
   readonly scrollable?: boolean;
+  /**
+   * With `scrollable={false}`, lets the body claim the viewport instead of being centred in it.
+   *
+   * Used by the two catalogue selectors, which own a `FlatList` and therefore need a bounded height
+   * to virtualize against. See `ModuleScaffold`'s own note for why a centred static body cannot
+   * provide one.
+   */
+  readonly fills?: boolean;
+  /**
+   * A panel pinned above the bottom navigation — the Qur'an reader's audio transport.
+   *
+   * Passed straight through to `ModuleScaffold`, which docks it and reserves scroll padding equal to
+   * its measured height so it can never cover the last verse. See that prop's note.
+   */
+  readonly docked?: ReactNode;
+  /**
+   * A handle on the scaffold's scroll region.
+   *
+   * The reader uses it to bring the verse being recited into view. Passed through rather than
+   * re-created here, because the scroll region belongs to `ModuleScaffold` — see that prop's note.
+   */
+  readonly scrollRef?: RefObject<ScrollView | null>;
+  /**
+   * Replaces the page background. Passed straight to `ModuleScaffold` — see that prop's note.
+   *
+   * Only the Qur'an reader supplies it, and only with `readerPageBackground`.
+   */
+  readonly background?: string;
   readonly children: ReactNode;
   readonly testID: string;
 };
@@ -58,6 +86,10 @@ export function FaithScreen({
   banner,
   onBack,
   scrollable = true,
+  fills = false,
+  docked,
+  scrollRef,
+  background,
   children,
   testID,
 }: FaithScreenProps) {
@@ -68,7 +100,11 @@ export function FaithScreen({
       title={title}
       onBack={onBack}
       scrollable={scrollable}
+      fills={fills}
       banner={banner}
+      docked={docked}
+      scrollRef={scrollRef}
+      background={background}
       testID={testID}
     >
       {children}
@@ -85,6 +121,18 @@ export type FaithResourceViewProps<T> = {
   readonly onEmptyAction?: () => void;
   /** Skeleton row count while loading. */
   readonly loadingRows?: number;
+  /**
+   * What the permission state's Grant control does.
+   *
+   * ── Why this had to become a prop ───────────────────────────────────────────
+   * It defaulted to `resource.reload`, which re-ran a request that would fail for exactly the same
+   * reason it failed the first time. The user pressed "Grant", nothing prompted, and the same screen
+   * came back — a control that looks like it asks the OS for something and does not.
+   *
+   * A screen that can genuinely raise a prompt passes one here. The reload default is kept for the
+   * screens whose blocked permission is not one this app can request.
+   */
+  readonly onGrantPermission?: () => void;
   readonly testID: string;
 };
 
@@ -100,6 +148,7 @@ export function FaithResourceView<T>({
   empty,
   onEmptyAction,
   loadingRows = 3,
+  onGrantPermission,
   testID,
 }: FaithResourceViewProps<T>) {
   const router = useRouter();
@@ -114,16 +163,36 @@ export function FaithResourceView<T>({
 
   switch (result.kind) {
     case 'ok':
-      return <>{children(result.data)}</>;
+      /**
+       * Content, with a thin line above it while it is being refreshed.
+       *
+       * Not a skeleton and not a modal: the data below is real, current enough to read, and the user
+       * did not ask to stop reading it. The refresh indication is the whole visible difference
+       * between "refreshing" and "loading", and it is deliberately the smallest one that is still
+       * honest — a screen that refreshed with no indication at all would change its content under
+       * the reader with no explanation.
+       */
+      return resource.refreshing ? (
+        <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+          <FaithRefreshingNotice testID={testID} />
+          {children(result.data)}
+        </View>
+      ) : (
+        <>{children(result.data)}</>
+      );
 
     case 'stale':
       return (
         <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
-          <FaithStaleBanner
-            cachedAt={result.cachedAt}
-            onRefresh={resource.reload}
-            testID={testID}
-          />
+          {resource.refreshing ? (
+            <FaithRefreshingNotice testID={testID} />
+          ) : (
+            <FaithStaleBanner
+              cachedAt={result.cachedAt}
+              onRefresh={resource.reload}
+              testID={testID}
+            />
+          )}
           {children(result.data)}
         </View>
       );
@@ -154,7 +223,7 @@ export function FaithResourceView<T>({
             rationale: result.rationale,
             required: false,
           }}
-          onGrant={resource.reload}
+          onGrant={onGrantPermission ?? resource.reload}
           onSkip={() => router.back()}
           testID={`${testID}-permission`}
         />

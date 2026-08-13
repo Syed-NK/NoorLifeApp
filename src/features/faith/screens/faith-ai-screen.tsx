@@ -1,6 +1,6 @@
-import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { Image, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { fontFamilies } from '@ds/tokens';
@@ -11,11 +11,19 @@ import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { ArabicText } from '../components/faith-list';
-import { FaithScreen } from '../components/faith-screen';
-import { SourceBadge } from '../components/faith-states';
-import type { FaithAiReply, FaithQuote } from '../data/faith-ai.repository';
+import { FaithResourceView, FaithScreen } from '../components/faith-screen';
+import { FaithSectionHero } from '../components/faith-section-hero';
+import { UnverifiedSourceNotice } from '../components/faith-states';
+import { noorAIRobot } from '../faith-ai-assets';
+import type { FaithAiReply, FaithQuote, FaithVerseContext } from '../data/faith-ai.repository';
+import { hasData, type FaithResult } from '../data/faith-result';
+import type { AyahText, AyahTranslation } from '../data/quran-content.repository';
+import { surahNumber } from '../data/quran-content.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
 import { faithNavKeys } from '../faith-routes';
+import { useFaithResource } from '../hooks/use-faith-resource';
+import { useTranslationPreference } from '../hooks/use-translation-preference';
+import { parseAyahParam, parseSurahParam } from './reader-screen';
 
 /**
  * Faith AI.
@@ -39,13 +47,33 @@ import { faithNavKeys } from '../faith-routes';
 export function FaithAiScreen() {
   const { dp } = useModuleMetrics();
   const { ai } = useFaithRepositories();
+  const params = useLocalSearchParams<{ surah?: string; ayah?: string }>();
   const [draft, setDraft] = useState('');
   const [turns, setTurns] = useState<
     readonly { readonly question: string; readonly reply: FaithAiReply }[]
   >([]);
   const [busy, setBusy] = useState(false);
 
-  const suggestions = ['When is my next prayer?', 'Explain this ayah', 'Summarise my week'];
+  /**
+   * The verse this screen was opened about, when the reader's action sheet sent one.
+   *
+   * A pair of integers off the route and nothing more — see `faithAiHref` for why the scripture
+   * itself is not passed through the navigation. `null` is the ordinary case: the screen is also
+   * reached from the bottom navigation, where there is no verse in hand.
+   */
+  const context = useMemo((): FaithVerseContext | null => {
+    const surah = parseSurahParam(params.surah);
+    const ayah = parseAyahParam(params.ayah);
+    return surah === null || ayah === null ? null : { kind: 'ayah', surah, ayah };
+  }, [params.surah, params.ayah]);
+
+  const suggestions =
+    context === null
+      ? ['When is my next prayer?', 'Explain this ayah', 'Summarise my week']
+      : [
+          `What is the meaning of aya ${context.surah}:${context.ayah}?`,
+          `When was aya ${context.surah}:${context.ayah} revealed?`,
+        ];
 
   const ask = useCallback(
     async (text: string) => {
@@ -55,13 +83,23 @@ export function FaithAiScreen() {
       }
       setBusy(true);
       setDraft('');
-      const result = await ai.ask({ text: trimmed, fromScreen: '/faith/ai' });
+      /*
+        The verse travels as `context` — a citation — rather than being pasted into `text`. A
+        question with the Arabic interpolated into it would reach the assistant as user-typed prose
+        with no source behind it, which is the one way scripture can enter this boundary
+        unattributed.
+      */
+      const result = await ai.ask({
+        text: trimmed,
+        fromScreen: '/faith/ai',
+        ...(context === null ? {} : { context }),
+      });
       if (result.kind === 'ok') {
         setTurns((current) => [{ question: trimmed, reply: result.data }, ...current]);
       }
       setBusy(false);
     },
-    [ai, busy],
+    [ai, busy, context],
   );
 
   return (
@@ -78,19 +116,37 @@ export function FaithAiScreen() {
       testID="faith-ai"
     >
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+        {/*
+          The assistant's own hero, at the same measured geometry as the other nine Faith heroes,
+          carrying the approved robot instead of a tile pictogram. Faith AI has no Faith Home tile,
+          so it supplies its title, artwork and testID explicitly — see `FaithSectionHero`'s
+          identity union.
+        */}
+        <FaithSectionHero
+          title="Noor AI"
+          summary="Ask about the Qur’an, prayer and practice."
+          artwork={noorAIRobot}
+          testID="faith-hero-ai"
+        />
+
+        {context === null ? null : <VerseContextCard context={context} />}
+
         <AskField value={draft} onChange={setDraft} onSubmit={() => void ask(draft)} busy={busy} />
 
         {turns.length === 0 ? (
-          <View style={{ rowGap: dp(8) }}>
-            <ModuleText token="cardTitle" numberOfLines={1}>
-              Try asking
-            </ModuleText>
-            <View style={[styles.chips, { columnGap: dp(8), rowGap: dp(8) }]}>
-              {suggestions.map((suggestion) => (
-                <Chip key={suggestion} label={suggestion} onPress={() => void ask(suggestion)} />
-              ))}
+          <>
+            <NoorAIWelcome hasVerseContext={context !== null} />
+            <View style={{ rowGap: dp(8) }}>
+              <ModuleText token="cardTitle" numberOfLines={1}>
+                Try asking
+              </ModuleText>
+              <View style={[styles.chips, { columnGap: dp(8), rowGap: dp(8) }]}>
+                {suggestions.map((suggestion) => (
+                  <Chip key={suggestion} label={suggestion} onPress={() => void ask(suggestion)} />
+                ))}
+              </View>
             </View>
-          </View>
+          </>
         ) : null}
 
         {turns.map((turn, index) => (
@@ -98,6 +154,157 @@ export function FaithAiScreen() {
         ))}
       </View>
     </FaithScreen>
+  );
+}
+
+/**
+ * The assistant's welcome state — the robot, a greeting, and what it can and cannot do.
+ *
+ * ── Why it says what it cannot do, up front ─────────────────────────────────
+ * The reference draws a warm greeting and nothing else. That would be a claim this build cannot
+ * honour: there is no AI backend, replies come from a keyword classifier, and the screen's banner
+ * already says so. A welcome card that promised "clear explanations with verified sources" beneath
+ * that banner would contradict it in the same viewport.
+ *
+ * So the greeting is the reference's, and the second line is the truth about the boundary — the
+ * assistant explains, and does not issue rulings. That line stays correct when the backend does
+ * arrive, because it describes the scope rather than the implementation.
+ *
+ * ── The robot is decorative here ────────────────────────────────────────────
+ * The greeting beside it already names Noor AI, so the image is `accessible={false}` rather than
+ * announcing the assistant a second time to a screen reader.
+ */
+function NoorAIWelcome({ hasVerseContext }: { readonly hasVerseContext: boolean }) {
+  const { dp } = useModuleMetrics();
+
+  return (
+    <ModuleCard tinted testID="faith-ai-welcome">
+      <View style={[styles.welcome, { columnGap: dp(12) }]}>
+        <Image
+          source={noorAIRobot}
+          style={{ width: dp(72), height: dp(108) }}
+          resizeMode="contain"
+          accessible={false}
+          testID="faith-ai-welcome-robot"
+        />
+        <View style={styles.welcomeCopy}>
+          <ModuleText token="cardTitle" numberOfLines={1} accessibilityRole="header">
+            Assalamu alaykum
+          </ModuleText>
+          <ModuleText token="body">
+            {hasVerseContext
+              ? 'I’m Noor AI. Ask about the aya above and I’ll explain it with its source shown.'
+              : 'I’m Noor AI, your faith companion. I explain — I don’t issue religious rulings.'}
+          </ModuleText>
+        </View>
+      </View>
+    </ModuleCard>
+  );
+}
+
+/** The scripture and translation for one verse, resolved together so they can be shown together. */
+type VerseContextContent = {
+  readonly text: AyahText;
+  readonly translation: AyahTranslation | null;
+};
+
+/**
+ * The verse the question is about, shown at the top of the screen.
+ *
+ * ── Every word in this card came from the repository ────────────────────────
+ * The route handed this screen two integers. The Arabic, the translation, the translator and the
+ * source name below are all fetched through `QuranContentRepository` — the same approved boundary
+ * the reader itself reads from, and the only one that attaches a `ContentSource` to what it
+ * returns. Nothing here is passed in through navigation, held in a constant, or produced by the
+ * assistant, so there is no path by which generated text could appear in this card.
+ *
+ * That is also why it renders *above* the composer rather than inside the conversation. A reply is
+ * the assistant's own words and is drawn as such; this is the verse, drawn as scripture, before any
+ * question has been asked — the two are never in the same container, which is the separation
+ * `FaithQuote` enforces for quotes inside a reply.
+ */
+function VerseContextCard({ context }: { readonly context: FaithVerseContext }) {
+  const { dp } = useModuleMetrics();
+  const { quran } = useFaithRepositories();
+  const { translation: edition, status: translationStatus } = useTranslationPreference();
+  const editionId = edition?.id ?? null;
+
+  const verse = useFaithResource(
+    translationStatus === 'resolving'
+      ? null
+      : `faith.ai.verse.${context.surah}.${context.ayah}.${editionId ?? 'unresolved'}`,
+    useCallback(async (): Promise<FaithResult<VerseContextContent>> => {
+      const number = surahNumber(context.surah);
+      const [text, translated] = await Promise.all([
+        quran.listAyahs(number),
+        editionId === null
+          ? Promise.resolve({ kind: 'empty' as const })
+          : quran.listTranslations(number, editionId),
+      ]);
+      if (!hasData(text)) {
+        return text;
+      }
+      const item = text.data.items.find((entry) => entry.ayah === context.ayah);
+      if (item === undefined) {
+        return { kind: 'error', code: 'not-found' };
+      }
+      return {
+        kind: 'ok',
+        data: {
+          text: item,
+          translation: hasData(translated)
+            ? (translated.data.items.find((entry) => entry.ayah === context.ayah) ?? null)
+            : null,
+        },
+      };
+    }, [quran, context.surah, context.ayah, editionId]),
+  );
+
+  return (
+    <ModuleCard testID="faith-ai-verse-context">
+      <View style={{ rowGap: dp(8) }}>
+        {/* The citation, stated before the text, so what is being shown is never in doubt. */}
+        <ModuleText
+          token="cardTitle"
+          accessibilityRole="header"
+          testID="faith-ai-verse-context-title"
+        >
+          {`Aya ${context.surah}:${context.ayah}`}
+        </ModuleText>
+
+        <FaithResourceView
+          resource={verse}
+          empty={{
+            title: 'This aya could not be loaded',
+            body: 'Noor AI still works — ask your question and it will answer without the text.',
+          }}
+          loadingRows={2}
+          testID="faith-ai-verse-context-body"
+        >
+          {(content) => (
+            <View style={{ rowGap: dp(8) }}>
+              <ArabicText testID="faith-ai-verse-context-arabic">{content.text.arabic}</ArabicText>
+              {content.translation === null ? null : (
+                <>
+                  <ModuleText token="body" testID="faith-ai-verse-context-translation">
+                    {content.translation.text}
+                  </ModuleText>
+                  <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
+                    {content.translation.source.attribution === undefined
+                      ? content.translation.source.name
+                      : `Translated by ${content.translation.source.attribution}`}
+                  </ModuleText>
+                </>
+              )}
+              <UnverifiedSourceNotice
+                source={content.text.source}
+                testID="faith-ai-verse-context"
+              />
+            </View>
+          )}
+        </FaithResourceView>
+      </View>
+    </ModuleCard>
   );
 }
 
@@ -342,12 +549,22 @@ function QuoteBlock({ quote }: { readonly quote: FaithQuote }) {
       <ModuleText token="caption" numberOfLines={1}>
         {quote.reference}
       </ModuleText>
-      <SourceBadge source={quote.source} testID={`faith-ai-quote-${quote.reference}`} />
+      <UnverifiedSourceNotice source={quote.source} testID={`faith-ai-quote-${quote.reference}`} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  welcome: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  welcomeCopy: {
+    flex: 1,
+    // Lets the copy column shrink below its content width instead of pushing the robot out of
+    // the card at a large font scale.
+    minWidth: 0,
+  },
   askRow: {
     flexDirection: 'row',
     alignItems: 'center',

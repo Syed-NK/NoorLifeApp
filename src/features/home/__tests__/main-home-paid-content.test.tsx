@@ -216,20 +216,28 @@ describe('the upgrade sheet on Main Home', () => {
 // ── Today at a Glance ───────────────────────────────────────────────────────
 
 describe('the timeline on a free plan', () => {
-  it('leaves Dhuhr Prayer active and unbadged', async () => {
+  it('leaves the Faith prayer row active and unbadged', async () => {
     await free();
 
     // Faith is never premium, so its row is untouched by any of this.
-    expect(screen.getByTestId('timeline-row-dhuhr')).toBeTruthy();
-    expect(screen.queryByTestId('timeline-lock-dhuhr')).toBeNull();
-    expect(screen.getByLabelText('12:35 PM, Dhuhr Prayer')).toBeTruthy();
+    expect(screen.getByTestId('timeline-row-next-prayer')).toBeTruthy();
+    expect(screen.queryByTestId('timeline-lock-next-prayer')).toBeNull();
+    /*
+      This asserted `'12:35 PM, Dhuhr Prayer'`, which was the fabricated fixture value — the deleted
+      prayer-times fixture's Dhuhr, shown to every user everywhere while Faith calculated a different
+      time for the same place. The row is live now, and in this suite there is no granted location, so
+      it carries the instruction and no time. Entitlement is what this case is about, so it asserts the
+      row is present and unlocked rather than pinning its text; `main-home-prayer-row.test.tsx` owns
+      the content.
+    */
+    expect(screen.getByLabelText('Set your location to see prayer times')).toBeTruthy();
   });
 
-  it('opens Faith from Dhuhr Prayer and never raises an upgrade prompt', async () => {
+  it('opens Faith from the prayer row and never raises an upgrade prompt', async () => {
     const user = userEvent.setup();
     await free();
 
-    await user.press(screen.getByTestId('timeline-row-dhuhr'));
+    await user.press(screen.getByTestId('timeline-row-next-prayer'));
     expect(mockRouter.push).toHaveBeenCalledWith('/faith');
     expect(screen.queryByTestId('main-home-upgrade-sheet')).toBeNull();
   });
@@ -304,17 +312,20 @@ describe('the timeline on a paid plan', () => {
 });
 
 describe('the timeline before entitlement resolves', () => {
-  it('keeps Dhuhr Prayer available', async () => {
+  it('keeps the Faith prayer row available', async () => {
     await unresolved();
     // Faith short-circuits before the plan or the status is consulted, so it does not wait.
-    expect(screen.getByTestId('timeline-row-dhuhr')).toBeTruthy();
-    expect(screen.queryByTestId('timeline-lock-dhuhr')).toBeNull();
+    expect(screen.getByTestId('timeline-row-next-prayer')).toBeTruthy();
+    expect(screen.queryByTestId('timeline-lock-next-prayer')).toBeNull();
   });
 
-  it.each(PROTECTED_ROWS)('defaults $title to locked rather than flashing it open', async ({ id }) => {
-    await unresolved();
-    expect(screen.getByTestId(`timeline-lock-${id}`)).toBeTruthy();
-  });
+  it.each(PROTECTED_ROWS)(
+    'defaults $title to locked rather than flashing it open',
+    async ({ id }) => {
+      await unresolved();
+      expect(screen.getByTestId(`timeline-lock-${id}`)).toBeTruthy();
+    },
+  );
 });
 
 // ── Summary cards ───────────────────────────────────────────────────────────
@@ -376,15 +387,18 @@ describe('the summary cards on a free plan', () => {
   it.each([
     ['family-check-in-card', 'Family Check-in', 'Family'],
     ['overall-progress-card', 'Overall Progress', 'Goals'],
-  ])('raises the upgrade sheet from %s without entering the module', async (card, feature, module) => {
-    const user = userEvent.setup();
-    await free();
+  ])(
+    'raises the upgrade sheet from %s without entering the module',
+    async (card, feature, module) => {
+      const user = userEvent.setup();
+      await free();
 
-    await user.press(screen.getByTestId(card));
+      await user.press(screen.getByTestId(card));
 
-    expect(screen.getByText(sheetBodyFor(feature, module))).toBeTruthy();
-    expectNoProtectedRouteEntered();
-  });
+      expect(screen.getByText(sheetBodyFor(feature, module))).toBeTruthy();
+      expectNoProtectedRouteEntered();
+    },
+  );
 });
 
 describe('the summary cards on a paid plan', () => {
@@ -464,7 +478,7 @@ describe('locked geometry survives both states', () => {
 
     expect(flat('main-home-timeline')?.height).toBe(LOCKED.today.cardHeight);
     expect(flat('main-home-timeline')?.borderRadius).toBe(LOCKED.today.cardRadius);
-    for (const id of ['dhuhr', ...PROTECTED_ROWS.map((row) => row.id)]) {
+    for (const id of ['next-prayer', ...PROTECTED_ROWS.map((row) => row.id)]) {
       expect(flat(`timeline-row-${id}`)?.height).toBe(LOCKED.today.rowHeight);
     }
   });

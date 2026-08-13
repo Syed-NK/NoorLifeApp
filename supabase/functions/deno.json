@@ -14,11 +14,11 @@
     }
   },
   "test": {
-    "include": ["noor-ai/tests"]
+    "include": ["noor-ai/tests", "quran-content/tests"]
   },
   "tasks": {
-    "test": "deno test --no-remote --no-npm --allow-read=../.. --allow-env=NOOR_AI_GATEWAY_URL,NOOR_AI_LOCAL_GATEWAY_JWT_SECRET,NOOR_AI_SAFETY_HMAC_KEY_V1 noor-ai/tests",
-    "check": "deno check noor-ai/index.ts noor-ai/tests",
+    "test": "deno test --no-remote --no-npm --allow-read=../.. --allow-env=NOOR_AI_GATEWAY_URL,NOOR_AI_LOCAL_GATEWAY_JWT_SECRET,NOOR_AI_SAFETY_HMAC_KEY_V1 noor-ai/tests quran-content/tests",
+    "check": "deno check noor-ai/index.ts noor-ai/tests quran-content/index.ts quran-content/tests",
     "verify": "deno fmt --check && deno lint && deno task check && deno task test"
   }
 }

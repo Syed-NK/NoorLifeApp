@@ -33,13 +33,12 @@ export const MOCK_SOURCE: ContentSource = {
   verified: false,
 };
 
-/** Provenance for Hadith fixtures, which cite a real collection but are not vetted text. */
-export const MOCK_HADITH_SOURCE: ContentSource = {
-  name: 'NoorLife sample content',
-  edition: 'development fixtures',
-  attribution: 'Collection named for realism; text not verified against a critical edition',
-  verified: false,
-};
+/*
+  `MOCK_HADITH_SOURCE` is deleted. Its own doc comment — "cite a real collection but are not vetted
+  text" — described the defect rather than a provenance: a citation nobody had checked, with a badge
+  admitting as much. Every fixture that used it is gone, so the constant has no callers and is not
+  kept for a future one.
+*/
 
 /**
  * Paginates an in-memory array.

@@ -135,8 +135,17 @@ describe.each(EXPECTED_MODULES)('4 & 5 — header order: %s', (moduleId) => {
      * renderer performs no layout pass, so positions are all zero. Tree order is what the
      * header markup actually guarantees, and it is what changed in this correction.
      */
+    /*
+      `-title-band` is the layer the title sits in, and it is first because the title is drawn
+      beneath the controls rather than between them. It became addressable when the band stopped
+      spanning the header edge to edge and started reserving room for the control clusters — see
+      `headerTitleBandWidth`. The order the correction is about is unchanged: title layer, Back,
+      Help, Profile.
+    */
     const sequence = headerTestIDs(prefix);
-    expect(sequence).toEqual(['-title', '-back', '-help', '-profile'].map((s) => prefix + s));
+    expect(sequence).toEqual(
+      ['-title-band', '-title', '-back', '-help', '-profile'].map((s) => prefix + s),
+    );
   });
 
   it('does not place the profile beside Back', async () => {
@@ -152,14 +161,31 @@ describe.each(EXPECTED_MODULES)('4 & 5 — header order: %s', (moduleId) => {
 
   it('centres the title across the whole header rather than the leftover space', async () => {
     await render(<ModuleHomeScreen moduleId={moduleId} />);
-    const layer = screen.getByTestId(`${moduleId}-home-header-title`).parent;
-    const styles = [layer?.props?.style].flat(3).filter(Boolean) as Record<string, unknown>[];
-    // Absolutely positioned edge-to-edge, so the centre is the screen's centre.
-    expect(
-      styles.some(
-        (entry) => entry.position === 'absolute' && entry.left === 0 && entry.right === 0,
-      ),
-    ).toBe(true);
+    const layer = screen.getByTestId(`${moduleId}-home-header-title-band`);
+    const style = Object.assign(
+      {},
+      ...[layer.props.style].flat(3).filter((entry) => entry !== null && typeof entry === 'object'),
+    ) as Record<string, unknown>;
+
+    /*
+      ── What the invariant is, and what it is not ─────────────────────────────
+      It used to be asserted as `left === 0 && right === 0` — the title layer spanning the header
+      edge to edge. That was *one implementation* of centring on the screen, and it has been
+      replaced by another: the layer now reserves the wider control cluster on both sides, so the
+      title fills a band instead of shrinking to its own measured string. (The measurement is the
+      defect — a deep link mounts a module screen before Poppins is registered, and a content-sized
+      box keeps the fallback face's width for ever. See `module-header.tsx`.)
+
+      What the correction actually requires survives both: **equal insets**. Back is one control and
+      Help plus Profile are two, so any layout that reserves each side its own width centres the
+      title on the midpoint between the clusters, which sits left of the screen's centre. Equal
+      insets — of any size, including zero — put the band's centre on the screen's centre.
+    */
+    expect(style.position).toBe('absolute');
+    expect(typeof style.left).toBe('number');
+    expect(style.left).toBe(style.right);
+    // And the child fills that band rather than being sized by the string inside it.
+    expect(style.alignItems).toBe('stretch');
   });
 });
 
@@ -191,14 +217,33 @@ describe('6 — every raised centre control uses Main Home’s Noor AI asset', (
   });
 });
 
-describe('7 — Faith renders the prayer and time on one line', () => {
-  it('holds them in a single string, so a wrap is impossible', async () => {
+describe('7 — Faith renders the prayer and time as one unit', () => {
+  it('holds them in a single string, so they cannot be split across fields', async () => {
     await render(<ModuleHomeScreen moduleId="faith" />);
     const line = screen.getByTestId('faith-hero-prayer');
-    expect(line.props.numberOfLines).toBe(1);
-    expect(screen.getByText('Dhuhr 12:35 PM')).toBeTruthy();
-    // Two separate fields is how they end up on two lines.
-    expect(moduleRegistry.faith.hero.headline).toBe('Dhuhr 12:35 PM');
+
+    /**
+     * ── What this case still asserts, and what it deliberately no longer does ──
+     * The correction it was written for is that the prayer and its time are **one node**: two
+     * separate fields is how they end up on two lines with the time orphaned below the name. That
+     * is unchanged and is asserted below.
+     *
+     * The hard `numberOfLines === 1` that used to sit here is gone. It was the mechanism, not the
+     * requirement, and it is the mechanism that shipped `Times for where …` — the headline is not
+     * always a prayer line, and capping every headline at one line to keep one of them tidy cost
+     * the meaning of another. `faith-hero-layout.test.tsx` now covers the replacement rule: shrink,
+     * then wrap, and never truncate.
+     */
+
+    /*
+      The prayer and its time are one node, which is the correction this case was written for: two
+      separate fields is how they end up on two lines. The *content* is no longer asserted here —
+      it used to be the literal `Dhuhr 12:35 PM`, which was a fixture rendered to every user on
+      every day. `faith-hero-layout.test.tsx` covers both the live and the fallback copy, and that
+      the static copy names no time at all.
+    */
+    expect(typeof line.props.children).toBe('string');
+    expect(String(line.props.children).length).toBeGreaterThan(0);
   });
 });
 

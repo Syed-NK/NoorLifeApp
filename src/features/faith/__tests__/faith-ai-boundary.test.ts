@@ -93,59 +93,74 @@ describe('jurisprudential questions always carry a limitation', () => {
   });
 });
 
+/**
+ * The mock assistant quotes nothing at all.
+ *
+ * ── Why these assertions inverted ───────────────────────────────────────────
+ * This block used to establish that quotes were well-formed: separated from the prose, carrying source
+ * metadata, marked unverified, and drawn only from a frozen two-entry set. Every one of those passed,
+ * and together they licensed the thing that was actually wrong — the set held Qur'an 94:6 referenced as
+ * "Surah Ash-Sharh 94:6" and a narration attributed to "Sahih al-Bukhari 6464", neither verified by
+ * anybody.
+ *
+ * "Only from a frozen set" is a weaker guarantee than it reads as, because it says nothing about
+ * whether the set should exist. The rule now is that a mock reply carries no quote on any path, which
+ * cannot be satisfied by a well-formed fabrication.
+ *
+ * The `FaithQuote` type keeps its required `source` and `reference` fields. That is deliberate: when a
+ * real backend quotes approved scripture retrieved at request time, an unattributed quote must still be
+ * unconstructable. What changed is that nothing in the mock is entitled to build one.
+ */
 describe('never presents generated text as scripture', () => {
-  it('keeps quotes in a separate field from the assistant’s own words', () => {
+  /** Every question shape the classifier routes, including the three that used to attach a quote. */
+  const EVERY_QUESTION: readonly string[] = [
+    'explain this ayah',
+    'summarise my week',
+    'is it haram?',
+    'is it permissible?',
+    'when is my next prayer',
+    'tell me about surah',
+    'what does the hadith say',
+    'something else entirely',
+    '',
+  ];
+
+  it.each(EVERY_QUESTION)('carries no quote in the reply to "%s"', (question) => {
+    const reply = classifyFaithQuestion(question);
+    const quotes = 'quotes' in reply ? reply.quotes : [];
+    expect(quotes).toHaveLength(0);
+  });
+
+  it('names no collection, narrator or scripture reference in its prose', () => {
+    /*
+      The prose field is now the only place text can reach the user, so it is the place a fabrication
+      would reappear. These are the shapes the deleted content took.
+    */
+    for (const question of EVERY_QUESTION) {
+      const reply = classifyFaithQuestion(question);
+      const prose = 'answer' in reply ? reply.answer : 'message' in reply ? reply.message : '';
+      expect(prose).not.toMatch(/(Sahih|Sunan|Jami|Musnad|Muwatta|Bukhari|Tirmidhi)/i);
+      expect(prose).not.toMatch(/\d{1,3}:\d{1,3}/);
+      expect(prose).not.toMatch(/(narrated by|widely read as|the sources say)/i);
+    }
+  });
+
+  it('contains no Arabic script on any path', () => {
+    // The most serious of the two deleted entries: Arabic a user may recite, from no approved source.
+    for (const question of EVERY_QUESTION) {
+      const reply = classifyFaithQuestion(question);
+      expect(JSON.stringify(reply)).not.toMatch(/[ء-ي]/);
+    }
+  });
+
+  it('still answers in scope rather than refusing everything', () => {
+    // The guarantee above would also be satisfied by an assistant that said nothing useful. It is not
+    // one: an in-scope question is still answered, and still points somewhere real.
     const reply = classifyFaithQuestion('explain this ayah');
     expect(reply.kind).toBe('answer');
     if (reply.kind === 'answer') {
-      expect(reply.quotes.length).toBeGreaterThan(0);
-      // The verse text must not appear inside the prose field.
-      for (const quote of reply.quotes) {
-        expect(reply.answer).not.toContain(quote.verbatim);
-      }
+      expect(reply.answer).toMatch(/reader/i);
     }
-  });
-
-  it('requires source metadata on every quote', () => {
-    for (const question of ['explain this ayah', 'summarise my week', 'is it permissible?']) {
-      const reply = classifyFaithQuestion(question);
-      const quotes = 'quotes' in reply ? reply.quotes : [];
-      for (const quote of quotes) {
-        expect(quote.source).toBeDefined();
-        expect(quote.source.name.length).toBeGreaterThan(0);
-        expect(quote.reference.length).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('marks sample scripture as unverified', () => {
-    const reply = classifyFaithQuestion('explain this ayah');
-    const quotes = 'quotes' in reply ? reply.quotes : [];
-    expect(quotes.length).toBeGreaterThan(0);
-    for (const quote of quotes) {
-      // While Quran Foundation approval is pending, nothing may claim to be verified.
-      expect(quote.source.verified).toBe(false);
-    }
-  });
-
-  it('only ever quotes text from its frozen fixture set', () => {
-    // The assistant cannot generate scripture because the only strings it can put in a
-    // quote come from a frozen constant. Asking many different things must never
-    // produce a quote outside that set.
-    const seen = new Set<string>();
-    for (const question of [
-      'explain this ayah',
-      'summarise my week',
-      'is it haram?',
-      'when is my next prayer',
-      'tell me about surah',
-      'something else entirely',
-    ]) {
-      const reply = classifyFaithQuestion(question);
-      const quotes = 'quotes' in reply ? reply.quotes : [];
-      quotes.forEach((quote) => seen.add(quote.verbatim));
-    }
-    expect(seen.size).toBeLessThanOrEqual(2);
   });
 });
 

@@ -13,11 +13,36 @@ import { fontFamilies } from '@ds/tokens';
  * Spec §2.4 permits Poppins weights 400/500/600/700 only — exactly the four
  * loaded below. No italic, no other weight, no other Latin typeface.
  *
- * Poppins is served by `@expo-google-fonts/poppins` (SIL Open Font License 1.1),
- * loaded at runtime through expo-font's `useFonts`. Runtime loading is used
- * rather than the `expo-font` config plugin because the config plugin embeds
- * fonts at prebuild time, which would require rebuilding the installed Android
- * development client. See ASSETS-REQUIRED.md for the Phase 2 migration note.
+ * Poppins is SIL Open Font License 1.1. The four faces are registered **twice**, by two
+ * mechanisms that answer two different questions, and both are required.
+ *
+ * ── Android: embedded at build time, because measurement cannot wait ────────
+ * `app.json` links the four `.ttf` files under `assets/fonts/` through the `expo-font` config
+ * plugin, which copies them to `android/app/src/main/assets/fonts/`. React Native's
+ * `ReactFontManager` resolves a `fontFamily` there **by filename**, so `Poppins_600SemiBold.ttf`
+ * is reachable as `Poppins_600SemiBold` — the exact keys `fontFamilies` below already used.
+ *
+ * This is not a packaging preference. Runtime registration alone produced a defect that only
+ * appeared in release builds: React Native measured every string in the system fallback face
+ * while painting it in Poppins, because the text was measured before `useFonts` had registered
+ * anything. Poppins is 10–18% wider than the fallback, so Yoga sized each `Text` view for a
+ * narrower face than Android drew and the surplus lines were cropped by the view's own bounds.
+ * Measured on the emulator: one string rendered at 16 dp in `Poppins_600SemiBold` and again with
+ * no family reported 243.8 dp and 244.9 dp — visibly different faces, indistinguishable widths.
+ * Re-navigating never corrected it, because the measurement spannable is cached by string
+ * content. Embedding removes the window entirely: the family exists before the first frame.
+ *
+ * ── iOS and web: still loaded at runtime, and not redundant ─────────────────
+ * `useFonts` stays, and `FontProvider` still publishes readiness. iOS resolves an embedded font
+ * by its **internal** name, and these files carry `Poppins-Regular` / `Poppins-Medium` /
+ * `Poppins-SemiBold` / `Poppins-Bold` — which are *not* the `Poppins_400Regular` style keys the
+ * app asks for. Embedding on iOS would therefore add ~600 KB of faces under names nothing
+ * references, so the plugin is scoped to `android` and iOS keeps the runtime path that already
+ * registers the right keys. Web has no native project at all and depends on it outright.
+ *
+ * The consequence worth stating: the family names below are the contract between this file,
+ * `app.json` and every `fontFamily` in the app. `typography-fonts.test.ts` asserts that the four
+ * files exist, that `app.json` links exactly them, and that each filename equals its token.
  */
 export const latinFontsToLoad = {
   [fontFamilies.regular]: Poppins_400Regular,

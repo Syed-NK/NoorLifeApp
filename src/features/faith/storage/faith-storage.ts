@@ -31,8 +31,54 @@ export const faithStorageKeys = {
   tasbihHistory: `${NAMESPACE}.tasbih.history`,
   worshipDays: `${NAMESPACE}.worship.days`,
   readingPosition: `${NAMESPACE}.quran.position`,
+  /** Per-day ayat read, per-surah furthest verse, and the daily goal. See `faith-reading-log.ts`. */
+  readingLog: `${NAMESPACE}.quran.reading-log`,
+  /** The coordinate prayer times and the Qibla are calculated for. See `faith-location.ts`. */
+  location: `${NAMESPACE}.location`,
   bookmarks: `${NAMESPACE}.bookmarks`,
+  /**
+   * Which prayer alerts are pending, by local calendar date and prayer.
+   *
+   * Identifiers and a fingerprint of the inputs that produced them — no coordinate, no place name
+   * and no times. See `faith-notification-schedule.ts` for why the fingerprint is stored beside
+   * them.
+   */
+  notificationSchedule: `${NAMESPACE}.notifications.prayer-schedule`,
   preferences: `${NAMESPACE}.preferences`,
+  /**
+   * The 114-surah catalogue, so Qur'an home opens without a network read.
+   *
+   * Catalogue metadata only — numbers, names, meanings, ayah counts — never a verse, a translation
+   * or a recitation URL, and bounded by the same one-week licence ceiling the in-memory cache
+   * enforces. See `faith-quran-catalogue.ts` for why this one key is permitted to persist.
+   */
+  quranCatalogue: `${NAMESPACE}.quran.catalogue`,
+  /**
+   * Which surahs the user deliberately downloaded, for which reciter.
+   *
+   * An index of *decisions*, not content: no audio, no URL and no host is written here — only a
+   * reciter id, a surah number, a file count, a byte total and a timestamp. The audio itself lives
+   * on the filesystem under the same one-week ceiling, and this key exists so a deliberate download
+   * is never evicted by the automatic prefetch and can be described and removed by the user. See
+   * `faith-audio-downloads.ts`.
+   */
+  audioDownloads: `${NAMESPACE}.quran.audio-downloads`,
+  /**
+   * The user's own notes on individual ayat, keyed by `surah:ayah`.
+   *
+   * The user's words, never scripture: a note record carries no Arabic and no translation, only the
+   * verse it is attached to. See `faith-notes.ts` for why the identity is the verse reference rather
+   * than a position in a rendered list.
+   */
+  quranNotes: `${NAMESPACE}.quran.notes`,
+  /**
+   * Listening playlists — named lists of verse references, with the reciter each was added under.
+   *
+   * References only. No audio, no URL and no host: the files themselves live under
+   * `faith-audio-downloads.ts` and its one-week ceiling, and a playlist entry is resolved back to a
+   * recitation through the repository at the moment it is played.
+   */
+  quranPlaylists: `${NAMESPACE}.quran.playlists`,
 } as const;
 
 export type FaithStorageKey = (typeof faithStorageKeys)[keyof typeof faithStorageKeys];

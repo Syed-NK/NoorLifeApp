@@ -104,10 +104,31 @@ export type FaithAiReply =
       readonly message: string;
     };
 
+/**
+ * A verse a question is *about*, as a citation and never as text.
+ *
+ * ── Why this is two integers ────────────────────────────────────────────────
+ * The reader can hand an ayah to the assistant, and what it hands over is the reference. The
+ * alternative — passing the Arabic and the translation along with the question — creates a second
+ * copy of scripture that arrives with no `ContentSource` behind it, sitting in the same object as
+ * the user's free text, indistinguishable in a log from something generated. This shape makes that
+ * impossible rather than discouraged: there is no field here a verse could be written into.
+ *
+ * An implementation that needs the text resolves it from `QuranContentRepository`, which is the
+ * approved boundary and the only place a rendering carries its attribution.
+ */
+export type FaithVerseContext = {
+  readonly kind: 'ayah';
+  readonly surah: number;
+  readonly ayah: number;
+};
+
 export type FaithAiQuestion = {
   readonly text: string;
   /** The route the question was asked from, for the audit trail. */
   readonly fromScreen: string;
+  /** The verse the question is about, when it was asked from one. A reference, never a quotation. */
+  readonly context?: FaithVerseContext;
 };
 
 /** One turn in the visible conversation. */
