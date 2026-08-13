@@ -1,0 +1,18 @@
+# Line-ending policy for files whose *bytes* are part of a published claim.
+#
+# ── Why this file exists ────────────────────────────────────────────────────
+# This repository is developed on Windows with `core.autocrlf=true`, so by default Git checks text
+# files out with CRLF. That is harmless for source, and it is not harmless for a generated data asset
+# whose SHA-256 is recorded as an audit fact.
+#
+# `assets/data/city-catalogue.json` is committed alongside a checksum in
+# `docs/THIRD_PARTY_LICENCES.md` and a reproducibility claim in `scripts/import-city-catalogue.mjs`:
+# re-running the importer over the recorded GeoNames inputs must reproduce the committed file byte
+# for byte. Under the default policy it would not. The asset holds 49 literal newlines, so a checkout
+# on a Windows machine would rewrite it to 2,297,052 bytes with an entirely different hash — while a
+# checkout on Linux produced the documented 2,297,003. The audit would then pass or fail depending on
+# who ran it, which is the opposite of what a checksum is for.
+#
+# `eol=lf` pins the working-tree form to the form the importer emits, on every platform. The file
+# stays diffable text; only its newline convention is fixed.
+assets/data/*.json text eol=lf

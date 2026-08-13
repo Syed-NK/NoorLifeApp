@@ -18,6 +18,7 @@ import { faithNavKeys, faithRoutes } from '../faith-routes';
 import { DEFAULT_RECITER_NAME } from '../storage/faith-preferences';
 import { useFaithPreferences } from '../hooks/use-faith-preferences';
 import { useFaithResource } from '../hooks/use-faith-resource';
+import { usePrayerNotifications } from '../hooks/use-prayer-notifications';
 import { useTranslationPreference } from '../hooks/use-translation-preference';
 
 const METHODS: readonly { readonly id: CalculationMethod; readonly label: string }[] = [
@@ -53,6 +54,12 @@ function PreferencesBody() {
   const { preferences, update } = useFaithPreferences();
   const { translation, status } = useTranslationPreference();
   const [saved, setSaved] = useState<string | null>(null);
+  /*
+    `false` — this screen reschedules only *after* it changes a calculation input, exactly as the
+    Prayer location screen does. Reconciling on mount would spend one prayer-time calculation per day
+    of the horizon to render a list of radio rows.
+  */
+  const notifications = usePrayerNotifications(false);
 
   /**
    * The reciter's name for the summary row.
@@ -71,9 +78,33 @@ function PreferencesBody() {
       ? (reciters.result.data.find((entry) => entry.id === preferences.reciterId)?.name ?? null)
       : null;
 
+  /**
+   * Persist a preference, then rebuild the alert schedule it invalidates.
+   *
+   * ── The gap this closes ─────────────────────────────────────────────────────
+   * The calculation method and the Asr convention are two of the three inputs that decide *when*
+   * every prayer is — the location being the third. Changing one here moved the times on the Prayer
+   * screen immediately, because those resources key on the preference, and left the already-scheduled
+   * notifications alone. The alarms then fired at the previous method's instants: not by minutes in
+   * the worst case, and silently, because nothing on screen claims a notification time.
+   *
+   * The schedule did eventually self-correct — `scheduleFingerprint` includes the method and the Asr
+   * convention, so the next reconciliation notices — but the next reconciliation is the reminder
+   * screen mounting or the app returning to the foreground, which can be days. "Correct once the
+   * user happens to background the app" is not a reconciliation policy.
+   *
+   * ── Why the reschedule cannot fail the save ─────────────────────────────────
+   * The preference is written first and is not rolled back if the platform refuses to reschedule.
+   * The user's chosen method is a fact about what they want and is correct either way; discarding it
+   * because 35 alarms could not be created would be the worse outcome, and `reconcilePrayerAlerts`
+   * already retains the previous schedule rather than destroying it on failure.
+   */
   const save = async (patch: Parameters<typeof update>[0], message: string) => {
     await update(patch);
     setSaved(message);
+    if (patch.calculationMethod !== undefined || patch.asrMethod !== undefined) {
+      await notifications.refreshSchedule();
+    }
   };
 
   /**

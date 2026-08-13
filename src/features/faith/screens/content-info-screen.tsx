@@ -182,7 +182,68 @@ function ContentInfoBody() {
           </ModuleText>
         </View>
       </ModuleCard>
+
+      <CityDataAttribution />
     </View>
+  );
+}
+
+/**
+ * The GeoNames credit — the one notice on this screen that a licence *requires* be user-visible.
+ *
+ * ── Why it is here and not only in a document ───────────────────────────────
+ * The bundled city catalogue is CC BY 4.0. MIT and OFL are satisfied by licence text travelling
+ * inside the bundle, but CC BY asks for credit "in the manner specified" — for a shipped app that
+ * means somewhere a person can actually find it, not a file in the repository. This screen is where
+ * NoorLife already puts the question "where did this content come from", so it is where the answer
+ * belongs.
+ *
+ * ── Why the string is read from the asset rather than typed here ────────────
+ * `meta.licence.attribution` is written by the importer and travels with the data. Retyping it in
+ * JSX would create a second copy that a future re-import could silently contradict — and a stale
+ * attribution is a licence breach that looks exactly like a correct one.
+ *
+ * ── Why it states that the data was modified ────────────────────────────────
+ * CC BY 4.0 requires an indication of changes, and NoorLife's asset genuinely is a derivative:
+ * columns dropped, names normalised for searching, rows deduplicated and re-ordered. Saying so is
+ * part of the obligation, not a courtesy.
+ */
+function CityDataAttribution() {
+  const { dp } = useModuleMetrics();
+  const attribution = useFaithResource(
+    'faith.content-info.city-attribution',
+    useCallback(async (): Promise<FaithResult<string>> => {
+      const { loadCityCatalogue } = await import('../data/location/city-catalogue');
+      const catalogue = await loadCityCatalogue();
+      return { kind: 'ok', data: catalogue.attribution };
+    }, []),
+  );
+
+  /*
+    Rendered only once the credit is actually known. A placeholder would be worse than nothing here:
+    an attribution card that says "loading" is a card that has not attributed anybody, and the
+    fallback text would be the second copy this reads the asset to avoid.
+  */
+  if (attribution.status !== 'settled' || !hasData(attribution.result)) {
+    return null;
+  }
+
+  return (
+    <ModuleCard testID="faith-content-info-city-data">
+      <View style={{ rowGap: dp(6) }}>
+        <ModuleText token="cardTitle" numberOfLines={2} accessibilityRole="header">
+          City data
+        </ModuleText>
+        <ModuleText token="body" numberOfLines={6} testID="faith-content-info-city-attribution">
+          {attribution.result.data}
+        </ModuleText>
+        <ModuleText token="caption" numberOfLines={5}>
+          City names and coordinates are bundled with the app and searched entirely on this device —
+          nothing you type is sent anywhere. The data has been modified from its original form:
+          unused fields removed, names normalised for searching, and duplicates merged.
+        </ModuleText>
+      </View>
+    </ModuleCard>
   );
 }
 

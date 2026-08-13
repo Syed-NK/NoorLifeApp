@@ -9,6 +9,7 @@ import {
   qiblaBearing,
   type CompassAccuracy,
 } from '../data/qibla/qibla';
+import { useActiveLocationRevision } from '../data/location/active-location';
 import { useFaithRepositories } from '../di/faith-repository-context';
 import { useFaithResource, type UseFaithResource } from './use-faith-resource';
 
@@ -52,8 +53,21 @@ export type UseQibla = {
 export function useQibla(): UseQibla {
   const { prayerTimes, location } = useFaithRepositories();
 
+  /*
+    ── The bearing is a property of the location, so its key must name the location ──
+    The key was the constant `'faith.qibla.target'`, which never changed — so saving a new location
+    on the Prayer location screen left this resource settled under the same key and the screen kept
+    the *previous* place's bearing until something unrelated remounted it. A Qibla arrow that is
+    confidently wrong is the worst failure this module has: nothing on screen says it is stale, and
+    the user has no way to tell degrees for Dubai from degrees for Mountain View.
+
+    The revision is the same one Faith Home and Prayer Times key on, bumped once by the mutation
+    boundary after the write lands, so all three recompute from one commit.
+  */
+  const locationRevision = useActiveLocationRevision();
+
   const target = useFaithResource(
-    'faith.qibla.target',
+    `faith.qibla.target.${locationRevision}`,
     useCallback(async (): Promise<FaithResult<QiblaTarget>> => {
       const resolved = await prayerTimes.resolveCurrentLocation();
       if (!hasData(resolved)) {

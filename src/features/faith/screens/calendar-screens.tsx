@@ -14,6 +14,7 @@ import { HijriMonthGrid } from '../components/hijri-month-grid';
 import { FaithSectionHero } from '../components/faith-section-hero';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import { hasData, type FaithResult } from '../data/faith-result';
+import { useActiveLocationRevision } from '../data/location/active-location';
 import type { CalendarMonth, LocationToday, Observance } from '../data/faith-calendar.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
 import { faithHeroImages } from '../faith-hero-images';
@@ -49,6 +50,19 @@ export function CalendarScreen() {
   const { dp } = useModuleMetrics();
   const { calendar, prayerTimes } = useFaithRepositories();
 
+  /*
+    ── Every resource below that resolves a location keys on this ──────────────
+    "Location-scoped" is only true if the resource actually re-runs when the location changes, and
+    these two keyed on constants — so the screen said it derived its dates from the prayer location
+    while continuing to show the dates of the *previous* one. The revision is the module-wide signal
+    the mutation boundary bumps once after a write lands; Faith Home, Prayer Times and Qibla key on
+    the same value, which is what makes one save reach all four together.
+
+    The browsed month deliberately does *not* take it: converting Hijri to Gregorian for a month grid
+    is zone-free arithmetic, so rekeying it on a location change would refetch identical days.
+  */
+  const locationRevision = useActiveLocationRevision();
+
   /**
    * Today, at the user's prayer location.
    *
@@ -77,7 +91,7 @@ export function CalendarScreen() {
    * so they keep working regardless.
    */
   const today = useFaithResource(
-    'faith.calendar.today',
+    `faith.calendar.today.${locationRevision}`,
     useCallback(async (): Promise<FaithResult<LocationToday>> => {
       const location = await prayerTimes.resolveCurrentLocation();
       return hasData(location) ? calendar.getLocationToday(location.data) : location;
@@ -144,7 +158,7 @@ export function CalendarScreen() {
   );
 
   const observances = useFaithResource(
-    'faith.calendar.upcoming',
+    `faith.calendar.upcoming.${locationRevision}`,
     useCallback(async (): Promise<FaithResult<readonly Observance[]>> => {
       const location = await prayerTimes.resolveCurrentLocation();
       return hasData(location) ? calendar.listUpcomingObservances(location.data, 3) : location;
@@ -326,9 +340,13 @@ export function EventsScreen() {
     Location-scoped for the same reason the calendar's "today" is: `daysUntil` is a countdown, and a
     countdown measured from a day the user is not on is wrong by a day for anyone across a midnight
     boundary. `permission-required` passes straight through to the screen's own state.
+
+    And keyed on the revision for the same reason again — a countdown from the old location's day is
+    exactly the wrongness this resource was written to avoid.
   */
+  const locationRevision = useActiveLocationRevision();
   const observances = useFaithResource(
-    'faith.observances',
+    `faith.observances.${locationRevision}`,
     useCallback(async (): Promise<FaithResult<readonly Observance[]>> => {
       const location = await prayerTimes.resolveCurrentLocation();
       return hasData(location) ? calendar.listUpcomingObservances(location.data, 10) : location;

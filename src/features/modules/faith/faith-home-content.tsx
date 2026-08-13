@@ -9,6 +9,7 @@ import { ArabicText } from '@features/faith/components/faith-list';
 import { UnverifiedSourceNotice } from '@features/faith/components/faith-states';
 import { countdownLabel } from '@features/faith/screens/calendar-screens';
 import { hasData } from '@features/faith/data/faith-result';
+import { useActiveLocationRevision } from '@features/faith/data/location/active-location';
 import type { WorshipDay, WorshipEntryStatus } from '@features/faith/data/worship.repository';
 import { useFaithRepositories } from '@features/faith/di/faith-repository-context';
 import { faithRoutes, readerHref } from '@features/faith/faith-routes';
@@ -519,8 +520,19 @@ function WorshipCard({ onViewAll }: { readonly onViewAll: () => void }) {
   const { worship } = useFaithRepositories();
   const today = new Date().toISOString().slice(0, 10);
 
+  /*
+    ── This card's times are location-derived, even though it asks only for a day ──
+    `worship.getDay` fills each row's time from `worshipTimes` in the repository container, which
+    resolves the active location and calculates the day's prayers from it. So the *rendered* card
+    depends on the location even though nothing in this call site mentions one, and keying on the
+    date alone meant saving a new location left the checklist showing the old place's times directly
+    beneath a hero that had already updated — the one-screen-two-claims defect the seed constants
+    were removed to fix, reintroduced through a stale cache key instead of a stale literal.
+  */
+  const locationRevision = useActiveLocationRevision();
+
   const day = useFaithResource(
-    `faith.home.worship.${today}`,
+    `faith.home.worship.${today}.${locationRevision}`,
     useCallback(() => worship.getDay(today), [worship, today]),
   );
 
