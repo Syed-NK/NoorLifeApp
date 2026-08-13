@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useActiveLocationRevision } from '../data/location/active-location';
 import { hasData } from '../data/faith-result';
-import type { LocationRefresh } from '../data/prayer-times.repository';
+import { isUserSelectedLocation, type LocationRefresh } from '../data/prayer-times.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
 
 /**
@@ -29,12 +29,13 @@ export type LocationRefreshState =
   /** A fix arrived and replaced the stored location. */
   | { readonly kind: 'updated'; readonly movedMetres: number; readonly materialChange: boolean }
   /**
-   * Manual mode: no device position was requested, so none could fail.
+   * A user-selected location — a city or typed coordinates. No device position was requested, so
+   * none could fail.
    *
    * A distinct state rather than reusing `updated`, because the screen must be able to say nothing
    * at all here. "Could not get a new position" would be false — nothing was attempted.
    */
-  | { readonly kind: 'manual' }
+  | { readonly kind: 'user-selected' }
   /** A fix arrived and was not good enough to replace what is stored. */
   | { readonly kind: 'kept'; readonly reason: NonNullable<LocationRefresh['rejectedReason']> }
   /** No fix could be acquired. What is displayed is the last accepted one. */
@@ -105,7 +106,7 @@ export function useLocationRefresh(
     setState({ kind: 'refreshing' });
 
     try {
-      const result = await prayerTimes.refreshCurrentLocation();
+      const result = await prayerTimes.refreshDeviceLocation();
 
       if (!hasData(result)) {
         /*
@@ -126,8 +127,13 @@ export function useLocationRefresh(
       }
 
       const { accepted, materialChange, movedMetres, rejectedReason, mode } = result.data;
-      if (mode === 'manual') {
-        setState({ kind: 'manual' });
+      /*
+        The predicate, not `mode === 'coordinates'`. Both user-authority modes suppress the
+        device-fix commentary for the same reason, and a literal comparison here would have left a
+        saved city being described as a device fix that could not be refreshed.
+      */
+      if (isUserSelectedLocation({ mode })) {
+        setState({ kind: 'user-selected' });
         return;
       }
       if (!accepted && rejectedReason !== null) {

@@ -12,6 +12,11 @@ import { commitActivePrayerLocation, readStoredLocation } from '../../storage/fa
 import type { FaithResult } from '../faith-result';
 import type { LocationPort } from '../location/location.port';
 import { acceptLocationFix } from '../location/location-acceptance';
+import {
+  cityCatalogueAttribution,
+  findCityChoice,
+  searchCityChoices,
+} from '../location/city-lookup';
 import { daysInGregorianMonth, locationCalendarDay } from '../calendar-day';
 import {
   addCalendarDays,
@@ -19,9 +24,12 @@ import {
   timeZoneForCoordinate,
   toZonedOffsetIso,
 } from './location-time-zone';
+import { cityLabel, isUserSelectedLocation } from '../prayer-times.repository';
 import type {
   AsrJuristicMethod,
   CalculationMethod,
+  CityChoice,
+  CityPreview,
   Coordinate,
   DailyPrayerTimes,
   LocationRefresh,
@@ -29,6 +37,7 @@ import type {
   PrayerCalculationSettings,
   PrayerKey,
   PrayerLocation,
+  PrayerLocationMode,
   PrayerNotificationPreference,
   PrayerTime,
   PrayerTimesRepository,
@@ -202,7 +211,7 @@ export function createAdhanPrayerTimesRepository(
   const toPrayerLocation = (
     coordinate: Coordinate,
     label: string | null,
-    manual: boolean,
+    mode: PrayerLocationMode,
     /*
       When the fix behind this location was taken. Carried through rather than re-stamped, so a
       location read back from storage reports the age it actually has — anything derived from it,
@@ -218,7 +227,7 @@ export function createAdhanPrayerTimesRepository(
       coordinate,
       label: label ?? `${coordinate.latitude.toFixed(3)}, ${coordinate.longitude.toFixed(3)}`,
       timeZone,
-      manual,
+      mode,
       resolvedAt,
     };
   };
@@ -264,7 +273,7 @@ export function createAdhanPrayerTimesRepository(
         const resolved = toPrayerLocation(
           stored.coordinate,
           stored.label,
-          stored.mode === 'manual',
+          stored.mode,
           stored.resolvedAt,
         );
         /*
@@ -303,7 +312,7 @@ export function createAdhanPrayerTimesRepository(
 
       const label = await config.location.describe(fix.coordinate);
       const resolvedAt = now().toISOString();
-      const resolved = toPrayerLocation(fix.coordinate, label, false, resolvedAt);
+      const resolved = toPrayerLocation(fix.coordinate, label, 'device', resolvedAt);
       if (resolved === null) {
         // Nothing is stored: a coordinate with no resolvable zone would be a stored fix that fails
         // this same way on every future launch.
@@ -328,46 +337,137 @@ export function createAdhanPrayerTimesRepository(
     /** The zone a typed coordinate resolves to, resolved without writing anything. */
     previewLocation(coordinate: Coordinate): PrayerLocation | null {
       // No label: a preview shows the *zone*, which is the thing a coordinate determines.
-      return toPrayerLocation(coordinate, null, true, null);
+      return toPrayerLocation(coordinate, null, 'coordinates', null);
     },
 
-    async activeLocationMode(): Promise<'device' | 'manual' | null> {
+    async getActiveLocationMode(): Promise<PrayerLocationMode | null> {
       const stored = await readStoredLocation();
       return stored === null ? null : stored.mode;
     },
 
-    async saveManualLocation(input: {
+    /**
+     * Offline city search.
+     *
+     * ── Nothing is logged, and that is a requirement rather than an omission ──
+     * A search query on this screen is a person telling the app where they live or where they are
+     * travelling. There is no `console` call on this path, no measurement sink and no error report
+     * that could carry the string — the query reaches a pure ranking function and nothing else. The
+     * privacy suite asserts this by reading the source of every module on the path, and it matches on
+     * bare words rather than on syntax: a Faith file that so much as *names* one of those sinks fails
+     * it, comment or not, which is why this note describes the property without naming one.
+     */
+    async searchCities(query: string): Promise<FaithResult<readonly CityChoice[]>> {
+      const trimmed = query.trim();
+      try {
+        const outcome = await searchCityChoices(trimmed);
+        return outcome.cities.length === 0
+          ? { kind: 'no-results', query: trimmed }
+          : { kind: 'ok', data: outcome.cities };
+      } catch {
+        /*
+          The bundled asset could not be read or parsed — a corrupt or truncated install. `unavailable`
+          rather than `no-results`: "we found nothing" and "we could not look" are different answers,
+          and only one of them means the user should try a coordinate instead.
+        */
+        return { kind: 'error', code: 'unavailable' };
+      }
+    },
+
+    async previewCity(city: CityChoice): Promise<FaithResult<CityPreview>> {
+      const timeZone = timeZoneForCoordinate(city.coordinate);
+      if (timeZone === null) {
+        return { kind: 'error', code: 'unavailable' };
+      }
+      try {
+        return {
+          kind: 'ok',
+          data: { city, timeZone, attribution: await cityCatalogueAttribution() },
+        };
+      } catch {
+        return { kind: 'error', code: 'unavailable' };
+      }
+    },
+
+    /**
+     * Saves a selected city, in `city` mode, with its GeoNames identity attached.
+     *
+     * ── The re-validation, and what it protects ─────────────────────────────
+     * The city is looked up again by id and its coordinate compared with the one being saved. This
+     * is what entitles the stored record to claim `geonames` provenance: the credit shown beside a
+     * saved city asserts the data came from the catalogue, and an assertion nobody re-checked is one
+     * a stale screen or a re-imported asset could quietly falsify.
+     */
+    async saveCityLocation(city: CityChoice): Promise<FaithResult<PrayerLocation>> {
+      let verified: CityChoice | null = null;
+      try {
+        verified = await findCityChoice(city.geonamesId);
+      } catch {
+        return { kind: 'error', code: 'unavailable' };
+      }
+      if (
+        verified === null ||
+        verified.coordinate.latitude !== city.coordinate.latitude ||
+        verified.coordinate.longitude !== city.coordinate.longitude
+      ) {
+        /*
+          `not-found` rather than `unavailable`: the catalogue was readable and simply does not
+          contain what the screen offered, which is a different failure from being unable to look.
+        */
+        return { kind: 'error', code: 'not-found' };
+      }
+
+      const label = cityLabel(verified);
+      const resolvedAt = now().toISOString();
+      const resolved = toPrayerLocation(verified.coordinate, label, 'city', resolvedAt);
+      if (resolved === null) {
+        return { kind: 'error', code: 'unavailable' };
+      }
+
+      /*
+        Caller 2: the city save. The boundary owns the revision bump, so nothing here publishes — a
+        screen that both wrote and published could publish before the bytes land.
+      */
+      const committed = await commitActivePrayerLocation({
+        mode: 'city',
+        coordinate: verified.coordinate,
+        label,
+        geonamesId: verified.geonamesId,
+        countryCode: verified.countryCode,
+        admin1: verified.region,
+        resolvedAt,
+      });
+      if (committed.kind !== 'committed' && committed.kind !== 'unchanged') {
+        return { kind: 'error', code: 'unavailable' };
+      }
+      return { kind: 'ok', data: resolved };
+    },
+
+    async saveCoordinateLocation(input: {
       readonly label: string;
       readonly coordinate: Coordinate;
     }): Promise<FaithResult<PrayerLocation>> {
       const label = input.label.trim();
+      const named = label.length === 0 ? null : label;
       /*
         The zone is resolved before anything is written. A coordinate with no resolvable zone is
         rejected here rather than stored — a stored location that cannot produce a wall clock fails
         on every launch afterwards, and the failure looks like a bug in prayer times rather than in
         the place.
       */
-      const resolved = toPrayerLocation(
-        input.coordinate,
-        label.length === 0 ? null : label,
-        true,
-        now().toISOString(),
-      );
+      const resolvedAt = now().toISOString();
+      const resolved = toPrayerLocation(input.coordinate, named, 'coordinates', resolvedAt);
       if (resolved === null) {
         return { kind: 'error', code: 'unavailable' };
       }
 
-      /*
-        Caller 2: the manual save. The boundary owns the revision bump, so this no longer publishes
-        anything itself — a screen that both wrote and published could publish before the bytes land.
-      */
+      // Caller 3: the typed-coordinate save.
       const committed = await commitActivePrayerLocation({
-        mode: 'manual',
+        mode: 'coordinates',
         coordinate: input.coordinate,
-        label: label.length === 0 ? null : label,
-        resolvedAt: resolved.resolvedAt ?? now().toISOString(),
+        label: named,
+        resolvedAt,
       });
-      if (committed.kind === 'rejected') {
+      if (committed.kind !== 'committed' && committed.kind !== 'unchanged') {
         return { kind: 'error', code: 'unavailable' };
       }
       return { kind: 'ok', data: resolved };
@@ -394,12 +494,12 @@ export function createAdhanPrayerTimesRepository(
 
       const label = await config.location.describe(fix.coordinate);
       const resolvedAt = now().toISOString();
-      const resolved = toPrayerLocation(fix.coordinate, label, false, resolvedAt);
+      const resolved = toPrayerLocation(fix.coordinate, label, 'device', resolvedAt);
       if (resolved === null) {
         return { kind: 'error', code: 'unavailable' };
       }
 
-      // Caller 3: switching back to device mode, only once a complete valid snapshot exists.
+      // Caller 4: switching back to device mode, only once a complete valid snapshot exists.
       const committed = await commitActivePrayerLocation({
         mode: 'device',
         coordinate: fix.coordinate,
@@ -426,17 +526,27 @@ export function createAdhanPrayerTimesRepository(
      * A rejected fix is not an error. The stored location is still correct and still returned; the
      * outcome simply says it was kept and why.
      */
-    async refreshCurrentLocation(): Promise<FaithResult<LocationRefresh>> {
+    async refreshDeviceLocation(): Promise<FaithResult<LocationRefresh>> {
       /*
-        ── Manual mode is not refreshable, and saying so is the point ───────────
-        A saved coordinate is the user's decision. Waking the GPS to "check" it and then either
-        discarding the answer or — worse — overwriting Dubai with a stale Mountain View fix are both
-        wrong. So the automatic path returns the saved location unchanged, and the screen renders it
-        without a device-fix warning, because no device fix was required or attempted.
+        ── A user-selected location is not refreshable, and saying so is the point ──
+        A saved city or a typed coordinate is the user's decision. Waking the GPS to "check" it and
+        then either discarding the answer or — worse — overwriting Dubai with a stale Mountain View
+        fix are both wrong. So the automatic path returns the saved location unchanged, and the screen
+        renders it without a device-fix warning, because no device fix was required or attempted.
+
+        `isUserSelectedLocation` rather than a mode comparison: this is *the* guard that stops a
+        refresh replacing a deliberate choice, and it has to cover every user-authority mode. Written
+        as `mode === 'coordinates'` it would have been correct for typed coordinates and would have
+        let a background refresh silently overwrite every saved city.
       */
       const current = await readStoredLocation();
-      if (current !== null && current.mode === 'manual') {
-        const kept = toPrayerLocation(current.coordinate, current.label, true, current.resolvedAt);
+      if (current !== null && isUserSelectedLocation(current)) {
+        const kept = toPrayerLocation(
+          current.coordinate,
+          current.label,
+          current.mode,
+          current.resolvedAt,
+        );
         return kept === null
           ? { kind: 'error', code: 'unavailable' }
           : {
@@ -447,7 +557,7 @@ export function createAdhanPrayerTimesRepository(
                 materialChange: false,
                 movedMetres: 0,
                 rejectedReason: null,
-                mode: 'manual',
+                mode: current.mode,
               },
             };
       }
@@ -497,7 +607,7 @@ export function createAdhanPrayerTimesRepository(
         const kept = toPrayerLocation(
           stored.coordinate,
           stored.label,
-          stored.mode === 'manual',
+          stored.mode,
           stored.resolvedAt,
         );
         return kept === null
@@ -525,14 +635,14 @@ export function createAdhanPrayerTimesRepository(
         : (stored?.label ?? null);
 
       const resolvedAt = now().toISOString();
-      const resolved = toPrayerLocation(fix.coordinate, label, false, resolvedAt);
+      const resolved = toPrayerLocation(fix.coordinate, label, 'device', resolvedAt);
       if (resolved === null) {
         // A coordinate whose zone will not resolve is unusable. The stored location is untouched.
         return { kind: 'error', code: 'unavailable' };
       }
 
       /*
-        Caller 4: an accepted automatic refresh. The boundary suppresses the write and the revision
+        Caller 5: an accepted automatic refresh. The boundary suppresses the write and the revision
         entirely when the snapshot is equivalent, which is what stops a stationary device
         rescheduling notifications every time a screen opens.
       */
@@ -555,29 +665,6 @@ export function createAdhanPrayerTimesRepository(
           mode: 'device',
         },
       };
-    },
-
-    async searchLocations(query: string): Promise<FaithResult<readonly PrayerLocation[]>> {
-      const trimmed = query.trim();
-      if (trimmed.length < 2) {
-        return { kind: 'no-results', query: trimmed };
-      }
-      const results = await config.location.search(trimmed);
-      if (results.length === 0) {
-        return { kind: 'no-results', query: trimmed };
-      }
-      /*
-        A search result whose zone will not resolve is dropped rather than listed. Offering a city
-        NoorLife cannot compute a wall clock for would be a row that fails once selected.
-      */
-      const resolved = results
-        /* `null` age: a search result describes a place, not a fix, until the user selects it. */
-        .map((result) => toPrayerLocation(result.coordinate, result.label, true, null))
-        .filter((place): place is PrayerLocation => place !== null);
-
-      return resolved.length === 0
-        ? { kind: 'no-results', query: trimmed }
-        : { kind: 'ok', data: resolved };
     },
 
     async getDailyTimes(

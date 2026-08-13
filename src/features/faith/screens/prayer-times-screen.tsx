@@ -511,11 +511,11 @@ function formatTime(iso: string): string {
 function refreshNote(state: UseLocationRefresh['state']): string | null {
   switch (state.kind) {
     /*
-      Manual mode says nothing. No device position was requested, so there is no freshness to
-      qualify — the coordinate on screen is the one the user chose and it is exactly as current as
-      they left it.
+      A user-selected location says nothing. No device position was requested, so there is no
+      freshness to qualify — the city or coordinate on screen is the one the user chose and it is
+      exactly as current as they left it.
     */
-    case 'manual':
+    case 'user-selected':
       return null;
     case 'stale':
       return state.reason === 'permission'

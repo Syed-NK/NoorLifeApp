@@ -6,6 +6,7 @@ import {
   type CivilDate,
 } from './hijri/hijri-calendar';
 import { zonedIsoDay } from './prayer/location-time-zone';
+import { isUserSelectedLocation, type PrayerLocationMode } from './prayer-times.repository';
 
 /**
  * The one boundary between "an instant" and "which calendar day it is at a place".
@@ -139,7 +140,14 @@ export const LOCATION_DAY_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
  */
 export const LOCATION_DAY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** How a location came to be known. Mirrors `PrayerLocation.manual`, named for reading. */
+/**
+ * How a location came to be known.
+ *
+ * Two values where `PrayerLocation.mode` has three, and deliberately: what a *date* inherits from its
+ * location is whether somebody stood behind it, not which of the two ways they chose it. A day
+ * derived from a selected city and one derived from a typed coordinate are equally the user's own
+ * claim about where they are — `isUserSelectedLocation` is what collapses the three to these two.
+ */
 export type LocationDayProvenance = 'device-fix' | 'user-selected';
 
 /** A calendar day that is genuinely attributable to a place, with the evidence attached. */
@@ -217,7 +225,7 @@ export function locationDayFor(location: LocationLike, instant: Date): LocationD
       day,
       civil,
       timeZone: location.timeZone,
-      provenance: location.manual ? 'user-selected' : 'device-fix',
+      provenance: isUserSelectedLocation(location) ? 'user-selected' : 'device-fix',
       locationResolvedAt: location.resolvedAt,
       ageMs,
       stale: ageMs !== null && ageMs > LOCATION_DAY_STALE_AFTER_MS,
@@ -228,7 +236,7 @@ export function locationDayFor(location: LocationLike, instant: Date): LocationD
 /** The part of a `PrayerLocation` a day derivation needs. Narrowed so tests need not build one. */
 export type LocationLike = {
   readonly timeZone: string;
-  readonly manual: boolean;
+  readonly mode: PrayerLocationMode;
   readonly resolvedAt: string | null;
 };
 

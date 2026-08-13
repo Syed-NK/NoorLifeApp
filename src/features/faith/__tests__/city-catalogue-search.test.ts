@@ -293,6 +293,8 @@ describe('offline and cost boundary', () => {
       'src/features/faith/data/location/city-catalogue.ts',
       'src/features/faith/data/location/city-search.ts',
       'src/features/faith/data/location/city-exonyms.ts',
+      'src/features/faith/data/location/city-lookup.ts',
+      'src/features/faith/data/location/country-names.ts',
     ]) {
       const source = fs
         .readFileSync(path.join(process.cwd(), file), 'utf8')
@@ -306,6 +308,8 @@ describe('offline and cost boundary', () => {
     for (const file of [
       'src/features/faith/data/location/city-catalogue.ts',
       'src/features/faith/data/location/city-search.ts',
+      'src/features/faith/data/location/city-lookup.ts',
+      'src/features/faith/data/location/country-names.ts',
     ]) {
       const source = fs.readFileSync(path.join(process.cwd(), file), 'utf8');
       expect(source).not.toMatch(/console\.\w+\(/);

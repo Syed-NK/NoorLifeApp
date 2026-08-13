@@ -26,7 +26,7 @@ import {
   zoneOffsetMinutes,
 } from '../data/prayer/location-time-zone';
 import { formatPrayerClock } from '../data/prayer/prayer-clock';
-import type { Coordinate, PrayerLocation } from '../data/prayer-times.repository';
+import type { CityChoice, Coordinate, PrayerLocation } from '../data/prayer-times.repository';
 
 /**
  * A prayer time is a fact about a **place**, and is displayed in that place's own clock.
@@ -66,7 +66,7 @@ function locationAt(coordinate: Coordinate, label: string): PrayerLocation {
     throw new Error(`No IANA zone resolved for ${label}.`);
   }
   // A fresh fix, so nothing here trips the staleness ceiling in `locationDayFor`.
-  return { coordinate, label, timeZone, manual: false, resolvedAt: new Date().toISOString() };
+  return { coordinate, label, timeZone, mode: 'device', resolvedAt: new Date().toISOString() };
 }
 
 function fakeLocationPort(overrides: Partial<LocationPort> = {}): LocationPort {
@@ -549,21 +549,20 @@ describe('a cached result reopens correctly', () => {
   });
 });
 
-describe('a manually chosen location', () => {
-  it('carries the chosen place’s zone, not the device’s', async () => {
-    const repository = repositoryWith(
-      fakeLocationPort({
-        search: async () => [{ label: 'Mountain View', coordinate: MOUNTAIN_VIEW }],
-      }),
-      new Date(Date.UTC(2026, 7, 10, 12, 0)),
-    );
+describe('a user-selected location', () => {
+  it('carries the chosen city’s zone, not the device’s', async () => {
+    const repository = repositoryWith(fakeLocationPort(), new Date(Date.UTC(2026, 7, 10, 12, 0)));
 
-    const result = await repository.searchLocations('Mountain View');
-    const place = (result as { data: readonly PrayerLocation[] }).data[0];
+    const found = await repository.searchCities('Mountain View');
+    const city = (found as { data: readonly CityChoice[] }).data[0];
+    expect(city).toBeDefined();
 
-    expect(place?.manual).toBe(true);
-    expect(place?.timeZone).toBe('America/Los_Angeles');
-    expect(place?.timeZone).not.toBe(deviceTimeZone());
+    const saved = await repository.saveCityLocation(city as CityChoice);
+    const place = (saved as { data: PrayerLocation }).data;
+
+    expect(place.mode).toBe('city');
+    expect(place.timeZone).toBe('America/Los_Angeles');
+    expect(place.timeZone).not.toBe(deviceTimeZone());
   });
 
   it('gives a stored manual location its own zone on reopen', async () => {
@@ -583,7 +582,8 @@ describe('a manually chosen location', () => {
     expect(result.kind).toBe('ok');
     const place = (result as { data: PrayerLocation }).data;
     expect(place.timeZone).toBe('America/Los_Angeles');
-    expect(place.manual).toBe(true);
+    // A legacy `manual: true` record has no GeoNames identity, so it migrates to `coordinates`.
+    expect(place.mode).toBe('coordinates');
   });
 });
 
@@ -595,7 +595,7 @@ describe('when the zone cannot be resolved', () => {
       coordinate: MANCHESTER,
       label: 'Somewhere',
       timeZone: 'Nowhere/Nowhere',
-      manual: false,
+      mode: 'device',
       resolvedAt: '2026-08-10T00:00:00Z',
     };
     expect(computeDailyTimes(broken, '2026-08-10', SETTINGS, () => 'x')).toBeNull();

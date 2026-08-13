@@ -1,4 +1,9 @@
-import type { DailyPrayerTimes, NextPrayer, PrayerLocation } from '../prayer-times.repository';
+import type {
+  DailyPrayerTimes,
+  NextPrayer,
+  PrayerLocation,
+  PrayerLocationMode,
+} from '../prayer-times.repository';
 
 /**
  * Where every value the Prayer screen displays actually came from.
@@ -36,6 +41,10 @@ export type PrayerValueOrigin =
   | 'device-reverse-geocoder'
   /** The rounded coordinate NoorLife substitutes when the geocoder names no place. */
   | 'coordinate-derived-label'
+  /** The bundled offline GeoNames catalogue, for a city the user selected from it. */
+  | 'geonames-catalogue'
+  /** The user's own words, typed beside a coordinate. Never verified against anything. */
+  | 'user-supplied-label'
   /** Read back from this device's own storage, written by an earlier fix or a manual choice. */
   | 'device-storage'
   /** `tz-lookup` against the coordinate — offline, no network, no service. */
@@ -92,6 +101,8 @@ export type PrayerProvenanceReport = {
 export const PRAYER_ORIGIN_LABELS: Readonly<Record<PrayerValueOrigin, string>> = {
   'device-reverse-geocoder': 'OS reverse geocoder',
   'coordinate-derived-label': 'rounded coordinate (geocoder named no place)',
+  'geonames-catalogue': 'bundled GeoNames catalogue, offline',
+  'user-supplied-label': 'typed by you, unverified',
   'device-storage': 'this device’s storage',
   'coordinate-iana-zone-lookup': 'IANA zone from coordinate, offline',
   'adhan-calculation': 'adhan astronomical calculation',
@@ -100,6 +111,50 @@ export const PRAYER_ORIGIN_LABELS: Readonly<Record<PrayerValueOrigin, string>> =
   'device-clock': 'device clock',
   'derived-on-screen': 'derived on screen',
 };
+
+/**
+ * How the location row is named, per mode.
+ *
+ * ── Why three strings rather than "chosen by user" or not ───────────────────
+ * Because a provenance report whose whole purpose is to say where a value came from should not
+ * flatten two different origins into one. A city carries an id, a country and a region from a
+ * catalogue that can be re-read; a typed coordinate carries the user's own numbers and nothing else.
+ * Reporting both as "chosen by user" would be true and would hide the only distinction a reader of
+ * this panel is looking for.
+ */
+const LOCATION_SLOT: Readonly<Record<PrayerLocationMode, string>> = {
+  device: 'Location (device fix)',
+  city: 'Location (city you selected)',
+  coordinates: 'Location (coordinates you entered)',
+};
+
+/**
+ * Where the displayed place name came from.
+ *
+ * ── Why the coordinate stand-in is still detected by shape ──────────────────
+ * A `device` location's label is whatever the OS geocoder returned, and where it returned nothing the
+ * repository substitutes the rounded coordinate. Those two share one field, so `12.345, -67.890` is
+ * the geocoder declining rather than a bug, and the shape is what tells them apart — see
+ * `toPrayerLocation`.
+ *
+ * The other two modes need no such inference. A `city` label is the catalogue's own name for the
+ * record the user picked, and a `coordinates` label is the user's own words — and stating that the
+ * second is unverified is the point of listing it at all.
+ */
+function labelOriginFor(location: PrayerLocation): PrayerValueOrigin {
+  switch (location.mode) {
+    case 'city':
+      return 'geonames-catalogue';
+    case 'coordinates':
+      return /^-?\d+\.\d+, -?\d+\.\d+$/.test(location.label)
+        ? 'coordinate-derived-label'
+        : 'user-supplied-label';
+    default:
+      return /^-?\d+\.\d+, -?\d+\.\d+$/.test(location.label)
+        ? 'coordinate-derived-label'
+        : 'device-reverse-geocoder';
+  }
+}
 
 /**
  * The provenance of one rendering of the Prayer screen.
@@ -119,23 +174,15 @@ export function describePrayerProvenance({
 }): PrayerProvenanceReport {
   const location: PrayerLocation = day.location;
 
-  /*
-    A resolved place name and NoorLife's coordinate-derived stand-in are two different origins, and
-    the difference matters when a label looks wrong: `12.345, -67.890` is the geocoder declining,
-    not a bug. They are told apart by shape rather than by a flag, because the repository writes one
-    field for both — see `toPrayerLocation`.
-  */
-  const labelIsCoordinate = /^-?\d+\.\d+, -?\d+\.\d+$/.test(location.label);
-
   const entries: PrayerProvenanceEntry[] = [
     {
       slot: 'Location name',
-      origin: labelIsCoordinate ? 'coordinate-derived-label' : 'device-reverse-geocoder',
+      origin: labelOriginFor(location),
       resolved: location.label.length > 0,
       redacted: true,
     },
     {
-      slot: location.manual ? 'Location (chosen by user)' : 'Location (device fix)',
+      slot: LOCATION_SLOT[location.mode],
       origin: 'device-storage',
       resolved: true,
       redacted: true,

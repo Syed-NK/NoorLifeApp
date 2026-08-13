@@ -153,7 +153,7 @@ function coloursIn(root: TestElement): readonly string[] {
 }
 
 async function openForm() {
-  fireEvent.press(await screen.findByTestId('faith-prayer-location-mode-manual'));
+  fireEvent.press(await screen.findByTestId('faith-prayer-location-mode-coordinates'));
   await settle();
 }
 

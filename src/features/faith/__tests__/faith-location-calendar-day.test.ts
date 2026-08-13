@@ -91,7 +91,7 @@ function locationAt(coordinate: Coordinate, label: string, resolvedAt?: string):
     coordinate,
     label,
     timeZone,
-    manual: false,
+    mode: 'device',
     resolvedAt: resolvedAt ?? new Date().toISOString(),
   };
 }
@@ -489,7 +489,7 @@ describe('an unresolved location yields a state, never a date', () => {
 
   it('reports zone-unresolved rather than substituting the device day', () => {
     const resolution = locationDayFor(
-      { timeZone: 'Not/AZone', manual: false, resolvedAt: AT.toISOString() },
+      { timeZone: 'Not/AZone', mode: 'device', resolvedAt: AT.toISOString() },
       AT,
     );
     expect(resolution.status).toBe('zone-unresolved');
@@ -516,7 +516,7 @@ describe('a cached location provides an immediate, correct location day', () => 
     const at = new Date('2026-08-12T05:00:00Z');
     const resolution = locationDayFor(
       // A location as `resolveCurrentLocation` returns it when read back from storage.
-      { timeZone: LA_ZONE, manual: false, resolvedAt: '2026-08-12T04:00:00Z' },
+      { timeZone: LA_ZONE, mode: 'device', resolvedAt: '2026-08-12T04:00:00Z' },
       at,
     );
 
@@ -532,7 +532,7 @@ describe('a cached location provides an immediate, correct location day', () => 
   it('records a user-selected place as such', () => {
     const at = new Date('2026-08-12T05:00:00Z');
     const resolution = locationDayFor(
-      { timeZone: DUBAI_ZONE, manual: true, resolvedAt: at.toISOString() },
+      { timeZone: DUBAI_ZONE, mode: 'city', resolvedAt: at.toISOString() },
       at,
     );
     expect((resolution as { value: LocationDay }).value.provenance).toBe('user-selected');
@@ -542,7 +542,7 @@ describe('a cached location provides an immediate, correct location day', () => 
   it('flags a fix older than the staleness threshold but still serves it', () => {
     const at = new Date('2026-08-12T05:00:00Z');
     const resolvedAt = new Date(at.getTime() - LOCATION_DAY_STALE_AFTER_MS - 1000).toISOString();
-    const resolution = locationDayFor({ timeZone: LA_ZONE, manual: false, resolvedAt }, at);
+    const resolution = locationDayFor({ timeZone: LA_ZONE, mode: 'device', resolvedAt }, at);
 
     expect(resolution.status).toBe('resolved');
     expect((resolution as { value: LocationDay }).value.stale).toBe(true);
@@ -553,7 +553,7 @@ describe('a cached location provides an immediate, correct location day', () => 
   it('expires a fix past the maximum age rather than dating from it', () => {
     const at = new Date('2026-08-12T05:00:00Z');
     const resolvedAt = new Date(at.getTime() - LOCATION_DAY_MAX_AGE_MS - 1000).toISOString();
-    const resolution = locationDayFor({ timeZone: LA_ZONE, manual: false, resolvedAt }, at);
+    const resolution = locationDayFor({ timeZone: LA_ZONE, mode: 'device', resolvedAt }, at);
 
     expect(resolution.status).toBe('expired');
     expect('value' in resolution).toBe(false);
@@ -567,7 +567,7 @@ describe('a cached location provides an immediate, correct location day', () => 
    */
   it('treats an unparseable resolvedAt as unknown age rather than as fresh', () => {
     const at = new Date('2026-08-12T05:00:00Z');
-    const resolution = locationDayFor({ timeZone: LA_ZONE, manual: false, resolvedAt: 'x' }, at);
+    const resolution = locationDayFor({ timeZone: LA_ZONE, mode: 'device', resolvedAt: 'x' }, at);
     const value = (resolution as { value: LocationDay }).value;
     expect(value.ageMs).toBeNull();
     expect(value.stale).toBe(false);
@@ -575,7 +575,11 @@ describe('a cached location provides an immediate, correct location day', () => 
 
   /** The day advances with the clock even though the zone is cached — no frozen date. */
   it('recomputes the day from now, not from when the location was resolved', () => {
-    const cached = { timeZone: DUBAI_ZONE, manual: false, resolvedAt: '2026-08-11T10:00:00Z' };
+    const cached = {
+      timeZone: DUBAI_ZONE,
+      mode: 'device',
+      resolvedAt: '2026-08-11T10:00:00Z',
+    } as const;
     const before = locationDayFor(cached, new Date('2026-08-11T19:59:59Z'));
     const after = locationDayFor(cached, new Date('2026-08-11T20:00:00Z'));
 
@@ -587,8 +591,8 @@ describe('a cached location provides an immediate, correct location day', () => 
   it('recomputes when the location changes', () => {
     const at = new Date('2026-08-12T05:00:00Z');
     const stamp = at.toISOString();
-    const inLa = locationDayFor({ timeZone: LA_ZONE, manual: false, resolvedAt: stamp }, at);
-    const inDubai = locationDayFor({ timeZone: DUBAI_ZONE, manual: true, resolvedAt: stamp }, at);
+    const inLa = locationDayFor({ timeZone: LA_ZONE, mode: 'device', resolvedAt: stamp }, at);
+    const inDubai = locationDayFor({ timeZone: DUBAI_ZONE, mode: 'city', resolvedAt: stamp }, at);
 
     expect((inLa as { value: LocationDay }).value.day).toBe('2026-08-11');
     expect((inDubai as { value: LocationDay }).value.day).toBe('2026-08-12');

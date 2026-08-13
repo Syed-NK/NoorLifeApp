@@ -228,7 +228,10 @@ export type CoordinateInputResult =
  * Infinity is excluded explicitly — `Number('Infinity')` is finite-looking to a range check that
  * only compares magnitudes.
  */
-export function parseCoordinateInput(raw: string, axis: 'latitude' | 'longitude'): CoordinateInputResult {
+export function parseCoordinateInput(
+  raw: string,
+  axis: 'latitude' | 'longitude',
+): CoordinateInputResult {
   const trimmed = raw.trim();
   if (trimmed.length === 0) {
     return { kind: 'invalid', reason: 'empty' };

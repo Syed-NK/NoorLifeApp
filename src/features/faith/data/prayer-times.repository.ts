@@ -26,14 +26,55 @@ export type Coordinate = {
   readonly longitude: number;
 };
 
+/**
+ * Where the active location's authority comes from.
+ *
+ * Defined here, in the domain, rather than in the storage module that persists it — because it is
+ * what every screen branches on, and a screen reaching into `storage/` to name a mode would put the
+ * persistence layer in the import graph of the presentation layer. `prayer-location-store.ts` imports
+ * it from here, which is the direction that already holds for `Coordinate`.
+ *
+ * ── Why `coordinates` is a mode and not a flavour of `city` ─────────────────
+ * A city carries GeoNames identity — an id, a country, a region — and can be re-validated against the
+ * catalogue it came from. A typed coordinate carries none of that and must never be rendered as
+ * though it did. They share only the property below.
+ */
+export type PrayerLocationMode = 'device' | 'city' | 'coordinates';
+
+/**
+ * Whether the location was **chosen by the user**, and must therefore survive a device refresh.
+ *
+ * ── One predicate, so the answer cannot differ by call site ─────────────────
+ * This replaced `mode === 'manual'` written out at a dozen places. Spelling the question as a literal
+ * comparison made each site responsible for knowing the full set of modes that count — so splitting
+ * `manual` into `city` and `coordinates` would have meant finding all of them and remembering that
+ * both are user authority. The edit that gets eleven of twelve right silently lets a GPS fix
+ * overwrite somebody's saved city on the twelfth, and nothing on screen would say so.
+ *
+ * Deliberately a function of `mode` rather than a stored boolean beside it: a second field would be
+ * the same fact expressed twice, which is the contradiction the schema was rewritten to remove.
+ */
+export function isUserSelectedLocation(location: { readonly mode: PrayerLocationMode }): boolean {
+  return location.mode === 'city' || location.mode === 'coordinates';
+}
+
 export type PrayerLocation = {
   readonly coordinate: Coordinate;
   /** Human-readable place, e.g. "Manchester, United Kingdom". */
   readonly label: string;
   /** IANA zone, e.g. "Europe/London". Times are meaningless without it. */
   readonly timeZone: string;
-  /** True when the user picked a city rather than the device reporting one. */
-  readonly manual: boolean;
+  /**
+   * Which of the three authorities produced this location.
+   *
+   * Replaced a `manual: boolean`. The boolean could not distinguish a catalogue city from a typed
+   * coordinate, so every consumer that wanted to say where a place came from — the provenance sheet,
+   * the Qibla screen's caption, the Hijri day's evidence — had to describe both as "chosen by the
+   * user" and stop there. Carrying the discriminant through means a surface can be as specific as the
+   * record actually justifies, and `isUserSelectedLocation` still answers the authority question in
+   * one place.
+   */
+  readonly mode: PrayerLocationMode;
   /**
    * When this location was resolved, ISO-8601, or `null` for one that has never been stored.
    *
@@ -112,18 +153,79 @@ export type LocationRefresh = {
   readonly movedMetres: number;
   /** Why a fix was not accepted, for the screen to state honestly. `null` when it was. */
   readonly rejectedReason:
-    | 'accuracy-unusable'
-    | 'not-better-than-recent'
-    | 'invalid-coordinate'
-    | null;
+    'accuracy-unusable' | 'not-better-than-recent' | 'invalid-coordinate' | null;
   /**
    * The mode in force.
    *
-   * `manual` means no device position was requested — the saved coordinate *is* the answer. A screen
-   * reads this to decide whether "could not get a new position" is even a meaningful thing to say,
-   * and it is not: nothing was attempted, so nothing failed.
+   * Anything `isUserSelectedLocation` accepts means no device position was requested — the saved
+   * place *is* the answer. A screen reads this to decide whether "could not get a new position" is
+   * even a meaningful thing to say, and it is not: nothing was attempted, so nothing failed.
    */
-  readonly mode: 'device' | 'manual';
+  readonly mode: PrayerLocationMode;
+};
+
+/**
+ * One city from the bundled GeoNames catalogue, as the domain's shape.
+ *
+ * ── Why a screen never sees a catalogue row ─────────────────────────────────
+ * The catalogue is eight parallel arrays indexed by position, with a country *code* and a possibly
+ * empty region string — a representation chosen so 34,084 rows can be scanned per keystroke without
+ * allocating. That is the right shape for a search loop and the wrong shape for anything else: a
+ * screen holding an index position would break the moment the asset is re-imported and the ordering
+ * changes, and a screen holding `''` for "no region" would render an empty line rather than omitting
+ * one.
+ *
+ * So the repository converts. A `CityChoice` is stable, self-describing, and carries the identity a
+ * save needs to re-validate itself — see `saveCityLocation`.
+ */
+export type CityChoice = {
+  /** The catalogue's identity for this settlement. What a save re-validates against. */
+  readonly geonamesId: number;
+  /** The place as GeoNames spells it, accents intact. */
+  readonly name: string;
+  /** First administrative division, or `null` where the source has none. Never `''`. */
+  readonly region: string | null;
+  readonly countryCode: string;
+  /** The country's name, so a row never renders a bare two-letter code. */
+  readonly countryName: string;
+  readonly coordinate: Coordinate;
+};
+
+/**
+ * How a city is named on screen and in the stored record.
+ *
+ * ── Why the region is dropped when it repeats the city ──────────────────────
+ * GeoNames' first administrative division is frequently the city itself — Dubai is in Dubai, Tokyo is
+ * in Tokyo, Kuwait City is in Al Asimah but Singapore is in Singapore. Emitting both produces "Dubai,
+ * Dubai, United Arab Emirates", which reads as a data error to anybody who does not know the schema.
+ * Where the region genuinely differs it is real information and is kept: "Lahore, Punjab, Pakistan".
+ *
+ * One function, so the label a user confirmed in the preview is byte-for-byte the label that gets
+ * stored and the label every later screen renders. Two formatters would eventually disagree, and the
+ * disagreement would look like the app having silently changed the user's location.
+ */
+export function cityLabel(city: CityChoice): string {
+  const parts =
+    city.region === null || city.region === city.name
+      ? [city.name, city.countryName]
+      : [city.name, city.region, city.countryName];
+  return parts.join(', ');
+}
+
+/**
+ * A city with everything a user needs to confirm it, resolved but **not** saved.
+ *
+ * The preview is the point of the two-step flow. A row in a result list is a name, and a name is not
+ * enough to commit every prayer time in the app to — two cities share a name far more often than
+ * people expect. The coordinate and the resolved zone are what let somebody see that the Dubai they
+ * picked is the one at 25.07°N in `Asia/Dubai`, before anything is written.
+ */
+export type CityPreview = {
+  readonly city: CityChoice;
+  /** Resolved locally from the coordinate, by the same lookup every prayer time uses. */
+  readonly timeZone: string;
+  /** The credit CC BY 4.0 requires, read from the asset rather than retyped in a screen. */
+  readonly attribution: string;
 };
 
 /** Which prayer is next, and how long until it. Derived, but derived in one place. */
@@ -164,7 +266,7 @@ export type PrayerTimesRepository = {
    * Hijri date and every scheduled notification, while an accepted fix in the same place is a quiet
    * storage refresh nothing downstream needs to react to.
    */
-  refreshCurrentLocation(): Promise<FaithResult<LocationRefresh>>;
+  refreshDeviceLocation(): Promise<FaithResult<LocationRefresh>>;
 
   /**
    * The coordinate-derived IANA zone for a typed coordinate, without saving anything.
@@ -178,7 +280,7 @@ export type PrayerTimesRepository = {
   previewLocation(coordinate: Coordinate): PrayerLocation | null;
 
   /**
-   * Saves a coordinate the user typed, and switches to manual mode.
+   * Saves a coordinate the user typed, and switches to `coordinates` mode.
    *
    * ── Why the repository owns this rather than the screen ─────────────────────
    * Because the write has to be ordered against the zone resolution and the revision bump, and a
@@ -188,10 +290,47 @@ export type PrayerTimesRepository = {
    * The label is stored verbatim and never verified. It is the user's reference, and the screen says
    * so; nothing downstream treats it as evidence of where the coordinate is.
    */
-  saveManualLocation(input: {
+  saveCoordinateLocation(input: {
     readonly label: string;
     readonly coordinate: Coordinate;
   }): Promise<FaithResult<PrayerLocation>>;
+
+  /**
+   * Cities matching a typed query, from the bundled catalogue. **Entirely offline.**
+   *
+   * ── The cost guarantee, expressed as a call graph ───────────────────────────
+   * There is no transport anywhere beneath this method. It reaches a bundled JSON asset through
+   * `require` and searches it in memory, so no query a user types can leave the device and no
+   * keystroke can bill anybody. That is a structural property rather than a policy: the modules it
+   * calls have no fetch, no URL and no host to reach — see `data/location/city-catalogue.ts`.
+   *
+   * `no-results` for a query shorter than two meaningful characters, which is the same answer as
+   * "nothing matched" on purpose: the screen decides which prompt to render from the query it already
+   * holds, rather than from a sentinel returned here.
+   */
+  searchCities(query: string): Promise<FaithResult<readonly CityChoice[]>>;
+
+  /**
+   * Everything needed to confirm a city, without saving it.
+   *
+   * Resolves the IANA zone from the city's own coordinate, through the same offline polygon lookup
+   * every prayer time in the app already uses — so the zone shown in the preview is, by construction,
+   * the zone the times will be calculated in.
+   */
+  previewCity(city: CityChoice): Promise<FaithResult<CityPreview>>;
+
+  /**
+   * Saves a city the user selected, and switches to `city` mode.
+   *
+   * ── Why the catalogue record is re-read rather than trusted ─────────────────
+   * The `CityChoice` handed back here has been through a screen: it sat in React state across
+   * renders, a search, a preview and a scroll. Re-reading it from the catalogue by `geonamesId` and
+   * confirming the coordinate still matches costs one scan and turns "the screen passed us the right
+   * object" from an assumption into a checked fact. A city record that no longer validates is
+   * rejected rather than stored — a stored `city` mode carries GeoNames provenance, and provenance
+   * that cannot be re-derived is a credit the app has no basis to display.
+   */
+  saveCityLocation(city: CityChoice): Promise<FaithResult<PrayerLocation>>;
 
   /**
    * Switches back to device mode — but only if a real fix can be obtained first.
@@ -207,10 +346,7 @@ export type PrayerTimesRepository = {
   switchToDeviceLocation(): Promise<FaithResult<PrayerLocation>>;
 
   /** The mode in force. `null` when no location has ever been resolved. */
-  activeLocationMode(): Promise<'device' | 'manual' | null>;
-
-  /** Cities the user can pick when they decline location. */
-  searchLocations(query: string): Promise<FaithResult<readonly PrayerLocation[]>>;
+  getActiveLocationMode(): Promise<PrayerLocationMode | null>;
 
   /**
    * Today's Gregorian calendar day **at the location**, `YYYY-MM-DD`, or `null` if the zone will

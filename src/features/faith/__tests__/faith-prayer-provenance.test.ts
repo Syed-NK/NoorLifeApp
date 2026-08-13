@@ -133,7 +133,7 @@ function sampleDay(overrides: Partial<DailyPrayerTimes> = {}): DailyPrayerTimes 
       coordinate: { latitude: 37.386, longitude: -122.084 },
       label: 'A Place, A Country',
       timeZone: 'America/Los_Angeles',
-      manual: false,
+      mode: 'device',
       resolvedAt: '2026-08-12T00:00:00Z',
     },
     settings: { method: 'muslim-world-league', asr: 'standard', offsetsMinutes: {} },

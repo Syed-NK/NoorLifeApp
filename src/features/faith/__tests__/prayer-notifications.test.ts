@@ -50,7 +50,7 @@ const MAKKAH: PrayerLocation = {
   coordinate: { latitude: 21.4225, longitude: 39.8262 },
   label: 'Makkah, Saudi Arabia',
   timeZone: 'Asia/Riyadh',
-  manual: false,
+  mode: 'device',
   resolvedAt: '2026-08-13T00:00:00.000Z',
 };
 
@@ -100,14 +100,16 @@ function fakeRepository(
     requestedDays,
     resolveCurrentLocation: async () =>
       location === null ? { kind: 'error', code: 'unavailable' } : { kind: 'ok', data: location },
-    refreshCurrentLocation: async () => ({ kind: 'error', code: 'unavailable' }),
+    refreshDeviceLocation: async () => ({ kind: 'error', code: 'unavailable' }),
     previewLocation: () => location,
-    saveManualLocation: async () =>
+    saveCoordinateLocation: async () =>
       location === null ? { kind: 'error', code: 'unavailable' } : { kind: 'ok', data: location },
     switchToDeviceLocation: async () => ({ kind: 'error', code: 'unavailable' }),
-    activeLocationMode: async () => 'device',
+    getActiveLocationMode: async () => 'device',
     locationCalendarDay: () => '2026-08-13',
-    searchLocations: async () => ({ kind: 'no-results', query: '' }),
+    searchCities: async () => ({ kind: 'no-results', query: '' }),
+    previewCity: async () => ({ kind: 'error', code: 'unavailable' }),
+    saveCityLocation: async () => ({ kind: 'error', code: 'unavailable' }),
     getDailyTimes: async (_location, date) => {
       requestedDays.push(date);
       const index = call;

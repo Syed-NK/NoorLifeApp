@@ -242,14 +242,16 @@ describe('repository swapping', () => {
     const view = await withRepositories(<QiblaScreen />, {
       prayerTimes: {
         resolveCurrentLocation: async () => permissionRequired,
-        refreshCurrentLocation: async () => permissionRequired,
+        refreshDeviceLocation: async () => permissionRequired,
         previewLocation: () => null,
-        saveManualLocation: async () => permissionRequired,
+        saveCoordinateLocation: async () => permissionRequired,
         switchToDeviceLocation: async () => permissionRequired,
-        activeLocationMode: async () => null,
+        getActiveLocationMode: async () => null,
         // No location, so no location day. The screen never gets far enough to ask.
         locationCalendarDay: () => null,
-        searchLocations: async () => ({ kind: 'no-results', query: '' }),
+        searchCities: async () => ({ kind: 'no-results', query: '' }),
+        previewCity: async () => ({ kind: 'error', code: 'unavailable' }),
+        saveCityLocation: async () => ({ kind: 'error', code: 'unavailable' }),
         getDailyTimes: async () => permissionRequired,
         getMonthlyTimes: async () => permissionRequired,
         getNextPrayer: async () => permissionRequired,

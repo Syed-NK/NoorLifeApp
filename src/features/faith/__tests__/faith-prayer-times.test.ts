@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { Coordinate, PrayerLocation } from '../data/prayer-times.repository';
+import type { CityChoice, Coordinate, PrayerLocation } from '../data/prayer-times.repository';
 import type {
   HeadingReading,
   LocationFailure,
@@ -49,7 +49,7 @@ function locationAt(coordinate: Coordinate, label = 'Test place'): PrayerLocatio
     throw new Error(`No IANA zone for ${label}; the fixture coordinate is not on land.`);
   }
   // A fresh fix, so nothing here trips the staleness ceiling in `locationDayFor`.
-  return { coordinate, label, timeZone, manual: false, resolvedAt: new Date().toISOString() };
+  return { coordinate, label, timeZone, mode: 'device', resolvedAt: new Date().toISOString() };
 }
 
 const SETTINGS = {
@@ -284,7 +284,7 @@ describe('resolving a location', () => {
     // Stored, so the next render does not wake the GPS again.
     const stored = await readStoredLocation();
     expect(stored?.coordinate).toEqual(MANCHESTER);
-    expect(stored?.mode === 'manual').toBe(false);
+    expect(stored?.mode).toBe('device');
   });
 
   it('prefers the stored location over waking the GPS', async () => {
@@ -301,7 +301,7 @@ describe('resolving a location', () => {
       JSON.stringify({
         coordinate: MANCHESTER,
         label: 'Manchester, United Kingdom',
-        manual: false,
+        mode: 'device',
         resolvedAt: new Date().toISOString(),
       }),
     );
@@ -345,22 +345,28 @@ describe('resolving a location', () => {
 
 describe('searching for a place', () => {
   it('reports no results rather than offering a default city', async () => {
-    const repository = repositoryWith(fakeLocationPort({ search: async () => [] }));
-    expect(await repository.searchLocations('nowhere at all')).toEqual({
+    const repository = repositoryWith(fakeLocationPort());
+    expect(await repository.searchCities('nowhere at all')).toEqual({
       kind: 'no-results',
       query: 'nowhere at all',
     });
   });
 
-  it('marks a chosen place as manual, so the screens can say so', async () => {
-    const repository = repositoryWith(
-      fakeLocationPort({
-        search: async () => [{ label: 'Makkah', coordinate: MAKKAH }],
-      }),
-    );
+  /*
+    Through the bundled catalogue rather than the location port. The port's `search` was the seam a
+    paid provider would have been wired into and is no longer on this path at all — city search is a
+    scan of an asset, so this asserts against the data the app actually ships.
+  */
+  it('finds a city in the bundled catalogue and carries its GeoNames identity', async () => {
+    const repository = repositoryWith(fakeLocationPort());
 
-    const result = await repository.searchLocations('Makkah');
-    expect((result as { data: readonly PrayerLocation[] }).data[0]?.manual).toBe(true);
+    const result = await repository.searchCities('Makkah');
+    const first = (result as { data: readonly CityChoice[] }).data[0];
+
+    expect(first?.name).toBe('Makkah');
+    expect(first?.countryCode).toBe('SA');
+    expect(first?.countryName).toBe('Saudi Arabia');
+    expect(first?.geonamesId).toBeGreaterThan(0);
   });
 });
 

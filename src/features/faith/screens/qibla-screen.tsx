@@ -10,6 +10,7 @@ import { useReducedMotion } from '@shared/utils/a11y';
 
 import { FaithSectionHero } from '../components/faith-section-hero';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
+import { isUserSelectedLocation } from '../data/prayer-times.repository';
 import {
   calibrationAdvice,
   guidanceLabel,
@@ -168,7 +169,7 @@ function QiblaView({
             {`${bearing}° from true north • ${Math.round(target.distanceKm).toLocaleString()} km to Makkah`}
           </ModuleText>
           <ModuleText token="caption" align="center" numberOfLines={2}>
-            {target.location.manual
+            {isUserSelectedLocation(target.location)
               ? `Calculated for ${target.location.label}, which you chose`
               : `Calculated for ${target.location.label}`}
           </ModuleText>

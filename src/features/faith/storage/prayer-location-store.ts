@@ -13,79 +13,172 @@ import {
 /**
  * The active prayer location: one versioned record, and the one place that writes it.
  *
- * ── Why the previous shape had to go ────────────────────────────────────────
- * It carried both `manual: boolean` and `mode?: 'device' | 'manual'`, which are the same fact
- * expressed twice. Two of the four combinations are contradictions — `manual: true, mode: 'device'`
- * and its mirror — and nothing prevented one being written. A record like that has no correct
- * reading: the mode decides whether an automatic GPS refresh may overwrite a saved city, and
- * guessing which field to believe would silently replace somebody's deliberate choice.
+ * ── What V3 changes, and why a third mode was necessary ─────────────────────
+ * V2 had two modes, `device` and `manual`, and `manual` was carrying two genuinely different claims.
+ * A coordinate somebody typed and a city selected from the bundled GeoNames catalogue are not the
+ * same kind of fact: one is an unverified pair of numbers with a label that means nothing, the other
+ * is an identified settlement with a source, an id, a country and a region that can be re-validated
+ * against the catalogue it came from. Collapsing them lost every one of those fields, so a saved city
+ * could not be told from a typed coordinate on relaunch — and the screen had to describe both as
+ * "manual", which is true of the *authority* and false about the *evidence*.
  *
- * A discriminated union makes both contradictions *unrepresentable*. `mode` is the discriminant and
- * the only mode field; `manual` is gone from everything newly written.
+ * V3 splits them. `city` carries GeoNames identity; `coordinates` carries none and never pretends to.
+ *
+ * ── `mode` alone decides authority, and nothing else may ────────────────────
+ * The discriminant is the whole answer to "may a device refresh overwrite this". Not a boolean beside
+ * it, not a label, not the presence of an id — see `isUserSelectedLocation`, which is the only
+ * function permitted to answer that question.
+ *
+ * ── Contradictions are unrepresentable rather than merely invalid ───────────
+ * Each variant carries exactly the fields its mode can justify. `accuracyMetres` is a property of a
+ * device fix and exists only on `device`. `geonamesId`, `countryCode` and `admin1` are properties of
+ * a catalogue record and exist only on `city`. There is no shape in which a typed coordinate claims a
+ * GeoNames id, or a selected city claims a GPS accuracy, because the type has no such field to set.
  *
  * ── Why the timezone is stored beside the coordinate ────────────────────────
- * Because they are one fact. Every prayer instant is stamped in the location's zone, so a record
- * that carries a coordinate and re-derives the zone on each read has two places to disagree — and a
+ * Because they are one fact. Every prayer instant is stamped in the location's zone, so a record that
+ * carries a coordinate and re-derives the zone on each read has two places to disagree — and a
  * plausible time in the wrong zone is indistinguishable from a correct one. Storing them together,
  * and validating the pair before publishing, means a snapshot is either wholly usable or rejected.
  *
  * ── Why the label carries provenance ────────────────────────────────────────
- * "Dubai, UAE" typed by a user and "Dubai, United Arab Emirates" returned by a reverse geocoder are
- * different kinds of claim, and only one of them is evidence of anything. The provenance travels
- * with the label so no screen has to infer it from the mode.
+ * "Dubai" typed by a user, "Dubai" returned by the platform's reverse geocoder, and "Dubai" read out
+ * of the GeoNames catalogue are three different claims, and only two of them are evidence of
+ * anything. The provenance travels with the label so no screen has to infer it from the mode, and so
+ * a user's own words can never be rendered as though something verified them.
  */
 
 /** The schema version. Bumped only when the *meaning* of a stored field changes. */
-export const PRAYER_LOCATION_SCHEMA_VERSION = 2;
+export const PRAYER_LOCATION_SCHEMA_VERSION = 3;
 
-export type PrayerLocationMode = 'device' | 'manual';
+/**
+ * Where the active location's authority comes from.
+ *
+ * Three values, not two, and the third is not a refinement of the second — see the note above.
+ */
+export type PrayerLocationMode = 'device' | 'city' | 'coordinates';
 
-export type SavedPrayerLocationV2 =
+/**
+ * What produced the label, as a closed set.
+ *
+ * `device-unlabelled` and `coordinates` both mean "there is no name for this place", and they are
+ * distinct because the reason differs: the geocoder was asked and had nothing, versus nobody was ever
+ * in a position to ask. A screen renders the coordinate in both cases; an audit can tell them apart.
+ */
+export type LabelProvenance =
+  /** The platform's reverse geocoder named this coordinate. */
+  | 'reverse-geocoded'
+  /** A device fix the geocoder could not name. */
+  | 'device-unlabelled'
+  /** Read from the bundled GeoNames catalogue, with the identity fields to prove it. */
+  | 'geonames'
+  /** The user's own words. Never verified, and never presented as though it were. */
+  | 'user-supplied'
+  /** A typed coordinate the user did not name. The numbers are the label. */
+  | 'coordinates';
+
+export type SavedPrayerLocationV3 =
   | {
-      readonly version: 2;
-      readonly mode: 'manual';
+      readonly version: 3;
+      readonly mode: 'device';
       readonly coordinate: Coordinate;
-      readonly label: string | null;
-      /** A manual label is always the user's own words, and is never verified. */
-      readonly labelProvenance: 'user-supplied';
       readonly timezone: string;
+      readonly label: string | null;
+      readonly labelProvenance: 'reverse-geocoded' | 'device-unlabelled';
+      readonly resolvedAt: string;
+      /**
+       * Reported horizontal accuracy of the fix, in metres, or `null` where the platform gave none.
+       *
+       * Device-only by construction. The acceptance policy compares it against a new fix to decide
+       * whether a stationary phone's jitter should rewrite storage; on a city or a typed coordinate
+       * there is no such thing as accuracy, and a field that could hold one would invite a comparison
+       * that has no meaning.
+       */
+      readonly accuracyMetres: number | null;
+    }
+  | {
+      readonly version: 3;
+      readonly mode: 'city';
+      readonly coordinate: Coordinate;
+      readonly timezone: string;
+      /** Never null: a city selected from the catalogue always has the catalogue's own name. */
+      readonly label: string;
+      readonly labelProvenance: 'geonames';
+      /** The catalogue's identity for this settlement. Lets a save be re-validated against it. */
+      readonly geonamesId: number;
+      /** ISO 3166-1 alpha-2, as GeoNames records it. */
+      readonly countryCode: string;
+      /** First administrative division, or `null` where the source has none. */
+      readonly admin1: string | null;
       readonly resolvedAt: string;
     }
   | {
-      readonly version: 2;
-      readonly mode: 'device';
+      readonly version: 3;
+      readonly mode: 'coordinates';
       readonly coordinate: Coordinate;
-      readonly label: string | null;
-      /** A device label comes from the platform geocoder, or the geocoder had nothing. */
-      readonly labelProvenance: 'reverse-geocoded' | 'unavailable';
       readonly timezone: string;
+      readonly label: string | null;
+      readonly labelProvenance: 'user-supplied' | 'coordinates';
       readonly resolvedAt: string;
-      readonly accuracyMetres: number | null;
     };
 
-/** What a caller supplies. The timezone is resolved by the boundary, never passed in. */
+/**
+ * Whether the active location is one the **user chose**, and must therefore survive a device refresh.
+ *
+ * ── The one predicate, replacing every scattered `mode === 'manual'` ────────
+ * This is the question the old comparison was really asking, and spelling it as a mode comparison at
+ * a dozen call sites made it a question each site answered for itself. Adding `coordinates` beside
+ * `city` in V3 would have meant finding all of them and remembering that both count — exactly the
+ * edit that gets 11 of 12 sites right and silently lets a GPS fix overwrite somebody's saved city on
+ * the twelfth.
+ *
+ * Deliberately **not** a stored boolean. A field would be a second representation of a fact `mode`
+ * already determines, which is the contradiction V2 was rewritten to remove; this is a function *of*
+ * the discriminant, so it cannot disagree with it.
+ */
+export function isUserSelectedLocation(location: { readonly mode: PrayerLocationMode }): boolean {
+  return location.mode === 'city' || location.mode === 'coordinates';
+}
+
+/**
+ * What a caller supplies.
+ *
+ * The timezone is resolved by the boundary and never passed in, and `labelProvenance` is *derived*
+ * rather than accepted — both for the same reason: a caller able to supply either could supply one
+ * that contradicts the rest of the record, and validating a passed-in value against the fields it
+ * must agree with is the same work as deriving it.
+ */
 export type PrayerLocationCandidate =
-  | {
-      readonly mode: 'manual';
-      readonly coordinate: Coordinate;
-      readonly label: string | null;
-      readonly resolvedAt: string;
-    }
   | {
       readonly mode: 'device';
       readonly coordinate: Coordinate;
       readonly label: string | null;
       readonly resolvedAt: string;
       readonly accuracyMetres: number | null;
+    }
+  | {
+      readonly mode: 'city';
+      readonly coordinate: Coordinate;
+      readonly label: string;
+      readonly geonamesId: number;
+      readonly countryCode: string;
+      readonly admin1: string | null;
+      readonly resolvedAt: string;
+    }
+  | {
+      readonly mode: 'coordinates';
+      readonly coordinate: Coordinate;
+      readonly label: string | null;
+      readonly resolvedAt: string;
     };
 
 export type CommitOptions = {
   /**
    * Why this write is happening.
    *
-   * `change` is a real location change and publishes a new revision. `migration` rewrites an
-   * existing location into the current schema — the place has not moved, so subscribers have nothing
-   * to recompute and the revision must not move either.
+   * `change` is a real location change and publishes a new revision. `migration` rewrites an existing
+   * location into the current schema — the place has not moved, so subscribers have nothing to
+   * recompute, the revision must not move, and no notification reconciliation may be triggered.
    */
   readonly reason?: 'change' | 'migration';
 };
@@ -93,14 +186,15 @@ export type CommitOptions = {
 export type CommitResult =
   | {
       readonly kind: 'committed';
-      readonly record: SavedPrayerLocationV2;
+      readonly record: SavedPrayerLocationV3;
       readonly published: boolean;
     }
   /** Nothing was written because the candidate is already exactly what is stored. */
-  | { readonly kind: 'unchanged'; readonly record: SavedPrayerLocationV2 }
+  | { readonly kind: 'unchanged'; readonly record: SavedPrayerLocationV3 }
   | {
       readonly kind: 'rejected';
-      readonly reason: 'invalid-coordinate' | 'timezone-unresolved' | 'write-failed';
+      readonly reason:
+        'invalid-coordinate' | 'timezone-unresolved' | 'incomplete-city' | 'write-failed';
     };
 
 function isUsableCoordinate(value: unknown): value is Coordinate {
@@ -117,18 +211,40 @@ function isUsableCoordinate(value: unknown): value is Coordinate {
 }
 
 /**
+ * Whether a stamp is a moment rather than a string that merely occupies the field.
+ *
+ * Validated at the boundary rather than where it is read. Everything downstream measures the
+ * location's *age* from this — the Hijri date refuses to state a day past a ceiling, the acceptance
+ * policy protects a recent fix — and an unparseable stamp read as age zero would disable exactly the
+ * protections that exist for stale data.
+ */
+function isUsableStamp(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value));
+}
+
+/** A GeoNames id as the catalogue emits them: a positive integer. */
+function isUsableGeonamesId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
  * **The single mutation boundary.** Nothing else writes `faithStorageKeys.location`.
  *
  * ── What it exclusively owns ────────────────────────────────────────────────
- * Validating the candidate; resolving and attaching the timezone; deciding whether the write is even
- * necessary; serialising; completing the write; incrementing the revision; publishing to
- * subscribers. Splitting any of those across call sites is how a revision gets published before the
- * bytes land, or a record gets stored with a zone that does not match its coordinate.
+ * Validating the candidate; resolving and attaching the timezone; deriving the label provenance;
+ * deciding whether the write is even necessary; serialising; completing the write; incrementing the
+ * revision; publishing to subscribers. Splitting any of those across call sites is how a revision
+ * gets published before the bytes land, or a record gets stored with a zone that does not match its
+ * coordinate.
  *
  * ── The ordering guarantee ──────────────────────────────────────────────────
  * The revision is incremented **after** `writeJson` resolves, never before. A subscriber woken by a
- * revision always re-reads storage that already holds the new value; a failed write publishes
- * nothing at all.
+ * revision always re-reads storage that already holds the new value; a failed write publishes nothing
+ * at all, so a save that could not land leaves every screen on the last record that did.
  */
 export async function commitActivePrayerLocation(
   candidate: PrayerLocationCandidate,
@@ -137,55 +253,50 @@ export async function commitActivePrayerLocation(
   if (!isUsableCoordinate(candidate.coordinate)) {
     return { kind: 'rejected', reason: 'invalid-coordinate' };
   }
+  if (!isUsableStamp(candidate.resolvedAt)) {
+    return { kind: 'rejected', reason: 'invalid-coordinate' };
+  }
 
   /*
-    Resolved here rather than accepted from the caller. The zone is a *function* of the coordinate,
-    so letting a caller supply one would be letting it supply a contradiction — and validating a
-    passed-in zone against the coordinate is the same work as deriving it.
+    A city is only a city if it carries the identity that makes it one. Storing a `city` record whose
+    id or country is missing would produce a mode that claims catalogue provenance it cannot support
+    — the save could never be re-validated, and the GeoNames credit shown beside it would be a claim
+    about data that is not there.
+  */
+  if (
+    candidate.mode === 'city' &&
+    (!isUsableGeonamesId(candidate.geonamesId) ||
+      !isNonEmptyString(candidate.countryCode) ||
+      !isNonEmptyString(candidate.label))
+  ) {
+    return { kind: 'rejected', reason: 'incomplete-city' };
+  }
+
+  /*
+    Resolved here rather than accepted from the caller. The zone is a *function* of the coordinate, so
+    letting a caller supply one would be letting it supply a contradiction.
   */
   const timezone = timeZoneForCoordinate(candidate.coordinate);
   if (timezone === null) {
     return { kind: 'rejected', reason: 'timezone-unresolved' };
   }
 
-  const record: SavedPrayerLocationV2 =
-    candidate.mode === 'manual'
-      ? {
-          version: PRAYER_LOCATION_SCHEMA_VERSION,
-          mode: 'manual',
-          coordinate: candidate.coordinate,
-          label: candidate.label,
-          labelProvenance: 'user-supplied',
-          timezone,
-          resolvedAt: candidate.resolvedAt,
-        }
-      : {
-          version: PRAYER_LOCATION_SCHEMA_VERSION,
-          mode: 'device',
-          coordinate: candidate.coordinate,
-          label: candidate.label,
-          // Provenance follows whether the geocoder actually produced a name.
-          labelProvenance: candidate.label === null ? 'unavailable' : 'reverse-geocoded',
-          timezone,
-          resolvedAt: candidate.resolvedAt,
-          accuracyMetres: candidate.accuracyMetres,
-        };
+  const record = buildRecord(candidate, timezone);
 
   /*
     An equivalent snapshot writes nothing and publishes nothing. `resolvedAt` is excluded from the
     comparison deliberately: a re-resolution of the same place at the same accuracy is not a change
     anything downstream can act on, and treating it as one would reschedule 35 notifications every
     time a screen opened.
-  */
-  /*
+
     ── Deliberately the *non-migrating* read ─────────────────────────────────
     `readActivePrayerLocation` migrates a legacy record by calling this function, so using it here
     would recurse: commit → read → migrate → commit. It did, and the suite exhausted the heap. The
     equivalence check only ever needs to compare against an already-current record, so it reads the
-    raw V2 value and treats anything else as "not equivalent" — which is correct, because a legacy
-    record genuinely is not equal to the V2 one replacing it.
+    raw V3 value and treats anything else as "not equivalent" — which is correct, because a legacy
+    record genuinely is not equal to the V3 one replacing it.
   */
-  const existing = await readRawV2();
+  const existing = await readRawV3();
   if (existing !== null && isEquivalent(existing, record)) {
     return { kind: 'unchanged', record: existing };
   }
@@ -200,21 +311,69 @@ export async function commitActivePrayerLocation(
   if (publish) {
     markActiveLocationChanged();
   }
+  lastValidSnapshot = record;
   return { kind: 'committed', record, published: publish };
 }
 
-/** The stored value if — and only if — it is already a valid V2 record. Never migrates, never writes. */
-async function readRawV2(): Promise<SavedPrayerLocationV2 | null> {
+/**
+ * The stored shape for a validated candidate.
+ *
+ * Provenance is derived here and only here. `device` with a label came from the geocoder; without
+ * one, the geocoder had nothing. A typed coordinate the user named is `user-supplied` — their own
+ * words, marked as such — and one they did not name is `coordinates`, where the numbers are the whole
+ * of what is known.
+ */
+function buildRecord(candidate: PrayerLocationCandidate, timezone: string): SavedPrayerLocationV3 {
+  switch (candidate.mode) {
+    case 'device':
+      return {
+        version: PRAYER_LOCATION_SCHEMA_VERSION,
+        mode: 'device',
+        coordinate: candidate.coordinate,
+        timezone,
+        label: candidate.label,
+        labelProvenance: candidate.label === null ? 'device-unlabelled' : 'reverse-geocoded',
+        resolvedAt: candidate.resolvedAt,
+        accuracyMetres: candidate.accuracyMetres,
+      };
+    case 'city':
+      return {
+        version: PRAYER_LOCATION_SCHEMA_VERSION,
+        mode: 'city',
+        coordinate: candidate.coordinate,
+        timezone,
+        label: candidate.label,
+        labelProvenance: 'geonames',
+        geonamesId: candidate.geonamesId,
+        countryCode: candidate.countryCode,
+        admin1: candidate.admin1,
+        resolvedAt: candidate.resolvedAt,
+      };
+    default:
+      return {
+        version: PRAYER_LOCATION_SCHEMA_VERSION,
+        mode: 'coordinates',
+        coordinate: candidate.coordinate,
+        timezone,
+        label: candidate.label,
+        labelProvenance: candidate.label === null ? 'coordinates' : 'user-supplied',
+        resolvedAt: candidate.resolvedAt,
+      };
+  }
+}
+
+/** The stored value if — and only if — it is already a valid V3 record. Never migrates, never writes. */
+async function readRawV3(): Promise<SavedPrayerLocationV3 | null> {
   const raw = await readJson<unknown>(
     faithStorageKeys.location,
     null,
     (_value): _value is unknown => true,
   );
-  return isSavedV2(raw) ? raw : null;
+  return isSavedV3(raw) ? raw : null;
 }
 
 /** Whether two records describe the same active location, ignoring when it was resolved. */
-function isEquivalent(a: SavedPrayerLocationV2, b: SavedPrayerLocationV2): boolean {
+function isEquivalent(a: SavedPrayerLocationV3, b: SavedPrayerLocationV3): boolean {
   if (a.mode !== b.mode || a.timezone !== b.timezone || a.label !== b.label) {
     return false;
   }
@@ -227,135 +386,264 @@ function isEquivalent(a: SavedPrayerLocationV2, b: SavedPrayerLocationV2): boole
   if (a.mode === 'device' && b.mode === 'device') {
     return a.accuracyMetres === b.accuracyMetres;
   }
+  /*
+    Two city records at the same coordinate with different GeoNames ids are different selections, not
+    the same one — duplicate names at near-identical coordinates exist in the catalogue, and treating
+    them as equivalent would silently discard the user's actual pick.
+  */
+  if (a.mode === 'city' && b.mode === 'city') {
+    return (
+      a.geonamesId === b.geonamesId && a.countryCode === b.countryCode && a.admin1 === b.admin1
+    );
+  }
   return true;
 }
 
-/** A stored value that is already a valid V2 record. */
-function isSavedV2(value: unknown): value is SavedPrayerLocationV2 {
+/** A stored value that is already a valid V3 record. */
+export function isSavedV3(value: unknown): value is SavedPrayerLocationV3 {
   if (!isRecord(value) || value.version !== PRAYER_LOCATION_SCHEMA_VERSION) {
     return false;
   }
   if (!isUsableCoordinate(value.coordinate) || !hasString(value, 'timezone')) {
     return false;
   }
-  if (!hasString(value, 'resolvedAt')) {
+  if (!isUsableStamp(value.resolvedAt)) {
     return false;
   }
-  const label = value.label;
-  if (label !== null && typeof label !== 'string') {
-    return false;
+
+  switch (value.mode) {
+    case 'device': {
+      const label = value.label;
+      if (label !== null && typeof label !== 'string') {
+        return false;
+      }
+      const accuracy = value.accuracyMetres;
+      const provenanceAgrees =
+        label === null
+          ? value.labelProvenance === 'device-unlabelled'
+          : value.labelProvenance === 'reverse-geocoded';
+      return (
+        provenanceAgrees &&
+        (accuracy === null || (typeof accuracy === 'number' && Number.isFinite(accuracy)))
+      );
+    }
+    case 'city':
+      return (
+        isNonEmptyString(value.label) &&
+        value.labelProvenance === 'geonames' &&
+        isUsableGeonamesId(value.geonamesId) &&
+        isNonEmptyString(value.countryCode) &&
+        (value.admin1 === null || typeof value.admin1 === 'string')
+      );
+    case 'coordinates': {
+      const label = value.label;
+      if (label !== null && typeof label !== 'string') {
+        return false;
+      }
+      /*
+        Provenance must agree with the label's presence. A `coordinates` record claiming
+        `user-supplied` with no label is a record asserting the user named a place and then not
+        carrying the name — unreadable, so refused.
+      */
+      return label === null
+        ? value.labelProvenance === 'coordinates'
+        : value.labelProvenance === 'user-supplied';
+    }
+    default:
+      return false;
   }
-  if (value.mode === 'manual') {
-    return value.labelProvenance === 'user-supplied';
-  }
-  if (value.mode === 'device') {
-    const accuracy = value.accuracyMetres;
-    return (
-      (value.labelProvenance === 'reverse-geocoded' || value.labelProvenance === 'unavailable') &&
-      (accuracy === null || typeof accuracy === 'number')
-    );
-  }
-  return false;
 }
 
 /**
- * A legacy record, migrated — or `null` when it cannot be migrated honestly.
+ * What a stored value turned out to be — the **one** parser and migration boundary.
  *
- * ── Where this fails closed, and why ────────────────────────────────────────
- * When `manual` and `mode` are both present and disagree. That pair has no correct reading, and the
- * two possible guesses have opposite consequences: read it as `device` and an automatic refresh may
- * replace a city the user chose; read it as `manual` and their location stops following them. A
- * record nobody can interpret is discarded rather than interpreted.
+ * ── Why a union rather than "returns a record or null" ──────────────────────
+ * Because the three outcomes have different consequences and only one of them is a write. A current
+ * record is used as-is. A migratable one has to be re-committed, once, through the same atomic
+ * boundary as any other write, with the revision suppressed. An unreadable one must leave storage
+ * alone and fall back to whatever this process last knew — and collapsing that into `null` alongside
+ * "nothing stored" is what would make a corrupt record indistinguishable from a fresh install, which
+ * is the difference between "keep what you had" and "offer to set a location".
+ */
+export type StoredLocationParse =
+  /** Already V3 and valid. Nothing to write. */
+  | { readonly kind: 'current'; readonly record: SavedPrayerLocationV3 }
+  /** A valid earlier record. Must be committed as V3 with `reason: 'migration'`. */
+  | { readonly kind: 'migrated'; readonly candidate: PrayerLocationCandidate }
+  /** Nothing has ever been stored. */
+  | { readonly kind: 'absent' }
+  /** Present, and not interpretable honestly. Storage is left exactly as it is. */
+  | { readonly kind: 'unreadable' };
+
+/**
+ * Interprets whatever is in the key.
+ *
+ * ── The migration table ─────────────────────────────────────────────────────
+ * | Stored                          | Becomes                                              |
+ * |---------------------------------|------------------------------------------------------|
+ * | V3, valid                       | itself — no write                                    |
+ * | V2 `device`                     | V3 `device`, `unavailable` → `device-unlabelled`     |
+ * | V2 `manual`                     | V3 `coordinates`                                     |
+ * | V1 `manual: false` / `mode: 'device'`  | V3 `device`                                   |
+ * | V1 `manual: true` / `mode: 'manual'`   | V3 `coordinates`                              |
+ * | V1 with `manual` and `mode` disagreeing | *unreadable*                                |
+ * | anything malformed, non-finite or out of range | *unreadable*                        |
+ *
+ * ── Why a V2 `manual` record can only become `coordinates` ──────────────────
+ * Because a V2 `manual` record has no GeoNames id, no country code and no region, and there is no
+ * honest way to obtain them from a coordinate. Reverse-matching the nearest catalogue city would
+ * fabricate a provenance the user never gave: somebody who typed a coordinate five kilometres outside
+ * Dubai would find their location relabelled "Dubai" with a source credit attached, and every screen
+ * would then present their own typed guess as catalogue-verified data. `coordinates` is what the
+ * record actually is, and the migration says so.
+ *
+ * ── Why contradictions fail closed rather than picking a side ───────────────
+ * A V1 record with `manual: true, mode: 'device'` has no correct reading, and the two guesses have
+ * opposite consequences: read it as device and an automatic refresh may replace a place the user
+ * chose; read it as user-selected and their location stops following them. A record nobody can
+ * interpret is discarded rather than interpreted.
+ */
+export function parseStoredPrayerLocation(value: unknown): StoredLocationParse {
+  if (value === null || value === undefined) {
+    return { kind: 'absent' };
+  }
+  if (isSavedV3(value)) {
+    return { kind: 'current', record: value };
+  }
+  const candidate = migrateLegacyRecord(value);
+  return candidate === null ? { kind: 'unreadable' } : { kind: 'migrated', candidate };
+}
+
+/**
+ * A pre-V3 record as a V3 candidate, or `null` when it cannot be migrated honestly.
+ *
+ * Exported for the fixture suite, which drives every historical shape through it directly — a
+ * migration is only trustworthy if the shapes it refuses are as well covered as the shapes it
+ * accepts, and asserting that through storage would test `readJson` rather than this table.
  */
 export function migrateLegacyRecord(value: unknown): PrayerLocationCandidate | null {
   if (!isRecord(value) || !isUsableCoordinate(value.coordinate)) {
     return null;
   }
-  if (!hasString(value, 'resolvedAt')) {
+  if (!isUsableStamp(value.resolvedAt)) {
     return null;
   }
 
+  const coordinate = value.coordinate;
+  const resolvedAt = value.resolvedAt;
+  const label = isNonEmptyString(value.label) ? value.label : null;
+
+  /*
+    A V2 record is already unambiguous — `mode` is its only mode field — so it is read directly rather
+    than through the V1 reconciliation below. `manual` becomes `coordinates`; see the note above for
+    why it cannot become `city`.
+  */
+  if (value.version === 2 && (value.mode === 'device' || value.mode === 'manual')) {
+    return value.mode === 'manual'
+      ? { mode: 'coordinates', coordinate, label, resolvedAt }
+      : {
+          mode: 'device',
+          coordinate,
+          label,
+          resolvedAt,
+          accuracyMetres: readAccuracy(value.accuracyMetres),
+        };
+  }
+
+  /*
+    V1 and anything older: `manual: boolean`, `mode`, or both. Both present and disagreeing is the one
+    case that fails closed.
+  */
   const legacyManual = value.manual;
   const legacyMode = value.mode;
   const hasManual = typeof legacyManual === 'boolean';
   const hasMode = legacyMode === 'manual' || legacyMode === 'device';
 
+  if (!hasManual && !hasMode) {
+    /*
+      Neither field. Nothing in the record says where its authority came from, and defaulting would be
+      a guess with the same opposite consequences as a contradiction.
+    */
+    return null;
+  }
   if (hasManual && hasMode) {
     const impliedByManual = legacyManual === true ? 'manual' : 'device';
     if (impliedByManual !== legacyMode) {
-      // Contradictory. Fail closed — see the note above.
       return null;
     }
   }
-  const mode: PrayerLocationMode = hasMode
-    ? (legacyMode as PrayerLocationMode)
-    : hasManual && legacyManual === true
-      ? 'manual'
-      : 'device';
 
-  const label = typeof value.label === 'string' && value.label.length > 0 ? value.label : null;
-  const coordinate = value.coordinate;
-  const resolvedAt = value.resolvedAt as string;
+  const userSelected = hasMode ? legacyMode === 'manual' : legacyManual === true;
+  return userSelected
+    ? { mode: 'coordinates', coordinate, label, resolvedAt }
+    : {
+        mode: 'device',
+        coordinate,
+        label,
+        resolvedAt,
+        accuracyMetres: readAccuracy(value.accuracyMetres),
+      };
+}
 
-  if (mode === 'manual') {
-    return { mode: 'manual', coordinate, label, resolvedAt };
-  }
-  const accuracy = value.accuracyMetres;
-  return {
-    mode: 'device',
-    coordinate,
-    label,
-    resolvedAt,
-    accuracyMetres: typeof accuracy === 'number' && Number.isFinite(accuracy) ? accuracy : null,
-  };
+/** A stored accuracy, or `null` for anything that is not a finite number. */
+function readAccuracy(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 /**
  * The last record that was successfully read or committed in this process.
  *
  * ── Why a runtime snapshot exists at all ────────────────────────────────────
- * The brief's recovery rule: if a stored record cannot be migrated into a complete valid one, the
- * app should retain the last valid snapshot rather than losing the user's location. Storage is still
- * the source of truth — this is only what the process already knew, so a corrupt write does not blank
- * a working screen mid-session.
+ * The recovery rule: if a stored record cannot be migrated into a complete valid one, the app retains
+ * the last valid snapshot rather than losing the user's location. Storage is still the source of
+ * truth — this is only what the process already knew, so a corrupt write does not blank a working
+ * screen mid-session.
  */
-let lastValidSnapshot: SavedPrayerLocationV2 | null = null;
+let lastValidSnapshot: SavedPrayerLocationV3 | null = null;
 
 /**
- * The active location, migrating a legacy record exactly once.
+ * The active location, migrating a pre-V3 record exactly once.
  *
  * ── Why a read is allowed to write ──────────────────────────────────────────
  * Only on the one read that finds a legacy record. It goes through the same mutation boundary, with
  * `reason: 'migration'` so no revision is published — the place has not moved, only its
- * representation — and every subsequent read finds V2 and writes nothing.
+ * representation — and every subsequent read finds V3 and writes nothing.
+ *
+ * That suppression is also what keeps a migration from reconciling notifications twice. Every
+ * reconciliation is triggered by a revision change; a migration that published one would rebuild the
+ * whole alert schedule on the first launch after an upgrade, for a location that had not moved a
+ * metre.
  */
-export async function readActivePrayerLocation(): Promise<SavedPrayerLocationV2 | null> {
+export async function readActivePrayerLocation(): Promise<SavedPrayerLocationV3 | null> {
   const raw = await readJson<unknown>(
     faithStorageKeys.location,
     null,
     (_value): _value is unknown => true,
   );
-  if (raw === null || raw === undefined) {
-    return null;
-  }
 
-  if (isSavedV2(raw)) {
-    lastValidSnapshot = raw;
-    return raw;
+  const parsed = parseStoredPrayerLocation(raw);
+  switch (parsed.kind) {
+    case 'current':
+      lastValidSnapshot = parsed.record;
+      return parsed.record;
+    case 'absent':
+      /*
+        Nothing stored is not a failure and must not resurrect a snapshot: a cleared location has to
+        read as cleared, or "reset Faith data" would appear to do nothing until the process restarted.
+      */
+      return null;
+    case 'unreadable':
+      // Keep whatever this process last knew to be valid. Storage is left untouched.
+      return lastValidSnapshot;
+    default: {
+      const committed = await commitActivePrayerLocation(parsed.candidate, { reason: 'migration' });
+      if (committed.kind === 'rejected') {
+        return lastValidSnapshot;
+      }
+      lastValidSnapshot = committed.record;
+      return committed.record;
+    }
   }
-
-  const candidate = migrateLegacyRecord(raw);
-  if (candidate === null) {
-    // Unreadable or contradictory. Keep whatever this process last knew to be valid.
-    return lastValidSnapshot;
-  }
-
-  const committed = await commitActivePrayerLocation(candidate, { reason: 'migration' });
-  if (committed.kind === 'rejected') {
-    return lastValidSnapshot;
-  }
-  lastValidSnapshot = committed.record;
-  return committed.record;
 }
 
 /** Forgets the location. Used when the user clears it, and by the Faith data reset. */
