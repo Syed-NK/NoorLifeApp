@@ -7,7 +7,10 @@ import {
   greatCircleDistanceKm,
   KAABA,
   qiblaBearing,
+  qiblaMode,
+  smoothHeading,
   type CompassAccuracy,
+  type QiblaMode,
 } from '../data/qibla/qibla';
 import { useActiveLocationRevision } from '../data/location/active-location';
 import { useFaithRepositories } from '../di/faith-repository-context';
@@ -48,6 +51,13 @@ export type UseQibla = {
   readonly hasCompass: boolean;
   /** True until the first reading or the capability probe settles. */
   readonly probing: boolean;
+  /**
+   * Which of the two honest states the screen must render.
+   *
+   * Resolved here rather than in the screen so the decision is made once, from the same values the
+   * dial is drawn from — see `qiblaMode`.
+   */
+  readonly mode: QiblaMode;
 };
 
 export function useQibla(): UseQibla {
@@ -119,14 +129,26 @@ export function useQibla(): UseQibla {
         setProbing(false);
         setReportedAccuracy(reading.accuracy);
         /**
-         * True north only.
+         * True north only, and smoothed on the circle.
          *
          * `trueHeading` is `null` when the platform could not resolve declination, and magnetic
          * north is **not** an acceptable substitute: the two differ by up to ~20° in populated parts
          * of the world, and the Qibla bearing is measured from true north. Rotating a dial by a
          * magnetic heading would point the arrow confidently into the wrong quarter of the sky.
+         *
+         * `null` is passed straight through rather than smoothed toward: there is nothing to average
+         * a missing reading with, and holding the last good heading would leave a stale arrow moving
+         * as though the sensor were still reporting.
+         *
+         * The smoothing runs against the *previous smoothed* value, which is what makes it a filter
+         * rather than a one-step blend, and it happens here rather than in the screen so the value
+         * the guidance is computed from is the same one the marker is drawn at. Two smoothers — one
+         * for the arrow, one for the instruction — is how a dial ends up saying "facing the Qibla"
+         * while pointing somewhere else. See `smoothHeading` for why it is done in vector space.
          */
-        setHeading(reading.trueHeading);
+        setHeading((current) =>
+          reading.trueHeading === null ? null : smoothHeading(current, reading.trueHeading),
+        );
       });
     })();
 
@@ -136,11 +158,13 @@ export function useQibla(): UseQibla {
     };
   }, [location]);
 
+  const accuracy = compassAccuracy(reportedAccuracy);
   return {
     target,
     heading,
-    accuracy: compassAccuracy(reportedAccuracy),
+    accuracy,
     hasCompass,
     probing,
+    mode: qiblaMode({ hasCompass, heading, accuracy }),
   };
 }

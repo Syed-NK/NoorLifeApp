@@ -10,13 +10,14 @@ import { useReducedMotion } from '@shared/utils/a11y';
 
 import { FaithSectionHero } from '../components/faith-section-hero';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
-import { isUserSelectedLocation } from '../data/prayer-times.repository';
 import {
   calibrationAdvice,
   guidanceLabel,
+  locationAuthorityLabel,
   qiblaGuidance,
   relativeBearing,
   type CompassAccuracy,
+  type QiblaMode,
 } from '../data/qibla/qibla';
 import { faithHeroImages } from '../faith-hero-images';
 import { faithNavKeys } from '../faith-routes';
@@ -52,7 +53,7 @@ export function QiblaScreen() {
 /** Split out so it renders inside the scaffold's `ModuleProvider`. */
 function QiblaBody() {
   const { dp } = useModuleMetrics();
-  const { target, heading, accuracy, hasCompass, probing } = useQibla();
+  const { target, heading, accuracy, mode, probing } = useQibla();
   const permission = useLocationPermission(target.reload);
   const advice = permissionAdvice(permission.outcome);
 
@@ -93,7 +94,7 @@ function QiblaBody() {
             target={value}
             heading={heading}
             accuracy={accuracy}
-            hasCompass={hasCompass}
+            mode={mode}
             probing={probing}
           />
         )}
@@ -102,41 +103,66 @@ function QiblaBody() {
   );
 }
 
+/** What the bearing-only state says, and why it is in that state. One wording per reason. */
+function bearingOnlyMessage(
+  reason: Extract<QiblaMode, { kind: 'bearing-only' }>['reason'],
+): string {
+  switch (reason) {
+    case 'no-compass':
+      return 'This device has no compass, so NoorLife cannot show which way you are facing. The bearing below is measured from true north — use it with a separate compass.';
+    case 'unusable-accuracy':
+      return 'The compass is not reporting a heading NoorLife can trust, so the dial is showing the bearing rather than tracking your phone. The bearing itself is unaffected.';
+    case 'no-heading':
+      return 'No compass heading has arrived, so the dial is showing the bearing from north rather than tracking your phone.';
+  }
+}
+
 function QiblaView({
   target,
   heading,
   accuracy,
-  hasCompass,
+  mode,
   probing,
 }: {
   readonly target: QiblaTarget;
   readonly heading: number | null;
   readonly accuracy: CompassAccuracy;
-  readonly hasCompass: boolean;
+  readonly mode: QiblaMode;
   readonly probing: boolean;
 }) {
   const { dp } = useModuleMetrics();
 
   const bearing = Math.round(target.bearing);
-  const guidance = heading === null ? null : qiblaGuidance(target.bearing, heading);
-  const calibration = hasCompass ? calibrationAdvice(accuracy) : null;
+  /*
+    ── Guidance belongs to `live` alone ──────────────────────────────────────
+    "Turn left 24°" is an instruction about the room, and it is only meaningful when a heading is
+    being tracked. Deriving it from a heading the mode has already judged untrustworthy is how a
+    screen tells somebody to turn based on a reading the platform disowned.
+  */
+  const guidance =
+    mode.kind === 'live' && heading !== null ? qiblaGuidance(target.bearing, heading) : null;
+  /*
+    Calibration advice is for a compass that is working but imprecise. When accuracy is unusable the
+    mode has already dropped to bearing-only and says so in full, so a second banner would be the
+    same news twice.
+  */
+  const calibration = mode.kind === 'live' ? calibrationAdvice(accuracy) : null;
 
   return (
     <View style={{ rowGap: dp(moduleLayout.cardGap) }}>
       {/*
-        ── The no-compass state ────────────────────────────────────────────
-        An emulator without a virtual magnetometer, and some low-cost handsets, genuinely cannot
-        report a heading. The bearing below is still correct and still usable with a separate
-        compass, so the screen keeps it and says plainly what is missing — rather than drawing a
-        needle that will never move.
+        ── One banner, naming the actual reason ────────────────────────────
+        This replaced a `hasCompass` banner that could only describe one of the three ways a heading
+        goes missing. A device with a compass reporting garbage got no explanation at all, and the
+        dial stayed live on readings the platform had disowned.
       */}
-      {hasCompass ? null : (
+      {mode.kind === 'bearing-only' ? (
         <ModuleStatusBanner
-          tone="info"
-          message="This device has no compass, so NoorLife cannot show which way you are facing. The bearing below is measured from true north."
-          testID="faith-qibla-no-compass"
+          tone={mode.reason === 'no-compass' ? 'info' : 'warning'}
+          message={bearingOnlyMessage(mode.reason)}
+          testID="faith-qibla-bearing-only"
         />
-      )}
+      ) : null}
 
       {calibration === null ? null : (
         <ModuleStatusBanner tone="warning" message={calibration} testID="faith-qibla-calibration" />
@@ -144,9 +170,26 @@ function QiblaView({
 
       <ModuleCard testID="faith-qibla-dial">
         <View style={{ alignItems: 'center', rowGap: dp(12) }}>
+          {/*
+            The mode, stated on the dial itself rather than only in a banner above it. A user who
+            scrolls past the banner still has to be able to tell a compass from a diagram, and this
+            is the label that survives a screenshot.
+          */}
+          <ModuleText
+            token="caption"
+            align="center"
+            color={moduleNeutrals.textSecondary}
+            testID="faith-qibla-mode"
+          >
+            {mode.kind === 'live'
+              ? 'Live compass'
+              : 'Bearing only — dial does not track your phone'}
+          </ModuleText>
+
           <QiblaDial
             bearing={target.bearing}
             heading={heading}
+            live={mode.kind === 'live'}
             aligned={guidance?.kind === 'aligned'}
           />
 
@@ -156,11 +199,23 @@ function QiblaView({
             re-focusing anything.
           */}
           <View accessible accessibilityLiveRegion="polite" testID="faith-qibla-guidance">
+            {/*
+              ── "Finding your heading…" is only true while it is still being looked for ──
+              On the emulator this line read "Finding your heading…" underneath a banner that had
+              already concluded the compass could not be trusted — two statements about the same
+              sensor, one of them stale, and the optimistic one on top. `probing` alone was the wrong
+              condition: it stays true until a *reading* arrives, which never happens on a device
+              whose compass has been ruled out.
+
+              Waiting is now only claimed for the one reason that is genuinely transient — no reading
+              yet, from a compass that exists and is trusted. `no-compass` and `unusable-accuracy` are
+              settled answers, so they state the bearing instead.
+            */}
             <ModuleText token="cardTitle" align="center" numberOfLines={2}>
               {guidance === null
-                ? probing
+                ? probing && mode.kind === 'bearing-only' && mode.reason === 'no-heading'
                   ? 'Finding your heading…'
-                  : 'Heading unavailable'
+                  : `Qibla is ${bearing}° from true north`
                 : guidanceLabel(guidance)}
             </ModuleText>
           </View>
@@ -168,10 +223,15 @@ function QiblaView({
           <ModuleText token="caption" align="center" numberOfLines={2}>
             {`${bearing}° from true north • ${Math.round(target.distanceKm).toLocaleString()} km to Makkah`}
           </ModuleText>
-          <ModuleText token="caption" align="center" numberOfLines={2}>
-            {isUserSelectedLocation(target.location)
-              ? `Calculated for ${target.location.label}, which you chose`
-              : `Calculated for ${target.location.label}`}
+          {/*
+            ── Where the bearing was calculated *from* ─────────────────────
+            The place and the authority behind it, because they answer different questions. "Dubai"
+            says where; "Selected city" says NoorLife did not measure it — which is what a user needs
+            to know before trusting an arrow while standing somewhere else. The label is the stored
+            one and is never invented; `locationAuthorityLabel` is total over the three V3 modes.
+          */}
+          <ModuleText token="caption" align="center" numberOfLines={2} testID="faith-qibla-source">
+            {`Calculated for ${target.location.label} • ${locationAuthorityLabel(target.location.mode)}`}
           </ModuleText>
         </View>
       </ModuleCard>
@@ -197,10 +257,13 @@ function QiblaView({
 function QiblaDial({
   bearing,
   heading,
+  live,
   aligned,
 }: {
   readonly bearing: number;
   readonly heading: number | null;
+  /** True only when a trusted heading is tracking. Decides what the dial *is*. */
+  readonly live: boolean;
   readonly aligned: boolean;
 }) {
   const theme = useModuleTheme();
@@ -215,7 +278,7 @@ function QiblaDial({
    * unavailable — which is the same information the old screen gave, presented as the fallback it is
    * rather than as the feature.
    */
-  const raw = heading === null ? bearing : relativeBearing(bearing, heading);
+  const raw = live && heading !== null ? relativeBearing(bearing, heading) : bearing;
   const angle = reduceMotion ? Math.round(raw / 5) * 5 : Math.round(raw);
 
   return (

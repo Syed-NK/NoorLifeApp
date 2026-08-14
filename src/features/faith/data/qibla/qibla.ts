@@ -1,4 +1,4 @@
-import type { Coordinate } from '../prayer-times.repository';
+import type { Coordinate, PrayerLocationMode } from '../prayer-times.repository';
 
 /**
  * The direction of prayer, and the guidance that turns a bearing into an instruction.
@@ -148,6 +148,129 @@ export function compassAccuracy(reported: number): CompassAccuracy {
     return 'good';
   }
   return reported >= 2 ? 'low' : 'unusable';
+}
+
+/**
+ * Which of the two honest operating states the screen is in.
+ *
+ * ── Why this is a named decision and not an inline `heading === null` ───────
+ * Because the difference is what the user is being asked to believe. In `live` the dial is a compass:
+ * the marker points at the Kaaba *in the room*, and turning the phone moves it. In `bearing-only`
+ * there is no heading at all, so the dial is a diagram — a north-up rose with the Qibla drawn on it,
+ * which is exactly as useful as a printed bearing and no more.
+ *
+ * Drawing the second as though it were the first is the failure this type exists to prevent: a
+ * marker that sits still while the phone turns, with nothing on screen saying why, reads as a broken
+ * compass rather than as a correct bearing.
+ */
+export type QiblaMode =
+  /** A trusted heading is arriving. The dial tracks the room. */
+  | { readonly kind: 'live' }
+  /** No usable heading. The dial is a north-up diagram, and says so. */
+  | {
+      readonly kind: 'bearing-only';
+      readonly reason: 'no-compass' | 'no-heading' | 'unusable-accuracy';
+    };
+
+/**
+ * Which mode to render, from what the device actually reported.
+ *
+ * ── `unusable` accuracy is bearing-only, not a warned live dial ─────────────
+ * A compass reporting accuracy 0 or 1 is not a compass with a caveat; it is a heading nobody should
+ * rotate an arrow by. The previous screen kept the dial live and added a banner, which left the
+ * marker swinging confidently on readings the platform had already disowned. Demoting it to the
+ * diagram is the honest response, and the bearing underneath is unaffected.
+ */
+export function qiblaMode(input: {
+  readonly hasCompass: boolean;
+  readonly heading: number | null;
+  readonly accuracy: CompassAccuracy;
+}): QiblaMode {
+  if (!input.hasCompass) {
+    return { kind: 'bearing-only', reason: 'no-compass' };
+  }
+  if (input.accuracy === 'unusable') {
+    return { kind: 'bearing-only', reason: 'unusable-accuracy' };
+  }
+  return input.heading === null ? { kind: 'bearing-only', reason: 'no-heading' } : { kind: 'live' };
+}
+
+/**
+ * Where the active location came from, in the words the Qibla screen shows.
+ *
+ * One function so the three authorities are named identically wherever they appear, and so adding a
+ * fourth mode to `PrayerLocationMode` is a compile error here rather than a silent "Device location"
+ * on a place that is nothing of the kind.
+ */
+export function locationAuthorityLabel(mode: PrayerLocationMode): string {
+  switch (mode) {
+    case 'device':
+      return 'Device location';
+    case 'city':
+      return 'Selected city';
+    case 'coordinates':
+      return 'Coordinates';
+  }
+}
+
+/**
+ * How much of a new heading reading to accept, per update.
+ *
+ * 0.25 is a compromise measured against the two failures either end produces. At 1.0 (no smoothing)
+ * the marker trembles several degrees while the phone is held still, which is the magnetometer's own
+ * noise rendered faithfully and read by a user as the app being unsure. Below about 0.15 the marker
+ * visibly lags a deliberate turn, which is worse: the user turns, the arrow follows late, and they
+ * over-correct.
+ */
+export const HEADING_SMOOTHING = 0.25;
+
+/**
+ * One step of circular exponential smoothing, in degrees.
+ *
+ * ── Why this cannot be done on the numbers directly ─────────────────────────
+ * Headings are angles on a circle, and `previous + (next - previous) * factor` is arithmetic on a
+ * line. Crossing north, the honest readings 359° and 1° are two degrees apart; that expression reads
+ * them as 358 degrees apart and sweeps the marker the long way round the entire dial. Smoothing has
+ * to happen in the space the values actually live in, so each angle becomes a unit vector, the
+ * vectors are mixed, and `atan2` turns the result back into an angle — where 359 and 1 mix to 0.
+ *
+ * ── Why smoothing cannot manufacture alignment ──────────────────────────────
+ * The output is a weighted mean of two real readings, so it always lies on the shorter arc *between*
+ * them. It can never overshoot past `next`, never settle anywhere neither reading supports, and
+ * never arrive before the sensor does — so a marker cannot snap to the Qibla while the phone is
+ * pointing somewhere else. `qibla-smoothing` cases in the suite assert exactly that.
+ *
+ * The first reading is taken whole: with no previous value there is nothing to average, and starting
+ * from an assumed north would sweep the marker in from a heading the device never reported.
+ */
+export function smoothHeading(
+  previous: number | null,
+  next: number,
+  factor: number = HEADING_SMOOTHING,
+): number {
+  if (previous === null) {
+    return ((next % 360) + 360) % 360;
+  }
+  const previousRad = toRadians(previous);
+  const nextRad = toRadians(next);
+  const x = Math.cos(previousRad) * (1 - factor) + Math.cos(nextRad) * factor;
+  const y = Math.sin(previousRad) * (1 - factor) + Math.sin(nextRad) * factor;
+  /*
+    Two readings opposite each other cancel toward the origin, where the angle is undefined. That is
+    a 180° reversal — a genuine change rather than noise — so the new reading is taken whole rather
+    than resolved to an arbitrary direction that would be neither.
+
+    ── Why a magnitude threshold and not `x === 0 && y === 0` ────────────────
+    Because the cancellation is never exact. `cos(180°)` is exactly −1, but `sin(180°)` is
+    1.2246e-16 rather than zero, so an exact-zero guard misses and `atan2` resolves the residue to a
+    confident 90° — a marker pointing at right angles to both readings. Found by the reversal case in
+    `faith-qibla-production.test.ts`. Comparing the resultant's length against an epsilon catches the
+    near-cancellations too, which is the same failure with a fractionally smaller residue.
+  */
+  if (Math.hypot(x, y) < 1e-9) {
+    return ((next % 360) + 360) % 360;
+  }
+  return (toDegrees(Math.atan2(y, x)) + 360) % 360;
 }
 
 /** What to say about a compass that is not reporting confidently. Null when it is. */
