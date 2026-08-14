@@ -99,6 +99,23 @@ export type ModuleScaffoldProps = {
   readonly scrollRef?: RefObject<ScrollView | null>;
   readonly children: ReactNode;
   /**
+   * Overrides the breathing room reserved under the last card, in baseline dp.
+   *
+   * ── What it may and may not change ──────────────────────────────────────────
+   * Only `moduleLayout.scrollBottomInset` — the *comfort* term. The navigation bar's own height and
+   * the gesture inset underneath it are never affected, so a screen cannot use this to push content
+   * beneath the bar; the worst it can do is remove the air below content that already clears it.
+   *
+   * ── Why any screen would want to ────────────────────────────────────────────
+   * A dashboard that fits its viewport has nothing to scroll, and the breathing room then does the
+   * one thing it was never meant to: it makes the content *taller than the box* by fourteen dp, so a
+   * screen with everything visible still scrolls by fourteen. Prayer Times passes 0 once it has
+   * measured itself as compact, which is what takes its scroll range to zero. In overflow mode it
+   * passes nothing and the shared value applies, because there the padding is doing its real job —
+   * letting the last card scroll clear of the bar.
+   */
+  readonly scrollBottomInset?: number;
+  /**
    * Replaces the shared page background for this screen.
    *
    * ── Deliberately narrow ─────────────────────────────────────────────────────
@@ -147,6 +164,7 @@ export function ModuleScaffold({
   banner,
   docked,
   scrollRef,
+  scrollBottomInset,
   background,
   children,
   testID,
@@ -163,6 +181,7 @@ export function ModuleScaffold({
         fills={fills}
         docked={docked}
         scrollRef={scrollRef}
+        scrollBottomInset={scrollBottomInset}
         banner={banner}
         background={background}
         testID={testID}
@@ -190,6 +209,7 @@ function ModuleScaffoldBody({
   banner,
   docked,
   scrollRef,
+  scrollBottomInset,
   background,
   children,
   testID,
@@ -219,9 +239,12 @@ function ModuleScaffoldBody({
    * This is also where "the safe-area inset is applied exactly once" is decided: `insets.bottom`
    * reaches this screen through `moduleNavigationHeight` and through nothing else.
    */
-  const bottomInset = hasDock
-    ? dp(moduleLayout.scrollBottomInset)
-    : moduleNavigationHeight(dp, insets.bottom) + dp(moduleLayout.scrollBottomInset);
+  /*
+    The comfort term, which a screen may override — see the prop's note. Only this term: the
+    navigation height below is unconditional, so no override can put a card under the bar.
+  */
+  const comfort = dp(scrollBottomInset ?? moduleLayout.scrollBottomInset);
+  const bottomInset = hasDock ? comfort : moduleNavigationHeight(dp, insets.bottom) + comfort;
   const column = { width: contentWidth, alignSelf: 'center' as const };
 
   const content = (

@@ -55,11 +55,30 @@ const MINT = modulePalettes.faith.soft;
  * and still put the card at 110 dp inside the reference's 108–122 band.
  */
 const PICTOGRAM_DP = 62;
-const RING_DP = 78;
+/*
+  72, the floor of the reference's 72-82 dp band, down from 78.
+
+  The ring is the tallest thing in this card, so it alone sets the card's height: at 78 with 15 dp of
+  padding the card measured 107.8 dp on the emulator. At 72 with 13 it measures 98, which is where
+  the ten dp the dashboard needed came from. The stroke is unchanged and the inner disc still holds
+  two lines of countdown without crowding — 72 less two 6 dp strokes is 60 dp against 30 dp of text.
+*/
+const RING_DP = 72;
 const RING_STROKE_DP = 6;
-const CARD_PADDING_DP = 15;
+const CARD_PADDING_DP = 13;
 /** Between the marker, the copy and the ring. 9 dp, for the same reason the two above are low. */
 const COLUMN_GAP_DP = 9;
+
+/** This card's contribution to the dashboard's height. See `prayerActionMetrics` for why. */
+export const prayerNextMetrics = {
+  ringDp: RING_DP,
+  pictogramDp: PICTOGRAM_DP,
+  cardPaddingDp: CARD_PADDING_DP,
+  /** A gradient, not a `ModuleCard` — no border to count. */
+  get heightDp(): number {
+    return this.cardPaddingDp * 2 + Math.max(this.ringDp, this.pictogramDp);
+  },
+} as const;
 
 export type PrayerNextSummaryProps = {
   /** The next prayer's marker — its own approved P2 artwork, never tinted. */

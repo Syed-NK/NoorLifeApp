@@ -4,7 +4,7 @@ import { AppIcon } from '@ds/components';
 import { ModuleText } from '@features/modules/components';
 import { ModuleCard } from '@features/modules/components/module-card';
 import { useModuleTheme } from '@features/modules/module-context';
-import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
+import { moduleLayout, moduleNeutrals, moduleType } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { faithPictogramSlot } from '../faith-pictogram-assets';
@@ -37,6 +37,99 @@ export function shouldStackPrayerActions(screenWidth: number, stackTwoColumns: b
 }
 
 /**
+ * The width each title needs to render on **one line**, measured off the release build.
+ *
+ * ── Why these are measured numbers and not a guess at the ratio ─────────────
+ * The pair used to be exactly half the row each, and the emulator showed what that costs: at 411 dp
+ * the text column came to 108.2 dp, "Prayer reminders" rendered at 14.1 dp tall — one line — and
+ * "Calculation method" rendered at **28.2 dp**, which is two. A wrapped title is the tallest thing in
+ * either card, so it set the height of *both* (they stretch to match) and the row measured 57.5 dp
+ * against the 44 dp its content actually needs.
+ *
+ * The interesting part is which line wrapped. The subtitle was the suspect — "Muslim World League" is
+ * the longest string on the pair — and it was innocent: it measured 13.3 dp, one line, inside the same
+ * 108.2 dp column. Only the title overflowed, and only on the calculation card, because it is the
+ * longer of the two titles by two characters.
+ *
+ * So the correction is not "make one card bigger"; it is to give each card the width its own longest
+ * line needs. These two constants are that requirement, in dp at the 393 dp baseline:
+ *
+ *   • `REMINDERS_TITLE_DP` — 104. "Prayer reminders" is known to fit inside 108.2 dp, and 104 is the
+ *     largest value that leaves the other card enough. Any smaller and this one wraps instead, which
+ *     would move the defect rather than fix it.
+ *   • `CALCULATION_TITLE_DP` — 126. "Calculation method" is known **not** to fit inside 108.2 dp, and
+ *     it is 18 characters against the other's 16 in the same face at the same size — so it needs
+ *     about 108 × 18/16 ≈ 122 dp. 126 carries four dp of margin over that estimate, which is the
+ *     honest amount given the estimate is a ratio rather than a second measurement.
+ */
+const CALCULATION_TITLE_DP = 126;
+const REMINDERS_TITLE_DP = 104;
+
+export type PrayerActionLayout =
+  /** Side by side, at the widths each card's own longest line requires. */
+  | {
+      readonly kind: 'row';
+      readonly calculationWidth: number;
+      readonly remindersWidth: number;
+    }
+  /** One above the other, each at the full content width. */
+  | { readonly kind: 'stacked' };
+
+/**
+ * How to lay the pair out, from the width actually available and what the text actually needs.
+ *
+ * ── Deterministic, and never a device check ─────────────────────────────────
+ * Every input is a measurement: the content column the scaffold resolved, the gap between the cards,
+ * the fixed furniture inside one (padding, mark, gaps, chevron) and the two title requirements above.
+ * There is no width threshold standing in for a handset and no font-scale table.
+ *
+ * ── The stacking rule, and why it is a consequence rather than a second rule ──
+ * The pair stacks when the row cannot give **both** cards their measured minimum. That covers the
+ * narrow widths the old literal covered, and it also covers the case the literal could not see: a
+ * large OS text size, where the titles grow but the column does not. React Native applies the font
+ * scale on top of these dp values, so the requirement grows with it — dividing by the scale is what
+ * expresses "the same words, in bigger letters, need more room".
+ *
+ * Stacking rather than shrinking is the whole point: nothing here reduces a font size, and nothing
+ * ellipsises. A card that cannot hold its title beside its neighbour gets the full width instead.
+ */
+export function prayerActionLayout(input: {
+  /** The scaffold's resolved content column, in dp. */
+  readonly contentWidth: number;
+  /** The gap between the two cards, in dp. */
+  readonly gap: number;
+  /** Fixed width inside one card: both paddings, the mark, both gaps and the chevron. */
+  readonly overhead: number;
+  /** The OS text-size setting. Requirements grow with it; the column does not. */
+  readonly fontScale: number;
+}): PrayerActionLayout {
+  const { contentWidth, gap, overhead, fontScale } = input;
+  const scale = Math.max(fontScale, 1);
+  const calculation = CALCULATION_TITLE_DP * scale;
+  const reminders = REMINDERS_TITLE_DP * scale;
+
+  const available = contentWidth - gap;
+  const required = calculation + reminders + overhead * 2;
+  if (available < required) {
+    return { kind: 'stacked' };
+  }
+
+  /*
+    Whatever the row has over the minimum is shared in proportion to each card's requirement, so the
+    surplus lands where the text is densest rather than being split evenly between a card that needs
+    it and one that does not.
+  */
+  const surplus = available - required;
+  const calculationWidth =
+    overhead + calculation + (surplus * calculation) / (calculation + reminders);
+  return {
+    kind: 'row',
+    calculationWidth,
+    remindersWidth: available - calculationWidth,
+  };
+}
+
+/**
  * The reference's proportions for a compact action card, at the 393 dp baseline.
  *
  * ── Why these four numbers are what they are ────────────────────────────────
@@ -54,12 +147,53 @@ export function shouldStackPrayerActions(screenWidth: number, stackTwoColumns: b
  * 30 dp, because the instruction is not to shrink it.
  */
 const MARK_DP = 30;
-const CARD_PADDING_DP = 7;
-const COLUMN_GAP_DP = 5;
-const CHEVRON_DP = 12;
+/**
+ * The furniture around the text, tightened so the two titles can sit side by side on one line each.
+ *
+ * ── What moved, and what deliberately did not ───────────────────────────────
+ * Padding 7 → 6, the internal gaps 5 → 4 and the chevron 12 → 10. Together they return ten dp of
+ * text column across the pair, which is the difference between the row measuring 44 dp and 57.5.
+ * The P4 gear stays at 30 dp — the instruction has never been to shrink it, and the mark is what
+ * makes each card identifiable at a glance.
+ *
+ * The chevron is still drawn, still 10 dp, and still boxed. Its own note explains why the box
+ * matters: an icon glyph's advance width exceeds its `size`, so an unboxed chevron quietly takes
+ * more of the row than it is budgeted — which is exactly how a title ends up on two lines.
+ */
+const CARD_PADDING_DP = 6;
+const COLUMN_GAP_DP = 4;
+const CHEVRON_DP = 10;
 /** The local title face. Inside the reference's 10.5–11 dp band, at its lower end. */
 const TITLE_DP = 10.5;
 const TITLE_LINE_DP = 14;
+
+/** Padding + mark + both internal gaps + chevron. The fixed cost of one card, in dp. */
+const CARD_OVERHEAD_DP = CARD_PADDING_DP * 2 + MARK_DP + COLUMN_GAP_DP * 2 + CHEVRON_DP;
+
+/**
+ * This row's contribution to the dashboard's height, and the numbers behind it.
+ *
+ * Exported so the fit contract can be *composed from the values that ship* rather than from a second
+ * copy of them in a test. A change to the padding or the mark moves the model in the same commit,
+ * which is the only way "the dashboard fits 411 dp" stays true rather than becoming a stale comment.
+ */
+export const prayerActionMetrics = {
+  markDp: MARK_DP,
+  cardPaddingDp: CARD_PADDING_DP,
+  columnGapDp: COLUMN_GAP_DP,
+  chevronDp: CHEVRON_DP,
+  overheadDp: CARD_OVERHEAD_DP,
+  calculationTitleDp: CALCULATION_TITLE_DP,
+  remindersTitleDp: REMINDERS_TITLE_DP,
+  /** One title line plus one subtitle line — the text column when nothing wraps. */
+  textDp: TITLE_LINE_DP + moduleType.rowMeta[1],
+  /** `ModuleCard` draws a one dp border on each edge, and both count toward the row's height. */
+  borderDp: 2,
+  /** The row's height with neither title wrapped: border + padding + the taller of mark and text. */
+  get heightDp(): number {
+    return this.borderDp + this.cardPaddingDp * 2 + Math.max(this.markDp, this.textDp);
+  },
+} as const;
 
 export type PrayerActionCardsProps = {
   /** The live calculation method, e.g. "Muslim World League". Never a literal in this file. */
@@ -75,9 +209,28 @@ export function PrayerActionCards({
   onReminders,
   testID,
 }: PrayerActionCardsProps) {
-  const { dp, screenWidth, stackTwoColumns } = useModuleMetrics();
-  const stacked = shouldStackPrayerActions(screenWidth, stackTwoColumns);
-  const gap = dp(moduleLayout.twoColumnGap);
+  const { dp, screenWidth, stackTwoColumns, contentWidth, fontScale } = useModuleMetrics();
+  /*
+    ── Two independent reasons to stack, and both have to be honoured ─────────
+    The module's own signal still applies: below the reference width every card here is already being
+    downscaled and the pair was calibrated above it. On top of that, the measured rule below stacks
+    whenever the row cannot give both titles a single line — which is what covers a large OS text
+    size at a width the first rule is happy with.
+  */
+  /*
+    The next smaller existing spacing token, 7 rather than `twoColumnGap`'s 9. Two dp back into the
+    text budget, taken from the one place on this row where the space is doing nothing but separating
+    two cards that are already separated by their own borders.
+  */
+  const gap = dp(moduleLayout.sectionGap);
+  const layout = prayerActionLayout({
+    contentWidth,
+    gap,
+    overhead: dp(CARD_OVERHEAD_DP),
+    fontScale,
+  });
+  const stacked =
+    shouldStackPrayerActions(screenWidth, stackTwoColumns) || layout.kind === 'stacked';
 
   const calculation = (
     <ActionCard
@@ -125,10 +278,18 @@ export function PrayerActionCards({
     );
   }
 
+  /*
+    ── Explicit widths, not `flex: 1` each ───────────────────────────────────
+    Equal flex is what produced two 174 dp cards and a wrapped title on the one that needed 126 dp of
+    text. These are the widths the rule computed, so each card is exactly as wide as its own longest
+    line requires plus its share of whatever the row had spare. `alignItems: 'stretch'` still matches
+    their heights, which is now 44 dp for both because neither title wraps.
+  */
+  const widths = layout.kind === 'row' ? layout : null;
   return (
     <View style={[styles.row, { columnGap: gap }]} testID={testID}>
-      <View style={styles.column}>{calculation}</View>
-      <View style={styles.column}>{reminders}</View>
+      <View style={{ width: widths?.calculationWidth }}>{calculation}</View>
+      <View style={{ width: widths?.remindersWidth }}>{reminders}</View>
     </View>
   );
 }
@@ -245,10 +406,6 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  column: {
-    flex: 1,
-    minWidth: 0,
   },
   flex: {
     flex: 1,

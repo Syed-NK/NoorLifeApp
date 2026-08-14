@@ -71,6 +71,12 @@ export type FaithScreenProps = {
    */
   readonly scrollRef?: RefObject<ScrollView | null>;
   /**
+   * Overrides the breathing room under the last card. Passed straight through — see that prop's note.
+   *
+   * Only Prayer Times supplies it, and only once it has measured itself as fitting its viewport.
+   */
+  readonly scrollBottomInset?: number;
+  /**
    * Replaces the page background. Passed straight to `ModuleScaffold` — see that prop's note.
    *
    * Only the Qur'an reader supplies it, and only with `readerPageBackground`.
@@ -89,6 +95,7 @@ export function FaithScreen({
   fills = false,
   docked,
   scrollRef,
+  scrollBottomInset,
   background,
   children,
   testID,
@@ -104,6 +111,7 @@ export function FaithScreen({
       banner={banner}
       docked={docked}
       scrollRef={scrollRef}
+      scrollBottomInset={scrollBottomInset}
       background={background}
       testID={testID}
     >

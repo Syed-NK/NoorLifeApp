@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
-import { useCallback } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, View, type LayoutChangeEvent } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { ModuleStatusBanner, ModuleText } from '@features/modules/components';
@@ -14,6 +15,11 @@ import { FaithPictogramDevAudit } from '../components/faith-pictogram-dev-audit'
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import { FaithSectionHero } from '../components/faith-section-hero';
 import { PrayerActionCards } from '../components/prayer-action-cards';
+import {
+  prayerDashboardMode,
+  prayerDashboardSafeBodyHeight,
+  type PrayerDashboardMode,
+} from '../components/prayer-dashboard-fit';
 import {
   PrayerJourneyTimeline,
   type PrayerJourneyEntry,
@@ -35,9 +41,14 @@ import { faithPictogramSlot, type FaithPictogramId } from '../faith-pictogram-as
 import { faithNavKeys, faithRoutes } from '../faith-routes';
 import { useFaithPreferences } from '../hooks/use-faith-preferences';
 import { useFaithResource } from '../hooks/use-faith-resource';
-import { useLocationRefresh, type UseLocationRefresh } from '../hooks/use-location-refresh';
+import {
+  useActiveLocationRefresh,
+  type ActiveLocationRefresh,
+  type DeviceRefreshState,
+} from '../hooks/use-location-refresh';
 import { permissionAdvice, useLocationPermission } from '../hooks/use-location-permission';
 import { usePrayerCountdown } from '../hooks/use-prayer-countdown';
+import { useTopOnEntry } from '../hooks/use-top-on-entry';
 
 /**
  * Prayer times for today — the approved **timeline** composition.
@@ -61,7 +72,8 @@ import { usePrayerCountdown } from '../hooks/use-prayer-countdown';
  * stays held for the same reason.
  */
 export function PrayerTimesScreen() {
-  const { dp } = useModuleMetrics();
+  const { dp, screenWidth, screenHeight, fontScale } = useModuleMetrics();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { prayerTimes } = useFaithRepositories();
   const { preferences } = useFaithPreferences();
@@ -145,7 +157,14 @@ export function PrayerTimesScreen() {
   const advice = permissionAdvice(permission.outcome);
 
   /**
-   * A live position, requested on entry and on demand.
+   * The refresh capability the **active authority** actually has.
+   *
+   * ── Why this is not simply "a refresh" any more ─────────────────────────────
+   * Because two of the three authorities have nothing to refresh. A saved city and a typed
+   * coordinate are the user's answer, not an estimate of one, and waking the GPS to check them costs
+   * a permission prompt, a radio and several seconds to learn something already known. The hook
+   * therefore hands back a union in which `refreshDevice` exists only under device authority — see
+   * its own note — so the control below cannot be wired up in a mode that must not have it.
    *
    * ── Why both resources reload together ──────────────────────────────────────
    * They are the day's times and the next prayer, and they are calculated from the same coordinate.
@@ -154,16 +173,79 @@ export function PrayerTimesScreen() {
    * both re-reads see the same coordinate — which is the property that actually makes the update
    * atomic, rather than the two calls being adjacent.
    */
-  const locationRefresh = useLocationRefresh(
+  const locationRefresh = useActiveLocationRefresh(
     useCallback(() => {
       times.reload();
       next.reload();
     }, [times, next]),
   );
 
+  /*
+    ── The scroll region, owned by this screen ───────────────────────────────
+    The scaffold draws it; this screen decides where it sits on entry. `resetKey` is the identity of
+    what is being displayed — the location and the two calculation conventions — so a saved city, a
+    changed method or a switch back to the device all return the reader to the hero, and a countdown
+    tick or a background reload does not. See `useTopOnEntry`.
+  */
+  const scrollRef = useTopOnEntry(
+    `${locationRevision}.${preferences.calculationMethod}.${preferences.asrMethod}`,
+  );
+
+  /**
+   * Whether the dashboard fits one viewport here, measured rather than assumed.
+   *
+   * The safe body is derived from the scaffold's own tokens — the status-bar inset it pads by, the
+   * header, the navigation bar including its gesture inset, and the breathing room under the last
+   * card. The content height is the real laid-out height of the column below. When the second is
+   * within the first the screen needs no scrolling; when it is not, it scrolls, from zero, with
+   * nothing clipped. See `prayer-dashboard-fit.ts`.
+   */
+  const [contentHeight, setContentHeight] = useState(0);
+  const viewportHeight = prayerDashboardSafeBodyHeight({
+    screenHeight,
+    insetTop: insets.top,
+    insetBottom: insets.bottom,
+    dp,
+  });
+  const mode: PrayerDashboardMode = prayerDashboardMode({
+    screenWidth,
+    fontScale,
+    viewportHeight,
+    contentHeight,
+  });
+
+  const onContentLayout = useCallback((event: LayoutChangeEvent) => {
+    setContentHeight(event.nativeEvent.layout.height);
+  }, []);
+
   return (
-    <FaithScreen title="Prayer Times" activeKey={faithNavKeys.worship} testID="faith-prayer-times">
-      <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+    <FaithScreen
+      title="Prayer Times"
+      activeKey={faithNavKeys.worship}
+      scrollRef={scrollRef}
+      /*
+        ── Zero breathing room once the dashboard is known to fit ──────────────
+        In compact mode there is nothing to scroll, and the fourteen dp the scaffold reserves under
+        the last card would be the only thing making the content taller than its box — a screen with
+        every card visible that still scrolls by fourteen dp. Dropping it there takes the scroll range
+        to zero. In overflow mode it is left alone, because that is where the padding does its real
+        job: letting the final action cards travel clear of the navigation bar.
+
+        The bar's own height is never touched by this — see the prop's note.
+      */
+      scrollBottomInset={mode === 'compact' ? 0 : undefined}
+      testID="faith-prayer-times"
+    >
+      <View
+        style={{ rowGap: dp(moduleLayout.sectionGap) }}
+        onLayout={onContentLayout}
+        /*
+          The resolved mode, on the element whose height decided it. Read by the layout suite and by
+          the device verification pass, so "compact at 411 dp, overflow at 1.3x" is a property that
+          can be asserted rather than a screenshot somebody eyeballed.
+        */
+        testID={`faith-prayer-dashboard-${mode}`}
+      >
         {/*
           ── No action, and no live time on the hero ───────────────────────────────
           The baked heading reads "Next prayer" and cannot be edited, so the real prayer and its
@@ -229,7 +311,7 @@ function PrayerDay({
 }: {
   readonly day: DailyPrayerTimes;
   readonly next: NextPrayer | null;
-  readonly locationRefresh: UseLocationRefresh;
+  readonly locationRefresh: ActiveLocationRefresh;
 }) {
   const { dp } = useModuleMetrics();
   const theme = useModuleTheme();
@@ -294,8 +376,25 @@ function PrayerDay({
    */
   const interval = next === null ? null : prayerIntervalProgress(day.times, next.prayer.at, now);
 
+  /*
+    ── The device control and its commentary are one decision ────────────────
+    Both come from the same narrowing. Under city or coordinates authority the union carries neither
+    a `refreshDevice` nor a `state`, so there is no button to draw and no freshness to qualify — and
+    that is the correction, stated structurally: the screen is not *choosing* to stay silent about a
+    device fix, it has nothing to say because nothing was attempted.
+  */
+  const device = locationRefresh.authority === 'device' ? locationRefresh : null;
+  const note = device === null ? null : refreshNote(device.state);
+
   return (
-    <View style={{ rowGap: dp(moduleLayout.cardGap) }}>
+    /*
+      ── `sectionGap`, the next smaller existing token, rather than `cardGap` ──
+      Three dp per gap and two gaps here. `cardGap` is 10 and `sectionGap` is 7, and stepping down
+      the existing scale is what the correction asks for rather than inventing a value between them.
+      The cards keep their own borders and shadows, so seven dp still reads as three distinct
+      surfaces — this is the separation the reference draws, not a denser one.
+    */
+    <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
       {/*
         ── Location ────────────────────────────────────────────────────────────
         Every value is the repository's: the place label it resolved, the Hijri date it calculated
@@ -304,16 +403,23 @@ function PrayerDay({
         label rather than a city, so this card never names somewhere the user is not.
       */}
       <ModuleCard
+        padding={LOCATION_CARD_PADDING_DP}
         onPress={() => router.push(faithRoutes.location)}
         accessibilityLabel={`Prayer location: ${day.location.label}. Opens Prayer location, where you can choose your location.`}
         testID="faith-prayer-location"
       >
+        {/*
+          ── No vertical padding of its own ──────────────────────────────────
+          The card already carries `moduleLayout.cardPadding` on every edge, and the 48 dp pictogram
+          is what sets this row's height — so the four dp that used to sit here bought no separation
+          from anything, it simply made the tallest card on the screen eight dp taller than the
+          composition it is measured against. The horizontal gap is untouched.
+        */}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            columnGap: dp(12),
-            paddingVertical: dp(4),
+            columnGap: dp(LOCATION_ROW_GAP_DP),
           }}
         >
           {/*
@@ -331,21 +437,29 @@ function PrayerDay({
             <ModuleText token="cardTitle" testID="faith-prayer-location-label">
               {day.location.label}
             </ModuleText>
-            <ModuleText token="caption">
+            <ModuleText token="caption" testID="faith-prayer-location-meta">
               {`${day.hijriDate} • ${methodLabel(day.settings.method)}`}
             </ModuleText>
             {/*
               Only ever a *qualification* of the label above, never a replacement for it. The times
               on this screen remain real times for the location named — a refresh that failed means
               "this may be out of date", which is a different statement from "this is wrong".
+
+              Unreachable under city or coordinates authority, and unreachable for a verdict from a
+              location that is no longer active: the hook only surfaces a device state stamped with
+              the revision being rendered. That pair is what stops "Could not get a new position just
+              now" appearing beneath a city the user chose while an acquisition was still running.
+
+              It wraps rather than truncates — no `numberOfLines` — because a warning that ellipsises
+              is a warning nobody can act on.
             */}
-            {refreshNote(locationRefresh.state) === null ? null : (
+            {note === null ? null : (
               <ModuleText
                 token="caption"
                 color={moduleNeutrals.warning}
                 testID="faith-prayer-location-refresh-note"
               >
-                {refreshNote(locationRefresh.state)}
+                {note}
               </ModuleText>
             )}
           </View>
@@ -364,38 +478,51 @@ function PrayerDay({
           </View>
 
           {/*
-            ── The refresh control ─────────────────────────────────────────────
-            Acquires a *new* position rather than re-reading the stored one — see
-            `refreshCurrentLocation`. Disabled while a fix is in flight so a second tap cannot wake
-            the GPS twice, and labelled with what it does rather than with an icon alone.
+            ── The device refresh control, and the modes that do not get one ───
+            Rendered only under device authority. It acquires a *new* position rather than re-reading
+            the stored one — see `refreshDeviceLocation` — which is precisely why a saved city or a
+            typed coordinate must not offer it: there is nothing to re-acquire, and the button's own
+            label ("Gets a new position from this device") would be describing something the app has
+            no business doing to a location the user chose deliberately.
+
+            No replacement control is drawn in those modes. The screen recalculates from the stored
+            snapshot whenever the location revision or a calculation convention changes, so a manual
+            "reload the calculations" action would be a button for work that has already happened —
+            and one shaped like this would be indistinguishable from the GPS refresh it replaced.
+            **Change** remains, in every mode, and it is the action those modes actually need.
+
+            Disabled while a fix is in flight so a second tap cannot wake the GPS twice. The hook
+            holds a synchronous in-flight ref as well, for the frame before `disabled` is committed.
           */}
-          <PressableScale
-            onPress={() => void locationRefresh.refresh()}
-            disabled={locationRefresh.state.kind === 'refreshing'}
-            accessibilityRole="button"
-            accessibilityLabel="Refresh location. Gets a new position from this device and recalculates today’s prayer times."
-            accessibilityState={{ disabled: locationRefresh.state.kind === 'refreshing' }}
-            hitSlop={10}
-            testID="faith-prayer-location-refresh"
-          >
-            <View
-              style={{
-                width: dp(36),
-                height: dp(36),
-                borderRadius: dp(18),
-                borderWidth: 1,
-                borderColor: moduleNeutrals.border,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+          {device === null ? null : (
+            <PressableScale
+              onPress={() => void device.refreshDevice()}
+              disabled={device.state.kind === 'refreshing'}
+              accessibilityRole="button"
+              accessibilityLabel="Refresh location. Gets a new position from this device and recalculates today’s prayer times."
+              accessibilityState={{ disabled: device.state.kind === 'refreshing' }}
+              hitSlop={10}
+              testID="faith-prayer-location-refresh"
             >
-              {locationRefresh.state.kind === 'refreshing' ? (
-                <ActivityIndicator size="small" color={theme.ink} />
-              ) : (
-                <AppIcon name="retry" size={dp(18)} color={theme.ink} />
-              )}
-            </View>
-          </PressableScale>
+              <View
+                style={{
+                  width: dp(36),
+                  height: dp(36),
+                  borderRadius: dp(18),
+                  borderWidth: 1,
+                  borderColor: moduleNeutrals.border,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {device.state.kind === 'refreshing' ? (
+                  <ActivityIndicator size="small" color={theme.ink} />
+                ) : (
+                  <AppIcon name="retry" size={dp(18)} color={theme.ink} />
+                )}
+              </View>
+            </PressableScale>
+          )}
         </View>
       </ModuleCard>
 
@@ -463,8 +590,42 @@ const PRAYER_SLOTS: readonly FaithPictogramId[] = [
   'p4',
 ];
 
-/** The location card's pictogram, within the reference's 48–52 dp band. */
-const LOCATION_PICTOGRAM_DP = 48;
+/**
+ * The location card's pictogram, and the card padding around it.
+ *
+ * ── Why 44 rather than the reference's 48–52 band ───────────────────────────
+ * Because at 48 this card was costing height twice over. The pictogram set a 48 dp floor, and the
+ * text column beside it — the place name over "29 Safar 1448 AH • Muslim World League" — was itself
+ * 51 dp, because that caption wrapped to two lines in the 210 dp the 48 dp mark left it. So the card
+ * measured 73.5 dp on the emulator and *neither* constraint was the pictogram's fault alone.
+ *
+ * Four dp off the mark returns those four dp to the text column, which is enough for the caption to
+ * hold one line: the column becomes ~230 dp against the ~224 dp the string measures. The text block
+ * then drops to 36 dp, the mark's 44 becomes the floor again, and the card lands at 66 — seven and a
+ * half dp saved from one four dp change, because the wrap went with it.
+ *
+ * 44 is the module's own minimum touch target, so the mark is still drawn at a size the design system
+ * treats as substantial. It is not itself a touch target — the whole card carries the press — and no
+ * target on this screen was reduced.
+ */
+const LOCATION_PICTOGRAM_DP = 40;
+/** One dp under the shared card padding, matching the timeline card beneath it. */
+const LOCATION_CARD_PADDING_DP = 10;
+/**
+ * Between the mark, the text column and the Change affordance.
+ *
+ * ── Six, and the six dp it gave back are the point ──────────────────────────
+ * This row has two gaps, so every dp here costs two of text column — and the text column is where
+ * the card's height is actually decided. At 12, with a 44 dp mark, the column measured 216.8 dp and
+ * "29 Safar 1448 AH • Muslim World League" needed one more line than that allowed; the card then
+ * stood at 71.6 dp rather than the 62 its content needs, because a wrapped caption is taller than
+ * the mark beside it.
+ *
+ * Six here and four off the mark return sixteen dp to the column. Nothing is abbreviated, nothing is
+ * shrunk, and the row still reads as three separate things: the gap is smaller than the mark, which
+ * is what keeps them from merging visually.
+ */
+const LOCATION_ROW_GAP_DP = 6;
 
 /**
  * Which approved marker belongs to which prayer.
@@ -508,21 +669,20 @@ function formatTime(iso: string): string {
 }
 
 /**
- * What to say beneath the place name about the freshness of the fix behind it, or `null`.
+ * What to say beneath the place name about the freshness of the **device fix** behind it, or `null`.
+ *
+ * ── Only ever reached under device authority ────────────────────────────────
+ * It used to take a state that had a `user-selected` member, which it had to return `null` for — a
+ * function whose type admitted a case it existed to say nothing about. Narrowing at the call site
+ * removes the case entirely: a city has no freshness to qualify, because no device position was
+ * requested, so there is nothing here to decide.
  *
  * Silent on the states that need no words. `idle` and `refreshing` say nothing because the label is
  * already correct and a spinner is already visible; `updated` says nothing because the new place
  * name *is* the message.
  */
-function refreshNote(state: UseLocationRefresh['state']): string | null {
+function refreshNote(state: DeviceRefreshState): string | null {
   switch (state.kind) {
-    /*
-      A user-selected location says nothing. No device position was requested, so there is no
-      freshness to qualify — the city or coordinate on screen is the one the user chose and it is
-      exactly as current as they left it.
-    */
-    case 'user-selected':
-      return null;
     case 'stale':
       return state.reason === 'permission'
         ? 'Location access is off, so this place cannot be re-checked.'

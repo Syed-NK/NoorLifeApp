@@ -5,7 +5,7 @@ import { modulePalettes, shadowCard } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
 import { ModuleCard } from '@features/modules/components/module-card';
 import { useModuleTheme } from '@features/modules/module-context';
-import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
+import { moduleLayout, moduleNeutrals, moduleType } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import type { PrayerMarkerState } from '../data/prayer/prayer-interval';
@@ -53,13 +53,24 @@ const NEXT_DISC_DP = 46;
 const PICTOGRAM_DP = 34;
 const NEXT_PICTOGRAM_DP = 38;
 /**
- * 50, and measured rather than chosen.
+ * 48, and measured rather than chosen.
  *
  * At 52 the six rows rendered at a 52 dp pitch and the card measured 369.5 dp — 4.5 dp above the
- * reference's 330–365 band. 50 lands it at ~357 dp with the pitch still inside the reference's
- * 48–54 dp row band, and still leaves 12 dp of visible track between two discs.
+ * reference's 330–365 band. 50 landed it at ~345 dp with the pitch inside the reference's 48–54 dp
+ * row band, and 48 lands it at ~333 dp with the pitch at the **bottom** of that same band.
+ *
+ * ── Why it moved the last two dp ────────────────────────────────────────────
+ * Six rows are the single largest term in a dashboard the correction requires to fit one viewport,
+ * so every dp of row pitch costs six of screen. The band is the constraint that matters and 48 is
+ * inside it; going lower would leave the approved composition, which is why this stops here rather
+ * than at whatever number would have made the arithmetic come out. The card still measures inside
+ * its own 330–365 band, and the disc is untouched at 38 dp, so ten dp of track remains visible
+ * between two markers.
+ *
+ * These rows are not touch targets — nothing here is pressable — so the 44 dp minimum does not
+ * apply to them, and nothing on this card has been taken below it.
  */
-const ROW_MIN_HEIGHT_DP = 50;
+const ROW_MIN_HEIGHT_DP = 48;
 /**
  * Vertical breathing room, carried by the **text column** rather than by the row.
  *
@@ -70,6 +81,10 @@ const ROW_MIN_HEIGHT_DP = 50;
  * dashes. On the text column it grows the row identically and leaves the rail full height.
  */
 const ROW_PADDING_DP = 4;
+/** The card’s own padding. One dp under the shared token — see the call site. */
+const CARD_PADDING_DP = 10;
+/** Between the card heading and the first marker row. */
+const HEADING_MARGIN_DP = 4;
 const BADGE_DP = 15;
 /** Track weights. The difference is deliberate and load-bearing — see the note on states above. */
 const TRACK_PASSED_DP = 3;
@@ -93,6 +108,26 @@ const TRACK_UPCOMING_COLOUR = moduleNeutrals.textTertiary;
  * They are a fact about the day, not about this drawing — see `data/prayer/prayer-interval.ts`.
  */
 export type PrayerJourneyState = PrayerMarkerState;
+
+/** This card's contribution to the dashboard's height. See `prayerActionMetrics` for why. */
+export const prayerJourneyMetrics = {
+  rowMinHeightDp: ROW_MIN_HEIGHT_DP,
+  discDp: DISC_DP,
+  cardPaddingDp: CARD_PADDING_DP,
+  headingMarginDp: HEADING_MARGIN_DP,
+  borderDp: 2,
+  /** Six markers on an ordinary day. */
+  rows: 6,
+  get heightDp(): number {
+    return (
+      this.borderDp +
+      this.cardPaddingDp * 2 +
+      moduleType.cardHeading[1] +
+      this.headingMarginDp +
+      this.rowMinHeightDp * this.rows
+    );
+  },
+} as const;
 
 export type PrayerJourneyEntry = {
   readonly key: string;
@@ -132,11 +167,21 @@ export function PrayerJourneyTimeline({
   const { dp } = useModuleMetrics();
 
   return (
-    <ModuleCard testID={testID}>
+    /*
+      One dp off the shared card padding. The card is the tallest element on the dashboard, so its
+      two paddings are the cheapest two dp available, and at 10 it still matches the location card
+      beside it rather than reading as a different container.
+    */
+    <ModuleCard padding={CARD_PADDING_DP} testID={testID}>
+      {/*
+        4 rather than 6. The first row already carries the disc's own air above it, so the gap the
+        eye reads between this heading and "Fajr" is this margin *plus* that — which is why two dp
+        can come out here without the heading appearing to sit on the row beneath it.
+      */}
       <ModuleText
         token="cardHeading"
         accessibilityRole="header"
-        style={{ marginBottom: dp(6) }}
+        style={{ marginBottom: dp(HEADING_MARGIN_DP) }}
         testID={`${testID}-heading`}
       >
         Today’s prayer journey

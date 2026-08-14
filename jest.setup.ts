@@ -950,7 +950,23 @@ jest.mock('expo-router', () => ({
   useGlobalSearchParams: () => ({ ...mockRouteParams }),
   usePathname: () => '/home',
   useSegments: () => [],
-  useFocusEffect: () => undefined,
+  /**
+   * A focus effect that actually runs, because a screen under test is a focused screen.
+   *
+   * ── Why the no-op it replaced was not neutral ───────────────────────────────
+   * It was `() => undefined`, which was harmless only while nothing used the hook. The Prayer Times
+   * dashboard now resets its scroll region on entry through `useFocusEffect`, and against an inert
+   * mock that reset simply never happened — so the suite would have asserted an offset of zero on a
+   * screen that had never been told to go there, and passed for the wrong reason.
+   *
+   * A mounted screen in a single-screen test *is* focused and stays focused for its whole life, so
+   * running the effect on mount and its cleanup on unmount is the faithful reading of the real hook
+   * rather than a convenience. `jest.requireActual` because a `jest.mock` factory may not close over
+   * an out-of-scope import — the same device the `Redirect` double below uses.
+   */
+  useFocusEffect: (effect: () => (() => void) | void) => {
+    jest.requireActual<typeof import('react')>('react').useEffect(() => effect(), [effect]);
+  },
   /**
    * `Redirect` renders an observable marker rather than nothing.
    *
