@@ -341,12 +341,26 @@ function DeviceLocationSection({
   const { outcome, requesting, request } = useLocationPermission();
 
   /**
+   * Guards against a second press before the first has re-rendered the disabled button.
+   *
+   * `setBusy(true)` does not disable anything until React commits the next render, and two taps
+   * inside that window both pass. A ref is checked and set synchronously, so the second tap returns
+   * before it can start a second permission prompt and a second native fix. The disabled state below
+   * is what a user sees; this is what makes it true.
+   */
+  const inFlight = useRef(false);
+
+  /**
    * Permission first, then the fix, then the write — and nothing is written until all three succeed.
    *
    * The repository enforces that order; this only has to report it. Every failure path below leaves
    * the saved location untouched and says which one is still active by name.
    */
   const onUseDevice = useCallback(async () => {
+    if (inFlight.current) {
+      return;
+    }
+    inFlight.current = true;
     setNotice(null);
     setBusy(true);
     /*
@@ -385,6 +399,20 @@ function DeviceLocationSection({
       }
 
       const result = await prayerTimes.switchToDeviceLocation();
+
+      /*
+        ── Supersession is not a failure, and must not look like one ──────────
+        `unsupported` here means a newer choice claimed authority while this fix was being acquired —
+        the user saved a city, or pressed the button again. They got exactly what they asked for, and
+        an error banner would be alarming them about the app working correctly. Nothing was written by
+        this attempt, so nothing needs saying; the card already shows the location that won.
+      */
+      if (result.kind === 'error' && result.code === 'unsupported') {
+        setError(null);
+        await reload();
+        return;
+      }
+
       if (!hasData(result)) {
         setError(
           `${
@@ -402,6 +430,8 @@ function DeviceLocationSection({
       setNotice(`Now using your device location: ${result.data.label}.`);
     } finally {
       setBusy(false);
+      // Released only here, so a deliberate retry after the attempt finishes starts a new operation.
+      inFlight.current = false;
     }
   }, [activeLabel, notifications, prayerTimes, reload, request, setBusy, setError, setNotice]);
 

@@ -17,9 +17,13 @@
  */
 
 export {
+  beginLocationOperation,
   clearActivePrayerLocation as clearStoredLocation,
   commitActivePrayerLocation,
+  isCurrentLocationOperation,
   isSavedV3,
+  resetLocationOperationsForTest,
+  retireLocationOperation,
   isUserSelectedLocation,
   migrateLegacyRecord,
   parseStoredPrayerLocation,
@@ -28,6 +32,7 @@ export {
   resetPrayerLocationSnapshotForTest,
   type CommitResult,
   type LabelProvenance,
+  type LocationOperation,
   type PrayerLocationCandidate,
   type PrayerLocationMode,
   type SavedPrayerLocationV3,

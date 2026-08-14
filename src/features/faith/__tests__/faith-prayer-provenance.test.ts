@@ -149,6 +149,7 @@ function sampleDay(overrides: Partial<DailyPrayerTimes> = {}): DailyPrayerTimes 
 const sampleNext: NextPrayer = {
   prayer: { key: 'dhuhr', label: 'Dhuhr', at: '2026-08-12T13:14:00-07:00' },
   minutesUntil: 74,
+  dayRelation: 'today',
 };
 
 describe('the provenance report identifies a source for every visible value', () => {

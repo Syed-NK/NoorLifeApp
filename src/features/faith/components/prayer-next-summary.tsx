@@ -6,6 +6,7 @@ import { ModuleText } from '@features/modules/components';
 import { moduleColorThemes, moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
+import type { NextPrayerDayRelation } from '../data/prayer-times.repository';
 import { FaithPictogram, type FaithPictogramSlot } from './faith-locked-library';
 import { PrayerProgressRing } from './prayer-progress-ring';
 
@@ -70,6 +71,16 @@ export type PrayerNextSummaryProps = {
   readonly remaining: string;
   /** The same duration split for the ring, at most two lines. */
   readonly remainingLines: readonly string[];
+  /**
+   * Which day the prayer falls on at the location.
+   *
+   * ── Why the qualifier belongs in this card ──────────────────────────────
+   * After Isha this card shows tomorrow's Fajr while the timeline below shows today's, and the two
+   * differ by a minute or so. The screen already carried a sentence explaining that — at the foot of
+   * a different card, a full screen height below the contradiction it explains. A reader comparing
+   * "4:31" here with "4:30" there has no reason to scroll looking for a footnote.
+   */
+  readonly dayRelation: NextPrayerDayRelation;
   /** 0–1 elapsed through the current interval, or `null` when that interval is not knowable. */
   readonly progress: number | null;
   readonly testID: string;
@@ -81,10 +92,20 @@ export function PrayerNextSummary({
   clock,
   remaining,
   remainingLines,
+  dayRelation,
   progress,
   testID,
 }: PrayerNextSummaryProps) {
   const { dp, stackTwoColumns } = useModuleMetrics();
+
+  /*
+    The eyebrow carries the qualifier rather than the title line. The title is `${prayerName} at
+    ${clock}` and is the one string on this card that may never be abbreviated or wrapped mid-time —
+    its own note records that it was already retuned to stop the longest prayer name breaking the
+    line. Appending "tomorrow" there would reintroduce exactly that. The eyebrow is a short caption
+    with room, sits directly above the time, and is read first.
+  */
+  const eyebrow = dayRelation === 'tomorrow' ? 'Next prayer tomorrow' : 'Next prayer';
 
   /*
     The same signal the module's two-column pairs use. At a narrow width or a large OS text size the
@@ -113,14 +134,20 @@ export function PrayerNextSummary({
         hearing it twice would be noise. When the interval is unknown the ring simply has no sweep;
         the spoken sentence is unchanged, because the countdown never depended on the interval.
       */
-      accessibilityLabel={`Next prayer. ${prayerName} at ${clock}. ${remaining}.`}
+      accessibilityLabel={`${eyebrow}. ${prayerName} at ${clock}. ${remaining}.`}
       testID={testID}
     >
       <FaithPictogram slot={pictogram} size={dp(PICTOGRAM_DP)} testID={`${testID}-pictogram`} />
 
       <View style={[styles.flex, { rowGap: dp(2) }, stacked ? styles.centred : null]}>
-        <ModuleText token="caption" color={MINT} align={stacked ? 'center' : undefined}>
-          Next prayer
+        <ModuleText
+          token="caption"
+          color={MINT}
+          align={stacked ? 'center' : undefined}
+          numberOfLines={2}
+          testID={`${testID}-eyebrow`}
+        >
+          {eyebrow}
         </ModuleText>
         {/*
           ── `heroTitle`, not `faithPrayer` ────────────────────────────────────

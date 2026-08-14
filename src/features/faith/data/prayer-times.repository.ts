@@ -228,10 +228,36 @@ export type CityPreview = {
   readonly attribution: string;
 };
 
+/**
+ * Which calendar day, at the location, the next prayer falls on.
+ *
+ * ── Why a relation and not `isTomorrow: boolean` ────────────────────────────
+ * Because the set may grow and a boolean cannot grow with it. A polar summer has days with no Fajr at
+ * all, and the honest answer there is a day further out than tomorrow; a boolean would have to be
+ * read as "not tomorrow" for a prayer two days away, which is false. A named relation can gain a
+ * member and every `switch` over it stops compiling until it is handled — which is the behaviour
+ * wanted from a value that decides what a screen tells the user about *when*.
+ */
+export type NextPrayerDayRelation = 'today' | 'tomorrow';
+
 /** Which prayer is next, and how long until it. Derived, but derived in one place. */
 export type NextPrayer = {
   readonly prayer: PrayerTime;
   readonly minutesUntil: number;
+  /**
+   * Whether this prayer belongs to the location's current calendar day or the next one.
+   *
+   * ── The confusion this exists to remove ─────────────────────────────────
+   * After Isha the next prayer is *tomorrow's* Fajr, and consecutive days' Fajr differ — in Dubai on
+   * 13/14 August 2026, by exactly one minute. So the hero says "Fajr at 4:31 AM" while the timeline
+   * beside it says "Fajr 4:30 AM", and both are right. Without this field every screen had to infer
+   * the difference — the Prayer Times screen did, by noticing that no timeline row matched the next
+   * prayer's instant, and Faith Home could not infer it at all and simply said nothing.
+   *
+   * Set once, in `getNextPrayer`, where the rollover is already decided. Screens read it; they never
+   * re-derive it, and they never compare against a device date to get it.
+   */
+  readonly dayRelation: NextPrayerDayRelation;
 };
 
 /** Per-prayer reminder preference. A contract only — no notification is scheduled yet. */

@@ -140,7 +140,21 @@ export function FaithHomeContent() {
   const heroCopy =
     nextPrayer.status === 'settled' && nextPrayer.result.kind === 'ok'
       ? {
-          headline: `${nextPrayer.result.data.prayer.prayer.label} ${formatPrayerClock(nextPrayer.result.data.prayer.prayer.at)}`,
+          /*
+            ── Why the qualifier is in the headline ──────────────────────────
+            Because the contradiction it explains is right beside it: after Isha this line reads
+            "Fajr 4:31 AM" while Today's worship, in the card immediately below, reads "Fajr Prayer
+            4:30 AM". Both are correct — the hero is tomorrow's — and until now nothing on this screen
+            said so. Faith Home had no equivalent of the Prayer Times footnote at all.
+
+            It fits. The headline shrinks to `titleMinScale` before it wraps and wraps to two lines
+            before it truncates, and the tomorrow case is always Fajr — after Isha there is no other
+            candidate — so the longest string this can produce is "Fajr 12:59 AM tomorrow" rather than
+            any prayer name plus a qualifier. Asserted at 320 dp and font scale 1.5.
+          */
+          headline: `${nextPrayer.result.data.prayer.prayer.label} ${formatPrayerClock(nextPrayer.result.data.prayer.prayer.at)}${
+            nextPrayer.result.data.prayer.dayRelation === 'tomorrow' ? ' tomorrow' : ''
+          }`,
           support: `${countdown.label ?? ''} • ${nextPrayer.result.data.location.label}`,
           supportSecondary: nextPrayer.result.data.today.hijri.formatted,
         }

@@ -18,7 +18,11 @@ import {
 } from '../data/location/active-location';
 import { parseCoordinateInput } from '../data/location/location-acceptance';
 import type { FaithResult } from '../data/faith-result';
-import { isUserSelectedLocation, type CityChoice } from '../data/prayer-times.repository';
+import {
+  isUserSelectedLocation,
+  type CityChoice,
+  type PrayerLocation,
+} from '../data/prayer-times.repository';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { faithRoutes } from '../faith-routes';
 import { PrayerLocationScreen } from '../screens/prayer-location-screen';
@@ -736,5 +740,104 @@ describe('switching back to device mode', () => {
     // And the failure wrote nothing, so the app is still in its honest no-location state.
     expect(await readStoredLocation()).toBeNull();
     expect(activeLocationRevision()).toBe(0);
+  });
+});
+
+describe('the device control cannot be pressed into two native requests', () => {
+  /*
+    ── Why this is UI protection over a data-layer guarantee, not instead of one ──
+    The generation model in `prayer-location-store.ts` already makes a second request harmless: the
+    newer one supersedes the older and only one can commit. What it does not do is stop the app
+    *asking the platform twice* — two permission checks, two GPS acquisitions, two radios spun up for
+    one intent. That is a battery and latency cost, and the disabled state is what avoids it.
+
+    `setBusy(true)` cannot do it alone: the button is not disabled until React commits the next
+    render, and two taps inside that window both pass. The screen holds a ref that is checked and set
+    synchronously, and this is what proves it.
+  */
+  /*
+    The in-flight promises are released at the end of each case rather than left hanging. A promise
+    that resolves into a torn-down tree is what corrupts React's act queue for the rest of the file —
+    the failure recorded in `drain`'s note above — so the fixture hands back the means to settle them.
+  */
+  function countingRepositories() {
+    let requests = 0;
+    const release: (() => void)[] = [];
+    const base = createMockFaithRepositories();
+    return {
+      count: () => requests,
+      releaseAll: () => {
+        for (const settle of release.splice(0)) {
+          settle();
+        }
+      },
+      repositories: {
+        ...base,
+        /*
+          Permission has to be granted for the press to reach the repository at all — `onUseDevice`
+          prompts first and returns early on a refusal, which is the correct order and would
+          otherwise make this a test of the permission gate rather than of the press guard.
+        */
+        location: {
+          ...base.location,
+          getPermission: async () => 'granted' as const,
+          requestPermission: async () => 'granted' as const,
+        },
+        prayerTimes: {
+          ...base.prayerTimes,
+          switchToDeviceLocation: () => {
+            requests += 1;
+            // Held open so the control stays in its in-flight state for the assertions below.
+            return new Promise<FaithResult<PrayerLocation>>((resolve) => {
+              release.push(() => resolve({ kind: 'error', code: 'unavailable' }));
+            });
+          },
+        },
+      },
+    };
+  }
+
+  /*
+    ── One case, one mount, on purpose ───────────────────────────────────────
+    Two cases here meant two mounts, and the first left an in-flight promise that resolved into the
+    second's render — the overlapping-act corruption `drain`'s note describes, which empties the tree
+    for everything after it. Asserting both properties against a single mount removes the second
+    render entirely.
+
+    The two presses are separated by a drain rather than fired in the same tick. A same-tick pair is
+    what the component's synchronous `inFlight` ref exists for, and it cannot be driven here: the
+    second `fireEvent` opens an act while the first press's `await` is still resolving inside one, and
+    React's queue does not survive it. What this proves is the protection a user actually meets — a
+    second tap always lands at least a frame later — and the ref remains as the belt-and-braces cover
+    for the frame the disabled prop has not been committed for yet.
+  */
+  it('stays disabled and busy, and starts only one request, while one is in flight', async () => {
+    const { count, releaseAll, repositories } = countingRepositories();
+    render(
+      <FaithRepositoryProvider repositories={repositories}>
+        <PrayerLocationScreen />
+      </FaithRepositoryProvider>,
+    );
+    await drain();
+
+    fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
+    await drain();
+
+    // A second tap while the first is still running starts nothing.
+    fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
+    await drain();
+    expect(count()).toBe(1);
+
+    /*
+      Both flags, because they mean different things to a screen reader: `disabled` says the control
+      will not respond, `busy` says something is happening. A spinner that announced neither would
+      leave a non-sighted user pressing a dead button with no feedback at all.
+    */
+    const state = screen.getByTestId('faith-prayer-location-use-device').props.accessibilityState;
+    expect(state?.disabled).toBe(true);
+    expect(state?.busy).toBe(true);
+
+    releaseAll();
+    await drain();
   });
 });

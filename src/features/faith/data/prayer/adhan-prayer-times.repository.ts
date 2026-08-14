@@ -8,7 +8,12 @@ import {
 } from 'adhan';
 
 import { readFaithPreferences, writeFaithPreferences } from '../../storage/faith-preferences';
-import { commitActivePrayerLocation, readStoredLocation } from '../../storage/faith-location';
+import {
+  beginLocationOperation,
+  commitActivePrayerLocation,
+  readStoredLocation,
+  retireLocationOperation,
+} from '../../storage/faith-location';
 import type { FaithResult } from '../faith-result';
 import type { LocationPort } from '../location/location.port';
 import { acceptLocationFix } from '../location/location-acceptance';
@@ -298,8 +303,18 @@ export function createAdhanPrayerTimesRepository(
         };
       }
 
+      /*
+        ── Why a read path claims an operation ───────────────────────────────
+        Because from here it is not a read. It acquires a device fix and stores it, and that takes
+        seconds during which another surface can save a city. The operation, plus `requires: 'absent'`
+        below, is what keeps this opportunistic first write from landing on top of a deliberate
+        choice made while it was in flight.
+      */
+      const operation = beginLocationOperation();
+
       const fix = await config.location.getCurrentPosition();
       if ('failure' in fix) {
+        retireLocationOperation(operation);
         return fix.failure === 'permission-denied' || fix.failure === 'services-disabled'
           ? {
               kind: 'permission-required',
@@ -314,6 +329,7 @@ export function createAdhanPrayerTimesRepository(
       const resolvedAt = now().toISOString();
       const resolved = toPrayerLocation(fix.coordinate, label, 'device', resolvedAt);
       if (resolved === null) {
+        retireLocationOperation(operation);
         // Nothing is stored: a coordinate with no resolvable zone would be a stored fix that fails
         // this same way on every future launch.
         return { kind: 'error', code: 'unavailable' };
@@ -323,13 +339,37 @@ export function createAdhanPrayerTimesRepository(
         Caller 1 of the mutation boundary: the first device resolution, when nothing is stored yet.
         The same stamp the returned location carries, so the two cannot drift apart.
       */
-      await commitActivePrayerLocation({
-        mode: 'device',
-        coordinate: fix.coordinate,
-        label,
-        resolvedAt,
-        accuracyMetres: fix.accuracyMetres,
-      });
+      const committed = await commitActivePrayerLocation(
+        {
+          mode: 'device',
+          coordinate: fix.coordinate,
+          label,
+          resolvedAt,
+          accuracyMetres: fix.accuracyMetres,
+        },
+        { operation, requires: 'absent' },
+      );
+
+      /*
+        Somebody saved a location while this was acquiring. Theirs is the answer — re-read rather than
+        return the fix this call happened to obtain, or the caller would render a place that is not
+        the stored one.
+      */
+      if (committed.kind === 'rejected') {
+        const settled = await readStoredLocation();
+        if (settled !== null) {
+          const other = toPrayerLocation(
+            settled.coordinate,
+            settled.label,
+            settled.mode,
+            settled.resolvedAt,
+          );
+          if (other !== null) {
+            return { kind: 'ok', data: other };
+          }
+        }
+        return { kind: 'error', code: 'unavailable' };
+      }
 
       return { kind: 'ok', data: resolved };
     },
@@ -424,18 +464,28 @@ export function createAdhanPrayerTimesRepository(
       }
 
       /*
+        Claimed here, after the catalogue re-validation and before the write. Starting it is what
+        supersedes any device request still in flight — the user has now said something newer, and
+        that statement is what the stored location must reflect.
+      */
+      const operation = beginLocationOperation();
+
+      /*
         Caller 2: the city save. The boundary owns the revision bump, so nothing here publishes — a
         screen that both wrote and published could publish before the bytes land.
       */
-      const committed = await commitActivePrayerLocation({
-        mode: 'city',
-        coordinate: verified.coordinate,
-        label,
-        geonamesId: verified.geonamesId,
-        countryCode: verified.countryCode,
-        admin1: verified.region,
-        resolvedAt,
-      });
+      const committed = await commitActivePrayerLocation(
+        {
+          mode: 'city',
+          coordinate: verified.coordinate,
+          label,
+          geonamesId: verified.geonamesId,
+          countryCode: verified.countryCode,
+          admin1: verified.region,
+          resolvedAt,
+        },
+        { operation },
+      );
       if (committed.kind !== 'committed' && committed.kind !== 'unchanged') {
         return { kind: 'error', code: 'unavailable' };
       }
@@ -460,13 +510,19 @@ export function createAdhanPrayerTimesRepository(
         return { kind: 'error', code: 'unavailable' };
       }
 
+      // Claimed for the same reason as the city save: a newer statement supersedes a pending device fix.
+      const operation = beginLocationOperation();
+
       // Caller 3: the typed-coordinate save.
-      const committed = await commitActivePrayerLocation({
-        mode: 'coordinates',
-        coordinate: input.coordinate,
-        label: named,
-        resolvedAt,
-      });
+      const committed = await commitActivePrayerLocation(
+        {
+          mode: 'coordinates',
+          coordinate: input.coordinate,
+          label: named,
+          resolvedAt,
+        },
+        { operation },
+      );
       if (committed.kind !== 'committed' && committed.kind !== 'unchanged') {
         return { kind: 'error', code: 'unavailable' };
       }
@@ -486,9 +542,23 @@ export function createAdhanPrayerTimesRepository(
         };
       }
 
+      /*
+        ── Claimed before the fix, not after ─────────────────────────────────
+        This is the operation a later city save must be able to supersede, and it can only do that if
+        the operation already exists while the fix is being acquired. Claiming it after the await
+        would leave the slow window — the one the whole race lives in — unguarded.
+      */
+      const operation = beginLocationOperation();
+
       const fix = await config.location.getCurrentPosition();
       if ('failure' in fix) {
-        // Nothing is written. The saved manual location remains active and remains selected.
+        /*
+          Nothing is written, and the operation gives up its authority here. A timeout is not a pause:
+          the native request may still be running and may still succeed minutes later, and this is
+          what guarantees that a success arriving after the user has been told it failed cannot
+          quietly become their location.
+        */
+        retireLocationOperation(operation);
         return { kind: 'error', code: fix.failure === 'timed-out' ? 'timeout' : 'unavailable' };
       }
 
@@ -496,19 +566,30 @@ export function createAdhanPrayerTimesRepository(
       const resolvedAt = now().toISOString();
       const resolved = toPrayerLocation(fix.coordinate, label, 'device', resolvedAt);
       if (resolved === null) {
+        retireLocationOperation(operation);
         return { kind: 'error', code: 'unavailable' };
       }
 
       // Caller 4: switching back to device mode, only once a complete valid snapshot exists.
-      const committed = await commitActivePrayerLocation({
-        mode: 'device',
-        coordinate: fix.coordinate,
-        label,
-        resolvedAt,
-        accuracyMetres: fix.accuracyMetres,
-      });
+      const committed = await commitActivePrayerLocation(
+        {
+          mode: 'device',
+          coordinate: fix.coordinate,
+          label,
+          resolvedAt,
+          accuracyMetres: fix.accuracyMetres,
+        },
+        { operation },
+      );
       if (committed.kind === 'rejected') {
-        return { kind: 'error', code: 'unavailable' };
+        /*
+          `superseded` is not a failure and must not be reported as one — the user chose something
+          newer and got exactly what they asked for. `unsupported` is the code for "this attempt no
+          longer had the authority to act", and the screen stays silent on it.
+        */
+        return committed.reason === 'superseded'
+          ? { kind: 'error', code: 'unsupported' }
+          : { kind: 'error', code: 'unavailable' };
       }
       return { kind: 'ok', data: resolved };
     },
@@ -574,8 +655,17 @@ export function createAdhanPrayerTimesRepository(
         };
       }
 
+      /*
+        The automatic refresh takes an operation for the same reason the explicit switch does: it is a
+        slow device acquisition whose result must not land after the user has chosen somewhere else.
+        The `isUserSelectedLocation` guard above runs *before* the fix and cannot see a choice made
+        during it; this is what covers that window.
+      */
+      const operation = beginLocationOperation();
+
       const fix = await config.location.getCurrentPosition();
       if ('failure' in fix) {
+        retireLocationOperation(operation);
         return fix.failure === 'permission-denied' || fix.failure === 'services-disabled'
           ? {
               kind: 'permission-required',
@@ -599,6 +689,8 @@ export function createAdhanPrayerTimesRepository(
       const decision = acceptLocationFix(existing, fix);
 
       if (decision.kind === 'rejected') {
+        // Judged not worth keeping, so this attempt is over and gives up its authority.
+        retireLocationOperation(operation);
         if (stored === null) {
           // Nothing to fall back to: a rejected first fix leaves the app with no location at all,
           // which is an error rather than a quiet "kept the old one".
@@ -637,6 +729,7 @@ export function createAdhanPrayerTimesRepository(
       const resolvedAt = now().toISOString();
       const resolved = toPrayerLocation(fix.coordinate, label, 'device', resolvedAt);
       if (resolved === null) {
+        retireLocationOperation(operation);
         // A coordinate whose zone will not resolve is unusable. The stored location is untouched.
         return { kind: 'error', code: 'unavailable' };
       }
@@ -646,13 +739,43 @@ export function createAdhanPrayerTimesRepository(
         entirely when the snapshot is equivalent, which is what stops a stationary device
         rescheduling notifications every time a screen opens.
       */
-      await commitActivePrayerLocation({
-        mode: 'device',
-        coordinate: fix.coordinate,
-        label,
-        resolvedAt,
-        accuracyMetres: fix.accuracyMetres,
-      });
+      const committed = await commitActivePrayerLocation(
+        {
+          mode: 'device',
+          coordinate: fix.coordinate,
+          label,
+          resolvedAt,
+          accuracyMetres: fix.accuracyMetres,
+        },
+        { operation },
+      );
+
+      /*
+        Superseded mid-refresh: the user chose a place while this fix was being acquired. Report the
+        location that actually won rather than the one this call fetched, and mark it unaccepted —
+        the caller uses `accepted` to decide whether anything downstream needs recalculating, and
+        nothing here changed the stored location.
+      */
+      if (committed.kind === 'rejected' && committed.reason === 'superseded') {
+        const winner = await readStoredLocation();
+        const kept =
+          winner === null
+            ? null
+            : toPrayerLocation(winner.coordinate, winner.label, winner.mode, winner.resolvedAt);
+        return kept === null
+          ? { kind: 'error', code: 'unavailable' }
+          : {
+              kind: 'ok',
+              data: {
+                location: kept,
+                accepted: false,
+                materialChange: false,
+                movedMetres: 0,
+                rejectedReason: null,
+                mode: winner === null ? 'device' : winner.mode,
+              },
+            };
+      }
 
       return {
         kind: 'ok',
@@ -755,9 +878,17 @@ export function createAdhanPrayerTimesRepository(
         .find((time) => new Date(time.at).getTime() > current.getTime());
 
       if (upcoming !== undefined) {
+        /*
+          Found in today's list, so it is today's by construction — `day` is the location's calendar
+          day and `today` was computed for it. No date arithmetic and no device clock involved.
+        */
         return {
           kind: 'ok',
-          data: { prayer: upcoming, minutesUntil: minutesBetween(current, upcoming.at) },
+          data: {
+            prayer: upcoming,
+            minutesUntil: minutesBetween(current, upcoming.at),
+            dayRelation: 'today',
+          },
         };
       }
 
@@ -777,7 +908,19 @@ export function createAdhanPrayerTimesRepository(
         // Polar summer: no Fajr tomorrow either. Honest, and not an error.
         return { kind: 'empty' };
       }
-      return { kind: 'ok', data: { prayer: fajr, minutesUntil: minutesBetween(current, fajr.at) } };
+      /*
+        The rollover branch, and the only place `tomorrow` is produced. `nextDay` came from
+        `addCalendarDays` on the *location's* day, so "tomorrow" means tomorrow where the prayer is —
+        not on the device, which may already be on a different date.
+      */
+      return {
+        kind: 'ok',
+        data: {
+          prayer: fajr,
+          minutesUntil: minutesBetween(current, fajr.at),
+          dayRelation: 'tomorrow',
+        },
+      };
     },
 
     async readNotificationPreferences(): Promise<

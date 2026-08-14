@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
@@ -234,9 +234,6 @@ function PrayerDay({
   const { dp } = useModuleMetrics();
   const theme = useModuleTheme();
   const router = useRouter();
-  // Sampled once on mount rather than read during render: `Date.now()` in a render body
-  // is impure, and a clock that advanced mid-render could put one row in two states.
-  const [now] = useState(() => Date.now());
 
   /**
    * The live countdown, from the same hook the hero and Main Home use.
@@ -245,8 +242,16 @@ function PrayerDay({
    * called, and rendering it directly is how the hero once displayed "in 4 hr 14 min" indefinitely
    * while the prayer arrived and passed. Passing `null` when there is no next prayer keeps the hook
    * call unconditional, which is what the rules of hooks require.
+   *
+   * ── One clock for the whole screen ──────────────────────────────────────
+   * `now` comes from the hook rather than from a second `useState(() => Date.now())` here. This
+   * screen ran two clocks: the hook's, ticking every fifteen seconds, and its own, frozen at mount.
+   * The ring's sweep and the timeline's past/next markers were drawn from the frozen one while the
+   * countdown beside them read the live one, so the two drifted apart for as long as the screen
+   * stayed open — and a prayer that passed meanwhile still rendered as upcoming. Reading both from
+   * one sample removes the drift and the minute-boundary flake it caused in tests.
    */
-  const { minutes } = usePrayerCountdown(next?.prayer.at ?? null);
+  const { minutes, now } = usePrayerCountdown(next?.prayer.at ?? null);
 
   /**
    * Which row, if any, is the next prayer — matched by **instant**, never by key.
@@ -407,6 +412,7 @@ function PrayerDay({
           clock={formatTime(next.prayer.at)}
           remaining={formatRemaining(minutes)}
           remainingLines={formatDurationParts(minutes)}
+          dayRelation={next.dayRelation}
           progress={
             interval !== null && interval.kind === 'known' ? interval.elapsedFraction : null
           }

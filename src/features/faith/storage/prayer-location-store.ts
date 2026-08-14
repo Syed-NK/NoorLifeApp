@@ -172,6 +172,77 @@ export type PrayerLocationCandidate =
       readonly resolvedAt: string;
     };
 
+/**
+ * One user-initiated attempt to change the active location.
+ *
+ * ── The defect this exists to make impossible ───────────────────────────────
+ * Acquiring a device fix is slow and asynchronous, and nothing about starting it stops the user
+ * doing something else. Press "Use device location" indoors, watch it time out, choose Dubai from the
+ * catalogue instead — and if that first request is still alive underneath, its eventual success
+ * commits a device fix *over* the city, minutes later, with no interaction. The stored authority
+ * changes to something the user did not last ask for, every prayer time moves, and the notification
+ * schedule is rebuilt. Nothing on screen reports it, because from the app's point of view a location
+ * request simply finished.
+ *
+ * ── Why a generation counter rather than cancellation ───────────────────────
+ * Because the platform will not cancel. `Location.getCurrentPositionAsync` returns a promise with no
+ * abort, and `withTimeout` in `expo-location.port.ts` resolves a *race* — the native request keeps
+ * running whatever the wrapper decided. `AbortController` would be a decoration over an API that
+ * ignores it. What can be controlled is whether a result is allowed to *land*, and that is a decision
+ * this process makes at commit time.
+ *
+ * So every operation takes a number, the newest number wins, and a write from any older number is
+ * refused inside the same serialized section that performs the write. A late result is still
+ * returned to its caller — it simply has no authority left to store anything.
+ *
+ * ── Process-local, deliberately ─────────────────────────────────────────────
+ * Nothing here is persisted. An operation cannot outlive the process that started it: a pending
+ * native request dies with the app, so a counter that survived a restart would be guarding against a
+ * race that can no longer happen while adding a durable field to reason about. `V3` is unchanged.
+ */
+export type LocationOperation = {
+  /** Monotonic within the process. Compared against the current generation, never stored. */
+  readonly id: number;
+};
+
+let operationGeneration = 0;
+
+/**
+ * Claims authority for a new location operation, invalidating every operation before it.
+ *
+ * Called at the *start* of every path that can change the location — a city save, a coordinate save,
+ * a device switch, a device refresh, the first resolution. Starting one is what supersedes the
+ * others, which is why it happens before the slow work rather than after it.
+ */
+export function beginLocationOperation(): LocationOperation {
+  operationGeneration += 1;
+  return { id: operationGeneration };
+}
+
+/**
+ * Gives up an operation's authority without starting another.
+ *
+ * Called when an attempt fails, times out or is abandoned. The brief's rule is that a timeout has
+ * *lost* the right to commit, and this is what enforces it: without this, a device request that timed
+ * out at twelve seconds and succeeded at ninety would still hold the newest generation — nothing
+ * newer having been started — and would commit exactly the stale fix the model exists to refuse.
+ */
+export function retireLocationOperation(operation: LocationOperation): void {
+  if (operation.id === operationGeneration) {
+    operationGeneration += 1;
+  }
+}
+
+/** Whether this operation still holds authority. Read-only; the commit re-checks under the lock. */
+export function isCurrentLocationOperation(operation: LocationOperation): boolean {
+  return operation.id === operationGeneration;
+}
+
+/** Resets the generation counter. Test-only. */
+export function resetLocationOperationsForTest(): void {
+  operationGeneration = 0;
+}
+
 export type CommitOptions = {
   /**
    * Why this write is happening.
@@ -181,6 +252,25 @@ export type CommitOptions = {
    * recompute, the revision must not move, and no notification reconciliation may be triggered.
    */
   readonly reason?: 'change' | 'migration';
+  /**
+   * The operation this write belongs to.
+   *
+   * Re-checked **inside** the serialized section, immediately before the write. Checking only before
+   * the slow work would be worthless: the whole point is that the world changed while the work was in
+   * flight. Omitted only by the migration path, which is a representation change rather than a user
+   * intent and can never be superseded by one.
+   */
+  readonly operation?: LocationOperation;
+  /**
+   * What must be true of storage at commit time for the write to proceed.
+   *
+   * `absent` — write only if nothing is stored. Used by the first-resolution path in
+   * `resolveCurrentLocation`, which is a *read* that writes: it acquires a device fix when it finds no
+   * location, and between that read and its write another surface may have saved one. Without this
+   * precondition, opening a screen at the wrong moment could replace a city the user had just chosen
+   * with a device fix nobody asked for.
+   */
+  readonly requires?: 'absent';
 };
 
 export type CommitResult =
@@ -194,8 +284,39 @@ export type CommitResult =
   | {
       readonly kind: 'rejected';
       readonly reason:
-        'invalid-coordinate' | 'timezone-unresolved' | 'incomplete-city' | 'write-failed';
+        | 'invalid-coordinate'
+        | 'timezone-unresolved'
+        | 'incomplete-city'
+        | 'write-failed'
+        /** A newer operation has claimed authority, or this one was retired. Not a failure. */
+        | 'superseded'
+        /** Storage was not in the state the caller required. Not a failure either. */
+        | 'precondition-unmet';
     };
+
+/**
+ * Serialises the critical section, so no two commits interleave.
+ *
+ * ── Why a lock is needed and a check is not enough ──────────────────────────
+ * The section reads what is stored, compares it, writes, and publishes — four awaits. Two commits
+ * running concurrently can both read the old value before either writes, and then both write: the
+ * loser's bytes land second and win, and two revisions publish for one logical change. Chaining every
+ * commit onto the previous one makes "check authority, then write" indivisible, which is what the
+ * authority check has to be to mean anything.
+ *
+ * The chain never rejects — a failed commit must not wedge every later one — so each link swallows
+ * its predecessor's outcome and only the caller sees it.
+ */
+let mutationChain: Promise<unknown> = Promise.resolve();
+
+function serializeMutation<T>(work: () => Promise<T>): Promise<T> {
+  const run = mutationChain.then(work, work);
+  mutationChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 function isUsableCoordinate(value: unknown): value is Coordinate {
   if (!isRecord(value) || !hasNumber(value, 'latitude') || !hasNumber(value, 'longitude')) {
@@ -245,6 +366,12 @@ function isNonEmptyString(value: unknown): value is string {
  * The revision is incremented **after** `writeJson` resolves, never before. A subscriber woken by a
  * revision always re-reads storage that already holds the new value; a failed write publishes nothing
  * at all, so a save that could not land leaves every screen on the last record that did.
+ *
+ * ── Where authority is decided ──────────────────────────────────────────────
+ * Under the lock, immediately before the write — never earlier. `options.operation` is re-checked
+ * there because everything interesting happens *between* a caller starting its work and reaching
+ * this point: a device fix takes seconds, and a user can save a city inside those seconds. A check
+ * performed before the slow work would pass and then be wrong; a check performed here cannot be.
  */
 export async function commitActivePrayerLocation(
   candidate: PrayerLocationCandidate,
@@ -284,35 +411,63 @@ export async function commitActivePrayerLocation(
   const record = buildRecord(candidate, timezone);
 
   /*
-    An equivalent snapshot writes nothing and publishes nothing. `resolvedAt` is excluded from the
-    comparison deliberately: a re-resolution of the same place at the same accuracy is not a change
-    anything downstream can act on, and treating it as one would reschedule 35 notifications every
-    time a screen opened.
-
-    ── Deliberately the *non-migrating* read ─────────────────────────────────
-    `readActivePrayerLocation` migrates a legacy record by calling this function, so using it here
-    would recurse: commit → read → migrate → commit. It did, and the suite exhausted the heap. The
-    equivalence check only ever needs to compare against an already-current record, so it reads the
-    raw V3 value and treats anything else as "not equivalent" — which is correct, because a legacy
-    record genuinely is not equal to the V3 one replacing it.
+    ── Everything from here runs under the lock ──────────────────────────────
+    The authority check, the equivalence read, the write and the publish are one indivisible step.
+    Splitting them is what lets two commits both read the old value and both write, and it is what
+    would let a superseded operation pass an authority check and then write after the operation that
+    superseded it had already finished.
   */
-  const existing = await readRawV3();
-  if (existing !== null && isEquivalent(existing, record)) {
-    return { kind: 'unchanged', record: existing };
-  }
+  return serializeMutation(async (): Promise<CommitResult> => {
+    /*
+      The re-check the whole model rests on. `operation` is undefined only for the migration path,
+      which rewrites the representation of a place that has not moved and cannot be superseded by a
+      user intent.
+    */
+    if (options.operation !== undefined && !isCurrentLocationOperation(options.operation)) {
+      return { kind: 'rejected', reason: 'superseded' };
+    }
 
-  try {
-    await writeJson(faithStorageKeys.location, record);
-  } catch {
-    return { kind: 'rejected', reason: 'write-failed' };
-  }
+    /*
+      An equivalent snapshot writes nothing and publishes nothing. `resolvedAt` is excluded from the
+      comparison deliberately: a re-resolution of the same place at the same accuracy is not a change
+      anything downstream can act on, and treating it as one would reschedule 35 notifications every
+      time a screen opened.
 
-  const publish = (options.reason ?? 'change') === 'change';
-  if (publish) {
-    markActiveLocationChanged();
-  }
-  lastValidSnapshot = record;
-  return { kind: 'committed', record, published: publish };
+      ── Deliberately the *non-migrating* read ───────────────────────────────
+      `readActivePrayerLocation` migrates a legacy record by calling this function, so using it here
+      would recurse: commit → read → migrate → commit. It did, and the suite exhausted the heap. The
+      equivalence check only ever needs to compare against an already-current record, so it reads the
+      raw V3 value and treats anything else as "not equivalent" — which is correct, because a legacy
+      record genuinely is not equal to the V3 one replacing it.
+    */
+    const existing = await readRawV3();
+
+    /*
+      The precondition, checked against what is stored *now* rather than what the caller saw when it
+      started. This is what stops `resolveCurrentLocation`'s opportunistic first write from landing on
+      top of a location saved while it was acquiring a fix.
+    */
+    if (options.requires === 'absent' && existing !== null) {
+      return { kind: 'rejected', reason: 'precondition-unmet' };
+    }
+
+    if (existing !== null && isEquivalent(existing, record)) {
+      return { kind: 'unchanged', record: existing };
+    }
+
+    try {
+      await writeJson(faithStorageKeys.location, record);
+    } catch {
+      return { kind: 'rejected', reason: 'write-failed' };
+    }
+
+    const publish = (options.reason ?? 'change') === 'change';
+    if (publish) {
+      markActiveLocationChanged();
+    }
+    lastValidSnapshot = record;
+    return { kind: 'committed', record, published: publish };
+  });
 }
 
 /**

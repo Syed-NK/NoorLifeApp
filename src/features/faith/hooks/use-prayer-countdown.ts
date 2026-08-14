@@ -41,6 +41,22 @@ export type PrayerCountdown = {
   readonly minutes: number | null;
   /** "in 2 hr 15 min", "in 14 min", "now", or `null`. */
   readonly label: string | null;
+  /**
+   * The clock this countdown was derived from, in epoch milliseconds.
+   *
+   * ── Why a screen needs the hook's clock rather than its own ─────────────
+   * The Prayer Times screen used to sample `Date.now()` a second time, in its own `useState`
+   * initialiser, and drive the timeline's past/next markers and the progress ring from that. So one
+   * screen ran two clocks: this one advancing on a fifteen-second tick, and the screen's frozen at
+   * mount. They disagreed by however long the screen had been open — the ring drew a sweep for the
+   * mount instant while the countdown beside it read the current one, and a prayer that passed while
+   * the screen was open still rendered as upcoming.
+   *
+   * In a test the same split is a flake: an assertion comparing a countdown-derived figure against a
+   * marker-derived one straddles a minute boundary whenever the two samples fall either side of it.
+   * Exposing the clock makes one source serve both, so there is no boundary to straddle.
+   */
+  readonly now: number;
 };
 
 /** How often the countdown is recomputed while the screen is in the foreground. */
@@ -107,5 +123,6 @@ export function usePrayerCountdown(iso: string | null): PrayerCountdown {
   return {
     minutes,
     label: minutes === null ? null : formatTimeUntil(minutes),
+    now,
   };
 }
