@@ -14,13 +14,25 @@ import {
 /**
  * The `expo-file-system` implementation of the audio store.
  *
- * ── Where the files live, and why it is the cache directory ─────────────────
- * `Paths.cache`, not `Paths.document`. The distinction is the platform's own and it is exactly the
- * distinction the Quran Foundation licence draws: the cache directory is storage the OS may reclaim
- * when the device runs low, and these files are a **cache of vendor content with a one-week
- * ceiling**, not user data. Putting them in the document directory would tell the OS to preserve
- * them across low-storage pressure, which is the opposite of what a bounded, expiring copy of
- * someone else's content should ask for.
+ * ── Two stores, and the platform distinction that separates them ────────────
+ * `Paths.cache` is storage the operating system may reclaim under pressure; `Paths.document` is
+ * storage it will not. Recitation audio needs **both**, because NoorLife holds two different things
+ * that happen to be the same file format:
+ *
+ *   • **prepared** — fetched to play a surah now, or prefetched a few ayat ahead. A bounded,
+ *     expiring copy of vendor content, subject to `MAX_PREPARED_BYTES`. The OS reclaiming it costs
+ *     a re-fetch and nothing else, so it belongs in the cache directory and asks for no protection.
+ *
+ *   • **downloaded** — a surah the user deliberately chose to keep, under the express permission
+ *     that allows retention beyond one week. The OS silently deleting *that* is a broken promise to
+ *     the user, so it belongs in the document directory. It is still private application storage —
+ *     `Paths.document` on Android is the app-internal files directory, not a shared media store —
+ *     so licence condition C1 holds for both.
+ *
+ * The two directories are siblings by name and must never resolve to the same path. That is
+ * asserted by `quran-audio-store-boundary.test.ts` rather than left to the reading of a constant:
+ * a single-character edit could otherwise put deliberate downloads back in purgeable storage, and
+ * nothing would fail until a user lost a surah they had downloaded.
  *
  * ── Nothing here logs ───────────────────────────────────────────────────────
  * Not a URL, not a filename, not a byte count, not a failure. This module holds the one value in the
@@ -30,14 +42,39 @@ import {
  * the transport.
  */
 
-/** The single directory every prepared and downloaded recitation lives in. */
-const AUDIO_DIRECTORY = 'faith-recitations';
+/**
+ * Which of the two stores a file belongs to.
+ *
+ * Not a boolean. `prepared` and `downloaded` differ in lifetime, in eviction, in which licence
+ * clause governs them and in what a user is owed when one disappears; a parameter named `persist`
+ * would carry the storage decision and lose all of that.
+ */
+export type AudioStoreKind = 'prepared' | 'downloaded';
+
+/** The prepared cache. Evictable, budgeted, cache directory. */
+const PREPARED_DIRECTORY = 'faith-recitations';
+
+/**
+ * The deliberate-download store. Persistent, private, document directory.
+ *
+ * A different leaf name as well as a different parent, so that even a mistaken parent would not
+ * make the two collide, and so a path seen in a crash report says which store it came from.
+ */
+const DOWNLOAD_DIRECTORY = 'faith-recitations-downloaded';
 
 /** How much of the file is read to decide whether it is plausibly audio. */
 const HEADER_BYTES = 16;
 
-function audioDirectory(): Directory {
-  return new Directory(Paths.cache, AUDIO_DIRECTORY);
+/**
+ * The directory for one store kind.
+ *
+ * Exported so the boundary test can assert the two are distinct without reaching into a private
+ * constant, and so nothing else in the app has to know which parent belongs to which kind.
+ */
+export function audioDirectoryFor(kind: AudioStoreKind): Directory {
+  return kind === 'downloaded'
+    ? new Directory(Paths.document, DOWNLOAD_DIRECTORY)
+    : new Directory(Paths.cache, PREPARED_DIRECTORY);
 }
 
 /**
@@ -47,8 +84,8 @@ function audioDirectory(): Directory {
  * between them, and two prepared ayat starting in the same tick would both see "absent" and both
  * create. `intermediates` covers a cache directory the OS has emptied down to nothing.
  */
-function ensureDirectory(): Directory {
-  const directory = audioDirectory();
+function ensureDirectory(kind: AudioStoreKind): Directory {
+  const directory = audioDirectoryFor(kind);
   directory.create({ idempotent: true, intermediates: true });
   return directory;
 }
@@ -115,11 +152,19 @@ function discard(file: File): void {
   }
 }
 
-export function createExpoAudioStore(): AudioStore {
+/**
+ * Builds a store over one of the two directories.
+ *
+ * The kind is taken at construction rather than per call: a store is handed to a preparation
+ * engine or to a download manager and used many times, and a per-call parameter would let one
+ * caller write a prepared file and read a downloaded one under the same name. Defaulted to
+ * `'prepared'` so every existing construction keeps its present behaviour unchanged.
+ */
+export function createExpoAudioStore(kind: AudioStoreKind = 'prepared'): AudioStore {
   return {
     list(): readonly StoredAudioFile[] {
       try {
-        const directory = audioDirectory();
+        const directory = audioDirectoryFor(kind);
         if (!directory.exists) {
           return [];
         }
@@ -141,7 +186,7 @@ export function createExpoAudioStore(): AudioStore {
 
     read(name: string): StoredAudioFile | null {
       try {
-        return describe(new File(audioDirectory(), name), name);
+        return describe(new File(audioDirectoryFor(kind), name), name);
       } catch {
         return null;
       }
@@ -149,7 +194,7 @@ export function createExpoAudioStore(): AudioStore {
 
     remove(name: string): void {
       try {
-        discard(new File(audioDirectory(), name));
+        discard(new File(audioDirectoryFor(kind), name));
       } catch {
         // Best-effort by design.
       }
@@ -171,7 +216,7 @@ export function createExpoAudioStore(): AudioStore {
      * incomplete file.
      */
     async download(request: AudioDownloadRequest): Promise<StoredAudioFile> {
-      const directory = ensureDirectory();
+      const directory = ensureDirectory(kind);
       const partial = new File(directory, partialFileName(request.name));
       const target = new File(directory, request.name);
 
@@ -249,7 +294,7 @@ export function createExpoAudioStore(): AudioStore {
      */
     sweepIncomplete(): void {
       try {
-        const directory = audioDirectory();
+        const directory = audioDirectoryFor(kind);
         if (!directory.exists) {
           return;
         }
