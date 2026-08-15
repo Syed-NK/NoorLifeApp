@@ -98,6 +98,45 @@ export const faithStorageKeys = {
    * Holds catalogue ids and nothing else — no scripture, no translation, no title.
    */
   dhikrUserState: `${NAMESPACE}.dhikr.user-state`,
+  /**
+   * How far NoorLife has read the Quran Foundation change feed, per canonical resource filter.
+   *
+   * A token and a timestamp — no content of any kind. Kept apart from the rows it governs because
+   * the two have different lifetimes: a content store can be rebuilt from a snapshot without
+   * losing the audit trail, and a stale token can be discarded without discarding the content.
+   * See `faith-sync-checkpoint.ts` for why the token may only ever be advanced after a whole run.
+   */
+  quranSyncCheckpoint: `${NAMESPACE}.quran.sync-checkpoint`,
+  /**
+   * Translation 85, as synchronised — not as cached.
+   *
+   * The distinction is the licence: text from the ordinary endpoint expires at one week because
+   * nothing would report a correction, while text arriving through Content Sync may be retained
+   * because the vendor will report one and NoorLife is obliged to apply it. Its own key so the
+   * two can never be confused for one another. See `faith-sync-rows.ts`.
+   */
+  quranSyncedTranslations: `${NAMESPACE}.quran.synced-translations`,
+  /**
+   * Sudais recitation rows — resource id, surah, ayah, and sizes where the vendor supplied them.
+   *
+   * Deliberately holds **no audio URL**. A CDN address can be rotated or re-signed, so binding a
+   * downloaded file to one would make its identity depend on something the vendor may change.
+   * Surah and ayah are the identity.
+   */
+  quranSyncedRecitations: `${NAMESPACE}.quran.synced-recitations`,
+  /**
+   * One row per downloaded ayah: identity, size, state, and when it last agreed with the vendor.
+   *
+   * ── Why this exists beside the surah-level download index ────────────────
+   * `audioDownloads` records *decisions* — which surahs a user asked for. This records *files*,
+   * and it exists because presence used to be decided by building a filename and asking whether
+   * it existed. A name is a guess about identity, not a record of one: it cannot say which vendor
+   * row the bytes came from, whether they were validated, or when they last matched the
+   * publisher. Content Sync makes all three answerable, and none of them fits in a name.
+   *
+   * Holds no URL and no host. See `faith-audio-manifest.ts`.
+   */
+  quranAudioManifest: `${NAMESPACE}.quran.audio-manifest`,
 } as const;
 
 export type FaithStorageKey = (typeof faithStorageKeys)[keyof typeof faithStorageKeys];
