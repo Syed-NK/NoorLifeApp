@@ -21,7 +21,15 @@ export function useSurahDownloads(): {
   readonly totalBytes: number;
   readonly ready: boolean;
   readonly refresh: () => void;
-  readonly remove: (reciterId: string, surah: number, ayahCount: number) => Promise<void>;
+  /**
+   * Deletes one downloaded surah for one reciter.
+   *
+   * No `ayahCount`: the service enumerates what is on disk. The parameter used to be required and
+   * was the reason removal could silently delete nothing — see `RecitationAudio.removeDownload`.
+   */
+  readonly remove: (reciterId: string, surah: number) => Promise<void>;
+  /** Deletes every downloaded surah for one reciter. Always behind a confirmation in the UI. */
+  readonly removeForReciter: (reciterId: string) => Promise<void>;
 } {
   const audio = useRecitationAudio();
   const [downloads, setDownloads] = useState<SurahDownloadIndex>([]);
@@ -44,8 +52,16 @@ export function useSurahDownloads(): {
   const refresh = useCallback(() => setTick((value) => value + 1), []);
 
   const remove = useCallback(
-    async (reciterId: string, surah: number, ayahCount: number) => {
-      await audio.removeDownload(reciterId, surah, ayahCount);
+    async (reciterId: string, surah: number) => {
+      await audio.removeDownload(reciterId, surah);
+      setTick((value) => value + 1);
+    },
+    [audio],
+  );
+
+  const removeForReciter = useCallback(
+    async (reciterId: string) => {
+      await audio.removeReciterDownloads(reciterId);
       setTick((value) => value + 1);
     },
     [audio],
@@ -57,5 +73,6 @@ export function useSurahDownloads(): {
     ready,
     refresh,
     remove,
+    removeForReciter,
   };
 }

@@ -9,7 +9,12 @@ import {
   type SurahDownloadIndex,
 } from '../../storage/faith-audio-downloads';
 import type { AyahRecitation } from '../quran-content.repository';
-import { audioFileName, type AudioStore } from './audio-store.port';
+import {
+  audioFileName,
+  fileSafeReciterId,
+  parseAudioFileName,
+  type AudioStore,
+} from './audio-store.port';
 import {
   createRecitationPreparation,
   type PreparationFailure,
@@ -78,8 +83,23 @@ export type RecitationAudio = {
     onProgress?: (completed: number, total: number) => void,
   ): Promise<SurahDownloadOutcome>;
   cancelDownload(reciterId: string, surah: number): void;
-  /** Deletes the files and forgets the record. */
-  removeDownload(reciterId: string, surah: number, ayahCount: number): Promise<void>;
+  /**
+   * Deletes one surah's files for one reciter and forgets the record.
+   *
+   * ── Why `ayahCount` is optional, and why passing it is now only a hint ──────
+   * It used to be required, and the deletion loop ran `1..ayahCount`. Every caller had to know a
+   * number it had no reliable way of knowing: the reciter screen passed
+   * `position?.ayahCount ?? 0`, so with no recorded reading position it passed **zero** — the loop
+   * removed nothing, the index entry was forgotten anyway, and the bytes stayed in private storage
+   * with nothing left that knew they were there. A removal that reports success and deletes nothing
+   * is the worst of the available failures.
+   *
+   * The files are now enumerated from the store and matched by name, so the count is whatever is
+   * actually on disk. The parameter is kept for the existing call sites and is ignored.
+   */
+  removeDownload(reciterId: string, surah: number, ayahCount?: number): Promise<void>;
+  /** Deletes every downloaded surah for one reciter. The bulk action behind a confirmation. */
+  removeReciterDownloads(reciterId: string): Promise<void>;
   /** Removes every download, for the Faith data reset. */
   removeAll(): Promise<void>;
   /** Re-reads the index into the pin registry. Called once at startup. */
@@ -125,6 +145,38 @@ export function createRecitationAudio(config: {
     ...(config.now === undefined ? {} : { now: config.now }),
     isPinned: (reciterId, surah) => pinned.has(pinKey(reciterId, surah)),
   });
+
+  /**
+   * Deletes every promoted file the predicate selects, identified from the directory itself.
+   *
+   * ── Why the filesystem is enumerated instead of a count being trusted ───────
+   * Because the count was wrong, and wrong in the silent direction. Removal used to iterate
+   * `1..ayahCount` from a number the *caller* supplied, and the reciter screen supplied
+   * `position?.ayahCount ?? 0` — zero whenever the user had not marked a verse read. The loop then
+   * deleted nothing while the index entry was dropped, so the bytes became unreachable rather than
+   * removed: invisible to the user, invisible to "how much storage is this using", and still on the
+   * device.
+   *
+   * `parseAudioFileName` is the same parser eviction uses, so a file this app wrote is matched and a
+   * file it did not write is left alone. Partials are excluded because `list()` never returns them —
+   * they are swept separately, by name, on every mount.
+   */
+  const removeFilesFor = (
+    matches: (file: { readonly reciterId: string; readonly surah: number }) => boolean,
+  ): void => {
+    for (const file of store.list()) {
+      const parsed = parseAudioFileName(file.name);
+      /*
+        The stored reciter id is compared in its sanitised form, because that is the form the
+        filename carries: `audioFileName` strips everything outside `[A-Za-z0-9]` so a preference
+        value can never contain a path separator. Comparing the raw id against a sanitised one would
+        make removal silently miss every reciter whose id has a separator in it.
+      */
+      if (parsed !== null && matches(parsed)) {
+        store.remove(file.name);
+      }
+    }
+  };
 
   /** How many of a surah's ayah files are actually on disk right now. */
   const filesPresent = (
@@ -298,28 +350,58 @@ export function createRecitationAudio(config: {
       }
     },
 
-    async removeDownload(reciterId, surah, ayahCount) {
+    async removeDownload(reciterId, surah) {
       const key = pinKey(reciterId, surah);
-      // Stop a download in flight first, so it cannot promote a file after the deletion below.
+      /*
+        ── Cancellation first, and the order is load-bearing ─────────────────
+        A transfer in flight holds a promotion that has not happened yet. Deleting first and
+        cancelling second leaves a window in which the download promotes an ayah file *after* the
+        directory was swept, so the surah comes back partly present with no index entry describing
+        it — a file the eviction budget will not pin and the user cannot see or remove.
+      */
       const running = active.get(key);
       if (running !== undefined) {
         running.cancelled = true;
       }
-      for (let ayah = 1; ayah <= ayahCount; ayah += 1) {
-        store.remove(audioFileName(reciterId, surah, ayah));
-      }
+      removeFilesFor(
+        (file) => file.reciterId === fileSafeReciterId(reciterId) && file.surah === surah,
+      );
       pinned.delete(key);
       records.delete(key);
       failures.delete(key);
       await forgetSurahDownload(reciterId, surah);
     },
 
-    async removeAll() {
-      for (const record of records.values()) {
-        for (let ayah = 1; ayah <= record.ayahCount; ayah += 1) {
-          store.remove(audioFileName(record.reciterId, record.surah, ayah));
+    async removeReciterDownloads(reciterId) {
+      for (const [key, running] of active.entries()) {
+        if (key.startsWith(`${reciterId}:`)) {
+          running.cancelled = true;
         }
       }
+      removeFilesFor((file) => file.reciterId === fileSafeReciterId(reciterId));
+
+      /*
+        The index is rewritten one surah at a time rather than cleared, because this reciter is not
+        the only one with downloads. `forgetSurahDownload` is the single writer of that key, so
+        reusing it keeps the removal path identical to the per-surah one.
+      */
+      const owned = [...records.values()].filter((record) => record.reciterId === reciterId);
+      for (const record of owned) {
+        const key = pinKey(record.reciterId, record.surah);
+        pinned.delete(key);
+        records.delete(key);
+        failures.delete(key);
+        await forgetSurahDownload(record.reciterId, record.surah);
+      }
+    },
+
+    async removeAll() {
+      /*
+        Swept from the store rather than from `records`, for the same reason the per-surah removal
+        is: `records` describes what this process believes, and the filesystem is what actually
+        holds bytes. A record lost to a failed write would otherwise leave its files behind forever.
+      */
+      removeFilesFor(() => true);
       pinned.clear();
       records.clear();
       failures.clear();

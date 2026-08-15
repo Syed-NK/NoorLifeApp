@@ -64,6 +64,8 @@ export type QuranAudioPlayerProps = {
   readonly onChangeRate: (rate: number) => void;
   readonly onDownload: () => void;
   readonly onCancelDownload: () => void;
+  /** Deletes this surah's downloaded audio. Reached from the completed state. */
+  readonly onRemoveDownload: () => void;
   readonly onRetry: () => void;
   readonly onOpenReciters: () => void;
 };
@@ -119,6 +121,7 @@ export function QuranAudioPlayer({
   onChangeRate,
   onDownload,
   onCancelDownload,
+  onRemoveDownload,
   onRetry,
   onOpenReciters,
 }: QuranAudioPlayerProps) {
@@ -231,6 +234,7 @@ export function QuranAudioPlayer({
             surahName={surahName}
             onDownload={onDownload}
             onCancel={onCancelDownload}
+            onRemove={onRemoveDownload}
           />
           <SpeedControl
             rate={rate}
@@ -525,11 +529,13 @@ function DownloadControl({
   surahName,
   onDownload,
   onCancel,
+  onRemove,
 }: {
   readonly state: SurahDownloadState;
   readonly surahName: string;
   readonly onDownload: () => void;
   readonly onCancel: () => void;
+  readonly onRemove: () => void;
 }) {
   const { dp } = useModuleMetrics();
 
@@ -541,7 +547,15 @@ function DownloadControl({
       case 'downloading':
         return `Downloading ${surahName}, ${state.completed} of ${state.total} ayat. Cancel the download`;
       case 'downloaded':
-        return `${surahName} is downloaded, ${formatBytes(state.bytes)}, available until ${formatDate(state.expiresAt)}`;
+        /*
+          ── The dead end this replaces ────────────────────────────────────
+          The control used to be `disabled` in this state, so a completed download turned the only
+          affordance on the panel into a read-out: pressing it re-announced "is downloaded" and did
+          nothing. The Reciter screen's own Remove was unreachable for this surah unless the user had
+          separately marked a verse read, so there was no path from "I have downloaded this" to "I
+          would like the space back". Now the control *is* that path.
+        */
+        return `${surahName} is downloaded, ${formatBytes(state.bytes)}, available until ${formatDate(state.expiresAt)}. Remove it from this device`;
       case 'expired':
         return `The download of ${surahName} has expired. Download it again`;
       case 'incomplete':
@@ -555,10 +569,9 @@ function DownloadControl({
 
   return (
     <PressableScale
-      onPress={running ? onCancel : onDownload}
-      disabled={done}
+      onPress={running ? onCancel : done ? onRemove : onDownload}
       accessibilityRole="button"
-      accessibilityState={{ disabled: done, busy: running }}
+      accessibilityState={{ busy: running }}
       accessibilityLabel={label}
       hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
       style={{
@@ -572,10 +585,15 @@ function DownloadControl({
       }}
       testID="faith-reader-player-download"
     >
+      {/*
+        The destructive state gets the destructive glyph. A tick that removed a download on tap
+        would be a delete button wearing the badge for "this worked" — the one icon a user is least
+        expecting to take something away.
+      */}
       <AppIcon
-        name={running ? 'downloading' : done ? 'check-circle' : 'download'}
+        name={running ? 'downloading' : done ? 'delete' : 'download'}
         size={dp(17)}
-        color={done ? moduleNeutrals.success : readerDockColors.accent}
+        color={done ? moduleNeutrals.warning : readerDockColors.accent}
       />
     </PressableScale>
   );

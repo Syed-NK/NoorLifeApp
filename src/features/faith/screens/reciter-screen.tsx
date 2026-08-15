@@ -1,12 +1,16 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Modal, View } from 'react-native';
 
+import { AppIcon, PressableScale } from '@ds/components';
+import { neutralColors } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
-import { moduleLayout } from '@features/modules/module-tokens';
+import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
+import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { FaithCatalogueList, type CatalogueRow } from '../components/faith-catalogue-list';
+import { FaithRow, FaithRowGroup } from '../components/faith-list';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import { formatBytes, formatDate } from '../components/reader/quran-audio-player';
 import type { SurahDownloadState } from '../data/audio';
@@ -22,7 +26,11 @@ import { useFaithResource } from '../hooks/use-faith-resource';
 import { useSurahDownloads } from '../hooks/use-surah-downloads';
 import { attributionForReciter } from '../data/quran-foundation/recitation-attribution';
 import { DEFAULT_RECITER_ID } from '../storage/faith-preferences';
-import { isDownloadExpired } from '../storage/faith-audio-downloads';
+import {
+  isDownloadExpired,
+  type SurahDownload,
+  type SurahDownloadIndex,
+} from '../storage/faith-audio-downloads';
 
 /**
  * "Choose reciter" — the recitation catalogue and its offline state.
@@ -242,14 +250,30 @@ function ReciterBody() {
               setTick((value) => value + 1);
             }
           }}
-          onRemove={(reciterId, ayahCount) => {
+          onRemove={(reciterId) => {
             if (targetSurah !== null) {
-              void downloads.remove(reciterId, targetSurah, ayahCount).then(() => {
+              void downloads.remove(reciterId, targetSurah).then(() => {
                 setTick((value) => value + 1);
               });
             }
           }}
-          ayahCount={position?.ayahCount ?? 0}
+          /*
+            ── The list that made removal reachable ──────────────────────────
+            Every download on the device, independent of `targetSurah`. The rows above can only ever
+            describe the surah in the user's reading position, and that position is `null` until they
+            deliberately mark a verse read — so a user who downloaded a surah from the reader and
+            never pressed Read saw every row say "Streams" with no action on it, and there was no
+            other surface anywhere that listed what they had downloaded. Removal existed in the
+            service and could not be reached from the app.
+          */
+          downloads={downloads.downloads}
+          stateOf={(reciterId, surah) => audio.stateFor(reciterId, surah)}
+          onRemoveDownload={(reciterId, surah) => {
+            void downloads.remove(reciterId, surah).then(() => setTick((value) => value + 1));
+          }}
+          onRemoveReciterDownloads={(reciterId) => {
+            void downloads.removeForReciter(reciterId).then(() => setTick((value) => value + 1));
+          }}
           revision={tick}
           onChoose={(reciter) => {
             void (async () => {
@@ -261,6 +285,250 @@ function ReciterBody() {
         />
       )}
     </FaithResourceView>
+  );
+}
+
+/**
+ * Everything on the device, and the only way to take it off again.
+ *
+ * ── Why this panel had to exist ─────────────────────────────────────────────
+ * `RecitationAudio.removeDownload` has always been implemented, and until now nothing could reach it
+ * for an arbitrary surah. The reciter rows above describe exactly one surah — `position?.surah`, the
+ * user's continue-reading position — and that position stays `null` until somebody deliberately
+ * presses **Read** on a verse. So the sequence "open a surah, download it, leave" produced a device
+ * holding tens of megabytes with no screen anywhere that listed it and no control anywhere that
+ * removed it. The bytes expired a week later; that is a licence ceiling doing the user's housekeeping,
+ * not a feature.
+ *
+ * ── What it deliberately does not offer ─────────────────────────────────────
+ * Any way to get a file *out*. No share, no export, no copy-to-Downloads, no path shown. The audio
+ * lives in private application storage under the Quran Foundation terms, and a control that moved one
+ * anywhere else would be the single most consequential line in this module.
+ */
+function DownloadedSurahs({
+  downloads,
+  reciterName,
+  stateOf,
+  onRemove,
+  onRemoveAllForReciter,
+  revision,
+}: {
+  readonly downloads: SurahDownloadIndex;
+  readonly reciterName: (reciterId: string) => string;
+  readonly stateOf: (reciterId: string, surah: number) => SurahDownloadState;
+  readonly onRemove: (reciterId: string, surah: number) => void;
+  readonly onRemoveAllForReciter: (reciterId: string) => void;
+  /** Bumped when the mutable download service changes, so the states below re-derive. */
+  readonly revision: number;
+}) {
+  const { dp } = useModuleMetrics();
+  /** The reciter whose bulk removal is awaiting confirmation, or `null`. */
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const byReciter = useMemo(() => {
+    const groups = new Map<string, SurahDownload[]>();
+    for (const entry of downloads) {
+      const existing = groups.get(entry.reciterId) ?? [];
+      existing.push(entry);
+      groups.set(entry.reciterId, existing);
+    }
+    for (const list of groups.values()) {
+      list.sort((left, right) => left.surah - right.surah);
+    }
+    return [...groups.entries()];
+    // `revision` re-derives the group after a removal, which mutates the service rather than state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [downloads, revision]);
+
+  if (byReciter.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={{ paddingBottom: dp(10), rowGap: dp(8) }} testID="faith-reciters-downloads">
+      {byReciter.map(([reciterId, entries]) => (
+        <FaithRowGroup
+          key={reciterId}
+          title={`Downloaded • ${reciterName(reciterId)}`}
+          testID={`faith-reciter-downloads-${reciterId}`}
+        >
+          {[
+            ...entries.map((entry) => {
+              const state = stateOf(entry.reciterId, entry.surah);
+              return (
+                <FaithRow
+                  key={entry.surah}
+                  title={`Surah ${entry.surah}`}
+                  subtitle={describeStoredDownload(entry, state)}
+                  icon="download"
+                  trailing={
+                    <PressableScale
+                      onPress={() => onRemove(entry.reciterId, entry.surah)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove downloaded surah ${entry.surah} by ${reciterName(reciterId)}, ${formatBytes(entry.bytes)}`}
+                      accessibilityHint="Deletes the audio from this device"
+                      hitSlop={minimumHitSlop(dp(24))}
+                      testID={`faith-reciter-download-remove-${reciterId}-${entry.surah}`}
+                    >
+                      <AppIcon name="delete" size={dp(20)} color={moduleNeutrals.warning} />
+                    </PressableScale>
+                  }
+                  /*
+                    The row carries its own control, so the container must not merge it — the same
+                    rule the prayer switches are governed by. See `FaithRowProps.trailingInteractive`.
+                  */
+                  trailingInteractive
+                  testID={`faith-reciter-download-${reciterId}-${entry.surah}`}
+                />
+              );
+            }),
+            /*
+              The bulk action, last, and only when there is more than one thing for it to do. A
+              "Remove all" beside a single item is a second button for the same deletion, and the
+              destructive one is the one you do not want duplicated.
+            */
+            ...(entries.length > 1
+              ? [
+                  <FaithRow
+                    key="all"
+                    title={`Remove all ${entries.length} downloads`}
+                    subtitle={`${formatBytes(entries.reduce((sum, entry) => sum + entry.bytes, 0))} for ${reciterName(reciterId)}`}
+                    icon="delete"
+                    iconColor={moduleNeutrals.warning}
+                    onPress={() => setConfirming(reciterId)}
+                    testID={`faith-reciter-downloads-remove-all-${reciterId}`}
+                  />,
+                ]
+              : []),
+          ]}
+        </FaithRowGroup>
+      ))}
+
+      {/*
+        Confirmation for the bulk removal only. One surah is a small, obvious, re-doable action and a
+        dialog in front of it teaches people to dismiss dialogs; "remove all" can discard a journey's
+        worth of downloading over a connection the user may not have again soon.
+      */}
+      {confirming === null ? null : (
+        <ConfirmRemoveAll
+          reciterName={reciterName(confirming)}
+          count={downloads.filter((entry) => entry.reciterId === confirming).length}
+          bytes={downloads
+            .filter((entry) => entry.reciterId === confirming)
+            .reduce((sum, entry) => sum + entry.bytes, 0)}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            onRemoveAllForReciter(confirming);
+            setConfirming(null);
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+/**
+ * One stored download's second line: how big, how many verses, and whether it can still be played.
+ *
+ * The live state is consulted rather than the index alone, because the index records what was written
+ * and the filesystem decides what survives. A file the OS reclaimed under storage pressure leaves an
+ * entry that looks perfectly healthy, and describing it as playable would be the download equivalent
+ * of claiming a notification is scheduled.
+ */
+export function describeStoredDownload(entry: SurahDownload, state: SurahDownloadState): string {
+  const size = `${formatBytes(entry.bytes)} • ${entry.files} of ${entry.ayahCount} verses`;
+  switch (state.kind) {
+    case 'downloaded':
+      return `${size} • until ${formatDate(state.expiresAt)}`;
+    case 'expired':
+      return `${size} • expired, download again to listen offline`;
+    case 'downloading':
+      return `${size} • downloading ${state.completed} of ${state.total}`;
+    case 'incomplete':
+      return `${size} • ${state.completed} of ${state.total} verses still on this device`;
+    case 'failed':
+      return `${size} • the last download failed`;
+    case 'stream-only':
+      /*
+        An index entry with nothing behind it: the files are gone and the record is not. Named
+        honestly rather than hidden, because Remove is exactly the right thing to do to it and
+        hiding it would leave the row unremovable.
+      */
+      return `${size} • files are missing from this device`;
+  }
+}
+
+/** The one confirmation in the download flow. Cancel is the safe default and is listed first. */
+function ConfirmRemoveAll({
+  reciterName,
+  count,
+  bytes,
+  onCancel,
+  onConfirm,
+}: {
+  readonly reciterName: string;
+  readonly count: number;
+  readonly bytes: number;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+}) {
+  const { dp } = useModuleMetrics();
+
+  return (
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+      testID="faith-reciter-downloads-confirm"
+    >
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          padding: dp(moduleLayout.pagePadding),
+          /* The locked scrim, the same dim the verse action sheet draws over the reader. */
+          backgroundColor: neutralColors.scrim,
+        }}
+      >
+        <View
+          style={{
+            backgroundColor: moduleNeutrals.surface,
+            borderRadius: dp(moduleLayout.cardRadius),
+            padding: dp(18),
+            rowGap: dp(12),
+          }}
+          accessibilityViewIsModal
+        >
+          <ModuleText token="cardHeading">{`Remove ${count} downloads?`}</ModuleText>
+          <ModuleText token="rowMeta" numberOfLines={4}>
+            {`This deletes ${formatBytes(bytes)} of ${reciterName}'s recitation from this device. You can download it again later.`}
+          </ModuleText>
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', columnGap: dp(16) }}>
+            <PressableScale
+              onPress={onCancel}
+              accessibilityRole="button"
+              accessibilityLabel="Keep the downloads"
+              style={{ minHeight: dp(moduleLayout.minTouchTarget), justifyContent: 'center' }}
+              testID="faith-reciter-downloads-confirm-cancel"
+            >
+              <ModuleText token="cardAction">Cancel</ModuleText>
+            </PressableScale>
+            <PressableScale
+              onPress={onConfirm}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove all ${count} downloads for ${reciterName}`}
+              style={{ minHeight: dp(moduleLayout.minTouchTarget), justifyContent: 'center' }}
+              testID="faith-reciter-downloads-confirm-remove"
+            >
+              <ModuleText token="cardAction" color={moduleNeutrals.warning}>
+                Remove all
+              </ModuleText>
+            </PressableScale>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -281,7 +549,10 @@ function ReciterCatalogueBody({
   onDownload,
   onCancel,
   onRemove,
-  ayahCount,
+  downloads,
+  stateOf: downloadStateOf,
+  onRemoveDownload,
+  onRemoveReciterDownloads,
   revision,
   onChoose,
 }: {
@@ -299,8 +570,13 @@ function ReciterCatalogueBody({
   readonly stateFor: (reciterId: string) => SurahDownloadState;
   readonly onDownload: (reciterId: string) => void;
   readonly onCancel: (reciterId: string) => void;
-  readonly onRemove: (reciterId: string, ayahCount: number) => void;
-  readonly ayahCount: number;
+  readonly onRemove: (reciterId: string) => void;
+  /** Every download on the device, for every reciter. The list that makes removal reachable. */
+  readonly downloads: SurahDownloadIndex;
+  /** The live state of one download — downloaded, expired, or short of the files it claims. */
+  readonly stateOf: (reciterId: string, surah: number) => SurahDownloadState;
+  readonly onRemoveDownload: (reciterId: string, surah: number) => void;
+  readonly onRemoveReciterDownloads: (reciterId: string) => void;
   /** Bumped when the mutable download service changes, so the rows re-derive. */
   readonly revision: number;
   readonly onChoose: (reciter: ReciterEdition) => void;
@@ -342,7 +618,7 @@ function ReciterCatalogueBody({
                   icon: 'delete',
                   label: 'Remove',
                   accessibilityLabel: `Remove downloaded ${surahName} by ${reciter.name}, ${formatBytes(current.bytes)}`,
-                  onPress: () => onRemove(reciter.id, ayahCount),
+                  onPress: () => onRemove(reciter.id),
                 },
               };
             case 'expired':
@@ -441,7 +717,6 @@ function ReciterCatalogueBody({
       onDownload,
       onCancel,
       onRemove,
-      ayahCount,
       revision,
     ],
   );
@@ -479,6 +754,15 @@ function ReciterCatalogueBody({
           </ModuleText>
         </View>
       )}
+
+      <DownloadedSurahs
+        downloads={downloads}
+        reciterName={(id) => byId.get(id)?.name ?? `Reciter ${id}`}
+        stateOf={downloadStateOf}
+        onRemove={onRemoveDownload}
+        onRemoveAllForReciter={onRemoveReciterDownloads}
+        revision={revision}
+      />
 
       <View style={{ flex: 1, minHeight: dp(moduleLayout.minTouchTarget) }}>
         <FaithCatalogueList

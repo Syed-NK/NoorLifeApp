@@ -77,6 +77,7 @@ function props(overrides?: Partial<QuranAudioPlayerProps>): QuranAudioPlayerProp
     onChangeRate: noop,
     onDownload: noop,
     onCancelDownload: noop,
+    onRemoveDownload: noop,
     onRetry: noop,
     onOpenReciters: noop,
     ...overrides,

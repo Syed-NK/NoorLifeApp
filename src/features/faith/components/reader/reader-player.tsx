@@ -25,6 +25,7 @@ export function ReaderPlayer({
   download,
   onDownloadSurah,
   onCancelDownload,
+  onRemoveDownload,
   onOpenReciters,
 }: {
   readonly transport: RecitationTransport;
@@ -43,6 +44,7 @@ export function ReaderPlayer({
   readonly download: SurahDownloadState;
   readonly onDownloadSurah: () => void;
   readonly onCancelDownload: () => void;
+  readonly onRemoveDownload: () => void;
   readonly onOpenReciters: () => void;
 }) {
   const focus = transport.focus;
@@ -75,6 +77,7 @@ export function ReaderPlayer({
       onChangeRate={transport.setRate}
       onDownload={onDownloadSurah}
       onCancelDownload={onCancelDownload}
+      onRemoveDownload={onRemoveDownload}
       onRetry={transport.retry}
       onOpenReciters={onOpenReciters}
     />

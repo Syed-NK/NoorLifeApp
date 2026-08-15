@@ -115,8 +115,19 @@ export function isPlausibleAudio(header: Uint8Array, bytes: number): boolean {
  * and escape the audio directory.
  */
 export function audioFileName(reciterId: string, surah: number, ayah: number): string {
-  const reciter = reciterId.replace(/[^A-Za-z0-9]/g, '');
-  return `r${reciter}-s${surah}-a${ayah}.mp3`;
+  return `r${fileSafeReciterId(reciterId)}-s${surah}-a${ayah}.mp3`;
+}
+
+/**
+ * A reciter id in the form a filename carries it.
+ *
+ * Exported because removal has to compare against it. `parseAudioFileName` can only return the
+ * sanitised form — it is reading a filename — so matching a raw preference value against it would
+ * silently miss every reciter whose id contains anything outside `[A-Za-z0-9]`, and a "Remove"
+ * that quietly matches nothing is the failure this whole path was corrected for.
+ */
+export function fileSafeReciterId(reciterId: string): string {
+  return reciterId.replace(/[^A-Za-z0-9]/g, '');
 }
 
 /** The partial a download writes to before it is validated and promoted. */
