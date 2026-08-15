@@ -18,7 +18,7 @@ import { hasData } from '../data/faith-result';
 import type { AyahRecitation, ReciterEdition } from '../data/quran-content.repository';
 import { surahNumber } from '../data/quran-content.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
-import { useRecitationAudio } from '../di/recitation-audio-context';
+import { useRecitationAudio, useRecitationAudioRevision } from '../di/recitation-audio-context';
 import { faithNavKeys } from '../faith-routes';
 import { useContinueReading } from '../hooks/use-continue-reading';
 import { useFaithPreferences } from '../hooks/use-faith-preferences';
@@ -172,6 +172,8 @@ function ReciterBody() {
   const [query, setQuery] = useState('');
   const [styleId, setStyleId] = useState<string>(ALL_STYLES);
   const [tick, setTick] = useState(0);
+  /* See the reader: a synchronous `stateFor` taken before hydration must not be kept. */
+  const audioRevision = useRecitationAudioRevision();
 
   const reciters = useFaithResource(
     'faith.reciters.catalogue',
@@ -274,7 +276,7 @@ function ReciterBody() {
           onRemoveReciterDownloads={(reciterId) => {
             void downloads.removeForReciter(reciterId).then(() => setTick((value) => value + 1));
           }}
-          revision={tick}
+          revision={tick + audioRevision}
           onChoose={(reciter) => {
             void (async () => {
               // Marked as the user's own, so the superseded-default migration never overrides it.

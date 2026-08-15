@@ -618,3 +618,155 @@ describe('P3 artwork', () => {
     expect(registry).not.toMatch(/require\([^)]*p3-reminder-bell/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The horizon, and what "6 pending" actually means
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Why one selected prayer produces six pending requests, pinned so the number is checkable.
+ *
+ * ── The observation these were written from ─────────────────────────────────
+ * On a release build at 14:00 Asia/Dubai with **Fajr alone** switched on, the screen reported
+ * "6 alerts pending" and `dumpsys alarm` listed exactly six `RTC_WAKEUP` entries for the package:
+ * 2026-08-16 04:32 through 2026-08-21 04:35, one per day, all future, all distinct dates, the time
+ * drifting about a minute per day as real Fajr does.
+ *
+ * Six is therefore neither a duplicate nor a stale entry nor a stray test notification. It is the
+ * seven-day horizon **minus the occurrence that had already passed today** — today's Fajr was at
+ * ~04:31 and the observation was made at 14:00. The cases below hold that arithmetic in place, and
+ * would fail if the horizon changed shape, if a past instant were ever scheduled, or if a repeated
+ * day produced a second request.
+ */
+describe('the pending count is the horizon minus what has already passed', () => {
+  const AFTERNOON_DAY_ONE = Date.parse('2026-08-13T14:00:00+03:00');
+
+  it('produces one request per selected prayer per horizon day when nothing has passed', () => {
+    const days = Array.from({ length: SCHEDULE_HORIZON_DAYS }, (_unused, index) => dayFor(index));
+    const planned = planPrayerAlerts({ days, enabled: ['fajr'], nowMs: BEFORE_ANY });
+
+    expect(planned).toHaveLength(SCHEDULE_HORIZON_DAYS);
+  });
+
+  it('drops only today’s occurrence once it is past, leaving six', () => {
+    const days = Array.from({ length: SCHEDULE_HORIZON_DAYS }, (_unused, index) => dayFor(index));
+    const planned = planPrayerAlerts({ days, enabled: ['fajr'], nowMs: AFTERNOON_DAY_ONE });
+
+    /* The device result, reproduced from the same arithmetic: 7 days − 1 past = 6. */
+    expect(planned).toHaveLength(SCHEDULE_HORIZON_DAYS - 1);
+    expect(planned.every((alert) => alert.prayer === 'fajr')).toBe(true);
+    expect(planned.every((alert) => Date.parse(alert.at) > AFTERNOON_DAY_ONE)).toBe(true);
+  });
+
+  it('gives every request a distinct date and prayer, spanning consecutive days', () => {
+    const days = Array.from({ length: SCHEDULE_HORIZON_DAYS }, (_unused, index) => dayFor(index));
+    const planned = planPrayerAlerts({ days, enabled: ['fajr'], nowMs: AFTERNOON_DAY_ONE });
+
+    const keys = planned.map((alert) => alert.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    const dates = planned.map((alert) => alert.calendarDate);
+    expect(new Set(dates).size).toBe(dates.length);
+    /* Chronological, and none of them today — the horizon deliberately spans into later days. */
+    expect(dates).toEqual([...dates].sort());
+    expect(dates).not.toContain(days[0]?.date);
+  });
+
+  it('cannot count a sunrise or a test notification among them', () => {
+    const days = Array.from({ length: SCHEDULE_HORIZON_DAYS }, (_unused, index) => dayFor(index));
+    const planned = planPrayerAlerts({ days, enabled: ['fajr'], nowMs: AFTERNOON_DAY_ONE });
+
+    expect(planned.some((alert) => alert.prayer === 'sunrise')).toBe(false);
+    /* Every key is `date:prayer`, so nothing that is not a planned prayer can occupy a slot. */
+    for (const alert of planned) {
+      expect(alert.key).toBe(plannedAlertKey(alert.calendarDate, alert.prayer));
+    }
+  });
+
+  it('collapses a repeated day rather than scheduling it twice', () => {
+    /* A horizon straddling a DST transition can return the same calendar day twice. */
+    const planned = planPrayerAlerts({
+      days: [dayFor(0), dayFor(0), dayFor(1)],
+      enabled: ['fajr'],
+      nowMs: BEFORE_ANY,
+    });
+    expect(planned).toHaveLength(2);
+  });
+});
+
+describe('reconciliation is idempotent', () => {
+  /*
+    Device evidence this mirrors: three explicit "Refresh schedule" presses and a force-stop relaunch
+    each left exactly six alarms, and `origWhen` was byte-identical before and after a master
+    off/on cycle — so nothing is cancelled and re-created when the inputs have not moved.
+  */
+  it('does no platform work and grows no count when nothing changed', async () => {
+    const notifications = createFakeNotificationPort({ permission: 'granted' });
+    const dependencies = {
+      prayerTimes: fakeRepository(),
+      notifications,
+      now: now(BEFORE_ANY),
+    };
+    const preferences = {
+      masterEnabled: true,
+      enabledPrayers: ['fajr'] as readonly PrayerKey[],
+      settings: SETTINGS,
+    };
+
+    await reconcilePrayerAlerts(dependencies, preferences);
+    const first = notifications.pending().map((entry) => entry.identifier);
+    expect(first).toHaveLength(SCHEDULE_HORIZON_DAYS);
+
+    const scheduleCalls = () =>
+      notifications.calls().filter((call) => call.startsWith('schedule')).length;
+    const afterFirst = scheduleCalls();
+
+    for (let pass = 0; pass < 3; pass += 1) {
+      await reconcilePrayerAlerts(
+        { ...dependencies, prayerTimes: fakeRepository(), notifications },
+        preferences,
+      );
+    }
+
+    /* Same identifiers, same count, and not one further scheduling call. */
+    expect(notifications.pending().map((entry) => entry.identifier)).toEqual(first);
+    expect(scheduleCalls()).toBe(afterFirst);
+  });
+
+  it('clears every request when the master switch goes off, and rebuilds the same set', async () => {
+    const notifications = createFakeNotificationPort({ permission: 'granted' });
+    const preferences = {
+      masterEnabled: true,
+      enabledPrayers: ['fajr'] as readonly PrayerKey[],
+      settings: SETTINGS,
+    };
+
+    await reconcilePrayerAlerts(
+      { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
+      preferences,
+    );
+    const instants = notifications
+      .pending()
+      .map((entry) => entry.at)
+      .sort();
+
+    await reconcilePrayerAlerts(
+      { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
+      { ...preferences, masterEnabled: false },
+    );
+    expect(notifications.pending()).toHaveLength(0);
+    expect(await readStoredSchedule()).toMatchObject({ identifiers: {} });
+
+    await reconcilePrayerAlerts(
+      { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
+      preferences,
+    );
+    /* The same instants, not a second overlapping set. */
+    expect(notifications.pending()).toHaveLength(SCHEDULE_HORIZON_DAYS);
+    expect(
+      notifications
+        .pending()
+        .map((entry) => entry.at)
+        .sort(),
+    ).toEqual(instants);
+  });
+});

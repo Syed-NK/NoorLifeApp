@@ -5,7 +5,7 @@ import React from 'react';
 import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 import { seedTranslationPreference } from '@/test-support/faith-preferences-fixtures';
 
-import { setRouteParams } from '../../../../jest.setup';
+import { mockAudio, setRouteParams } from '../../../../jest.setup';
 
 import type { FaithResult, FaithPage, FaithPageRequest } from '../data/faith-result';
 import { createMockFaithRepositories } from '../data/mock';
@@ -425,5 +425,90 @@ describe('a deep link that cannot be honoured says so', () => {
 
     /* The verses are fine. Only the request for one of them was impossible. */
     expect(view.getByText('verse-2-1')).toBeTruthy();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The player names the verse the reader opened at
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the docked player agrees with the reader', () => {
+  /*
+    ── The defect these cover ────────────────────────────────────────────────
+    `reader/2?ayah=255` opened at 255, scrolled to 255 and focused 255 — and the player captioned
+    itself "Aya 1". Two causes, both fixed here:
+
+      1. Recitations were fetched with one unpaged call, so the reciter's list stopped at verse 20
+         and held nothing for 255. The transport could not be pointed at it.
+      2. `ReaderPlayer` read `transport.focus`, which substitutes `ordered[0]` when nothing has been
+         pointed at, so the fallback overruled the reader's own answer.
+
+    This repository publishes no recitations at all, which is the harder case: with no audio
+    anywhere the transport can never be pointed, so the caption must come from the reader's resolved
+    target or it will be wrong.
+  */
+  it('captions the deep-linked verse even when no recitation exists', async () => {
+    const view = await openReader({ surah: '2', ayah: '255' });
+
+    expect(view.getByText('verse-2-255')).toBeTruthy();
+    expect(String(view.getByTestId('faith-reader-player-title').props.children)).toBe(
+      'Al-Baqarah • Aya 255',
+    );
+  });
+
+  it('captions an early and a final verse from the same resolved target', async () => {
+    const early = await openReader({ surah: '2', ayah: '12' });
+    expect(String(early.getByTestId('faith-reader-player-title').props.children)).toBe(
+      'Al-Baqarah • Aya 12',
+    );
+  });
+
+  it('captions the final verse of a long surah', async () => {
+    const view = await openReader({ surah: '2', ayah: '286' });
+    expect(String(view.getByTestId('faith-reader-player-title').props.children)).toBe(
+      'Al-Baqarah • Aya 286',
+    );
+  });
+
+  it('never captions an ayah the surah does not have', async () => {
+    const view = await openReader({ surah: '2', ayah: '300' });
+
+    /* The route said 300. The player must not repeat it — the reader opened at the beginning. */
+    const title = String(view.getByTestId('faith-reader-player-title').props.children);
+    expect(title).not.toContain('300');
+    expect(title).toBe('Al-Baqarah • Aya 1');
+  });
+
+  it('falls back to the page’s first verse when no verse was named', async () => {
+    const view = await openReader({ surah: '2' });
+    expect(String(view.getByTestId('faith-reader-player-title').props.children)).toBe(
+      'Al-Baqarah • Aya 1',
+    );
+  });
+
+  it('cannot carry one surah’s ayah into another', async () => {
+    /*
+      A new surah is a new reader key and a new load, so the resolved target is re-derived rather
+      than inherited. Al-Fatihah has no verse 255 and the caption must say so by not saying it.
+    */
+    const view = await openReader({ surah: '1', ayah: '7' });
+    const title = String(view.getByTestId('faith-reader-player-title').props.children);
+    expect(title).toBe('Al-Fatihah • Aya 7');
+    expect(title).not.toContain('255');
+  });
+
+  it('starts no audio merely by opening the link', async () => {
+    const view = await openReader({ surah: '2', ayah: '255' });
+
+    /*
+      Opening a deep link points the player; it must not play. With no recitation published the
+      panel additionally has to report that honestly rather than offering a control that cannot work.
+    */
+    expect(view.getByTestId('faith-reader-player')).toBeTruthy();
+    expect(mockAudio.player.play).not.toHaveBeenCalled();
+    /* And the transport control reports the honest unavailable state rather than a dead Play. */
+    expect(view.getByTestId('faith-reader-player-toggle').props.accessibilityState?.disabled).toBe(
+      true,
+    );
   });
 });

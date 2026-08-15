@@ -36,7 +36,7 @@ import type {
 } from '../data/quran-content.repository';
 import { surahNumber } from '../data/quran-content.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
-import { useRecitationAudio } from '../di/recitation-audio-context';
+import { useRecitationAudio, useRecitationAudioRevision } from '../di/recitation-audio-context';
 import { faithAiHref, faithNavKeys, faithRoutes, readerHref } from '../faith-routes';
 import { useNoteIndex } from '../hooks/use-ayah-note';
 import { useBookmarkIndex } from '../hooks/use-bookmark';
@@ -446,7 +446,7 @@ export function ReaderScreen() {
         translationId === null
           ? Promise.resolve({ kind: 'empty' as const })
           : quran.listTranslations(number, translationId, firstRequest),
-        quran.listRecitations(number, reciterId),
+        quran.listRecitations(number, reciterId, firstRequest),
       ]);
 
       if (!hasData(summary)) {
@@ -463,6 +463,18 @@ export function ReaderScreen() {
       }
 
       const textPages: (typeof firstText.data)[] = [firstText.data];
+      /*
+        ── Recitations are paged across the same span as the text ────────────
+        This used to be one unpaged call, which returns the reciter's first twenty verses — so a
+        reader deep-linked to 2:255 held no recitation for the verse it was showing. The transport
+        had nothing to be pointed at, fell back to the first verse that *did* have audio, and
+        captioned itself with verse 1 while the column sat on 255. Play would have started verse 1,
+        and next/previous walked a list that stopped at 20.
+
+        Keeping the three spans aligned is what makes the player's position and the reader's position
+        the same fact rather than two independently derived guesses.
+      */
+      const recitationPages: AyahRecitation[][] = [hasData(recited) ? [...recited.data.items] : []];
       const translationPages: readonly AyahTranslation[][] = [
         hasData(firstTranslated) ? [...firstTranslated.data.items] : [],
       ];
@@ -485,12 +497,22 @@ export function ReaderScreen() {
           )
         ) {
           const request = targetPageRequest(cursor, plan.pageSize);
-          const [more, moreTranslated] = await Promise.all([
+          const [more, moreTranslated, moreRecited] = await Promise.all([
             quran.listAyahs(number, request),
             translationId === null
               ? Promise.resolve({ kind: 'empty' as const })
               : quran.listTranslations(number, translationId, request),
+            quran.listRecitations(number, reciterId, request),
           ]);
+          /*
+            Recitation is the one strand allowed to come back short without costing the read: a
+            reciter may simply have published nothing for these verses, which is a fact about the
+            recording rather than a failure. The player then reports `unavailable` and the caption
+            still names the reader's verse.
+          */
+          if (hasData(moreRecited)) {
+            recitationPages.push([...moreRecited.data.items]);
+          }
           if (!hasData(more)) {
             /*
               A page short of the target. The verses already in hand are correct and are still shown;
@@ -559,7 +581,8 @@ export function ReaderScreen() {
           nextCursor: text.nextCursor,
           translationFailure,
           target,
-          recitations: hasData(recited) ? recited.data.items : [],
+          /* Merged by ayah, so a repeated page cannot put one verse in the transport twice. */
+          recitations: mergeAyahPages(recitationPages) as readonly AyahRecitation[],
           ...(text.total === undefined ? {} : { total: text.total }),
         },
       };
@@ -631,12 +654,14 @@ export function ReaderScreen() {
 
   /** The download state of this surah for this reciter, re-read as the download progresses. */
   const [downloadTick, setDownloadTick] = useState(0);
+  /* Changes when the download index finishes loading, so a state read taken too early is retaken. */
+  const audioRevision = useRecitationAudioRevision();
   const downloadState: SurahDownloadState = useMemo(
     () => (surah === null ? { kind: 'stream-only' } : audio.stateFor(reciterId, surah)),
     // `downloadTick` is the dependency that makes this re-read: the service's state is mutable and
     // is not React state, so a bump is how a completed transfer reaches the render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [audio, reciterId, surah, downloadTick],
+    [audio, reciterId, surah, downloadTick, audioRevision],
   );
 
   const downloadSurah = useCallback(() => {

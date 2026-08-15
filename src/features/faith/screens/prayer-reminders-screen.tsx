@@ -8,6 +8,7 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
 import { FaithScreen, FaithSuccessBanner } from '../components/faith-screen';
+import { SCHEDULE_HORIZON_DAYS } from '../data/notifications/prayer-alert-plan';
 import { prayerAlertSoundLabel } from '../data/notifications/prayer-alert-sound';
 import type { PrayerAlertStatus } from '../data/notifications/prayer-notifications.service';
 import { formatPrayerClock } from '../data/prayer/prayer-clock';
@@ -211,6 +212,7 @@ export function PrayerRemindersScreen() {
             <StatusLine
               label="Pending requests"
               value={pendingRequestsText(status)}
+              hint={horizonHint}
               testID="freshness"
             />
             {/*
@@ -264,13 +266,31 @@ export function PrayerRemindersScreen() {
   );
 }
 
+/**
+ * The one sentence that makes the pending *count* interpretable.
+ *
+ * ── Why a count alone is not self-explanatory ───────────────────────────────
+ * "6 pending" with one prayer switched on reads like a defect until you know the schedule spans
+ * several days. It does: `SCHEDULE_HORIZON_DAYS` calendar days from today at the prayer location,
+ * one request per selected prayer per day, with any occurrence already past today left out. So one
+ * prayer selected at two in the afternoon is six requests — tomorrow through day six — and that is
+ * correct rather than a duplicate.
+ *
+ * Stated in the UI because the count is the number a user would otherwise have to guess at, and
+ * because a number nobody can check is a number nobody can challenge.
+ */
+const horizonHint = `One request per selected prayer for each of the next ${SCHEDULE_HORIZON_DAYS} days. Times already past today are not scheduled.`;
+
 function StatusLine({
   label,
   value,
+  hint,
   testID,
 }: {
   readonly label: string;
   readonly value: string;
+  /** An extra clause for the spoken label only, where the value alone would invite a wrong reading. */
+  readonly hint?: string;
   readonly testID: string;
 }) {
   const { dp } = useModuleMetrics();
@@ -278,7 +298,7 @@ function StatusLine({
     <View
       style={{ flexDirection: 'row', columnGap: dp(8), alignItems: 'flex-start' }}
       accessible
-      accessibilityLabel={`${label}: ${value}`}
+      accessibilityLabel={`${label}: ${value}${hint === undefined ? '' : `. ${hint}`}`}
       testID={`faith-prayer-notification-${testID}`}
     >
       <ModuleText token="rowMeta" style={{ flex: 1 }}>
@@ -461,7 +481,8 @@ function pendingRequestsText(status: PrayerAlertStatus | null): string {
   const schedule = status?.schedule;
   switch (schedule?.kind) {
     case 'scheduled':
-      return `${schedule.count} pending`;
+      /* The span, visibly, so the count is interpretable without a screen reader. See `horizonHint`. */
+      return `${schedule.count} pending • next ${SCHEDULE_HORIZON_DAYS} days`;
     case 'stale':
       return `${schedule.count} pending, but out of date`;
     case 'failed':

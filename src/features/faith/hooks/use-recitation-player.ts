@@ -75,6 +75,14 @@ export type RecitationTransport = {
    * says Ayah 1" means mechanically.
    */
   readonly focus: AyahRecitation | null;
+  /**
+   * The verse the transport was explicitly pointed at, with no fallback. `null` when none.
+   *
+   * Distinct from `focus`, which substitutes the first verse that has audio so the panel always has
+   * a number to draw. Use this when a wrong number is worse than no number — a caption that names a
+   * verse the screen is not showing is the defect this exists to make impossible.
+   */
+  readonly pointedAyah: number | null;
   /** Points the player at a verse **without** starting it. The ayah menu's quiet route in. */
   readonly focusOn: (recitation: AyahRecitation) => void;
   /**
@@ -797,6 +805,20 @@ export function useRecitationPlayerWith(
   return {
     current,
     focus,
+    /**
+     * The verse the transport has been **explicitly** pointed at, or `null`.
+     *
+     * ── Why this is not `focus` ─────────────────────────────────────────────
+     * `focus` falls back to `ordered[0]` so the panel always has something to draw, and that
+     * fallback is exactly what made a deep link caption itself wrong: opening `reader/2?ayah=255`
+     * where the reciter's list only covered the first page left `focusAyah` unset, so `focus`
+     * resolved to verse 1 and the player announced "Aya 1" over a reader sitting on 255.
+     *
+     * This reports only a *decision* — a loaded verse, or one `focusOn` was called with. A caller
+     * that knows which verse the screen is actually about can then prefer its own answer when the
+     * transport has not been pointed anywhere, instead of being overruled by a fallback.
+     */
+    pointedAyah: current?.ayah ?? focusAyah,
     focusOn,
     completed: completedAyah !== null && completedAyah === focus?.ayah,
     playing: status.playing,

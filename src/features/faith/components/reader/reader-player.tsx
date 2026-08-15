@@ -31,11 +31,18 @@ export function ReaderPlayer({
   readonly transport: RecitationTransport;
   readonly surahName: string;
   /**
-   * The verse to name when the transport has none — a surah with no recitation at all.
+   * The verse the **reader** is about — a deep link's target, or the page's first verse.
    *
-   * The player is mounted from the moment the reader has a page, which includes the case where
-   * this reciter published nothing for this surah. It still has to say which verse it is pointed
-   * at, and the reader is the only thing that knows.
+   * ── Why this now wins over the transport's fallback ─────────────────────────
+   * The player is mounted from the moment the reader has a page, which includes the case where this
+   * reciter published nothing for this surah, and the case where a deep link opened at a verse the
+   * transport has not been pointed at yet. It still has to say which verse it is pointed at, and the
+   * reader is the only thing that knows.
+   *
+   * It used to lose to `transport.focus`, which substitutes the first verse that has audio — so
+   * `reader/2?ayah=255` captioned itself "Aya 1" while the column was on 255. The transport's
+   * *explicit* position still wins, because a loaded or deliberately selected verse is a stronger
+   * statement than the route's; its fallback no longer does.
    */
   readonly ayah: number;
   /** `null` until the reciter catalogue resolves. Never replaced with a guessed name. */
@@ -52,7 +59,12 @@ export function ReaderPlayer({
   return (
     <QuranAudioPlayer
       surahName={surahName}
-      ayah={focus?.ayah ?? ayah}
+      /*
+        Explicit position first, the reader's verse second. `transport.focus` is deliberately not
+        consulted here — its `ordered[0]` fallback is a drawing convenience, not a claim about where
+        the reader is. See the note on `ayah`.
+      */
+      ayah={transport.pointedAyah ?? ayah}
       totalAyat={totalAyat}
       reciterName={reciterName}
       state={resolveState(transport)}
