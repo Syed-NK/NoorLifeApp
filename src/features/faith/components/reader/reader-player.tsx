@@ -21,6 +21,8 @@ export function ReaderPlayer({
   ayah,
   reciterName,
   totalAyat,
+  recitationsSettled,
+  recitationFailure,
   onOpenReciters,
 }: {
   readonly transport: RecitationTransport;
@@ -43,10 +45,20 @@ export function ReaderPlayer({
   /** `null` until the reciter catalogue resolves. Never replaced with a guessed name. */
   readonly reciterName: string | null;
   readonly totalAyat: number;
+  /**
+   * Whether the reader's recitation query has settled — successfully or not.
+   *
+   * ── Why the panel has to be told ────────────────────────────────────────
+   * The transport is handed a list of recitations and cannot tell an empty list that is still
+   * arriving from one that arrived empty. Both look like "no verses to play", and resolving both to
+   * the same state means the panel says a reciter published nothing while the request is still in
+   * flight. Only the reader knows which it is, so only the reader can say.
+   */
+  readonly recitationsSettled: boolean;
+  /** How the recitation request failed, or `null`. Never inferred from an empty list. */
+  readonly recitationFailure: 'offline' | 'failed' | null;
   readonly onOpenReciters: () => void;
 }) {
-  const focus = transport.focus;
-
   return (
     <QuranAudioPlayer
       surahName={surahName}
@@ -58,7 +70,7 @@ export function ReaderPlayer({
       ayah={transport.pointedAyah ?? ayah}
       totalAyat={totalAyat}
       reciterName={reciterName}
-      state={resolveState(transport)}
+      state={resolveState(transport, recitationsSettled, recitationFailure)}
       positionSeconds={transport.elapsedSeconds}
       durationSeconds={transport.durationSeconds}
       prepareProgress={transport.prepareProgress}
@@ -68,11 +80,12 @@ export function ReaderPlayer({
       hasPrevious={transport.hasPrevious}
       hasNext={transport.hasNext}
       failure={transport.preparationFailure}
-      onTogglePlay={() => {
-        if (focus !== null) {
-          transport.toggle(focus);
-        }
-      }}
+      /*
+        Forwarded unconditionally. The adapter used to guard this with `if (focus !== null)`, which
+        made a press on a surah with no recitation do nothing at all — no sound, no message, no
+        change. The transport answers that case itself now; see `requestPlay`.
+      */
+      onTogglePlay={transport.requestPlay}
       onPrevious={transport.previous}
       onNext={transport.next}
       onSeek={transport.seekTo}
@@ -93,15 +106,31 @@ export function ReaderPlayer({
  * that could not be fetched would hide the only actionable thing on the panel. `offline` is split
  * out of failure because it is the one failure whose remedy is not "try again".
  */
-function resolveState(transport: RecitationTransport): QuranPlaybackState {
-  if (transport.focus === null) {
-    return 'unavailable';
-  }
+function resolveState(
+  transport: RecitationTransport,
+  recitationsSettled: boolean,
+  recitationFailure: 'offline' | 'failed' | null,
+): QuranPlaybackState {
   if (transport.failed) {
     return transport.preparationFailure === 'offline' ? 'offline' : 'failed';
   }
+  /* The request for the list itself, before anything the transport could have attempted. */
+  if (recitationFailure !== null && transport.queuedCount === 0) {
+    return recitationFailure;
+  }
   if (transport.preparing) {
     return 'preparing';
+  }
+  /*
+    Loading before unavailable, and both before anything derived from the queue: a transport with
+    nothing to play is the *same object* whether the list is still arriving or came back empty, and
+    the honest reading of that is the one the reader supplies.
+  */
+  if (!recitationsSettled && transport.queuedCount === 0 && transport.focus === null) {
+    return 'loading';
+  }
+  if (transport.unavailable || transport.focus === null) {
+    return 'unavailable';
   }
   if (transport.buffering) {
     return 'buffering';

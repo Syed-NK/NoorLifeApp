@@ -5,7 +5,7 @@ import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 import { seedTranslationPreference } from '@/test-support/faith-preferences-fixtures';
 import { playFromAyah, READER_RECITATIONS, renderReader } from '@/test-support/faith-reader';
 
-import { mockAudio, setRouteParams } from '../../../../jest.setup';
+import { mockPlaylist, setRouteParams } from '../../../../jest.setup';
 
 import {
   PREVIOUS_SCRIPTURE_FONT_SIZE,
@@ -204,7 +204,7 @@ describe('the player is mounted with the page, not with the playback', () => {
     expect(view.getAllByTestId('faith-reader-player')).toHaveLength(1);
 
     await playFromAyah(view, 1);
-    await waitFor(() => expect(mockAudio.currentUri()).not.toBeNull());
+    await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
 
     // `getAllBy` rather than `getBy`, so "one" is asserted rather than "at least one".
     expect(view.getAllByTestId('faith-reader-player')).toHaveLength(1);
@@ -214,7 +214,7 @@ describe('the player is mounted with the page, not with the playback', () => {
   it('stays on screen through preparing, playing, buffering, failure and completion', async () => {
     const { view } = await renderReader({ recitations: READER_RECITATIONS });
     await playFromAyah(view, 1);
-    await waitFor(() => expect(mockAudio.currentUri()).not.toBeNull());
+    await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
 
     for (const status of [
       { isLoaded: true, playing: true, isBuffering: false },
@@ -222,7 +222,7 @@ describe('the player is mounted with the page, not with the playback', () => {
       { isLoaded: false, playing: false, isBuffering: false },
       { isLoaded: true, playing: false, isBuffering: false, didJustFinish: true },
     ]) {
-      mockAudio.setStatus(status);
+      mockPlaylist.setStatus(status);
       await waitFor(() => expect(view.getByTestId('faith-reader-player')).toBeTruthy());
     }
   });
@@ -242,7 +242,7 @@ describe('the player is mounted with the page, not with the playback', () => {
       (await view.findByTestId('faith-reader-player-toggle')).props.accessibilityState,
     ).toMatchObject({ disabled: true });
     expect(String((await view.findByTestId('faith-reader-player-reciter')).props.children)).toMatch(
-      /no recitation/i,
+      /audio is unavailable for this reciter/i,
     );
   });
 });
@@ -270,7 +270,7 @@ describe('there is no per-ayah playback control', () => {
       *not* a statement about the player. Nothing autoplays and the transport does not move: it is
       still pointed at verse one, which is where it was. Only Play changes either.
     */
-    expect(mockAudio.currentUri()).toBeNull();
+    expect(mockPlaylist.currentUri()).toBeNull();
     expect(String(view.getByTestId('faith-reader-player-title').props.children)).toBe(
       'Al-Fatihah • Aya 1',
     );
@@ -316,8 +316,8 @@ describe('the reciting verse is marked', () => {
   /** Starts a verse and reports the platform actually playing it, which is what `active` means. */
   async function reciteAyah(view: Awaited<ReturnType<typeof renderReader>>['view'], ayah: number) {
     await playFromAyah(view, ayah);
-    await waitFor(() => expect(mockAudio.currentUri()).not.toBeNull());
-    mockAudio.setStatus({ playing: true, isLoaded: true });
+    await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
+    mockPlaylist.setStatus({ playing: true, isLoaded: true });
   }
 
   it('tints the Arabic block of the verse being recited, and only that verse', async () => {
@@ -384,8 +384,8 @@ describe('the reciting verse is marked', () => {
     );
 
     fireEvent.press(await view.findByTestId('faith-reader-player-next'));
-    await waitFor(() => expect(mockAudio.currentUri()).toContain('s1-a2'));
-    mockAudio.setStatus({ playing: true, isLoaded: true });
+    await waitFor(() => expect(mockPlaylist.currentUri()).toContain('s1-a2'));
+    mockPlaylist.setStatus({ playing: true, isLoaded: true });
 
     await waitFor(() => expect(view.getByTestId('faith-reader-ayah-active-1-2')).toBeTruthy());
     expect(String(view.getByTestId('faith-reader-player-title').props.children)).toContain('Aya 2');
@@ -449,11 +449,17 @@ describe('playback speed', () => {
     fireEvent.press(await view.findByTestId('faith-reader-player-speed'));
 
     await playFromAyah(view, 1);
-    // The chosen rate is applied to the verse as it loads, which is what makes offering the control
-    // before anything is playing an honest thing to do.
-    await waitFor(() =>
-      expect(mockAudio.player.setPlaybackRate).toHaveBeenCalledWith(1.25, 'high'),
-    );
+    /*
+      The chosen rate is applied to the queue as a track loads, which is what makes offering the
+      control before anything is playing an honest thing to do.
+
+      Assigned as `playlist.playbackRate` rather than through `setPlaybackRate(rate, quality)`:
+      `AudioPlaylist` exposes no pitch-correction argument — it is a plain property that reaches
+      ExoPlayer's `setPlaybackSpeed`, which preserves pitch by default. So pitch is preserved by the
+      platform's own behaviour rather than by a quality NoorLife selects, and this asserts the rate
+      that was actually set rather than a call signature that no longer exists.
+    */
+    await waitFor(() => expect(mockPlaylist.rate()).toBe(1.25));
   });
 });
 
@@ -461,9 +467,9 @@ describe('the progress row', () => {
   it('shows elapsed, duration and a live seek bar once the platform reports them', async () => {
     const { view } = await renderReader({ recitations: READER_RECITATIONS });
     await playFromAyah(view, 1);
-    await waitFor(() => expect(mockAudio.currentUri()).not.toBeNull());
+    await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
 
-    mockAudio.setStatus({ isLoaded: true, playing: true, currentTime: 7, duration: 42 });
+    mockPlaylist.setStatus({ isLoaded: true, playing: true, currentTime: 7, duration: 42 });
 
     const seek = await view.findByTestId('faith-reader-player-seek');
     await waitFor(() => expect(seek.props.accessibilityValue).toMatchObject({ now: 7, max: 42 }));
@@ -482,9 +488,9 @@ describe('the player reports what is happening', () => {
   it('shows a buffering indicator while the platform is fetching', async () => {
     const { view } = await renderReader({ recitations: READER_RECITATIONS });
     await playFromAyah(view, 1);
-    await waitFor(() => expect(mockAudio.currentUri()).not.toBeNull());
+    await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
 
-    mockAudio.setStatus({ isLoaded: false, isBuffering: true, playing: false });
+    mockPlaylist.setStatus({ isLoaded: false, isBuffering: true, playing: false });
 
     // Two channels for one state: a spinner and the caption beside it. A caption alone is easy to
     // miss on a busy panel.
@@ -493,15 +499,25 @@ describe('the player reports what is happening', () => {
     expect(String(reciter.props.children)).toMatch(/buffering/i);
   });
 
-  it('offers a retry that replays the verse rather than reloading the screen', async () => {
+  /**
+   * ── The heuristic this replaces, and why it had to go ────────────────────
+   * This case used to set the queue "not loaded, not buffering, not playing" and expect a retry,
+   * because the per-ayah player could not distinguish a failed load from an idle one — a source was
+   * set, nothing was happening, so the transport inferred failure.
+   *
+   * A playlist of validated local files makes that inference wrong. Every source in the queue was
+   * checked onto disk before it was queued, so "loaded is false" is an idle queue, not a broken one,
+   * and showing a retry for it would offer a remedy to a player that has nothing wrong with it.
+   * Failure is now a *preparation* outcome, and it is asserted where preparation can be made to fail
+   * — `quran-recitation-playlist.test.tsx`.
+   */
+  it('does not offer a retry for a queue that is merely idle', async () => {
     const { view } = await renderReader({ recitations: READER_RECITATIONS });
     await playFromAyah(view, 1);
-    await waitFor(() => expect(mockAudio.currentUri()).not.toBeNull());
+    await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
 
-    // A source set, not loading and not loaded: the heuristic the hook documents as a failure.
-    mockAudio.setStatus({ isLoaded: false, isBuffering: false, playing: false });
+    mockPlaylist.setStatus({ isLoaded: false, isBuffering: false, playing: false });
 
-    const retry = await view.findByTestId('faith-reader-player-retry');
-    expect(String(retry.props.accessibilityLabel)).toMatch(/try verse 1 again/i);
+    expect(view.queryByTestId('faith-reader-player-retry')).toBeNull();
   });
 });

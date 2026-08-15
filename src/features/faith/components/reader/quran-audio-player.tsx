@@ -26,6 +26,8 @@ import type { PreparationFailure } from '../../data/audio';
  */
 export type QuranPlaybackState =
   | 'idle'
+  /** The recitation list has not settled. Distinct from `unavailable`: nothing is known yet. */
+  | 'loading'
   | 'preparing'
   | 'buffering'
   | 'playing'
@@ -119,6 +121,16 @@ export function QuranAudioPlayer({
   const { dp } = useModuleMetrics();
 
   const playable = state !== 'unavailable';
+  /*
+    ── Why the step controls need their own reason ─────────────────────────
+    `hasNext` is false for two different situations, and the label named only one of them: at the
+    end of the queue, and when there is no queue at all. On a release device that produced "Next
+    ayah, unavailable on the last ayah" while the panel was pointed at verse one of eleven — a
+    statement about a position in a queue that did not exist. The queue's existence is the state,
+    not the flags, so it is read from there.
+  */
+  const queued = state !== 'unavailable' && state !== 'loading' && state !== 'idle';
+  const stepReason = queued ? null : ', unavailable until playback starts';
   const identity = `${surahName} • Aya ${ayah}`;
 
   return (
@@ -141,6 +153,13 @@ export function QuranAudioPlayer({
       }}
       testID="faith-reader-player"
     >
+      {/*
+        ── A temporary diagnostic, removed before this work is committed ─────
+        `console.log` does not reach logcat on a release build, and the release build is the one
+        whose playback is being stabilised. This carries the same privacy-safe trace as an
+        accessibility label so `uiautomator dump` can read it. It draws nothing.
+      */}
+
       {state === 'failed' || state === 'offline' ? (
         <RetryRow failure={failure} ayah={ayah} onRetry={onRetry} />
       ) : null}
@@ -238,14 +257,14 @@ export function QuranAudioPlayer({
           />
           <StepButton
             glyph="skip-previous"
-            label={`Previous ayah${hasPrevious ? '' : ', unavailable on the first ayah'}`}
+            label={`Previous ayah${hasPrevious ? '' : (stepReason ?? ', unavailable on the first ayah')}`}
             disabled={!hasPrevious || !playable}
             onPress={onPrevious}
             testID="faith-reader-player-previous"
           />
           <StepButton
             glyph="skip-next"
-            label={`Next ayah${hasNext ? '' : ', unavailable on the last ayah'}`}
+            label={`Next ayah${hasNext ? '' : (stepReason ?? ', unavailable on the last ayah')}`}
             disabled={!hasNext || !playable}
             onPress={onNext}
             testID="faith-reader-player-next"
@@ -284,7 +303,14 @@ export const PLAYER_MAX_FONT_SCALE = 1.5;
 function describeState(state: QuranPlaybackState): string {
   switch (state) {
     case 'idle':
-      return 'Ready to play';
+      /*
+        Not "Ready to play". Readiness is a claim about a validated local queue, and at this point
+        there is none — the files are fetched when Play is pressed. The old copy was drawn from the
+        route and the catalogue, so it appeared over surahs with no audio on the device at all.
+      */
+      return 'Tap play to begin';
+    case 'loading':
+      return 'Loading recitation';
     case 'preparing':
       return 'Preparing';
     case 'buffering':
@@ -300,7 +326,7 @@ function describeState(state: QuranPlaybackState): string {
     case 'failed':
       return 'Could not play';
     case 'unavailable':
-      return 'No recitation for this surah';
+      return 'Audio is unavailable for this reciter';
   }
 }
 
@@ -317,6 +343,7 @@ function stateSuffix(state: QuranPlaybackState): string {
     case 'paused':
     case 'idle':
       return '';
+    case 'loading':
     case 'preparing':
     case 'buffering':
     case 'completed':
@@ -345,7 +372,12 @@ function PlayButton({
 }) {
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
-  const disabled = state === 'unavailable';
+  /*
+    Disabled for the two states where there is nothing a press could start: no recording exists, or
+    the recitation list has not settled and pressing would have to guess which of those it is.
+    Every other state — including `failed` — keeps the control live, because retrying is the point.
+  */
+  const disabled = state === 'unavailable' || state === 'loading';
   const size = dp(PLAYER_PLAY_SIZE);
 
   return (

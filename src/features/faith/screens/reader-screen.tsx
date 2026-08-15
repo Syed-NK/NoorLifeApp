@@ -89,6 +89,8 @@ type ReaderPage = {
    * list has an entry for the selected verse, which is correct in every one of those cases.
    */
   readonly recitations: readonly AyahRecitation[];
+  /** Set when the recitation request itself failed, so the empty list above is not read as a fact. */
+  readonly recitationFailure: 'offline' | 'failed' | null;
   readonly total?: number;
 };
 
@@ -133,6 +135,23 @@ function surahNameOf(resource: {
 }): string {
   const result = resource.result;
   return result !== undefined && hasData(result) ? result.data.surah.name : 'Recitation';
+}
+
+/**
+ * Whether the recitation strand of the page failed, and how.
+ *
+ * ── Why the failure has to travel at all ────────────────────────────────────
+ * The loader turns a failed `listRecitations` into an empty array so the verses still render — a
+ * reciter's outage is not a reason to withhold scripture. But an empty array is also what a reciter
+ * who published nothing looks like, and the panel drew the second for both. An error that becomes
+ * `[]` with nothing carried alongside it is an error the user is never told about.
+ */
+function recitationFailureOf(resource: {
+  readonly status: string;
+  readonly result?: FaithResult<ReaderPage>;
+}): 'offline' | 'failed' | null {
+  const result = resource.result;
+  return result !== undefined && hasData(result) ? result.data.recitationFailure : null;
 }
 
 function ayahCountOf(resource: {
@@ -570,6 +589,18 @@ export function ReaderScreen() {
               ? { kind: 'loaded', ayah: plan.ayah }
               : { kind: 'load-failed', ayah: plan.ayah };
 
+      const mergedRecitations = mergeAyahPages(recitationPages) as readonly AyahRecitation[];
+      /*
+        `empty` is not a failure: it means this reciter published no audio for this surah, which is a
+        fact about the recording. Everything else is a request that did not succeed, and the panel
+        renders it as such rather than as silence.
+      */
+      const recitationFailure: 'offline' | 'failed' | null =
+        hasData(recited) || recited.kind === 'empty'
+          ? null
+          : recited.kind === 'offline'
+            ? 'offline'
+            : 'failed';
       return {
         kind: 'ok' as const,
         data: {
@@ -579,7 +610,8 @@ export function ReaderScreen() {
           translationFailure,
           target,
           /* Merged by ayah, so a repeated page cannot put one verse in the transport twice. */
-          recitations: mergeAyahPages(recitationPages) as readonly AyahRecitation[],
+          recitations: mergedRecitations,
+          recitationFailure,
           ...(text.total === undefined ? {} : { total: text.total }),
         },
       };
@@ -999,6 +1031,8 @@ export function ReaderScreen() {
             ayah={openingAyahOf(ayat, openedAyah)}
             reciterName={reciterName}
             totalAyat={ayahCountOf(ayat)}
+            recitationsSettled={ayat.status === 'settled'}
+            recitationFailure={recitationFailureOf(ayat)}
             onOpenReciters={() => router.push(faithRoutes.reciters)}
           />
         ) : undefined

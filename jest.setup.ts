@@ -311,6 +311,196 @@ type MockAudioStatus = typeof mockAudioPlayerState;
 
 const mockAudioListeners = new Set<(status: MockAudioStatus) => void>();
 
+/**
+ * The playlist double's own state, outside the mock factory so tests can drive it.
+ *
+ * Everything a native `AudioPlaylist` does that the transport can observe: an ordered queue, a
+ * current index, a status, `trackChanged` listeners, and a record of every command it received.
+ */
+type MockPlaylistStatus = {
+  currentIndex: number;
+  trackCount: number;
+  currentTime: number;
+  duration: number;
+  playing: boolean;
+  isBuffering: boolean;
+  isLoaded: boolean;
+  playbackRate: number;
+  didJustFinish: boolean;
+};
+
+type MockAudioPlaylist = {
+  readonly id: string;
+  readonly sources: { uri: string }[];
+  playbackRate: number;
+  readonly __status: MockPlaylistStatus;
+  readonly __statusListeners: Set<(status: MockPlaylistStatus) => void>;
+  readonly __trackListeners: Set<(data: { previousIndex: number; currentIndex: number }) => void>;
+  readonly play: () => void;
+  readonly pause: () => void;
+  readonly next: () => void;
+  readonly previous: () => void;
+  readonly skipTo: (index: number) => void;
+  readonly seekTo: (seconds: number) => Promise<void>;
+  readonly add: (source: { uri: string }) => void;
+  readonly addListener: (
+    event: string,
+    listener: (data: never) => void,
+  ) => { remove: () => void };
+};
+
+/** How many native playlists have been constructed. A rebuild mid-surah shows up here. */
+let mockPlaylistCreations = 0;
+let mockCurrentPlaylist: MockAudioPlaylist | null = null;
+/** Every command the transport issued, in order, for asserting one action per transition. */
+let mockPlaylistCommands: string[] = [];
+let mockPlaylistSerial = 0;
+
+function mockCreatePlaylist(initial: { uri: string }[]): MockAudioPlaylist {
+  mockPlaylistSerial += 1;
+  const sources = [...initial];
+  const status: MockPlaylistStatus = {
+    currentIndex: 0,
+    trackCount: sources.length,
+    currentTime: 0,
+    duration: 0,
+    playing: false,
+    isBuffering: false,
+    isLoaded: sources.length > 0,
+    playbackRate: 1,
+    didJustFinish: false,
+  };
+  const statusListeners = new Set<(next: MockPlaylistStatus) => void>();
+  const trackListeners = new Set<
+    (data: { previousIndex: number; currentIndex: number }) => void
+  >();
+
+  const emit = (): void => {
+    for (const listener of [...statusListeners]) {
+      listener(status);
+    }
+  };
+  const move = (next: number): void => {
+    const previous = status.currentIndex;
+    if (next === previous || next < 0 || next >= sources.length) {
+      return;
+    }
+    status.currentIndex = next;
+    status.didJustFinish = false;
+    for (const listener of [...trackListeners]) {
+      listener({ previousIndex: previous, currentIndex: next });
+    }
+    emit();
+  };
+
+  const playlist: MockAudioPlaylist = {
+    id: `playlist-${mockPlaylistSerial}`,
+    sources,
+    playbackRate: 1,
+    __status: status,
+    __statusListeners: statusListeners,
+    __trackListeners: trackListeners,
+    play: () => {
+      mockPlaylistCommands.push('play');
+      status.playing = true;
+      emit();
+    },
+    pause: () => {
+      mockPlaylistCommands.push('pause');
+      status.playing = false;
+      emit();
+    },
+    next: () => {
+      mockPlaylistCommands.push('next');
+      move(status.currentIndex + 1);
+    },
+    previous: () => {
+      mockPlaylistCommands.push('previous');
+      move(status.currentIndex - 1);
+    },
+    skipTo: (index: number) => {
+      mockPlaylistCommands.push(`skipTo:${index}`);
+      move(index);
+    },
+    seekTo: async (seconds: number) => {
+      mockPlaylistCommands.push(`seekTo:${seconds}`);
+      status.currentTime = seconds;
+      emit();
+    },
+    add: (source: { uri: string }) => {
+      mockPlaylistCommands.push('add');
+      sources.push(source);
+      status.trackCount = sources.length;
+      emit();
+    },
+    addListener: (event: string, listener: (data: never) => void) => {
+      if (event === 'trackChanged') {
+        trackListeners.add(
+          listener as unknown as (data: { previousIndex: number; currentIndex: number }) => void,
+        );
+      }
+      return {
+        remove: () => {
+          trackListeners.delete(
+            listener as unknown as (data: { previousIndex: number; currentIndex: number }) => void,
+          );
+        },
+      };
+    },
+  };
+  return playlist;
+}
+
+/** Exposed so a suite can drive native transitions and assert the queue the transport built. */
+export const mockPlaylist = {
+  /** The instance the last render returned. Its identity changes only on a genuine rebuild. */
+  current: (): MockAudioPlaylist | null => mockCurrentPlaylist,
+  /** How many native playlists have been constructed since the last reset. */
+  creations: (): number => mockPlaylistCreations,
+  /** Every command issued, in order. */
+  commands: (): readonly string[] => [...mockPlaylistCommands],
+  /** The URIs currently queued, including any appended while playing. */
+  queue: (): readonly string[] => (mockCurrentPlaylist?.sources ?? []).map((s) => s.uri),
+  /**
+   * The URI of the track the queue is on, or `null`.
+   *
+   * The playlist equivalent of the old player double's `currentUri()`, and it answers the same
+   * question the suites using it actually care about: *which file is the platform pointed at*. It
+   * reads through `currentIndex`, so a test that asserts on it is asserting about the real queue
+   * position rather than about a source somebody set.
+   */
+  currentUri: (): string | null =>
+    mockCurrentPlaylist?.sources[mockCurrentPlaylist.__status.currentIndex]?.uri ?? null,
+  /** Whether playback was started at least once. */
+  played: (): boolean => mockPlaylistCommands.includes('play'),
+  /** The playback rate the transport last assigned. */
+  rate: (): number | null => mockCurrentPlaylist?.playbackRate ?? null,
+  /** Fires a native track change, which is the transport's only transition authority. */
+  advance(to?: number): void {
+    const playlist = mockCurrentPlaylist;
+    if (playlist === null) {
+      return;
+    }
+    playlist.skipTo(to ?? playlist.__status.currentIndex + 1);
+  },
+  /** Reports a status change — buffering, loaded, a finished track. */
+  setStatus(patch: Partial<MockPlaylistStatus>): void {
+    const playlist = mockCurrentPlaylist;
+    if (playlist === null) {
+      return;
+    }
+    Object.assign(playlist.__status, patch);
+    for (const listener of [...playlist.__statusListeners]) {
+      listener(playlist.__status);
+    }
+  },
+  reset(): void {
+    mockPlaylistCreations = 0;
+    mockCurrentPlaylist = null;
+    mockPlaylistCommands = [];
+  },
+};
+
 jest.mock('expo-audio', () => {
   const react = jest.requireActual<typeof import('react')>('react');
   return {
@@ -403,6 +593,54 @@ jest.mock('expo-audio', () => {
        */
       const belongsHere = mockAudioFinishLeaks || mockAudioFinishedForPlayer === player.id;
       return status.didJustFinish && !belongsHere ? { ...status, didJustFinish: false } : status;
+    },
+    /**
+     * `useAudioPlaylist`, modelling the one behaviour the transport depends on.
+     *
+     * ── Why the double keys on the sources exactly as the SDK does ──────────
+     * The real hook is `useReleasingSharedObject(..., [JSON.stringify(resolvedSources), …])`, so the
+     * native playlist is **recreated when the sources array changes** and preserved when it does
+     * not. That is the whole lifecycle contract the new transport is built on: the queue survives
+     * ayah advances because appended tracks go through `add()` rather than through the sources memo.
+     * A double that returned one immortal object could not fail a test that reintroduced rebuilding,
+     * which is the regression this architecture exists to prevent.
+     *
+     * Track changes are driven by the test through `mockPlaylist`, because a real transition is a
+     * native ExoPlayer event no JavaScript environment produces.
+     */
+    useAudioPlaylist: (options: { sources?: { uri: string }[] } = {}) => {
+      const key = JSON.stringify(options.sources ?? []);
+      const instance = react.useRef<MockAudioPlaylist | null>(null);
+      const previousKey = react.useRef<string>(key);
+
+      if (instance.current === null) {
+        instance.current = mockCreatePlaylist(options.sources ?? []);
+        mockPlaylistCreations += 1;
+      }
+
+      const playlist = react.useMemo(() => {
+        if (previousKey.current !== key) {
+          instance.current = mockCreatePlaylist(options.sources ?? []);
+          mockPlaylistCreations += 1;
+          previousKey.current = key;
+        }
+        return instance.current as MockAudioPlaylist;
+      }, [key]);
+
+      mockCurrentPlaylist = playlist;
+      return playlist;
+    },
+    useAudioPlaylistStatus: (playlist: MockAudioPlaylist) => {
+      const [status, setStatus] = react.useState(() => ({ ...playlist.__status }));
+      react.useEffect(() => {
+        const listener = (next: MockPlaylistStatus): void => setStatus({ ...next });
+        playlist.__statusListeners.add(listener);
+        listener(playlist.__status);
+        return () => {
+          playlist.__statusListeners.delete(listener);
+        };
+      }, [playlist]);
+      return status;
     },
     setAudioModeAsync: jest.fn(async () => undefined),
   };
@@ -1026,6 +1264,8 @@ beforeEach(() => {
   // Unconditional, so a suite that never sets parameters cannot inherit another's.
   setRouteParams({});
   mockAudio.reset();
+  // The playlist double is module-level like the player double, and leaks between tests without this.
+  mockPlaylist.reset();
   // The filesystem is process-wide, so a file written by one test would otherwise be found by the
   // next one's cache read — which is exactly the kind of cross-test leak an audio cache invites.
   mockFileSystem.reset();

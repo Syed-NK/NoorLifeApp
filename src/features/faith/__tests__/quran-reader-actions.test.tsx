@@ -14,7 +14,7 @@ import { seedTranslationPreference } from '@/test-support/faith-preferences-fixt
 import { READER_RECITATIONS, renderReader } from '@/test-support/faith-reader';
 import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 
-import { mockAudio, mockRouter, setRouteParams } from '../../../../jest.setup';
+import { mockPlaylist, mockRouter, setRouteParams } from '../../../../jest.setup';
 
 import {
   PREVIOUS_ACTIVE_AYAH_SURFACE,
@@ -61,7 +61,7 @@ warmUpFirstMount(() => renderReader({ recitations: READER_RECITATIONS }).then(({
 beforeEach(async () => {
   await AsyncStorage.clear();
   await seedTranslationPreference();
-  mockAudio.reset();
+  mockPlaylist.reset();
   mockRouter.push.mockClear();
 });
 
@@ -180,8 +180,8 @@ async function typeInto(view: typeof screen, testID: string, text: string): Prom
 async function playAndReport(view: typeof screen, ayah: number): Promise<void> {
   fireEvent.press(await view.findByTestId(`faith-reader-ayah-1-${ayah}`));
   fireEvent.press(await view.findByTestId('faith-reader-action-play'));
-  await waitFor(() => expect(mockAudio.currentUri()).not.toBeNull());
-  mockAudio.setStatus({ playing: true, isLoaded: true });
+  await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
+  mockPlaylist.setStatus({ playing: true, isLoaded: true });
   await view.findByTestId(`faith-reader-ayah-active-1-${ayah}`);
 }
 
@@ -478,7 +478,7 @@ describe('Play', () => {
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     fireEvent.press(await view.findByTestId('faith-reader-action-play'));
 
-    await waitFor(() => expect(mockAudio.currentUri()).toContain('s1-a2'));
+    await waitFor(() => expect(mockPlaylist.currentUri()).toContain('s1-a2'));
     // The label, the audio and the highlight are three views of one selection.
     await waitFor(() =>
       expect(String(view.getByTestId('faith-reader-player-title').props.children)).toContain(
@@ -499,7 +499,7 @@ describe('Play', () => {
     expect(view.getAllByTestId('faith-reader-player')).toHaveLength(1);
 
     fireEvent.press(view.getByTestId('faith-reader-action-play'));
-    await waitFor(() => expect(mockAudio.currentUri()).not.toBeNull());
+    await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
     expect(view.getAllByTestId('faith-reader-player')).toHaveLength(1);
   });
 
@@ -509,8 +509,8 @@ describe('Play', () => {
     await view.findByTestId('faith-reader-ayah-actions');
 
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(mockAudio.currentUri()).toBeNull();
-    expect(mockAudio.player.play).not.toHaveBeenCalled();
+    expect(mockPlaylist.currentUri()).toBeNull();
+    expect(mockPlaylist.played()).toBe(false);
   });
 });
 
