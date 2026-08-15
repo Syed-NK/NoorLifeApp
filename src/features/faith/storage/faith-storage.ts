@@ -29,6 +29,8 @@ const NAMESPACE = 'noorlife.faith';
 export const faithStorageKeys = {
   tasbihSession: `${NAMESPACE}.tasbih.session`,
   tasbihHistory: `${NAMESPACE}.tasbih.history`,
+  /** The user's own counter labels. Private, on-device, never sent anywhere. */
+  tasbihLabels: `${NAMESPACE}.tasbih.labels`,
   worshipDays: `${NAMESPACE}.worship.days`,
   readingPosition: `${NAMESPACE}.quran.position`,
   /** Per-day ayat read, per-surah furthest verse, and the daily goal. See `faith-reading-log.ts`. */

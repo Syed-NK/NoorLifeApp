@@ -13,6 +13,7 @@ import {
 } from '../data/mock/mock-worship.repository';
 import { createAdhanPrayerTimesRepository } from '../data/prayer/adhan-prayer-times.repository';
 import { createProductionQuranRepository } from '../data/quran-foundation';
+import { createLocalTasbihRepository } from '../data/tasbih/local-tasbih.repository';
 import { readFaithPreferences } from '../storage/faith-preferences';
 
 /**
@@ -167,6 +168,21 @@ function createFaithRepositories(): FaithRepositories {
     prayerTimes,
     location,
     notifications: createExpoNotificationPort(),
+    /**
+     * Constructed here rather than taken from the spread above.
+     *
+     * ── The leak this closes ──────────────────────────────────────────────
+     * `...mocks` is `createMockFaithRepositories()`, and whatever that set happens to supply for a
+     * key nothing below overrides becomes production's implementation. Tasbih reached production
+     * that way — as `mock-tasbih.repository.ts`, shipping five built-in dhikr with no recorded
+     * provenance. Nothing was wrong with the wiring in the sense of failing; it simply meant a
+     * development fixture decided what a production screen rendered.
+     *
+     * Naming it here makes the production choice explicit, so a future key added to the development
+     * set cannot silently become production behaviour for this one. `local-tasbih.repository.ts` is
+     * the real implementation and lives at a production path.
+     */
+    tasbih: createLocalTasbihRepository(),
     worship: createMockWorshipRepository(worshipTimes),
   };
   return quran === null ? base : { ...base, quran };

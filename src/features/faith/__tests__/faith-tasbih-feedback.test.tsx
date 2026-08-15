@@ -106,7 +106,7 @@ async function countValue(view: typeof screen): Promise<string> {
 describe('haptics', () => {
   it('are offered on the screen, and on by default', async () => {
     const view = await renderTasbih();
-    const toggle = await view.findByTestId('faith-tasbih-haptics');
+    const toggle = await view.findByTestId('faith-tasbih-haptics-switch');
 
     // On the counter rather than buried in preferences, so it can be turned off in the moment it
     // becomes unwelcome.
@@ -115,38 +115,51 @@ describe('haptics', () => {
 
   it('can be turned off, and stay off', async () => {
     const view = await renderTasbih();
-    fireEvent(await view.findByTestId('faith-tasbih-haptics'), 'valueChange', false);
+    fireEvent(await view.findByTestId('faith-tasbih-haptics-switch'), 'valueChange', false);
 
     await waitFor(async () =>
-      expect((await view.findByTestId('faith-tasbih-haptics')).props.value).toBe(false),
+      expect((await view.findByTestId('faith-tasbih-haptics-switch')).props.value).toBe(false),
     );
 
     const remounted = await renderTasbih();
     await waitFor(async () =>
-      expect((await remounted.findByTestId('faith-tasbih-haptics')).props.value).toBe(false),
+      expect((await remounted.findByTestId('faith-tasbih-haptics-switch')).props.value).toBe(false),
     );
   });
 
   it('counting still works with them off', async () => {
     const view = await renderTasbih();
-    fireEvent(await view.findByTestId('faith-tasbih-haptics'), 'valueChange', false);
+    fireEvent(await view.findByTestId('faith-tasbih-haptics-switch'), 'valueChange', false);
     fireEvent.press(await view.findByTestId('faith-tasbih-count'));
 
     await waitFor(async () => expect(await countValue(view)).toBe('1'));
   });
 });
 
-describe('the three renderings stay distinct', () => {
-  it('keeps Arabic, transliteration and translation as separate nodes', async () => {
+describe('the counter presents no religious content', () => {
+  /*
+    This replaced a case asserting that Arabic, a transliteration and a translation rendered as three
+    distinct nodes. They no longer render at all: the five built-in entries were removed for want of
+    verified Arabic, verified translation, recorded provenance and a compatible licence. The
+    assertion is now the absence, which is the property that has to hold.
+  */
+  it('renders the counter’s own label and no scripture node', async () => {
     const view = await renderTasbih();
 
-    const arabic = await view.findByTestId('faith-tasbih-arabic');
-    expect(arabic.props.accessibilityLanguage).toBe('ar');
+    // The counter is identified by its own row; there is no scripture node anywhere on the screen.
+    expect(await view.findByTestId('faith-tasbih-counter-row')).toBeTruthy();
+    expect(view.queryByTestId('faith-tasbih-arabic')).toBeNull();
+  });
 
-    // The transliteration and the meaning are separate text nodes, never run together with the
-    // Arabic into one line — they are three different kinds of statement.
-    expect(await view.findByText('SubhanAllah')).toBeTruthy();
-    expect(await view.findByText(/Glory be to Allah/i)).toBeTruthy();
+  it('shows the neutral default rather than a phrase NoorLife supplied', async () => {
+    const view = await renderTasbih();
+    /*
+      Read from the row's spoken label rather than a visible value slot: the approved design shows
+      the counter's *kind* there ("Personal"/"Default"), and the property this case exists for is
+      that the counter is *named* neutrally — no phrase NoorLife supplied as religious content.
+    */
+    const row = await view.findByTestId('faith-tasbih-counter-row');
+    expect(String(row.props.accessibilityLabel)).toContain('My counter');
   });
 });
 

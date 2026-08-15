@@ -1,9 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
-  createMockTasbihRepository,
+  createLocalTasbihRepository,
   createMockWorshipRepository,
-  dhikrPresetsForTest,
+  DEFAULT_COUNTER,
   todayIso,
 } from '../data/mock';
 import { readBookmarks, toggleBookmark } from '../storage/faith-bookmarks';
@@ -29,26 +29,26 @@ beforeEach(async () => {
 
 describe('tasbih counter', () => {
   it('starts at zero on the first preset', async () => {
-    const repository = createMockTasbihRepository();
-    const started = await repository.startSession(dhikrPresetsForTest[0]!.id);
+    const repository = createLocalTasbihRepository();
+    const started = await repository.startSession(DEFAULT_COUNTER.id);
 
     expect(started.kind).toBe('ok');
     if (started.kind === 'ok') {
       expect(started.data.count).toBe(0);
       expect(started.data.rounds).toBe(0);
-      expect(started.data.target).toBe(dhikrPresetsForTest[0]!.target);
+      expect(started.data.target).toBe(DEFAULT_COUNTER.target);
     }
   });
 
   it('increments and persists across a fresh repository instance', async () => {
-    const first = createMockTasbihRepository();
+    const first = createLocalTasbihRepository();
     await first.startSession('subhanallah');
     await first.increment();
     await first.increment();
     await first.increment();
 
     // A new instance reads from storage, which is what a relaunch does.
-    const second = createMockTasbihRepository();
+    const second = createLocalTasbihRepository();
     const session = await second.getSession();
 
     expect(session.kind).toBe('ok');
@@ -58,7 +58,7 @@ describe('tasbih counter', () => {
   });
 
   it('banks a round and rolls the count back at the target', async () => {
-    const repository = createMockTasbihRepository();
+    const repository = createLocalTasbihRepository();
     const started = await repository.startSession('subhanallah');
     const target = started.kind === 'ok' ? started.data.target : 33;
 
@@ -75,7 +75,7 @@ describe('tasbih counter', () => {
   });
 
   it('never goes below zero on decrement', async () => {
-    const repository = createMockTasbihRepository();
+    const repository = createLocalTasbihRepository();
     await repository.startSession('subhanallah');
     const result = await repository.decrement();
 
@@ -86,7 +86,7 @@ describe('tasbih counter', () => {
   });
 
   it('resets to zero and archives the count to history', async () => {
-    const repository = createMockTasbihRepository();
+    const repository = createLocalTasbihRepository();
     await repository.startSession('subhanallah');
     await repository.increment();
     await repository.increment();
@@ -104,17 +104,23 @@ describe('tasbih counter', () => {
     }
   });
 
-  it('archives the previous count when switching dhikr', async () => {
-    const repository = createMockTasbihRepository();
-    await repository.startSession('subhanallah');
-    await repository.increment();
+  it('archives the previous count when switching counter', async () => {
+    const repository = createLocalTasbihRepository();
+    // Synthetic ids: no test may keep an unverified religious label alive as a fixture.
+    const a = await repository.createLabel('Counter A');
+    const b = await repository.createLabel('Counter B');
+    expect(a.kind).toBe('ok');
+    expect(b.kind).toBe('ok');
+    if (a.kind !== 'ok' || b.kind !== 'ok') return;
 
-    await repository.startSession('alhamdulillah');
+    await repository.startSession(a.data.id);
+    await repository.increment();
+    await repository.startSession(b.data.id);
 
     const history = await repository.getHistory();
     expect(history.kind).toBe('ok');
     if (history.kind === 'ok') {
-      expect(history.data[0]?.presetId).toBe('subhanallah');
+      expect(history.data[0]?.counterId).toBe(a.data.id);
       expect(history.data[0]?.count).toBe(1);
     }
   });

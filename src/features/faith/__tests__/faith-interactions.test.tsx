@@ -197,12 +197,22 @@ describe('reader pagination', () => {
 });
 
 describe('tasbih', () => {
-  it('offers count, undo, change and reset controls', async () => {
+  it('offers exactly the controls the approved design allows', async () => {
     const view = await withRepositories(<TasbihScreen />);
     expect(await view.findByTestId('faith-tasbih-count')).toBeTruthy();
     expect(await view.findByTestId('faith-tasbih-undo')).toBeTruthy();
     expect(await view.findByTestId('faith-tasbih-change')).toBeTruthy();
-    expect(await view.findByTestId('faith-tasbih-reset')).toBeTruthy();
+    expect(await view.findByTestId('faith-tasbih-target')).toBeTruthy();
+    expect(await view.findByTestId('faith-tasbih-haptics-switch')).toBeTruthy();
+
+    /*
+      Reset is deliberately absent. The locked design carries three control groups — Undo, Target,
+      Haptics — and naming the omissions here is what stops a later pass quietly restoring the
+      settings-form arrangement that was rejected.
+    */
+    expect(view.queryByTestId('faith-tasbih-reset')).toBeNull();
+    expect(view.queryByTestId('faith-tasbih-target-up-leap')).toBeNull();
+    expect(view.queryByTestId('faith-tasbih-target-down-leap')).toBeNull();
   });
 
   it('increments the visible count on press', async () => {
@@ -221,10 +231,22 @@ describe('tasbih', () => {
     expect(await view.findByText('0')).toBeTruthy();
   });
 
-  it('lists the dhikr presets when Change is pressed', async () => {
+  it('opens the dhikr selector when Change is pressed', async () => {
+    /*
+      `Change` is a destination now, not an inline list. Counter management outgrew a strip under
+      the counting surface once it had to carry search, category filters, five sections and the
+      create/rename/remove flow — and the approved reference puts `Change` on the Current Dhikr
+      sheet, which is what opens it.
+    */
     const view = await withRepositories(<TasbihScreen />);
-    fireEvent.press(await view.findByTestId('faith-tasbih-change'));
-    expect(await view.findByTestId('faith-tasbih-preset-alhamdulillah')).toBeTruthy();
+    const change = await view.findByTestId('faith-tasbih-change');
+
+    expect(change.props.accessibilityRole).toBe('button');
+    expect(String(change.props.accessibilityLabel)).toMatch(/change dhikr/i);
+    fireEvent.press(change);
+
+    // The counting screen itself never grows a counter list; the selector owns that.
+    expect(view.queryByTestId('faith-tasbih-counters')).toBeNull();
   });
 });
 

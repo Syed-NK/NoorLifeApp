@@ -22,11 +22,33 @@
 | Retention | Longer than one week |
 | Expiry | No fixed expiry, subject to continued compliance |
 
+### What this repository may record, and what it may never hold
+
+Fixed rule, so the boundary is not re-decided each time this file is edited.
+
+| May be recorded here | May **never** enter version control |
+|---|---|
+| The date the permission was received | The original email or any message body |
+| The sender / named grantor | Personal correspondence of any kind |
+| The granted scope (reciter, resource id, platforms, permitted use, retention) | Email headers, routing metadata or addresses |
+| A pointer to the private retention location | Attachments, screenshots or exports of the above |
+
+The pointer must name a **private** location — never a public repository, shared drive link, issue
+tracker or anything reachable without authorisation.
+
 ### Where the original evidence is retained
 
-**⚠ TO BE CONFIRMED.** The original written permission is held outside this repository. The
-storage location must be recorded here before this document is committed. It must not be a
-public location, and the correspondence itself must never enter version control.
+**⚠ TO BE CONFIRMED.** The original written permission is held outside this repository. Two fields
+in this record remain outstanding and are the last items blocking it:
+
+1. **Date received** — §1 currently reads "on or before 2026-08-12", which is a bound rather than
+   the fact.
+2. **Private retention location** — the pointer described above.
+
+Both were requested on 2026-08-14 and the supplied values were placeholders, so neither has been
+filled in. They are deliberately left as `⚠ TO BE CONFIRMED` rather than estimated: a date or a
+location inferred rather than known would be a fabricated entry in a compliance record, which is
+worse than a visible gap. The implementation itself complies; this is an evidentiary gap only.
 
 ---
 
@@ -119,6 +141,25 @@ content type. The exemption, when it arrives, is keyed on the resource id.
 
 ### 8.3 What is implemented now
 
+> **Status of the extended-retention feature: NOT IMPLEMENTED.**
+>
+> The permission to retain resource ID 3 offline beyond one week has been **granted** and is **not
+> built**. Nothing in this repository may describe it as delivered, available, shipped or complete
+> until every condition in §8.2 holds. Stated plainly so the distinction cannot be lost:
+>
+> | | Position |
+> |---|---|
+> | What Quran Foundation permits | Resource ID 3 may remain available offline **beyond seven days** |
+> | What NoorLife ships today | A **hard seven-day read-time expiry** on resource ID 3, the same as every other reciter |
+> | What C7 requires of a connected device | Check for corrections, updates or removals **at least every seven connected days** |
+> | What C9 requires of an offline device | Keep permitted audio **available** past that window, and synchronise at the next opportunity |
+> | Why the ceiling stays | There is no synchronisation mechanism, so lifting it would satisfy C9 by breaking C7 and C8 |
+>
+> The user-visible consequence is unchanged and is stated in §8.1: a user who downloads a surah and
+> goes offline for eight days loses audio NoorLife has written permission to retain. That is a real
+> regression against the grant, accepted deliberately, and it is the gap this section exists to keep
+> visible.
+
 Only what is safe without the synchronisation mechanism:
 
 - The exact attribution (§4) is displayed wherever resource ID 3 is selected or credited, from a
@@ -129,6 +170,13 @@ Only what is safe without the synchronisation mechanism:
   asserts the scope from both sides, and fails if the sentence is duplicated as a literal anywhere
   in `src/`.
 - No change to retention, no new download behaviour, no Edge Function operation, no deployment.
+
+**No Content Sync endpoint has been invented, and none may be.** Quran Foundation's published
+documentation contains no such API (§9), and NoorLife's approval covers the Content API only. The
+approved allow-list in `supabase/functions/quran-content/contract.ts` is a closed union of eight
+operations; satisfying C7 must not be attempted by adding a ninth, by guessing a route, or by
+reinterpreting `list_verse_recitations` as a synchronisation mechanism. The mechanism has to be
+confirmed by the vendor first — see §9, which remains open.
 
 ---
 

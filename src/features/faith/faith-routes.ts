@@ -31,6 +31,14 @@ export const faithRoutes = {
   prayerTimes: '/faith/prayer-times',
   qibla: '/faith/qibla',
   tasbih: '/faith/tasbih',
+  /**
+   * The Dhikr selector, reached from `Change` on the Tasbih screen.
+   *
+   * Its own destination rather than a sheet: it holds a search field, category filters, five
+   * sections and the full create/rename/remove flow for personal counters, which is more than a
+   * sheet over a counting surface can carry without burying the thing being counted.
+   */
+  dhikr: '/faith/dhikr',
   mosques: '/faith/mosques',
   calendar: '/faith/calendar',
 

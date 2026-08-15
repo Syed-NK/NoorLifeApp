@@ -402,6 +402,21 @@ describe('no secrets and no direct vendor calls in the Faith bundle', () => {
     expect(di).not.toMatch(/catch|\|\|\s*createMockFaithRepositories|try\s*\{/);
     // The environment question belongs to the data layer, not to the DI file.
     expect(di).not.toMatch(/isSupabaseConfigured|EXPO_PUBLIC/);
+
+    /**
+     * ── And the approved repository must win the spread, not lose it ──────────
+     * `base` is built from `...mocks`, so it already carries a `quran` key holding the fixture. The
+     * composition that ships the approved adapter is therefore `{ ...base, quran }`, and the reversed
+     * spelling — `{ quran, ...base }` — is a silent, total regression: it type-checks, every test that
+     * injects its own repository still passes, and the app quietly serves sample scripture from a
+     * build that has a working edge function.
+     *
+     * That is the same leak the file's own note records against `tasbih`, which reached production as
+     * a fixture for exactly this reason. Nothing above catches it, because every other assertion here
+     * is about which functions are *named* rather than which value survives.
+     */
+    expect(di).toMatch(/\{\s*\.\.\.base\s*,\s*quran\s*\}/);
+    expect(di).not.toMatch(/\{\s*quran\s*,\s*\.\.\.base\s*\}/);
   });
 
   it('logs nothing from the adapter', () => {

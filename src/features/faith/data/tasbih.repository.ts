@@ -23,19 +23,31 @@ import type { FaithResult } from './faith-result';
 export const MIN_TASBIH_TARGET = 1;
 export const MAX_TASBIH_TARGET = 1000;
 
-/** A dhikr phrase the counter can be set to. */
-export type DhikrPreset = {
+/**
+ * A label the counter can be set to — **the user's own words, and only ever theirs.**
+ *
+ * ── What this replaced ──────────────────────────────────────────────────────
+ * `DhikrPreset`, which carried `arabic`, `transliteration` and `translation` for five phrases
+ * NoorLife shipped built in. An audit for verified Arabic, verified translation, recorded provenance
+ * and a compatible redistribution licence found **none of the four** for any of them, so all five
+ * were removed rather than flag-gated. See `data/tasbih/local-tasbih.repository.ts` and
+ * `docs/FAITH_TASBIH_CONTENT_AUDIT.md`.
+ *
+ * ── What a label may and may not claim ──────────────────────────────────────
+ * There is no `arabic`, no `translation`, no `reference` and no `verified` field here, so
+ * "NoorLife stands behind this text" is not a state this type can express. A label is a private note
+ * somebody wrote to remind themselves what they are counting.
+ */
+export type CounterLabel = {
   readonly id: string;
-  /** Immutable Arabic. */
-  readonly arabic: string;
-  readonly transliteration: string;
-  readonly translation: string;
-  /** Traditional target, e.g. 33 or 100. */
+  /** The user's own text, or the neutral default. Rendered as written, credited to nobody. */
+  readonly name: string;
+  /** The round length this counter starts at. A number, carrying no religious claim. */
   readonly target: number;
 };
 
 export type TasbihSession = {
-  readonly presetId: string;
+  readonly counterId: string;
   readonly count: number;
   /** How many times the target has been completed in this session. */
   readonly rounds: number;
@@ -46,20 +58,36 @@ export type TasbihSession = {
 
 /** A completed round, kept so the user can see what they did today. */
 export type TasbihHistoryEntry = {
-  readonly presetId: string;
+  readonly counterId: string;
   readonly count: number;
   readonly rounds: number;
   readonly completedAt: string;
 };
 
 export type TasbihRepository = {
-  listPresets(): Promise<FaithResult<readonly DhikrPreset[]>>;
+  /** Every counter the user has, the neutral default first. Never religious content. */
+  listLabels(): Promise<FaithResult<readonly CounterLabel[]>>;
+
+  /** Creates a private label from the user's own text. Trimmed, length-bounded, on-device only. */
+  createLabel(name: string): Promise<FaithResult<CounterLabel>>;
+
+  /**
+   * Renames a private label in place, keeping its id.
+   *
+   * The id is preserved deliberately: the active session and the archived history both reference
+   * it, so re-creating the label under a new id would orphan the count the user is part-way
+   * through. Renaming a counter is editing a note to yourself, not starting a different one.
+   */
+  renameLabel(id: string, name: string): Promise<FaithResult<CounterLabel>>;
+
+  /** Removes a label. The neutral default cannot be removed, so a counter always exists. */
+  deleteLabel(id: string): Promise<FaithResult<readonly CounterLabel[]>>;
 
   /** The in-progress session, or an `empty` result when there is none. */
   getSession(): Promise<FaithResult<TasbihSession>>;
 
-  /** Starts or switches the active preset, archiving any in-progress count. */
-  startSession(presetId: string): Promise<FaithResult<TasbihSession>>;
+  /** Starts or switches the active counter, archiving any in-progress count. */
+  startSession(counterId: string): Promise<FaithResult<TasbihSession>>;
 
   /**
    * Adds one.

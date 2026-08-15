@@ -51,10 +51,13 @@ export const iconRegistry = {
 
   // ── Actions ───────────────────────────────────────────────────────────────
   add: mci('plus'),
+  minus: mci('minus'),
   'add-circle': mci('plus-circle'),
   check: mci('check'),
   'check-circle': mci('check-circle'),
   retry: mci('refresh'),
+  undo: mci('undo-variant'),
+  edit: mci('pencil-outline'),
   send: mci('send'),
   microphone: mci('microphone'),
   play: mci('play'),
@@ -74,6 +77,10 @@ export const iconRegistry = {
   lock: mci('lock'),
   shield: mci('shield-check'),
   sparkle: mci('star-four-points'),
+  /* The tap affordance on the Tasbih counting stage, and the haptics control beside it. */
+  tap: mci('gesture-tap'),
+  /* The Dhikr emblem: an eight-pointed star, the geometric motif the Faith module already uses. */
+  octagram: mci('octagram-outline'),
 
   // ── Module identities: locked by implementation-lock §8 ───────────────────
   'module-noor-ai': mci('robot'),
@@ -130,6 +137,11 @@ export const iconRegistry = {
   // matching the reference, which also draws those two from the same subject.
   hadith: mci('script-text-outline'),
   qibla: mci('compass-outline'),
+  location: mci('map-marker'),
+  calibrate: mci('crosshairs-gps'),
+  signal: mci('signal-cellular-3'),
+  /* The guidance card's turn arrow. Directional, so the screen mirrors it for a right turn. */
+  'turn-left': mci('arrow-u-left-top'),
   tasbih: mci('circle-multiple-outline'),
   crescent: mci('moon-waning-crescent'),
   share: mci('share-variant-outline'),

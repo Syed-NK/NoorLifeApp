@@ -251,21 +251,41 @@ export function classifyFaithQuestion(text: string): FaithAiReply {
     };
   }
 
+  /**
+   * The catch-all, and the one reply that has to describe the module rather than a topic.
+   *
+   * ── Why it no longer offers Hadith and duas ─────────────────────────────────
+   * It did — "I can help with prayer times, Qur'an and Hadith references, duas, and your own worship
+   * record" — and two of those five were untrue. Hadith and Duas have no approved provider, their
+   * repositories answer `not-configured`, and their screens render the locked state. An assistant
+   * advertising a capability the app does not have is the same failure as a fixture: a claim nothing
+   * behind it can honour, made in the place a user is most likely to trust it.
+   *
+   * The distinction is drawn explicitly rather than by omission. Silently dropping the two would
+   * leave a user to wonder whether they had asked wrongly; naming them as unconfigured says the
+   * limitation is NoorLife's, which is the truth and is the same thing the locked screens say.
+   */
   return {
     kind: 'answer',
     topic: 'explanation',
     answer:
-      'I can help with prayer times, Qur’an and Hadith references, duas, and your own ' +
-      'worship record. Try one of the suggestions above.',
+      'I can point you to your prayer times, the Qur’an reader and your own worship record. ' +
+      'Hadith and duas have no approved source configured yet, so I cannot answer from them.',
     quotes: NO_QUOTES,
   };
 }
 
+/**
+ * The starter questions, each one answerable.
+ *
+ * "A dua for anxiety" was here and was removed with the capability claim above: it invited the user
+ * to ask for the single thing this module is locked out of, and the reply could only have been a
+ * refusal. A suggestion chip is a promise that the question will be answered.
+ */
 const SUGGESTIONS: readonly string[] = [
   'When is my next prayer?',
   'Explain this ayah',
   'Summarise my week',
-  'A dua for anxiety',
 ];
 
 export function createMockFaithAiRepository(): FaithAiRepository {

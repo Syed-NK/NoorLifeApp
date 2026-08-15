@@ -17,7 +17,12 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import type { FaithNavKey } from '../faith-routes';
 import type { UseFaithResource } from '../hooks/use-faith-resource';
-import { FaithNoResultsState, FaithRefreshingNotice, FaithStaleBanner } from './faith-states';
+import {
+  FaithNoResultsState,
+  FaithProviderLockedState,
+  FaithRefreshingNotice,
+  FaithStaleBanner,
+} from './faith-states';
 
 /**
  * The frame every Faith sub-screen is built in.
@@ -237,14 +242,70 @@ export function FaithResourceView<T>({
         />
       );
 
+    /**
+     * ── One `error` kind, four different truths ───────────────────────────────
+     * Every code used to land on the module's default error copy: *"Couldn't load your Faith data.
+     * The connection dropped on our side."* — under a **Try again** button. For a timeout that is
+     * accurate. For the three codes below it is not, and the inaccuracy is the app asserting a cause
+     * it has not established.
+     *
+     * Seen on the emulator: a signed-out install opened the Qur'an list and was told the connection
+     * had dropped on NoorLife's side. Nothing had dropped. There was no session, so the adapter
+     * answered `unauthorized`, and the screen reported a server fault instead — inventing an outage
+     * and blaming it on the one party the user cannot check.
+     *
+     * `not-configured` is worse still, because `FaithErrorCode`'s own definition already says why:
+     * "a screen that said 'try again' would be advising a user to retry something that cannot
+     * succeed until somebody sets an environment variable". The rule was written down and the
+     * rendering did the opposite — the retry button was there, and it could never work.
+     *
+     * So the two terminal codes get the terminal state this module already has, with no action,
+     * matching the locked Hadith, Dua and Mosque screens; `unauthorized` names the real cause and
+     * keeps a retry, which genuinely succeeds once the user signs in. Everything else — a timeout, a
+     * rate limit, an outage, an unknown — keeps the retryable copy, which for those is true.
+     */
     case 'error':
-      return (
-        <ModuleErrorState
-          onRetry={resource.reload}
-          developerDetail={result.detail ?? result.code}
-          testID={`${testID}-error`}
-        />
-      );
+      switch (result.code) {
+        case 'not-configured':
+          return (
+            <FaithProviderLockedState
+              icon="lock"
+              title="Not connected to a source"
+              body="This build has no content provider configured, so there is nothing to load. This is not a fault on your device or your connection, and retrying cannot change it — it needs setting up on NoorLife's side."
+              testID={testID}
+            />
+          );
+
+        case 'unsupported':
+          return (
+            <FaithProviderLockedState
+              icon="info"
+              title="Not available from this source"
+              body="NoorLife's approved source does not offer this, so there is nothing to show. It is not missing because of an error, and it will appear only if the source is extended to cover it."
+              testID={testID}
+            />
+          );
+
+        case 'unauthorized':
+          return (
+            <ModuleErrorState
+              title="Sign in to load this"
+              body="This content is fetched with your account, and this device has no signed-in session. Sign in, then try again — nothing is wrong with your connection."
+              onRetry={resource.reload}
+              developerDetail={result.detail ?? result.code}
+              testID={`${testID}-error`}
+            />
+          );
+
+        default:
+          return (
+            <ModuleErrorState
+              onRetry={resource.reload}
+              developerDetail={result.detail ?? result.code}
+              testID={`${testID}-error`}
+            />
+          );
+      }
   }
 }
 

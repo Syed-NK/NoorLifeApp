@@ -325,6 +325,28 @@ export const readerDockColors = {
 export const readerPageBackground = '#FDFAF5';
 
 /**
+ * The Tasbih screen's ground, matched to the stage photographs.
+ *
+ * ── Why this is not `readerPageBackground` ──────────────────────────────────
+ * The six V4 stage plates are photographs on a warm studio ivory. Measured at their four corners,
+ * all six sit within a few units of **#F6ECE4** — walnut #F6EEE5, green jade #F6EDE4, black onyx
+ * #F5EBE3, white jade #F6ECE4, sandalwood #F6EDE5, figured brown #F6ECE4. The reader's ivory is
+ * #FDFAF5, which is lighter and cooler, so the plate drew a visible rectangle on the page: a hard
+ * seam exactly where the artwork was supposed to blend into the screen.
+ *
+ * Setting the screen's own ground to the photographs' ivory removes the join without touching the
+ * image — no crop, no fade mask, no scrim over the beads. The plates agree closely enough that one
+ * shared value serves all six; a per-material ground would make the page flicker on every swatch.
+ *
+ * Local to Tasbih. `moduleNeutrals.pageBackground` is untouched, as is the reader's.
+ *
+ * Measured on it: `textPrimary` 12.25:1 and `textSecondary` 4.61:1, both over the 4.5:1 AA bar, and
+ * `faith.ink` 4.25:1 against the 3:1 non-text bar. White cards separate from it at 1.16:1, which is
+ * what keeps the two control cards reading as raised surfaces.
+ */
+export const tasbihStageSurface = '#F6ECE4';
+
+/**
  * The reader's scripture surface **before** the correction, kept so the change is checkable.
  *
  * This is `moduleColorThemes.faith.lightSurface` — the palest Faith green, and what the reciting

@@ -103,7 +103,6 @@ const ARABIC_ALLOWED: readonly string[] = [
     states now; see `data/unconfigured-content.repository.ts`.
   */
   // Dhikr phrases. The user's own remembrance, not scripture quoted as a source.
-  'src/features/faith/data/mock/mock-tasbih.repository.ts',
   /*
     `mock-faith-ai.repository.ts` was exempted here and is not any more. It held Qur'an 94:6 in Arabic
     referenced as "Surah Ash-Sharh 94:6" and a narration attributed to "Sahih al-Bukhari 6464". The

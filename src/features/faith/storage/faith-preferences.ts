@@ -5,6 +5,11 @@ import type {
   PrayerNotificationPreference,
 } from '../data/prayer-times.repository';
 import type { ReciterId, TranslationId } from '../data/quran-content.repository';
+import {
+  DEFAULT_TASBIH_MATERIAL_ID,
+  isTasbihMaterialId,
+  type TasbihMaterialId,
+} from '../data/tasbih/tasbih-materials';
 import { faithStorageKeys, hasString, isRecord, readJson, writeJson } from './faith-storage';
 
 /**
@@ -123,6 +128,19 @@ export type FaithPreferences = {
    * unwelcome.
    */
   readonly hapticsEnabled: boolean;
+  /**
+   * Which bead material the Tasbih strand is drawn in, as a **stable id**.
+   *
+   * ── Why this is safe to persist before the artwork exists ─────────────────
+   * It stores a word, never a filename or an asset path, so it survives a re-export and leaks no
+   * build detail into user data. It is read back through `isTasbihMaterialId`, so a value written by
+   * a future build — or a corrupted one — falls back to the default rather than being handed to a
+   * lookup with no entry for it.
+   *
+   * A stored id is a *preference*, not a claim that the material can be drawn. Availability is
+   * `tasbih-materials.ts`'s business, and the screen consults it separately.
+   */
+  readonly tasbihMaterialId: TasbihMaterialId;
   /** Last chosen location label, so a manual city survives a restart. */
   readonly locationLabel: string | null;
 };
@@ -268,6 +286,7 @@ export const defaultFaithPreferences: FaithPreferences = {
   prayerNotifications: DEFAULT_NOTIFICATIONS,
   showTransliteration: true,
   hapticsEnabled: true,
+  tasbihMaterialId: DEFAULT_TASBIH_MATERIAL_ID,
   locationLabel: null,
 };
 
@@ -331,6 +350,14 @@ export function migratePreferences(stored: unknown): FaithPreferences {
    */
   const seeded = record.translationDefaultSeeded === true;
 
+  /*
+    Validated rather than trusted, for the same reason as the reciter above: `merged` spreads the
+    stored blob over the defaults, so anything at this key arrives intact.
+  */
+  const tasbihMaterialId: TasbihMaterialId = isTasbihMaterialId(record.tasbihMaterialId)
+    ? record.tasbihMaterialId
+    : DEFAULT_TASBIH_MATERIAL_ID;
+
   /**
    * A blob written by the current build, carrying a whole choice.
    *
@@ -386,6 +413,7 @@ export function migratePreferences(stored: unknown): FaithPreferences {
     translationDefaultSeeded: true,
     reciterId,
     reciterChosenByUser,
+    tasbihMaterialId,
   };
 }
 

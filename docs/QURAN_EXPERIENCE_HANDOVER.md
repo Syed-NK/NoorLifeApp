@@ -6,8 +6,27 @@
 playback, bounded offline audio, and reading progress.
 
 This document is the deliverable for the brief's **Required handover**, steps 1–6. Phase 1 (the
-translation defect) is implemented and verified. Nothing else has been built, and nothing has been
-deployed, committed, pushed or rebuilt.
+translation defect) is implemented and verified. Nothing else had been built when this was written.
+
+> ### Deployment status — verified 2026-08-14
+>
+> **This block supersedes every "needs a redeploy" and "awaiting deployment" statement in this
+> document.**
+>
+> `quran-content` is live as **production version 11**, deployed 2026-08-11 11:29 UTC, `verify_jwt:
+> true`. The deployed bundle was downloaded from the project and compared against the audited local
+> source at commit `3a4d96e`: **all eleven runtime files are byte-identical** by SHA-256.
+> `ports.ts` is types-only and is erased at bundle time, so its absence from the bundle is expected.
+>
+> **No redeploy is required.** Phase 1, the `fields=verse_key,resource_name,language_name`
+> parameter and the `list_verse_recitations` audio operation are all already in production and were
+> each confirmed present in the deployed source.
+>
+> Two things below read as pending and are not. The git history is misleading on its own: the whole
+> function directory landed in a single commit (`7637f50`, 2026-08-13) two days *after* it was
+> deployed from the then-uncommitted working tree, so `updated_at` legitimately predates the commit.
+> The one Edge change genuinely still outstanding is the **unbuilt** `bismillah_pre` field in §6 —
+> future work, not a pending deployment.
 
 ---
 
@@ -19,7 +38,7 @@ deployed, committed, pushed or rebuilt.
 | B2 | **Resolved.** Keep the platform Naskh rendering this phase. Proceed with 36–44sp sizing, no truncation, diacritic-safe line height, responsive sizing, RTL and large-font verification. A licensed Qur'an font is a separate reviewed change |
 | B3 | **Approved.** Exactly one authenticated `list_recitation_resources` call through the deployed NoorLife function. Every Sudais match to be reported; no style chosen unilaterally; no hard-coded guess |
 | — | Page mode stays excluded, and **no non-functional Page option is displayed** |
-| — | Phase 1 **deployed** to `dxchgpshydsgfvyydyeb` at 2026-08-11 via `npx supabase functions deploy quran-content`. No `config push`, no other function, no commit, no push |
+| — | Phase 1 **deployed** to `dxchgpshydsgfvyydyeb` at 2026-08-11 via `npx supabase functions deploy quran-content`. No `config push`, no other function, no commit, no push. **Confirmed 2026-08-14 as production version 11, byte-identical to `3a4d96e` — no redeploy required.** See the deployment-status block at the top |
 
 ---
 
@@ -338,9 +357,14 @@ because it means none of this work reopens the vendor approval:
 correctly — present for 112 surahs, absent for Al-Fatihah (where it is ayah 1) and At-Tawbah (where
 Quranic rules omit it) — must be driven by that field rather than by a hard-coded list of two surah
 numbers in the client. This is an additive field on `WireChapter`, inside an existing operation, and
-it needs a redeploy.
+it needs a redeploy **when it is built**. As of 2026-08-14 it is not built — neither `normalize.ts`
+nor any client file references `bismillah_pre` — so it is outstanding work rather than an
+undeployed change. It is the **only** Edge change in this document still to be made.
 
-**Phase 1 (already implemented) also needs a redeploy.** See §8.
+**Phase 1 is deployed.** It went to production on 2026-08-11 as version 11 and was re-confirmed on
+2026-08-14 by downloading the deployed bundle and comparing it against `3a4d96e`, byte for byte.
+This paragraph previously read "also needs a redeploy"; that was stale. See §8 and the
+deployment-status block at the top.
 
 ### Native — two new packages, one rebuild
 
@@ -373,7 +397,12 @@ restart.
 
 ## 8. Phase 1 — the translation defect: root cause, fix, and verification
 
-**Status: implemented, verified, and awaiting deployment approval** (the brief's §12.6 stop-gate).
+**Status: implemented, verified, and deployed.** It was released to `dxchgpshydsgfvyydyeb` on
+2026-08-11 as production version 11, and confirmed present in the deployed bundle on 2026-08-14 —
+`catalogue_outcome` and `normalize_reason` both appear in the deployed `handler.ts` and
+`production.ts`. The line that stood here, "awaiting deployment approval" (the brief's §12.6
+stop-gate), was stale: the approval was given and acted on the same day this document was written,
+and §0a records it.
 
 ### Root cause
 
@@ -422,7 +451,9 @@ a payload, no free-text field, and the `production.ts` serialiser writes keys by
 text, Qur'anic text, token, header, URL, edition id, surah number or user identifier can reach a log
 line through either field.
 
-### After deployment, one query settles it
+### One query settles it — and it can be run now
+
+The fix is deployed, so this query is live rather than pending:
 
 ```
 event=quran_content_request
@@ -446,7 +477,7 @@ Each phase is independently verifiable, and each leaves the app shippable.
 
 | Phase | Work | Gate |
 |---|---|---|
-| **1** | Translation defect — **done**, awaiting deploy | §12.6 stop |
+| **1** | Translation defect — **done and deployed** (production version 11) | §12.6 stop cleared 2026-08-11 |
 | **2** | Typography + ayah structure. Arabic to 38sp, line-height rule, remove the translation truncation defect, per-ayah attribution, dividers | Wrap tests at 320dp × 1.3 font scale |
 | **3** | Reader session + green states + auto-scroll | Six-state tests; contrast assertions |
 | **4** | Sticky player, compact ⇄ expanded, bottom-nav clearance | Clearance test; collapse/expand test |

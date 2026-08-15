@@ -12,9 +12,7 @@ import { DuasScreen } from '../screens/duas-screen';
 import { HadithScreen } from '../screens/hadith-screen';
 import { MosquesScreen } from '../screens/mosques-screen';
 import { PrayerTimesScreen } from '../screens/prayer-times-screen';
-import { QiblaScreen } from '../screens/qibla-screen';
 import { QuranScreen } from '../screens/quran-screen';
-import { TasbihScreen } from '../screens/tasbih-screen';
 
 /**
  * The eight section heroes render an approved baked card, and say nothing untrue while doing it.
@@ -55,8 +53,19 @@ const BAKED: readonly (readonly [string, ReactElement, FaithHeroImageKey, string
   ['Hadith', <HadithScreen key="h" />, 'hadith', 'faith-hero-hadith'],
   ['Duas', <DuasScreen key="d" />, 'duas', 'faith-hero-duas'],
   ['Prayer', <PrayerTimesScreen key="p" />, 'prayer', 'faith-hero-prayer'],
-  ['Qibla', <QiblaScreen key="qb" />, 'qibla', 'faith-hero-qibla'],
-  ['Tasbih', <TasbihScreen key="t" />, 'tasbih', 'faith-hero-tasbih'],
+  /*
+    Qibla is deliberately absent from this table, for the same reason as Tasbih.
+
+    The approved Qibla A+D design has **no hero**: the dial is the dominant element and starts
+    directly under the header, because a 144 dp artwork above it pushed the compass — the entire
+    point of the screen — below the fold, and pushed the guidance card off it entirely. The
+    nine-screen 'same rectangle' rule still binds every screen that draws a hero; Qibla no longer
+    draws one, so asserting its geometry would be asserting a card that is not there.
+  */
+  /*
+    Tasbih is deliberately absent: the approved Tasbih B design has no hero. See the note in
+    faith-hero-geometry.test.tsx.
+  */
   ['Mosques', <MosquesScreen key="m" />, 'mosques', 'faith-hero-mosques'],
   ['Calendar', <CalendarScreen key="c" />, 'calendar', 'faith-hero-calendar'],
 ];

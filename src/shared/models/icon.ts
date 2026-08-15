@@ -29,10 +29,19 @@ export type IconName =
   | 'more'
   // ── Actions ──────────────────────────────────────────────────────────────
   | 'add'
+  | 'minus'
   | 'add-circle'
   | 'check'
   | 'check-circle'
   | 'retry'
+  /*
+    Distinct from `retry` on purpose. Both are "go again" in the abstract, but a counter needs to
+    offer *step back one* and *start over* side by side, and two refresh arrows next to each other
+    say nothing about which is which — the whole point of the pair is that they are told apart at a
+    glance by somebody who is not looking carefully.
+  */
+  | 'undo'
+  | 'edit'
   | 'send'
   | 'microphone'
   | 'play'
@@ -50,6 +59,8 @@ export type IconName =
   | 'lock'
   | 'shield'
   | 'sparkle'
+  | 'tap'
+  | 'octagram'
   // ── Module identities (Main Home grid) ───────────────────────────────────
   | 'module-noor-ai'
   | 'module-faith'
@@ -98,6 +109,10 @@ export type IconName =
   // ── Faith module surfaces (Phase 4A, from 03-faith.png) ──────────────────
   | 'hadith'
   | 'qibla'
+  | 'location'
+  | 'calibrate'
+  | 'signal'
+  | 'turn-left'
   | 'tasbih'
   | 'crescent'
   | 'share'

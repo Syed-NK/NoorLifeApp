@@ -11,7 +11,7 @@ import {
   createUnconfiguredMosqueRepository,
 } from '../unconfigured-content.repository';
 import { createMockQuranRepository } from './mock-quran.repository';
-import { createMockTasbihRepository } from './mock-tasbih.repository';
+import { createLocalTasbihRepository } from '../tasbih/local-tasbih.repository';
 import { createMockWorshipRepository } from './mock-worship.repository';
 
 /**
@@ -84,7 +84,15 @@ export function createMockFaithRepositories(): FaithRepositories {
      * fabricated May 2025.
      */
     calendar: createHijriCalendarRepository(),
-    tasbih: createMockTasbihRepository(),
+    /**
+     * Not a mock, and no longer able to be one.
+     *
+     * The counting engine is real — it persists, serialises its mutations and survives a force-stop
+     * — and the five built-in dhikr that made this a fixture have been removed for want of any
+     * recorded provenance. It lives at `data/tasbih/` now, so a development set cannot supply
+     * religious content the production set would not.
+     */
+    tasbih: createLocalTasbihRepository(),
     /**
      * Also not a mock. The fixture listed two invented mosques with street addresses, facility
      * lists and distances in metres — a directional claim a user could act on by walking to an
@@ -105,7 +113,7 @@ export {
 export { createMockWorshipRepository, worshipSeedForTest } from './mock-worship.repository';
 export { createHijriCalendarRepository } from '../hijri/hijri-calendar.repository';
 export { createAdhanPrayerTimesRepository } from '../prayer/adhan-prayer-times.repository';
-export { createMockTasbihRepository, dhikrPresetsForTest } from './mock-tasbih.repository';
+export { createLocalTasbihRepository, DEFAULT_COUNTER } from '../tasbih/local-tasbih.repository';
 /*
   The Hadith, Dua and mosque fixtures that used to be re-exported here are gone. Their replacements
   hold no content, so there is no `…ForTest` array to expose.

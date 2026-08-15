@@ -1,50 +1,70 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppIcon } from '@ds/components';
+import { modulePalettes } from '@ds/tokens';
 import { ModuleStatusBanner, ModuleText } from '@features/modules/components';
-import { ModuleCard } from '@features/modules/components/module-card';
-import { useModuleTheme } from '@features/modules/module-context';
-import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
+import {
+  moduleLayout,
+  moduleNeutrals,
+  readerDockColors,
+  readerPageBackground,
+} from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { useReducedMotion } from '@shared/utils/a11y';
+import type { IconName } from '@shared/models/icon';
+import { minimumHitSlop, useReducedMotion } from '@shared/utils/a11y';
 
-import { FaithSectionHero } from '../components/faith-section-hero';
+import { QiblaBearingDial, QiblaLiveDial } from '../components/qibla-compass';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import {
   calibrationAdvice,
-  guidanceLabel,
   locationAuthorityLabel,
   qiblaGuidance,
   relativeBearing,
   type CompassAccuracy,
+  type QiblaGuidance,
   type QiblaMode,
 } from '../data/qibla/qibla';
-import { faithHeroImages } from '../faith-hero-images';
 import { faithNavKeys } from '../faith-routes';
 import { permissionAdvice, useLocationPermission } from '../hooks/use-location-permission';
 import { useQibla, type QiblaTarget } from '../hooks/use-qibla';
 
 /**
- * Qibla.
+ * Qibla — one screen, one route, two truthful runtime states.
  *
- * ── What changed, and why it needed to ──────────────────────────────────────
- * This screen used to show a bearing and a static arrow, with a banner explaining that it was "not a
- * live compass" and asking the user to align it with a separate app. That was honest, and it was
- * not the feature — the arrow rotated by the Qibla bearing alone, so it pointed the same way whether
- * you were facing Mecca or away from it.
+ * ── The distinction the whole screen is built around ────────────────────────
+ * In **live** the dial is an instrument: the marker points at the Kaaba *in the room*, and turning
+ * the phone moves it. In **bearing-only** there is no trustworthy heading at all, so the dial is a
+ * north-up diagram with the Qibla drawn on it — exactly as useful as a printed bearing and no more.
  *
- * It now reads the device's heading and rotates the marker by `qibla − heading`, so the marker points
- * at the Kaaba in the room the user is standing in. The states below are all the ways that can fail,
- * and each says what the user can do about it rather than hiding the dial.
+ * Drawing the second as though it were the first is the failure this screen exists to prevent. A
+ * marker sitting still while the phone turns, with nothing on screen saying why, reads as a broken
+ * compass rather than as a correct bearing — so bearing-only never shows a turn instruction, an
+ * alignment claim, a compass-accuracy grade or a "using device sensors" line, and it says which of
+ * the three ways the heading went missing applies.
+ *
+ * ── Shared geometry ────────────────────────────────────────────────────────
+ * Both states place the dial at the same diameter in the same position, and both end in the same
+ * location and distance rows, so a mode change while the user is looking at it does not move the
+ * furniture under their eyes.
  *
  * ── True north, and nothing else ────────────────────────────────────────────
  * The bearing is measured from true north, so the heading must be too. `expo-location` supplies a
  * declination-corrected `trueHeading` and reports its absence; magnetic north is never substituted,
  * because the two differ by up to ~20° in populated parts of the world.
  */
+
+const EMERALD = modulePalettes.faith.primary;
+const EMERALD_DEEP = modulePalettes.faith.dark;
+const GOLD = modulePalettes.faith.supporting;
+
 export function QiblaScreen() {
   return (
-    <FaithScreen title="Qibla" activeKey={faithNavKeys.more} testID="faith-qibla">
+    <FaithScreen
+      title="Qibla"
+      activeKey={faithNavKeys.more}
+      background={readerPageBackground}
+      testID="faith-qibla"
+    >
       <QiblaBody />
     </FaithScreen>
   );
@@ -58,22 +78,7 @@ function QiblaBody() {
   const advice = permissionAdvice(permission.outcome);
 
   return (
-    <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
-      {/*
-        ── "Find Qibla" was built, measured, and removed for the same reason as Qur'an's ──
-        It raised the real location prompt, so it was functional. It also covered the second line of the
-        baked subtitle — "from where you are." — because the 2.507 crop puts the baked copy lower in the
-        card than the cleared band allows for.
-
-        Nothing is lost: `FaithResourceView` below already offers the grant affordance on the permission
-        path, which is the only state in which acquiring a fix is the useful next step.
-      */}
-      <FaithSectionHero
-        submenu="qibla"
-        heroImage={faithHeroImages.qibla}
-        summary="The direction of prayer from where you are."
-      />
-
+    <View style={{ rowGap: dp(moduleLayout.cardGap) }}>
       {advice === null ? null : (
         <ModuleStatusBanner
           tone="warning"
@@ -103,18 +108,33 @@ function QiblaBody() {
   );
 }
 
-/** What the bearing-only state says, and why it is in that state. One wording per reason. */
-function bearingOnlyMessage(
-  reason: Extract<QiblaMode, { kind: 'bearing-only' }>['reason'],
-): string {
+/**
+ * Why the dial is not tracking, in one sentence per reason.
+ *
+ * Kept exhaustive over the union so a fourth reason is a compile error here rather than a screen
+ * that silently explains nothing.
+ */
+function bearingOnlyReason(reason: Extract<QiblaMode, { kind: 'bearing-only' }>['reason']): string {
   switch (reason) {
     case 'no-compass':
-      return 'This device has no compass, so NoorLife cannot show which way you are facing. The bearing below is measured from true north — use it with a separate compass.';
+      return 'This device has no compass sensor.';
     case 'unusable-accuracy':
-      return 'The compass is not reporting a heading NoorLife can trust, so the dial is showing the bearing rather than tracking your phone. The bearing itself is unaffected.';
+      return 'The compass is not reporting a heading NoorLife can trust.';
     case 'no-heading':
-      return 'No compass heading has arrived, so the dial is showing the bearing from north rather than tracking your phone.';
+      return 'No compass heading has arrived yet.';
   }
+}
+
+/**
+ * Whether saying the live dial may return is honest.
+ *
+ * A device with no magnetometer will never produce a heading, so telling its owner that NoorLife is
+ * waiting for one is a promise that can never be kept — they would hold the phone up waiting for a
+ * switch that is not coming. The other two reasons are genuinely transient, and there the statement
+ * is true.
+ */
+function isRecoverable(reason: Extract<QiblaMode, { kind: 'bearing-only' }>['reason']): boolean {
+  return reason !== 'no-compass';
 }
 
 function QiblaView({
@@ -130,203 +150,493 @@ function QiblaView({
   readonly mode: QiblaMode;
   readonly probing: boolean;
 }) {
-  const { dp } = useModuleMetrics();
+  const { dp, screenWidth } = useModuleMetrics();
+  const reduceMotion = useReducedMotion();
 
   const bearing = Math.round(target.bearing);
+  const distance = `${Math.round(target.distanceKm).toLocaleString()} km`;
+
   /*
     ── Guidance belongs to `live` alone ──────────────────────────────────────
-    "Turn left 24°" is an instruction about the room, and it is only meaningful when a heading is
+    "Turn left 24°" is an instruction about the room, and it is only meaningful while a heading is
     being tracked. Deriving it from a heading the mode has already judged untrustworthy is how a
     screen tells somebody to turn based on a reading the platform disowned.
   */
   const guidance =
     mode.kind === 'live' && heading !== null ? qiblaGuidance(target.bearing, heading) : null;
+
   /*
-    Calibration advice is for a compass that is working but imprecise. When accuracy is unusable the
-    mode has already dropped to bearing-only and says so in full, so a second banner would be the
-    same news twice.
+    ── The dial's diameter, and why the cap is 276 and not a round 300 ────────
+    It is the dominant element, so it takes the content column less its margins. The ceiling is what
+    makes the bearing-only state fit above the bottom navigation at the reference 411 dp: measured on
+    device at 300 dp, the recovery row ended at 841 dp against a navigation edge at ~820 and was
+    clipped mid-word. 276 dp buys back the difference and leaves the compass more than three times
+    the height of anything else on the screen, which is what "dominant" has to mean here.
   */
-  const calibration = mode.kind === 'live' ? calibrationAdvice(accuracy) : null;
+  const dial = Math.max(dp(200), Math.min(dp(276), screenWidth - dp(72)));
 
-  return (
-    <View style={{ rowGap: dp(moduleLayout.cardGap) }}>
-      {/*
-        ── One banner, naming the actual reason ────────────────────────────
-        This replaced a `hasCompass` banner that could only describe one of the three ways a heading
-        goes missing. A device with a compass reporting garbage got no explanation at all, and the
-        dial stayed live on readings the platform had disowned.
-      */}
-      {mode.kind === 'bearing-only' ? (
-        <ModuleStatusBanner
-          tone={mode.reason === 'no-compass' ? 'info' : 'warning'}
-          message={bearingOnlyMessage(mode.reason)}
-          testID="faith-qibla-bearing-only"
-        />
-      ) : null}
+  const locationRow = (
+    <InfoRow
+      icon="location"
+      title={target.location.label}
+      subtitle={locationAuthorityLabel(target.location.mode)}
+      testID="faith-qibla-source"
+    />
+  );
+  const distanceRow = (
+    <InfoRow icon="mosque" title={distance} subtitle="to Makkah" testID="faith-qibla-distance" />
+  );
 
-      {calibration === null ? null : (
-        <ModuleStatusBanner tone="warning" message={calibration} testID="faith-qibla-calibration" />
-      )}
+  if (mode.kind === 'live') {
+    /*
+      The marker's angle. `relativeBearing` is the shortest signed turn from where the phone points
+      to the Qibla, so the marker sits at the Kaaba's position relative to the top of the phone.
 
-      <ModuleCard testID="faith-qibla-dial">
-        <View style={{ alignItems: 'center', rowGap: dp(12) }}>
-          {/*
-            The mode, stated on the dial itself rather than only in a banner above it. A user who
-            scrolls past the banner still has to be able to tell a compass from a diagram, and this
-            is the label that survives a screenshot.
-          */}
-          <ModuleText
-            token="caption"
-            align="center"
-            color={moduleNeutrals.textSecondary}
-            testID="faith-qibla-mode"
-          >
-            {mode.kind === 'live'
-              ? 'Live compass'
-              : 'Bearing only — dial does not track your phone'}
-          </ModuleText>
+      Reduced motion does not disable an animation here — there is none; the marker is drawn at
+      whatever the latest reading gives, so it moves exactly as fast as the sensor. What it changes
+      is the *rounding*: at 5° steps the marker stops trembling in peripheral vision while staying
+      accurate to well inside the alignment window.
+    */
+    const raw = heading === null ? target.bearing : relativeBearing(target.bearing, heading);
+    const markerAngle = reduceMotion ? Math.round(raw / 5) * 5 : Math.round(raw);
+    const calibration = calibrationAdvice(accuracy);
 
-          <QiblaDial
-            bearing={target.bearing}
-            heading={heading}
-            live={mode.kind === 'live'}
+    return (
+      <View style={{ rowGap: dp(12) }} testID="faith-qibla-live">
+        <BearingHeadline bearing={bearing} />
+
+        <View style={styles.centre}>
+          <QiblaLiveDial
+            size={dial}
+            markerAngle={markerAngle}
             aligned={guidance?.kind === 'aligned'}
+            testID="faith-qibla-dial"
           />
+        </View>
 
-          {/*
-            The instruction, and the one thing on this screen a user acts on. It is a live region so
-            a screen-reader user hears "turn left 24 degrees" become "facing the Qibla" without
-            re-focusing anything.
-          */}
-          <View accessible accessibilityLiveRegion="polite" testID="faith-qibla-guidance">
-            {/*
-              ── "Finding your heading…" is only true while it is still being looked for ──
-              On the emulator this line read "Finding your heading…" underneath a banner that had
-              already concluded the compass could not be trusted — two statements about the same
-              sensor, one of them stale, and the optimistic one on top. `probing` alone was the wrong
-              condition: it stays true until a *reading* arrives, which never happens on a device
-              whose compass has been ruled out.
+        <GuidanceCard guidance={guidance} probing={probing} />
 
-              Waiting is now only claimed for the one reason that is genuinely transient — no reading
-              yet, from a compass that exists and is trusted. `no-compass` and `unusable-accuracy` are
-              settled answers, so they state the bearing instead.
-            */}
-            <ModuleText token="cardTitle" align="center" numberOfLines={2}>
-              {guidance === null
-                ? probing && mode.kind === 'bearing-only' && mode.reason === 'no-heading'
-                  ? 'Finding your heading…'
-                  : `Qibla is ${bearing}° from true north`
-                : guidanceLabel(guidance)}
-            </ModuleText>
-          </View>
+        <AccuracyRow accuracy={accuracy} />
 
-          <ModuleText token="caption" align="center" numberOfLines={2}>
-            {`${bearing}° from true north • ${Math.round(target.distanceKm).toLocaleString()} km to Makkah`}
-          </ModuleText>
-          {/*
-            ── Where the bearing was calculated *from* ─────────────────────
-            The place and the authority behind it, because they answer different questions. "Dubai"
-            says where; "Selected city" says NoorLife did not measure it — which is what a user needs
-            to know before trusting an arrow while standing somewhere else. The label is the stored
-            one and is never invented; `locationAuthorityLabel` is total over the three V3 modes.
-          */}
-          <ModuleText token="caption" align="center" numberOfLines={2} testID="faith-qibla-source">
-            {`Calculated for ${target.location.label} • ${locationAuthorityLabel(target.location.mode)}`}
+        {/*
+          Calibration is offered only when it would help: a compass that is working but imprecise.
+          At `good` there is nothing to fix, and at `unusable` the mode has already dropped to
+          bearing-only — so this control never appears as busywork on a dial that is already fine or
+          already disowned.
+        */}
+        {calibration === null ? null : (
+          <InfoRow
+            icon="calibrate"
+            title="Calibrate compass"
+            subtitle={calibration}
+            testID="faith-qibla-calibrate"
+          />
+        )}
+
+        <View style={[styles.sensorLine, { columnGap: dp(6) }]}>
+          <View
+            style={{
+              width: dp(7),
+              height: dp(7),
+              borderRadius: dp(4),
+              backgroundColor: EMERALD,
+            }}
+          />
+          <ModuleText token="caption" color={EMERALD} testID="faith-qibla-sensors">
+            Using device sensors
           </ModuleText>
         </View>
-      </ModuleCard>
+
+        {locationRow}
+        {distanceRow}
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ rowGap: dp(12) }} testID="faith-qibla-bearing-only">
+      {/*
+        The banner is the first thing on the screen for the same reason the mode exists: a user has
+        to know the dial below is a diagram *before* they start turning with the phone held up.
+      */}
+      <BearingOnlyBanner reason={bearingOnlyReason(mode.reason)} />
+
+      <View style={styles.centre}>
+        <QiblaBearingDial size={dial} bearing={target.bearing} testID="faith-qibla-dial" />
+      </View>
+
+      <View style={styles.centre} accessible testID="faith-qibla-bearing-readout">
+        <ModuleText token="body" align="center">
+          Qibla is
+        </ModuleText>
+        <ModuleText
+          token="heroScore"
+          align="center"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.6}
+          style={{ fontSize: dp(46), lineHeight: dp(54) }}
+        >
+          {`${bearing}°`}
+        </ModuleText>
+        <ModuleText token="caption" align="center">
+          from true north
+        </ModuleText>
+      </View>
+
+      {locationRow}
+      {distanceRow}
+
+      {/*
+        Whether the live dial can still come back, stated only when it can. See `isRecoverable`: on a
+        device with no magnetometer there is nothing to wait for, so saying so would be false hope.
+
+        ── Why this is worded as a status and not as "Try live compass" ──────────
+        It was worded that way, and it was an imperative with nothing behind it: the row is an
+        `InfoRow`, it has no `onPress`, and the mode switches on its own the moment a trustworthy
+        heading arrives. A user reading a command taps it, nothing happens, and the screen has taught
+        them the app is broken at precisely the point it is being most careful. The recovery is
+        automatic, so the row reports that it is waiting rather than asking for an action that does
+        not exist.
+      */}
+      {isRecoverable(mode.reason) ? (
+        <InfoRow
+          icon="qibla"
+          title="Waiting for a reliable heading"
+          subtitle="The dial switches to live tracking on its own if one arrives"
+          accent
+          testID="faith-qibla-recovery"
+        />
+      ) : null}
     </View>
   );
 }
 
 /**
- * The dial: a fixed compass rose, and a marker that rotates to point at the Kaaba.
+ * The bearing-only banner.
  *
- * ── What rotates, and why it is the marker rather than the rose ─────────────
- * Rotating the *rose* by `−heading` and leaving the marker at the Qibla bearing is the other common
- * design, and it is the one that makes people motion-sick: the whole dial swings as the phone
- * trembles. Here the rose is still and only the marker moves, by `qibla − heading`, so the marker
- * points at the Kaaba relative to the top of the phone. Less visually impressive, easier to follow.
+ * ── Why this is not the shared status banner ────────────────────────────────
+ * `ModuleStatusBanner` renders one run of prose, and this has to say three things with different
+ * weights: *what mode you are in*, *what that means for the dial below*, and *why*. Flattened into a
+ * sentence the middle one — the dial does not track your phone — stopped being the thing the eye
+ * lands on, which is the one fact a user has to take away before they lift the phone and turn.
  *
- * ── Reduced motion ─────────────────────────────────────────────────────────
- * There is no animation to disable — the marker is rendered at whatever angle the latest reading
- * gives, so it moves exactly as fast as the sensor does. What `reduceMotion` changes is the
- * *rounding*: at 5° steps the marker stops trembling in the user's peripheral vision while still
- * being accurate to well inside the alignment window.
+ * It is a statement, not a control: there is nothing to press, so it is one accessible node with the
+ * whole message rather than three a screen reader has to walk.
  */
-function QiblaDial({
-  bearing,
-  heading,
-  live,
-  aligned,
-}: {
-  readonly bearing: number;
-  readonly heading: number | null;
-  /** True only when a trusted heading is tracking. Decides what the dial *is*. */
-  readonly live: boolean;
-  readonly aligned: boolean;
-}) {
-  const theme = useModuleTheme();
+function BearingOnlyBanner({ reason }: { readonly reason: string }) {
   const { dp } = useModuleMetrics();
-  const reduceMotion = useReducedMotion();
-
-  const size = dp(220);
-  /**
-   * The marker's angle.
-   *
-   * With no heading it points at the Qibla bearing from *north* and the caption says the heading is
-   * unavailable — which is the same information the old screen gave, presented as the fallback it is
-   * rather than as the feature.
-   */
-  const raw = live && heading !== null ? relativeBearing(bearing, heading) : bearing;
-  const angle = reduceMotion ? Math.round(raw / 5) * 5 : Math.round(raw);
 
   return (
     <View
       style={[
-        styles.dial,
+        styles.banner,
         {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          borderColor: aligned ? theme.ink : theme.border,
-          borderWidth: aligned ? dp(3) : dp(2),
-          backgroundColor: theme.lightSurface,
+          borderRadius: dp(moduleLayout.radiusSmall),
+          padding: dp(12),
+          columnGap: dp(12),
         },
       ]}
       accessible
-      accessibilityLabel={
-        heading === null
-          ? `Qibla bearing ${Math.round(bearing)} degrees from true north. Device heading unavailable.`
-          : `Qibla is ${Math.abs(angle)} degrees ${angle >= 0 ? 'clockwise' : 'anticlockwise'} from where the phone is pointing.`
-      }
-      testID="faith-qibla-dial-face"
+      accessibilityLabel={`Bearing only. Dial does not track your phone. ${reason}`}
+      testID="faith-qibla-bearing-only-banner"
     >
-      {/* North, fixed at the top of the rose so the marker's angle is readable against it. */}
-      <View style={[styles.north, { top: dp(8) }]}>
-        <ModuleText token="caption" color={moduleNeutrals.textSecondary} numberOfLines={1}>
-          N
+      <View
+        style={{
+          width: dp(32),
+          height: dp(32),
+          borderRadius: dp(16),
+          borderWidth: 1.5,
+          borderColor: GOLD,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <AppIcon name="info" size={dp(18)} color={GOLD} />
+      </View>
+      <View style={styles.flex}>
+        <ModuleText token="cardTitle" color={moduleNeutrals.textPrimary} numberOfLines={1}>
+          Bearing only
+        </ModuleText>
+        <ModuleText token="caption" numberOfLines={2}>
+          Dial does not track your phone
+        </ModuleText>
+        {/* The specific reason, so the user can tell a missing sensor from a momentary one. */}
+        <ModuleText token="caption" numberOfLines={3} testID="faith-qibla-bearing-only-reason">
+          {reason}
         </ModuleText>
       </View>
+    </View>
+  );
+}
 
-      <View style={{ transform: [{ rotate: `${angle}deg` }] }} testID="faith-qibla-marker">
+/** `{bearing}° Qibla direction`, the live state's opening line. */
+function BearingHeadline({ bearing }: { readonly bearing: number }) {
+  const { dp } = useModuleMetrics();
+
+  return (
+    <View style={[styles.headline, { columnGap: dp(6) }]} testID="faith-qibla-headline">
+      <ModuleText
+        token="heroScore"
+        color={EMERALD}
+        numberOfLines={1}
+        style={{ fontSize: dp(30), lineHeight: dp(38) }}
+      >
+        {`${bearing}°`}
+      </ModuleText>
+      <ModuleText token="cardTitle" numberOfLines={1}>
+        Qibla direction
+      </ModuleText>
+    </View>
+  );
+}
+
+/**
+ * The instruction, and the one thing on this screen a user acts on.
+ *
+ * A live region, so a screen-reader user hears "turn left 24 degrees" become "you are facing the
+ * Qibla" without re-focusing anything.
+ */
+function GuidanceCard({
+  guidance,
+  probing,
+}: {
+  readonly guidance: QiblaGuidance | null;
+  readonly probing: boolean;
+}) {
+  const { dp } = useModuleMetrics();
+  const aligned = guidance?.kind === 'aligned';
+
+  const heading = (() => {
+    if (guidance === null) {
+      return probing ? 'Finding your heading…' : 'Heading unavailable';
+    }
+    if (guidance.kind === 'aligned') {
+      return 'You are facing the Qibla';
+    }
+    /*
+      ── The degrees are always stated, including inside the "almost" window ──
+      The model still marks a turn under 20° as `close`, and `guidanceLabel` renders that as "Almost
+      — turn slightly right". That reads well and it drops the one number the user is acting on: at
+      18° they were told to turn "slightly" with no idea whether that meant two degrees or nineteen.
+      The approved design shows the figure at every distance, so the figure is shown at every
+      distance; `close` survives as emphasis below rather than as a replacement for it.
+    */
+    return `Turn ${guidance.direction} ${guidance.degrees}°`;
+  })();
+
+  return (
+    <View
+      style={[
+        styles.guidance,
+        {
+          borderRadius: dp(moduleLayout.cardRadius),
+          padding: dp(14),
+          columnGap: dp(14),
+          backgroundColor: EMERALD_DEEP,
+          borderColor: aligned ? GOLD : 'transparent',
+          borderWidth: aligned ? dp(1.5) : 0,
+        },
+      ]}
+      accessible
+      accessibilityLiveRegion="polite"
+      testID="faith-qibla-guidance"
+    >
+      <View
+        style={[
+          styles.guidanceGlyph,
+          {
+            width: dp(46),
+            height: dp(46),
+            borderRadius: dp(23),
+            borderColor: `${GOLD}66`,
+          },
+        ]}
+      >
         <AppIcon
-          name="qibla"
-          size={dp(84)}
-          color={aligned ? theme.ink : moduleNeutrals.textSecondary}
+          name={aligned ? 'check' : 'turn-left'}
+          size={dp(22)}
+          color={GOLD}
+          /*
+            The glyph is a left turn; a right turn is the same arrow mirrored. One asset, and the two
+            can never drift apart into arrows that disagree about which way is which.
+          */
+          style={
+            guidance?.kind === 'turn' && guidance.direction === 'right'
+              ? { transform: [{ scaleX: -1 }] }
+              : undefined
+          }
         />
+      </View>
+
+      <View style={styles.flex}>
+        <ModuleText
+          token="cardTitle"
+          color={moduleNeutrals.surface}
+          numberOfLines={2}
+          testID="faith-qibla-guidance-text"
+        >
+          {heading}
+        </ModuleText>
+        <ModuleText token="caption" color={`${moduleNeutrals.surface}CC`} numberOfLines={2}>
+          Align your phone with the Qibla direction
+        </ModuleText>
+      </View>
+    </View>
+  );
+}
+
+/** Compass accuracy, as a grade with a signal glyph — live only. */
+function AccuracyRow({ accuracy }: { readonly accuracy: CompassAccuracy }) {
+  const { dp } = useModuleMetrics();
+  const grade = accuracy === 'good' ? 'High' : 'Low';
+  const tint = accuracy === 'good' ? EMERALD : moduleNeutrals.warning;
+
+  return (
+    <View
+      style={[
+        styles.row,
+        {
+          borderRadius: dp(moduleLayout.radiusSmall),
+          minHeight: dp(moduleLayout.minTouchTarget),
+          paddingHorizontal: dp(12),
+          paddingVertical: dp(10),
+          columnGap: dp(12),
+        },
+      ]}
+      accessible
+      accessibilityLabel={`Compass accuracy ${grade}`}
+      testID="faith-qibla-accuracy"
+    >
+      <RowGlyph icon="target" />
+      <ModuleText
+        token="body"
+        color={moduleNeutrals.textPrimary}
+        numberOfLines={1}
+        style={styles.flex}
+      >
+        Compass accuracy
+      </ModuleText>
+      <ModuleText token="button" color={tint} numberOfLines={1}>
+        {grade}
+      </ModuleText>
+      <AppIcon name="signal" size={dp(18)} color={tint} />
+    </View>
+  );
+}
+
+function RowGlyph({
+  icon,
+  accent = false,
+}: {
+  readonly icon: IconName;
+  readonly accent?: boolean;
+}) {
+  const { dp } = useModuleMetrics();
+  const size = dp(36);
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: accent ? EMERALD_DEEP : `${EMERALD}1A`,
+      }}
+    >
+      <AppIcon name={icon} size={dp(18)} color={accent ? GOLD : EMERALD} />
+    </View>
+  );
+}
+
+/** The repeated title/subtitle row the approved design ends both states with. */
+function InfoRow({
+  icon,
+  title,
+  subtitle,
+  accent = false,
+  testID,
+}: {
+  readonly icon: IconName;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly accent?: boolean;
+  readonly testID: string;
+}) {
+  const { dp } = useModuleMetrics();
+
+  return (
+    <View
+      style={[
+        styles.row,
+        {
+          borderRadius: dp(moduleLayout.radiusSmall),
+          minHeight: dp(moduleLayout.minTouchTarget),
+          paddingHorizontal: dp(12),
+          paddingVertical: dp(10),
+          columnGap: dp(12),
+        },
+      ]}
+      accessible
+      accessibilityLabel={`${title}. ${subtitle}`}
+      hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
+      testID={testID}
+    >
+      <RowGlyph icon={icon} accent={accent} />
+      <View style={styles.flex}>
+        <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
+          {title}
+        </ModuleText>
+        <ModuleText token="caption" numberOfLines={2}>
+          {subtitle}
+        </ModuleText>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  dial: {
+  centre: {
     alignItems: 'center',
+  },
+  flex: {
+    flex: 1,
+    minWidth: 0,
+  },
+  headline: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
     justifyContent: 'center',
   },
-  north: {
-    position: 'absolute',
-    alignSelf: 'center',
+  guidance: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  guidanceGlyph: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: moduleNeutrals.surface,
+    borderWidth: 1,
+    borderColor: moduleNeutrals.border,
+  },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // The mock's warm cream notice, from the reader's own gold panel rather than a new hue.
+    backgroundColor: readerDockColors.surface,
+    borderWidth: 1,
+    borderColor: readerDockColors.border,
+  },
+  sensorLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -278,7 +278,7 @@ describe('the Qibla screen', () => {
       portReporting({ trueHeading: bearing, magneticHeading: bearing, accuracy: 3 }),
     );
 
-    expect(await view.findByText('Facing the Qibla')).toBeTruthy();
+    expect(await view.findByText(/facing the Qibla/i)).toBeTruthy();
   });
 
   it('never substitutes magnetic north when true north is unavailable', async () => {
@@ -296,9 +296,13 @@ describe('the Qibla screen', () => {
       unavailable' it used to: a compass that is present but has produced no true-north reading is a
       different situation from a device that has no compass, and the user can act on the difference.
     */
-    const banner = await view.findByTestId('faith-qibla-bearing-only');
-    expect(String(banner.props.accessibilityLabel ?? '')).toMatch(/bearing from north/i);
-    expect(view.getByTestId('faith-qibla-mode').props.children).toMatch(/Bearing only/);
+    const banner = await view.findByTestId('faith-qibla-bearing-only-banner');
+    const message = String(banner.props.accessibilityLabel ?? '');
+    expect(message).toMatch(/does not track your phone/i);
+    // And it names *this* reason rather than the generic one — a compass that exists but has not
+    // reported is a different situation from a device that has none.
+    expect(message).toMatch(/no compass heading/i);
+    expect(view.getByTestId('faith-qibla-bearing-only')).toBeTruthy();
     expect(view.queryByText(/Turn (left|right)/)).toBeNull();
     // The bearing itself is still shown — it is correct and usable with a separate compass.
     expect((await view.findAllByText(/from true north/)).length).toBeGreaterThan(0);
@@ -307,10 +311,11 @@ describe('the Qibla screen', () => {
   it('says the device has no compass rather than drawing a needle that never moves', async () => {
     const view = await renderQibla(fakeLocationPort({ hasCompass: async () => false }));
 
-    const banner = await view.findByTestId('faith-qibla-bearing-only');
-    expect(String(banner.props.accessibilityLabel ?? '')).toMatch(/no compass/i);
-    // And the dial labels itself, so the state survives a screenshot of the card alone.
-    expect(view.getByTestId('faith-qibla-mode').props.children).toMatch(/Bearing only/);
+    const banner = await view.findByTestId('faith-qibla-bearing-only-banner');
+    const message = String(banner.props.accessibilityLabel ?? '');
+    expect(message).toMatch(/no compass sensor/i);
+    // And the state is the bearing-only layout, so it survives a screenshot of the screen alone.
+    expect(view.getByTestId('faith-qibla-bearing-only')).toBeTruthy();
     // `findAllBy`: the caption and the dial's own spoken label both name true north, and that
     // repetition is correct — the dial has to describe itself to a screen reader.
     expect((await view.findAllByText(/from true north/)).length).toBeGreaterThan(0);
@@ -321,7 +326,7 @@ describe('the Qibla screen', () => {
       portReporting({ trueHeading: 100, magneticHeading: 100, accuracy: 2 }),
     );
 
-    const banner = await view.findByTestId('faith-qibla-calibration');
+    const banner = await view.findByTestId('faith-qibla-calibrate');
     expect(String(banner.props.accessibilityLabel)).toMatch(/figure of eight/i);
   });
 
@@ -331,7 +336,7 @@ describe('the Qibla screen', () => {
     );
     await view.findByTestId('faith-qibla-dial');
 
-    expect(view.queryByTestId('faith-qibla-calibration')).toBeNull();
+    expect(view.queryByTestId('faith-qibla-calibrate')).toBeNull();
   });
 
   it('stops listening to the compass when the screen goes away', async () => {

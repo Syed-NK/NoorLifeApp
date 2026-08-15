@@ -185,3 +185,63 @@ describe('in-scope answers', () => {
     expect(classifyFaithQuestion('   ').kind).toBe('refused');
   });
 });
+
+/**
+ * **The assistant may not advertise a capability the module does not have.**
+ *
+ * ── The failure this locks out ──────────────────────────────────────────────
+ * The catch-all reply used to open "I can help with prayer times, Qur'an and Hadith references,
+ * duas, and your own worship record." Two of those five were false: Hadith and Duas have no approved
+ * provider, their repositories answer `not-configured`, and their own screens render the locked
+ * state. So the module's most cautious screens said "no verified content is available" while its
+ * assistant, one tap away, offered the same content as a service.
+ *
+ * That is the fixture problem wearing conversational clothes. It is not fixed by a badge, because
+ * the claim is in prose the user reads as the app describing itself — and unlike a card, an
+ * assistant's sentence about its own abilities is the one statement a user has no way to check.
+ *
+ * The tests below assert the two halves separately: what the reply may not offer, and that no
+ * starter chip invites the offer either. A suggestion is a promise that the question will be
+ * answered, so a chip reading "A dua for anxiety" is the same untruth in fewer words.
+ */
+describe('claims no capability the module cannot honour', () => {
+  it('does not offer Hadith or duas in the catch-all reply', () => {
+    const reply = classifyFaithQuestion('what can you do?');
+    expect(reply.kind).toBe('answer');
+    if (reply.kind !== 'answer') {
+      return;
+    }
+
+    /*
+      Asserted as "not offered as a service", not as "the words never appear". The reply is allowed
+      — and required — to *name* them as unconfigured, which is why the check is on the offering
+      construction rather than on the nouns.
+    */
+    expect(reply.answer).not.toMatch(/I can (help with|answer).*(hadith|dua)/i);
+    expect(reply.answer).toMatch(/hadith and duas/i);
+    expect(reply.answer).toMatch(/no approved source|not configured|cannot answer/i);
+  });
+
+  it('still points at the three surfaces that do work', () => {
+    const reply = classifyFaithQuestion('what can you do?');
+    if (reply.kind !== 'answer') {
+      throw new Error('the catch-all must be an answer');
+    }
+    expect(reply.answer).toMatch(/prayer times/i);
+    expect(reply.answer).toMatch(/reader/i);
+    expect(reply.answer).toMatch(/worship record/i);
+  });
+
+  it('suggests nothing that resolves to an unconfigured provider', async () => {
+    const repository = createMockFaithAiRepository();
+    const result = await repository.suggestions();
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') {
+      return;
+    }
+
+    for (const suggestion of result.data) {
+      expect(suggestion).not.toMatch(/\bdua\b|\bhadith\b|\bnarration\b/i);
+    }
+  });
+});

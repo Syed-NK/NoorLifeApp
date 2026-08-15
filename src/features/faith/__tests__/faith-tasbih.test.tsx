@@ -114,9 +114,16 @@ describe('counting', () => {
     const card = await view.findByTestId('faith-tasbih-count');
 
     expect(card.props.accessibilityRole).toBe('button');
-    expect(String(card.props.accessibilityHint)).toMatch(/whole card/i);
-    // The spoken label carries the dhikr and the position in the round.
-    expect(String(card.props.accessibilityLabel)).toMatch(/of \d+/);
+    expect(String(card.props.accessibilityHint)).toMatch(/add one/i);
+    /*
+      The spoken label carries the counter's name, the position in the round and the rounds banked —
+      everything a screen-reader user needs without exploring the bead ring, which is decorative and
+      hidden from the accessibility tree on purpose.
+    */
+    const label = String(card.props.accessibilityLabel);
+    expect(label).toMatch(/of \d+/);
+    expect(label).toMatch(/My counter/);
+    expect(label).toMatch(/round/i);
   });
 
   it('persists the count across a remount', async () => {
@@ -166,11 +173,12 @@ describe('the controls do not count', () => {
     await waitFor(async () => expect(await countValue(view)).toBe('1'));
   });
 
-  it('the dhikr switcher does not add a bead', async () => {
+  it('Change does not add a bead on its way to the selector', async () => {
     const view = await renderTasbih();
     fireEvent.press(await view.findByTestId('faith-tasbih-change'));
-    await view.findByTestId('faith-tasbih-presets');
 
+    // It sits inside the sheet rather than on the counting surface, so a thumb reaching for it
+    // cannot bank a repetition the user did not make.
     expect(await countValue(view)).toBe('0');
   });
 });
@@ -189,7 +197,7 @@ describe('the round', () => {
     await waitFor(
       async () =>
         expect(String((await view.findByTestId('faith-tasbih-rounds')).props.children)).toMatch(
-          /1 round completed/,
+          /Round 1/,
         ),
       { timeout: 4000 },
     );
@@ -202,7 +210,7 @@ describe('the round', () => {
     fireEvent.press(await view.findByTestId('faith-tasbih-count'));
     await waitFor(async () => expect(await countValue(view)).toBe('2'));
 
-    fireEvent.press(await view.findByTestId('faith-tasbih-target-up-leap'));
+    fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
 
     // The taps already made were real. Discarding them because somebody adjusted their intention
     // would be the counter deciding their dhikr did not happen.
@@ -219,9 +227,24 @@ describe('the target', () => {
     );
   });
 
-  it('changes in ones and in tens', async () => {
+  it('changes one step at a time', async () => {
     const view = await renderTasbih();
 
+    /*
+      One at a time is the whole control now. The ±10 leap buttons were removed with the rejected
+      pass: the approved design has minus, the current target and plus, and five circles in a row
+      read as a settings form rather than as part of a counter.
+    */
+    fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
+    await waitFor(async () =>
+      expect(String((await view.findByTestId('faith-tasbih-target-value')).props.children)).toBe(
+        '34',
+      ),
+    );
+  });
+
+  it('persists across a remount', async () => {
+    const view = await renderTasbih();
     fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
     await waitFor(async () =>
       expect(String((await view.findByTestId('faith-tasbih-target-value')).props.children)).toBe(
@@ -229,43 +252,22 @@ describe('the target', () => {
       ),
     );
 
-    // Ten at a time, so getting from 33 to 300 is not sixty taps.
-    fireEvent.press(await view.findByTestId('faith-tasbih-target-up-leap'));
-    await waitFor(async () =>
-      expect(String((await view.findByTestId('faith-tasbih-target-value')).props.children)).toBe(
-        '44',
-      ),
-    );
-  });
-
-  it('persists across a remount', async () => {
-    const view = await renderTasbih();
-    fireEvent.press(await view.findByTestId('faith-tasbih-target-up-leap'));
-    await waitFor(async () =>
-      expect(String((await view.findByTestId('faith-tasbih-target-value')).props.children)).toBe(
-        '43',
-      ),
-    );
-
     const remounted = await renderTasbih();
     await waitFor(async () =>
       expect(
         String((await remounted.findByTestId('faith-tasbih-target-value')).props.children),
-      ).toBe('43'),
+      ).toBe('34'),
     );
   });
 
   it('cannot be taken below one', async () => {
+    // Seeded one step above the floor, so the boundary is one press rather than thirty-two writes
+    // left in flight at the end of the case.
+    await seedSession({ target: MIN_TASBIH_TARGET + 1 });
     const view = await renderTasbih();
-    await view.findByTestId('faith-tasbih-target-down-leap');
-    /*
-      Exactly four: 33 → 23 → 13 → 3 → clamped to 1. A fifth press would still be in flight when the
-      case ends — every press after the value settles is a write that lands during the *next* case
-      and overwrites its setup, which surfaces as an unrelated screen failing to render.
-    */
-    for (let step = 0; step < 4; step += 1) {
-      fireEvent.press(view.getByTestId('faith-tasbih-target-down-leap'));
-    }
+    await view.findByTestId('faith-tasbih-target-down');
+
+    fireEvent.press(view.getByTestId('faith-tasbih-target-down'));
 
     await waitFor(
       async () =>
