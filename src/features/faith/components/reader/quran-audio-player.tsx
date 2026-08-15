@@ -9,7 +9,7 @@ import { useModuleTheme } from '@features/modules/module-context';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
-import type { PreparationFailure, SurahDownloadState } from '../../data/audio';
+import type { PreparationFailure } from '../../data/audio';
 
 /**
  * What the player is doing, as one closed set.
@@ -52,7 +52,6 @@ export type QuranAudioPlayerProps = {
   readonly rates: readonly number[];
   /** False only where the platform has refused a rate change. */
   readonly rateSupported: boolean;
-  readonly download: SurahDownloadState;
   readonly hasPrevious: boolean;
   readonly hasNext: boolean;
   /** Why the current verse could not be prepared, for the retry line's wording. */
@@ -62,10 +61,6 @@ export type QuranAudioPlayerProps = {
   readonly onNext: () => void;
   readonly onSeek: (seconds: number) => void;
   readonly onChangeRate: (rate: number) => void;
-  readonly onDownload: () => void;
-  readonly onCancelDownload: () => void;
-  /** Deletes this surah's downloaded audio. Reached from the completed state. */
-  readonly onRemoveDownload: () => void;
   readonly onRetry: () => void;
   readonly onOpenReciters: () => void;
 };
@@ -110,7 +105,6 @@ export function QuranAudioPlayer({
   rate,
   rates,
   rateSupported,
-  download,
   hasPrevious,
   hasNext,
   failure,
@@ -119,9 +113,6 @@ export function QuranAudioPlayer({
   onNext,
   onSeek,
   onChangeRate,
-  onDownload,
-  onCancelDownload,
-  onRemoveDownload,
   onRetry,
   onOpenReciters,
 }: QuranAudioPlayerProps) {
@@ -208,7 +199,7 @@ export function QuranAudioPlayer({
               maxFontSizeMultiplier={PLAYER_MAX_FONT_SCALE}
               testID="faith-reader-player-reciter"
             >
-              {`${reciterName ?? 'Recitation'}${stateSuffix(state)}${downloadSuffix(download)}`}
+              {`${reciterName ?? 'Recitation'}${stateSuffix(state)}`}
             </ModuleText>
           </PressableScale>
         </View>
@@ -229,13 +220,16 @@ export function QuranAudioPlayer({
         ) : null}
 
         <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: dp(3) }}>
-          <DownloadControl
-            state={download}
-            surahName={surahName}
-            onDownload={onDownload}
-            onCancel={onCancelDownload}
-            onRemove={onRemoveDownload}
-          />
+          {/*
+            ── The download control is gone from here, deliberately ──────────
+            The docked player is a playback controller, not a download manager. It used to carry one
+            control cycling through Download / Cancel / Remove / Retry / Finish across a six-state
+            union — five of those states are about storage rather than listening, and none of them
+            belongs on the surface somebody reaches for mid-recitation.
+
+            Downloads live on their own screen now, reached through the reader's settings rather than
+            through an icon here. See `docs/QURAN_AUDIO_ARCHITECTURE_AUDIT.md`.
+          */}
           <SpeedControl
             rate={rate}
             rates={rates}
@@ -330,30 +324,6 @@ function stateSuffix(state: QuranPlaybackState): string {
     case 'failed':
     case 'unavailable':
       return ` • ${describeState(state)}`;
-  }
-}
-
-/**
- * The download, stated on the panel rather than only in an icon.
- *
- * A glyph can say "there is a download control here"; it cannot say a surah is on the device until
- * a date, or that a transfer is a third of the way through. Those are facts a user plans around —
- * a commute, a flight — so they are on the line, not two taps away.
- */
-function downloadSuffix(state: SurahDownloadState): string {
-  switch (state.kind) {
-    case 'stream-only':
-      return '';
-    case 'downloading':
-      return ` • Downloading ${state.completed}/${state.total}`;
-    case 'downloaded':
-      return ` • Offline until ${formatDate(state.expiresAt)}`;
-    case 'expired':
-      return ' • Download expired';
-    case 'incomplete':
-      return ` • Download incomplete ${state.completed}/${state.total}`;
-    case 'failed':
-      return ' • Download failed';
   }
 }
 
@@ -511,90 +481,6 @@ function SpeedControl({
       >
         {`${rate}×`}
       </ModuleText>
-    </PressableScale>
-  );
-}
-
-/**
- * "Download this surah", and everything that is true instead of it.
- *
- * ── Every state is a different action, not a different colour ───────────────
- * Stream-only, running, complete, expired, incomplete and failed are six genuinely different
- * situations, and a control that said "Download" in all of them would be wrong in five. The glyph
- * changes with the state, the label states it in full, and the panel's caption line carries the
- * part a sighted user needs to plan around — see `downloadSuffix`.
- */
-function DownloadControl({
-  state,
-  surahName,
-  onDownload,
-  onCancel,
-  onRemove,
-}: {
-  readonly state: SurahDownloadState;
-  readonly surahName: string;
-  readonly onDownload: () => void;
-  readonly onCancel: () => void;
-  readonly onRemove: () => void;
-}) {
-  const { dp } = useModuleMetrics();
-
-  const running = state.kind === 'downloading';
-  const done = state.kind === 'downloaded';
-
-  const label = ((): string => {
-    switch (state.kind) {
-      case 'downloading':
-        return `Downloading ${surahName}, ${state.completed} of ${state.total} ayat. Cancel the download`;
-      case 'downloaded':
-        /*
-          ── The dead end this replaces ────────────────────────────────────
-          The control used to be `disabled` in this state, so a completed download turned the only
-          affordance on the panel into a read-out: pressing it re-announced "is downloaded" and did
-          nothing. The Reciter screen's own Remove was unreachable for this surah unless the user had
-          separately marked a verse read, so there was no path from "I have downloaded this" to "I
-          would like the space back". Now the control *is* that path.
-        */
-        return `${surahName} is downloaded, ${formatBytes(state.bytes)}, available until ${formatDate(state.expiresAt)}. Remove it from this device`;
-      case 'expired':
-        return `The download of ${surahName} has expired. Download it again`;
-      case 'incomplete':
-        return `The download of ${surahName} is incomplete, ${state.completed} of ${state.total} ayat. Finish it`;
-      case 'failed':
-        return `The download of ${surahName} failed. Try again`;
-      case 'stream-only':
-        return `Download ${surahName} for offline listening`;
-    }
-  })();
-
-  return (
-    <PressableScale
-      onPress={running ? onCancel : done ? onRemove : onDownload}
-      accessibilityRole="button"
-      accessibilityState={{ busy: running }}
-      accessibilityLabel={label}
-      hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
-      style={{
-        width: dp(PLAYER_STEP_SIZE),
-        height: dp(PLAYER_STEP_SIZE),
-        borderRadius: dp(PLAYER_STEP_SIZE) / 2,
-        borderWidth: 1,
-        borderColor: readerDockColors.border,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      testID="faith-reader-player-download"
-    >
-      {/*
-        The destructive state gets the destructive glyph. A tick that removed a download on tap
-        would be a delete button wearing the badge for "this worked" — the one icon a user is least
-        expecting to take something away.
-      */}
-      <AppIcon
-        name={running ? 'downloading' : done ? 'delete' : 'download'}
-        size={dp(17)}
-        color={done ? moduleNeutrals.warning : readerDockColors.accent}
-      />
     </PressableScale>
   );
 }

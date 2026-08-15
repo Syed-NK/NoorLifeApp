@@ -66,7 +66,6 @@ function props(overrides?: Partial<QuranAudioPlayerProps>): QuranAudioPlayerProp
     rate: 1,
     rates: [0.75, 1, 1.25, 1.5],
     rateSupported: true,
-    download: { kind: 'stream-only' },
     hasPrevious: false,
     hasNext: true,
     failure: null,
@@ -75,9 +74,6 @@ function props(overrides?: Partial<QuranAudioPlayerProps>): QuranAudioPlayerProp
     onNext: noop,
     onSeek: noop,
     onChangeRate: noop,
-    onDownload: noop,
-    onCancelDownload: noop,
-    onRemoveDownload: noop,
     onRetry: noop,
     onOpenReciters: noop,
     ...overrides,
@@ -103,7 +99,11 @@ const MANDATORY = [
   'faith-reader-player-elapsed',
   'faith-reader-player-duration',
   'faith-reader-player-speed',
-  'faith-reader-player-download',
+  /*
+    `faith-reader-player-download` is deliberately absent from this list. The docked player is a
+    playback controller; every download state it used to render belongs to the Audio downloads
+    screen. Its absence is asserted positively below.
+  */
   'faith-reader-player-title',
   'faith-reader-player-reciter',
 ] as const;
@@ -360,18 +360,28 @@ describe('what each state says', () => {
     expect(String(previous.props.accessibilityLabel)).toMatch(/first ayah/i);
   });
 
-  it('states the download rather than hiding it behind a glyph', async () => {
-    const view = await renderPlayer({
-      state: 'idle',
-      download: { kind: 'downloading', completed: 12, total: 286 },
-    });
+  /**
+   * ── The inverse of the case this replaces ───────────────────────────────
+   * This used to assert that the panel *stated* the download rather than hiding it behind a glyph.
+   * That was the right rule for a player that managed downloads, and this player no longer does:
+   * the control cycled through Download / Cancel / Remove / Retry / Finish across a six-state union,
+   * five of which are about storage rather than listening.
+   *
+   * Asserted across every playback state, so the control cannot be reintroduced for one state and
+   * pass — and as an absence of the *word*, so a decorative remnant fails too.
+   */
+  /*
+    One render per case rather than a loop with `unmount()`. Rendering repeatedly inside a single
+    test is what produces "overlapping act() calls" in this project, after which every later render
+    in the file yields an empty tree — the seek-bar cases failed on a missing `elapsed` label the
+    moment this was written as a loop.
+  */
+  it.each(EVERY_STATE)('carries no download control in the %s state', async (state) => {
+    const view = await renderPlayer({ state });
 
-    expect(String(view.getByTestId('faith-reader-player-reciter').props.children)).toContain(
-      'Downloading 12/286',
-    );
-    expect(
-      String(view.getByTestId('faith-reader-player-download').props.accessibilityLabel),
-    ).toMatch(/cancel the download/i);
+    expect(view.queryByTestId('faith-reader-player-download')).toBeNull();
+    /* Nor a decorative remnant: no download wording anywhere on the panel. */
+    expect(view.queryByText(/download/i)).toBeNull();
   });
 });
 

@@ -1,4 +1,3 @@
-import type { SurahDownloadState } from '../../data/audio';
 import { RECITATION_RATES, type RecitationTransport } from '../../hooks/use-recitation-player';
 import { QuranAudioPlayer, type QuranPlaybackState } from './quran-audio-player';
 
@@ -22,10 +21,6 @@ export function ReaderPlayer({
   ayah,
   reciterName,
   totalAyat,
-  download,
-  onDownloadSurah,
-  onCancelDownload,
-  onRemoveDownload,
   onOpenReciters,
 }: {
   readonly transport: RecitationTransport;
@@ -48,10 +43,6 @@ export function ReaderPlayer({
   /** `null` until the reciter catalogue resolves. Never replaced with a guessed name. */
   readonly reciterName: string | null;
   readonly totalAyat: number;
-  readonly download: SurahDownloadState;
-  readonly onDownloadSurah: () => void;
-  readonly onCancelDownload: () => void;
-  readonly onRemoveDownload: () => void;
   readonly onOpenReciters: () => void;
 }) {
   const focus = transport.focus;
@@ -74,7 +65,6 @@ export function ReaderPlayer({
       rate={transport.rate}
       rates={RECITATION_RATES}
       rateSupported={transport.speedSupported}
-      download={download}
       hasPrevious={transport.hasPrevious}
       hasNext={transport.hasNext}
       failure={transport.preparationFailure}
@@ -87,9 +77,6 @@ export function ReaderPlayer({
       onNext={transport.next}
       onSeek={transport.seekTo}
       onChangeRate={transport.setRate}
-      onDownload={onDownloadSurah}
-      onCancelDownload={onCancelDownload}
-      onRemoveDownload={onRemoveDownload}
       onRetry={transport.retry}
       onOpenReciters={onOpenReciters}
     />

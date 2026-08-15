@@ -191,16 +191,19 @@ describe('the removal surfaces exist and offer no way out of private storage', (
     expect(reciterScreen).toContain('totalDownloadedBytes');
   });
 
-  it('makes the player’s completed state remove rather than repeat itself', () => {
-    /*
-      The control used to be `disabled` when done, so pressing it re-announced "is downloaded" and
-      did nothing. It is now the removal path, and it carries the destructive glyph rather than the
-      tick — a delete button wearing the badge for "this worked" is the one icon a user is least
-      expecting to take something away.
-    */
-    expect(player).toContain('onRemoveDownload');
-    expect(player).toContain('done ? onRemove : onDownload');
-    expect(player).toContain("done ? 'delete' : 'download'");
+  /**
+   * ── Superseded: the player no longer manages downloads at all ─────────────
+   * This case asserted that the player's *completed* download state offered Remove rather than
+   * repeating its own status. That was the correct rule while the docked player carried a download
+   * control; it no longer does. The player is a playback controller, and removal lives on the
+   * Reciter screen's Downloads panel — which the cases above exercise directly against the service.
+   *
+   * Inverted rather than deleted, so the control cannot quietly return to the player.
+   */
+  it('keeps download management out of the docked player entirely', () => {
+    expect(player).not.toContain('onRemoveDownload');
+    expect(player).not.toContain('DownloadControl');
+    expect(player).not.toContain('faith-reader-player-download');
   });
 
   it('offers no share or export of downloaded audio anywhere', () => {

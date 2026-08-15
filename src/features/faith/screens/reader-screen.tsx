@@ -20,7 +20,6 @@ import { shareVerse } from '../components/reader/verse-share';
 import { ReaderHeader, SurahOpening, SurahPicker } from '../components/reader/reader-header';
 import { ReaderPlayer } from '../components/reader/reader-player';
 import { UnverifiedSourceNotice } from '../components/faith-states';
-import type { SurahDownloadState } from '../data/audio';
 import { hasData, type FaithPageRequest, type FaithResult } from '../data/faith-result';
 import {
   containsAyah,
@@ -36,7 +35,6 @@ import type {
 } from '../data/quran-content.repository';
 import { surahNumber } from '../data/quran-content.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
-import { useRecitationAudio, useRecitationAudioRevision } from '../di/recitation-audio-context';
 import { faithAiHref, faithNavKeys, faithRoutes, readerHref } from '../faith-routes';
 import { useNoteIndex } from '../hooks/use-ayah-note';
 import { useBookmarkIndex } from '../hooks/use-bookmark';
@@ -302,7 +300,6 @@ export function ReaderScreen() {
   const router = useRouter();
   const { dp } = useModuleMetrics();
   const { quran } = useFaithRepositories();
-  const audio = useRecitationAudio();
   const { preferences, ready: preferencesReady } = useFaithPreferences();
   const {
     translation,
@@ -652,38 +649,6 @@ export function ReaderScreen() {
    */
   const transport = useRecitationPlayer(recitations);
 
-  /** The download state of this surah for this reciter, re-read as the download progresses. */
-  const [downloadTick, setDownloadTick] = useState(0);
-  /* Changes when the download index finishes loading, so a state read taken too early is retaken. */
-  const audioRevision = useRecitationAudioRevision();
-  const downloadState: SurahDownloadState = useMemo(
-    () => (surah === null ? { kind: 'stream-only' } : audio.stateFor(reciterId, surah)),
-    // `downloadTick` is the dependency that makes this re-read: the service's state is mutable and
-    // is not React state, so a bump is how a completed transfer reaches the render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [audio, reciterId, surah, downloadTick, audioRevision],
-  );
-
-  const downloadSurah = useCallback(() => {
-    if (surah === null || recitations.length === 0) {
-      return;
-    }
-    void (async () => {
-      await audio.downloadSurah(reciterId, surah, recitations, () =>
-        setDownloadTick((tick) => tick + 1),
-      );
-      setDownloadTick((tick) => tick + 1);
-    })();
-    setDownloadTick((tick) => tick + 1);
-  }, [audio, reciterId, surah, recitations]);
-
-  const cancelDownload = useCallback(() => {
-    if (surah !== null) {
-      audio.cancelDownload(reciterId, surah);
-      setDownloadTick((tick) => tick + 1);
-    }
-  }, [audio, reciterId, surah]);
-
   /**
    * Deletes this surah's downloaded audio, stopping playback first.
    *
@@ -698,15 +663,6 @@ export function ReaderScreen() {
    * one surah, its transport only ever holds that surah's recitations, and a conditional here would
    * be a second, weaker copy of a fact the screen already guarantees.
    */
-  const removeDownload = useCallback(() => {
-    if (surah === null) {
-      return;
-    }
-    transport.stop();
-    void audio.removeDownload(reciterId, surah).then(() => setDownloadTick((tick) => tick + 1));
-    setDownloadTick((tick) => tick + 1);
-  }, [audio, reciterId, surah, transport]);
-
   /**
    * Where each verse sits inside the scroll content, and the handle that moves it.
    *
@@ -1043,10 +999,6 @@ export function ReaderScreen() {
             ayah={openingAyahOf(ayat, openedAyah)}
             reciterName={reciterName}
             totalAyat={ayahCountOf(ayat)}
-            download={downloadState}
-            onDownloadSurah={downloadSurah}
-            onCancelDownload={cancelDownload}
-            onRemoveDownload={removeDownload}
             onOpenReciters={() => router.push(faithRoutes.reciters)}
           />
         ) : undefined

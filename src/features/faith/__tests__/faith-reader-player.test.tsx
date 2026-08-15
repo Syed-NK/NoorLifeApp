@@ -174,12 +174,16 @@ describe('the player is mounted with the page, not with the playback', () => {
       'faith-reader-player-elapsed',
       'faith-reader-player-duration',
       'faith-reader-player-speed',
-      'faith-reader-player-download',
+      /*
+        `faith-reader-player-download` was in this list and is deliberately gone. The docked player
+        is a playback controller; download management moved off it entirely.
+      */
       'faith-reader-player-title',
       'faith-reader-player-reciter',
     ]) {
       expect(view.getByTestId(control)).toBeTruthy();
     }
+    expect(view.queryByTestId('faith-reader-player-download')).toBeNull();
   });
 
   it('has no collapsed form, no expand control and no second presentation', async () => {
