@@ -84,6 +84,13 @@ surah numbers, ayah numbers and its own metadata; the scripture is fetched. See 
 
 ## 3. Arabic retention rule
 
+> **Scope limit, added 2026-08-15.** This rule governs the **curated Dhikr catalogue** — the
+> specific, small, reviewed set of verses that back the Dhikr selector. It does **not** authorise
+> retaining the complete Arabic Qur'an for the Reader. Any statement that the Dhikr permission
+> lets NoorLife hold the whole mushaf offline indefinitely is **wrong and superseded**; the
+> Reader's Arabic stays under the ordinary seven-day caching ceiling unless a separate broader
+> permission is confirmed in writing and recorded here. See `QURAN_READER_OFFLINE_DESIGN.md` §2.
+
 Selected Arabic Quran text may be retained **beyond one week** when Content Sync is unavailable for
 it, provided **all** of the following hold:
 
@@ -92,7 +99,7 @@ it, provided **all** of the following hold:
 | R1 | The text **remains unchanged**. |
 | R2 | It stays in **private application storage**. |
 | R3 | It is used **only inside NoorLife**. |
-| R4 | It is **refreshed through the Content API** so that corrections, updates or removals are applied promptly. |
+| R4 | It is **refreshed through the Content API** so that corrections, updates or removals are applied promptly. Content Sync is now known to exist (see the audio record §9.2) and is the mechanism this condition should use once implemented. |
 
 R4 is a *refresh* obligation, not a deletion rule. Retention past a week is permitted; going stale
 without ever re-checking is not. A "safe last-known valid copy" is therefore held only within these

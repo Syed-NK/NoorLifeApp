@@ -180,21 +180,79 @@ confirmed by the vendor first — see §9, which remains open.
 
 ---
 
-## 9. Content Sync — open question
+## 9. Content Sync — resolved
 
-Quran Foundation has been asked to clarify the mechanism. Recorded because the public
-documentation does not answer it:
+**Corrected 2026-08-15. Everything under "9.1 Superseded conclusion" below was wrong.**
 
-- There is **no "Content Sync" API** in Quran Foundation's published documentation. The Content API
-  lists sixteen categories; none is named sync, and the word does not appear in the quickstart.
-- The endpoint that actually serves Sudais ayah audio is `GET /recitations/3/by_chapter/{n}`, which
-  is **already in NoorLife's approved allow-list** as the `list_verse_recitations` operation. So
-  downloading needs no new scope, no new operation and no redeploy.
-- What is unresolved is which mechanism satisfies C7. Re-reading `list_verse_recitations` and
-  comparing URLs and durations is a plausible reading, and it is **not** being adopted as an
-  interpretation — the brief is explicit that it must not be reinterpreted as Content Sync.
+Content Sync is a documented, published part of the Quran Foundation Content API. It was not found
+because the search that produced §9.1 looked in the Content API endpoint categories and the
+quickstart, and Content Sync is documented as its own tutorial and its own pair of versioned
+endpoints. That is a research failure, not a vendor gap.
 
-No guessed endpoint has been added. No production request has been made for this purpose.
+### 9.1 Superseded conclusion — retained as the record of what was believed, not as fact
+
+> There is **no "Content Sync" API** in Quran Foundation's published documentation. The Content API
+> lists sixteen categories; none is named sync, and the word does not appear in the quickstart.
+>
+> What is unresolved is which mechanism satisfies C7. Re-reading `list_verse_recitations` and
+> comparing URLs and durations is a plausible reading, and it is **not** being adopted as an
+> interpretation.
+
+**Every sentence in that block is superseded.** The one claim that survives is the narrow one, and
+it is still true: `GET /recitations/3/by_chapter/{n}` is already allow-listed as
+`list_verse_recitations`, so *downloading* audio needs no new scope. Synchronising it does.
+
+### 9.2 The actual mechanism
+
+| | |
+|---|---|
+| Origin | `https://apis.quran.foundation/content` |
+| Sync | `GET /api/v4/resources/sync` |
+| Snapshot | `GET /content/api/v4/resources/snapshots/{resource_group}/{resource_id}` |
+| Supported groups | `translations`, `tafsirs`, `recitations`, `articles` |
+| Auth | `x-auth-token` and `x-client-id`, server-side only |
+
+Sync parameters: `bootstrap`, `sync_token`, `resources` (canonical filter, semicolon-separated,
+e.g. `translations:19;tafsirs:151`), `per_page` (max 100), `cursor`.
+
+Response envelope, field names verbatim:
+
+```
+sync.sync_until_sequence   sync.has_more   sync.next_page_url   sync.next_sync_token
+sync.mutations[] = { sequence, type, resource_group, resource_id, record_type, record_key,
+                     changed_at, data, snapshot_url, unavailable_reason }
+```
+
+Mutation types: `RESOURCE_CREATE`, `RESOURCE_UPDATE`, `RESOURCE_INVALIDATE`, `RESOURCE_DELETE`,
+`ROW_CREATE`, `ROW_UPDATE`, `ROW_DELETE`.
+
+Client rules taken from the vendor's own flow document, not inferred:
+
+- Bootstrap is a call with no token. Paginate with `next_page_url` while `has_more` is true —
+  *"Do not build the cursor yourself."*
+- `next_sync_token` appears only on the final page, and may be persisted **only after that page has
+  been processed**. Each token is bound to its canonical filter.
+- A rejected or stale token is recovered by bootstrapping again: *"If token recovery fails,
+  bootstrap again."*
+- `RESOURCE_CREATE` / `RESOURCE_INVALIDATE` → fetch the snapshot and replace all local rows.
+  `RESOURCE_UPDATE` is *"a freshness marker only"*. `RESOURCE_DELETE` removes the resource.
+  `ROW_CREATE` inserts or replaces, `ROW_UPDATE` replaces, `ROW_DELETE` deletes.
+
+### 9.3 What remains genuinely unverified
+
+The documentation does **not** state whether a `recitations` resource id in Content Sync is an
+**ayah-recitation** id or a **chapter-reciter** id. NoorLife's Sudais grant names resource ID 3 in
+the ayah-recitation space — confirmed against `/resources/recitations`, which returns
+`id 3 = Abdur-Rahman as-Sudais`, the same id space `/recitations/{id}/by_chapter/{n}` takes.
+
+Whether `recitations:3` in a canonical filter selects that same resource is **not assumed**. It is
+resolved by the first bootstrap through NoorLife's own function, by checking that the returned
+`resource_group` is `recitations`, the `resource_id` is 3, and the rows carry ayah identity. Until
+that check has run against the live API, no claim is made either way, and the extended-retention
+exemption in §8.2 stays unmet.
+
+No endpoint has been guessed. The two paths above are quoted from the vendor's versioned
+documentation.
 
 ---
 

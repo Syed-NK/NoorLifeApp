@@ -156,6 +156,8 @@ export const QURAN_CONTENT_OPERATIONS = [
   'list_translation_resources',
   'list_recitation_resources',
   'list_verse_recitations',
+  'sync_content_resources',
+  'get_content_snapshot',
 ] as const;
 
 export type QuranContentOperation = (typeof QURAN_CONTENT_OPERATIONS)[number];
@@ -244,6 +246,36 @@ export type QuranContentRequest =
       readonly recitation_id: number;
       readonly page?: number;
       readonly per_page?: number;
+    }
+  /**
+   * One page of the change feed for the two resources NoorLife holds permission to retain.
+   *
+   * ── There is no field here that names a resource, and that is the design ──
+   * The canonical filter lives on the server. A device says *where in the run it is* — a checkpoint
+   * token it was given, a page cursor it was given — and never *what* is being synchronised. So
+   * widening NoorLife’s sync scope is a change to the edge function’s permission table, reviewed as
+   * a licensing decision, rather than a request a client could make.
+   *
+   * Both strings are opaque. They came from the vendor by way of the server and mean nothing here.
+   */
+  | {
+      readonly operation: 'sync_content_resources';
+      /** Omitted to bootstrap. Present to continue from a checkpoint. */
+      readonly sync_token?: string;
+      /** Omitted for the first page of a run. */
+      readonly cursor?: string;
+      readonly per_page?: number;
+    }
+  /**
+   * The full contents of one permitted resource, for a create or an invalidation.
+   *
+   * The group alone — the server looks the id up. A client cannot request a snapshot of a resource
+   * NoorLife may not hold, even by replaying an id it saw in a mutation, because there is no field
+   * for an id to travel in.
+   */
+  | {
+      readonly operation: 'get_content_snapshot';
+      readonly resource_group: 'recitations' | 'translations';
     };
 
 /** The body as it goes on the wire: the request above, plus the version the server checks. */
@@ -397,7 +429,93 @@ export type QuranContentPayload =
       readonly operation: 'list_verse_recitations';
       readonly recitations: readonly WireRecitation[];
       readonly pagination: WirePagination;
+    }
+  | {
+      readonly operation: 'sync_content_resources';
+      /** The filter this page belongs to, so a token cannot be bound to the wrong scope. */
+      readonly resources: string;
+      readonly syncUntilSequence: number;
+      readonly hasMore: boolean;
+      /** An opaque cursor, never a URL. `null` at the end of the run. */
+      readonly nextCursor: string | null;
+      /**
+       * Present only on the final page.
+       *
+       * Persistable **only after every mutation on this page has been applied**. A token stored
+       * early is a claim that work was done which was not, and the vendor will never offer those
+       * mutations again.
+       */
+      readonly nextSyncToken: string | null;
+      readonly mutations: readonly WireMutation[];
+    }
+  | {
+      readonly operation: 'get_content_snapshot';
+      readonly resourceGroup: 'recitations' | 'translations';
+      readonly resourceId: number;
+      readonly schemaVersion: number;
+      readonly syncSequence: number;
+      readonly rows: readonly WireSyncRow[];
     };
+
+/** The mutation kinds the vendor emits. Mirrors the function’s own closed union. */
+export type WireMutationType =
+  | 'RESOURCE_CREATE'
+  | 'RESOURCE_UPDATE'
+  | 'RESOURCE_INVALIDATE'
+  | 'RESOURCE_DELETE'
+  | 'ROW_CREATE'
+  | 'ROW_UPDATE'
+  | 'ROW_DELETE';
+
+/**
+ * A synchronised row, discriminated by its group.
+ *
+ * A translation row cannot be read as a recitation row by a caller that forgot to check, which
+ * matters more here than usual: the two carry different permissions and different retention rules.
+ */
+export type WireSyncRow =
+  | {
+      readonly group: 'translations';
+      readonly surah: number;
+      readonly ayah: number;
+      readonly text: string;
+    }
+  | {
+      readonly group: 'recitations';
+      readonly surah: number;
+      readonly ayah: number;
+      /**
+       * Present while online, for a caller about to fetch it.
+       *
+       * Deliberately **not** the identity of a downloaded file: a CDN address can be rotated or
+       * re-signed, so binding a local file to one would make identity depend on something the vendor
+       * may change. Surah and ayah above are the identity.
+       */
+      readonly url?: string;
+      readonly durationSeconds?: number;
+      readonly bytes?: number;
+    };
+
+/**
+ * One change, as it reaches the device.
+ *
+ * There is no `snapshot_url`. The server validates the vendor’s and discards it; what crosses is
+ * `snapshotRequired` beside the group and id to pass back to `get_content_snapshot`. The same
+ * information, none of it fetchable from here.
+ */
+export type WireMutation = {
+  readonly sequence: number;
+  readonly type: WireMutationType;
+  readonly resourceGroup: 'recitations' | 'translations';
+  readonly resourceId: number;
+  /** The vendor’s own row identity. Never reconstructed from array position. */
+  readonly recordKey?: string;
+  readonly recordType?: string;
+  readonly changedAt?: string;
+  readonly row?: WireSyncRow;
+  readonly snapshotRequired: boolean;
+  readonly unavailableReason?: string;
+};
 
 /**
  * The one thing the device may do with the edge function.

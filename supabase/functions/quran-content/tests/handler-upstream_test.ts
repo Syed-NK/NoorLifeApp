@@ -229,8 +229,21 @@ Deno.test('the budget timer is cancelled once the upstream answers', async () =>
 });
 
 Deno.test('every operation declares a cache age inside the one-week licence ceiling', async () => {
+  /*
+    Zero is permitted, and only for the two synchronisation operations.
+
+    Everywhere else a zero would be a bug — an operation nobody caches is an operation hitting the
+    vendor on every render. For a sync page and a snapshot it is the requirement: a page describes
+    what changed since one caller’s token, and a snapshot is marked `no-store` by the vendor itself.
+    The cache reads zero as "do not store", so the assertion is split rather than loosened.
+  */
+  const NEVER_CACHED = ['sync_content_resources', 'get_content_snapshot'];
   for (const operation of QURAN_OPERATIONS) {
     const declared = OPERATION_CACHE_MAX_AGE_MS[operation];
+    if (NEVER_CACHED.includes(operation)) {
+      assertEquals(declared, 0, `${operation} must never be cached`);
+      continue;
+    }
     assert(
       declared > 0 && declared <= MAX_CACHE_AGE_MS,
       `${operation} declares ${declared}ms, which must be positive and inside one week`,

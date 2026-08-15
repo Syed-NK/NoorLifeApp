@@ -17,7 +17,9 @@
  * ── What this does *not* claim ──────────────────────────────────────────────
  * Nothing here says anything about offline retention. The extended-retention permission is granted but
  * **not implemented**: the seven-day read-time expiry is still in force for every reciter including
- * this one, and it stays in force until the Content Sync mechanism is confirmed and built. The
+ * this one, and it stays in force until Content Sync is built. The mechanism itself is no longer in
+ * doubt — it is `/api/v4/resources/sync` plus the snapshot endpoint, documented by the vendor — so
+ * what remains is implementation, not a question for Quran Foundation. The
  * attribution is a condition of *using* the recitation, which NoorLife does today by streaming and by
  * the bounded download that already exists — so it is owed today, and stating it now implies nothing
  * about a feature that does not exist yet. See `docs/QURAN_FOUNDATION_AUDIO_PERMISSION.md`.

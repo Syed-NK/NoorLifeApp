@@ -43,7 +43,7 @@ translation defect) is implemented and verified. Nothing else had been built whe
 > | Outstanding | Why it is not resolved by the permission |
 > |---|---|
 > | **Scholarly review** of the curated references | A vendor's API permission is not a religious judgement. It is NoorLife's obligation, and until it is met the production catalogue holds **zero** entries and the selector says so. |
-> | **Content Sync for translations** | Still the open question of §9 of the audio record. Until a vendor-confirmed mechanism exists, the one-week translation cache ceiling stays. |
+> | **Content Sync for translations** | **Superseded 2026-08-15.** Content Sync is documented and published — see the audio record §9.2 for the endpoints and the client flow. The one-week translation ceiling stays until Content Sync is *implemented*, which is a build gap, no longer a vendor gap. |
 > | **Sudais audio synchronisation** | Explicitly out of scope of this confirmation. §8 and §9 below are unchanged. |
 
 ---

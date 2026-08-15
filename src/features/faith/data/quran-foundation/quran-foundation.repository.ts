@@ -166,6 +166,16 @@ function cacheKeyFor(request: QuranContentRequest): string {
       return `${request.operation}:${request.surah}:${request.verse}:${request.translation_id ?? 'none'}`;
     case 'list_verse_recitations':
       return `${request.operation}:${request.surah}:${request.recitation_id}:${request.page}:${request.per_page}`;
+    /*
+      Keyed, but never served from the cache: the edge function reports a zero max-age for both, and
+      `cache.write` reads zero as "do not store". The key still has to be unique because it is also
+      the in-flight deduplication key — two screens asking to synchronise at once should join one
+      request, and two *different* points in a run must not.
+    */
+    case 'sync_content_resources':
+      return `${request.operation}:${request.sync_token ?? 'bootstrap'}:${request.cursor ?? 'first'}`;
+    case 'get_content_snapshot':
+      return `${request.operation}:${request.resource_group}`;
   }
 }
 

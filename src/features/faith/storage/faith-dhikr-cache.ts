@@ -7,7 +7,8 @@ import { faithStorageKeys, isRecord, readJson, writeJson } from './faith-storage
  * ── Arabic and translations are not retained under the same permission ──────
  * This is the whole reason the cache is split rather than one blob with one timestamp.
  *
- * **Arabic** may be retained **beyond one week** when Content Sync is unavailable for it, provided
+ * **Arabic** — *the curated Dhikr verses only, never the whole mushaf* — may be retained **beyond one
+ * week** when Content Sync is unavailable for it, provided
  * it is unchanged, stays in private application storage, is used only inside NoorLife, and is
  * **refreshed through the Content API** so corrections, updates and removals are applied promptly.
  * So the Arabic entry carries a `refreshedAt` that drives a refresh, not an expiry: a stale copy is
@@ -16,8 +17,9 @@ import { faithStorageKeys, isRecord, readJson, writeJson } from './faith-storage
  *
  * **Translations** may be retained beyond one week **only** through supported Content Sync, with a
  * next sync at least every seven days and all available changes applied. NoorLife has not
- * implemented Content Sync — the mechanism is still an open question with the vendor and no endpoint
- * may be invented for it — so translations keep the ordinary **one-week ceiling** and are dropped
+ * implemented Content Sync yet. The mechanism is documented and published — `/api/v4/resources/sync`
+ * with the paired snapshot endpoint — so this is a build gap rather than the vendor gap an earlier
+ * version of this note claimed. Until it is built, translations keep the ordinary **one-week ceiling** and are dropped
  * when they pass it. That is a deliberate under-retention: holding a translation too briefly fails
  * toward re-fetching the vendor's current text, and holding one too long fails toward serving a
  * correction they have already made.

@@ -46,6 +46,9 @@ export const ACCEPTED_REQUEST_FIELDS = [
   'recitation_id',
   'page',
   'per_page',
+  'sync_token',
+  'cursor',
+  'resource_group',
 ] as const;
 
 /**
@@ -61,8 +64,14 @@ export const ACCEPTED_REQUEST_FIELDS = [
  *     so it is not in this union and cannot be requested.
  *   • **Tafsir.** Content-scoped and available, but no NoorLife screen renders one, and an operation
  *     nothing calls is an operation nobody reviews.
- *   • **Content Sync.** It exists to maintain a long-lived local copy, which the developer terms
- *     permit only under their sync obligations and which this integration deliberately does not do.
+ *   • ~~**Content Sync.**~~ **Superseded 2026-08-15.** An earlier version of this note said Content
+ *     Sync did not exist in the published documentation. It does — `/resources/sync` and
+ *     `/resources/snapshots/{group}/{id}`, both under the same versioned content prefix as every
+ *     other operation here — and NoorLife now needs it, because retaining Sudais audio and
+ *     translation 85 beyond one week is permitted *only* under the vendor’s sync obligations.
+ *     The two operations below are that mechanism, in its narrowest possible form: the client
+ *     cannot name a resource, cannot supply a URL, and cannot reach any resource group but the
+ *     two NoorLife holds permission for.
  *
  * `list_verse_recitations` is the one addition since the table was first written. It was reviewed
  * and added when verse-level recitation playback was approved: it is Content-scoped, it is the only
@@ -77,7 +86,9 @@ export type QuranOperation =
   | 'get_verse'
   | 'list_translation_resources'
   | 'list_recitation_resources'
-  | 'list_verse_recitations';
+  | 'list_verse_recitations'
+  | 'sync_content_resources'
+  | 'get_content_snapshot';
 
 export const QURAN_OPERATIONS: readonly QuranOperation[] = [
   'list_chapters',
@@ -88,6 +99,8 @@ export const QURAN_OPERATIONS: readonly QuranOperation[] = [
   'list_translation_resources',
   'list_recitation_resources',
   'list_verse_recitations',
+  'sync_content_resources',
+  'get_content_snapshot',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,6 +292,26 @@ export type QuranPayload =
     readonly operation: 'list_verse_recitations';
     readonly recitations: readonly WireRecitation[];
     readonly pagination: WirePagination;
+  }
+  | {
+    readonly operation: 'sync_content_resources';
+    /** The filter this page belongs to. Echoed so a client cannot bind a token to the wrong scope. */
+    readonly resources: string;
+    readonly syncUntilSequence: number;
+    readonly hasMore: boolean;
+    /** The extracted cursor, or `null` at the end. Never a URL. */
+    readonly nextCursor: string | null;
+    /** Present only on the final page. Persistable only after this page has been applied. */
+    readonly nextSyncToken: string | null;
+    readonly mutations: readonly WireMutation[];
+  }
+  | {
+    readonly operation: 'get_content_snapshot';
+    readonly resourceGroup: SyncResourceGroup;
+    readonly resourceId: number;
+    readonly schemaVersion: number;
+    readonly syncSequence: number;
+    readonly rows: readonly WireSyncRow[];
   };
 
 /**
@@ -298,6 +331,138 @@ export type WireRecitation = {
   readonly url: string;
   /** Duration in seconds where the upstream reported one. */
   readonly durationSeconds?: number;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Content Sync
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The resource groups NoorLife may synchronise, and the resource id it holds permission for in each.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * **The client never names a resource.** Not the group, not the id, not the filter string. This
+ * table is the whole of NoorLife’s sync scope and it lives on the server, because the alternative —
+ * a client-supplied `resources` parameter validated against an allow-list — is one refactor away
+ * from being an allow-list that grew. A device asks *to synchronise*; what that means is decided
+ * here.
+ *
+ * Two entries, each with a written permission behind it:
+ *
+ *   • `recitations:3` — Abdur-Rahman as-Sudais, express permission to retain beyond one week.
+ *   • `translations:85` — M.A.S. Abdel Haleem, retainable beyond one week only under sync.
+ *
+ * Adding a row here is a licensing decision, not a configuration change.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const SYNC_RESOURCES = {
+  recitations: 3,
+  translations: 85,
+} as const;
+
+export type SyncResourceGroup = keyof typeof SYNC_RESOURCES;
+
+export const SYNC_RESOURCE_GROUPS: readonly SyncResourceGroup[] = ['recitations', 'translations'];
+
+/**
+ * The canonical filter, built from the table and from nothing else.
+ *
+ * Sorted and deduplicated because the vendor binds a sync token to its filter: two spellings of the
+ * same scope would be two tokens, and a token presented against the other spelling is one the server
+ * may reject — which costs a full bootstrap. Derived rather than written out, so the string and the
+ * permission table above cannot drift apart.
+ */
+export const CANONICAL_SYNC_FILTER: string = SYNC_RESOURCE_GROUPS
+  .map((group) => `${group}:${SYNC_RESOURCES[group]}`)
+  .sort()
+  .join(';');
+
+/** The vendor’s page-size ceiling for sync. */
+export const MAX_SYNC_PER_PAGE = 100;
+
+/**
+ * How long an opaque cursor or token may be.
+ *
+ * ── Why a cursor crosses this boundary and a URL never does ─────────────────
+ * The vendor paginates by returning `next_page_url` — a whole URL. That URL is never given to a
+ * device and never fetched as received: the server checks it against the approved origin and prefix,
+ * lifts the `cursor` parameter out of it, and hands the client that alone. The client then holds a
+ * string it cannot turn into a request, and every request is still built from this module’s own
+ * constants. Bounded because both values are opaque: NoorLife cannot judge their content, so it
+ * judges their size.
+ */
+export const MAX_SYNC_CURSOR_LENGTH = 512;
+export const MAX_SYNC_TOKEN_LENGTH = 1024;
+
+/**
+ * The mutation kinds the vendor emits.
+ *
+ * Closed. An unrecognised kind is dropped by the normaliser rather than passed through: a mutation
+ * NoorLife does not understand is one it cannot apply correctly, and applying it wrongly is worse
+ * than not seeing it.
+ */
+export type WireMutationType =
+  | 'RESOURCE_CREATE'
+  | 'RESOURCE_UPDATE'
+  | 'RESOURCE_INVALIDATE'
+  | 'RESOURCE_DELETE'
+  | 'ROW_CREATE'
+  | 'ROW_UPDATE'
+  | 'ROW_DELETE';
+
+export const WIRE_MUTATION_TYPES: readonly WireMutationType[] = [
+  'RESOURCE_CREATE',
+  'RESOURCE_UPDATE',
+  'RESOURCE_INVALIDATE',
+  'RESOURCE_DELETE',
+  'ROW_CREATE',
+  'ROW_UPDATE',
+  'ROW_DELETE',
+];
+
+/**
+ * A synchronised row, in whichever shape its group takes.
+ *
+ * Discriminated by group rather than merged into one optional-everything record, so a translation
+ * row cannot be read as a recitation row by a caller that forgot to check.
+ */
+export type WireSyncRow =
+  | {
+    readonly group: 'translations';
+    readonly surah: number;
+    readonly ayah: number;
+    readonly text: string;
+  }
+  | {
+    readonly group: 'recitations';
+    readonly surah: number;
+    readonly ayah: number;
+    /** Allow-listed absolute URL, present only for a caller that is about to fetch it. */
+    readonly url?: string;
+    readonly durationSeconds?: number;
+    readonly bytes?: number;
+  };
+
+/**
+ * One change, as NoorLife forwards it.
+ *
+ * `snapshot_url` is deliberately **absent**. The vendor supplies one; forwarding it would put a
+ * fetchable URL on a device, and the device could not use it anyway because the credentials are
+ * here. What crosses instead is `snapshotRequired`, a boolean, beside the group and id the client
+ * passes back to `get_content_snapshot`. The same information, none of it fetchable.
+ */
+export type WireMutation = {
+  readonly sequence: number;
+  readonly type: WireMutationType;
+  readonly resourceGroup: SyncResourceGroup;
+  readonly resourceId: number;
+  /** The vendor’s own row identity. Never reconstructed from array position. */
+  readonly recordKey?: string;
+  readonly recordType?: string;
+  readonly changedAt?: string;
+  readonly row?: WireSyncRow;
+  readonly snapshotRequired: boolean;
+  readonly unavailableReason?: string;
 };
 
 export type SuccessResponseBody = {
@@ -436,6 +601,19 @@ export const OPERATION_CACHE_MAX_AGE_MS: Readonly<Record<QuranOperation, number>
    * lives at is not, and the cache window has to be sized for the thing actually being stored.
    */
   list_verse_recitations: DAY_MS,
+  /**
+   * Not cached at all, and the zero is the point.
+   *
+   * A sync page is a statement about *what has changed since a token*. Serving a second caller the
+   * first caller’s page would hand them mutations that are not theirs and a token bound to somebody
+   * else’s position in the run. Snapshots are excluded for the same reason in a stronger form: the
+   * vendor marks them `Cache-Control: no-store`, and a stale snapshot replaces every local row with
+   * an out-of-date set.
+   *
+   * The cache reads zero as "do not store", so this is enforcement rather than a hint.
+   */
+  sync_content_resources: 0,
+  get_content_snapshot: 0,
 };
 
 /**

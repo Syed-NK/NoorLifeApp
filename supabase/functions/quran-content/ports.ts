@@ -164,6 +164,31 @@ export type QuranQuery =
   | { readonly operation: 'list_translation_resources' }
   | { readonly operation: 'list_recitation_resources' }
   | {
+    readonly operation: 'sync_content_resources';
+    /**
+     * The vendor’s opaque checkpoint, or `null` to bootstrap.
+     *
+     * Bootstrap is the absence of a token rather than a separate flag on this side: the vendor’s
+     * own `bootstrap=true` is set by the client module from exactly this condition, so there is one
+     * place where “no token” becomes “start again” and no way for the two to disagree.
+     */
+    readonly syncToken: string | null;
+    /** A cursor previously extracted from `next_page_url`, or `null` for the first page. */
+    readonly cursor: string | null;
+    readonly perPage: number;
+  }
+  | {
+    readonly operation: 'get_content_snapshot';
+    /**
+     * Which permitted resource to snapshot.
+     *
+     * The group alone. The id is looked up from `SYNC_RESOURCES` on the server, so a client cannot
+     * request a snapshot of a resource NoorLife has no permission to hold — not by guessing an id,
+     * and not by replaying one it saw in a mutation.
+     */
+    readonly resourceGroup: 'recitations' | 'translations';
+  }
+  | {
     readonly operation: 'list_verse_recitations';
     readonly surah: number;
     readonly recitationId: number;

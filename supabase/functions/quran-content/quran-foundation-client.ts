@@ -8,6 +8,12 @@ import type {
   UpstreamOutcome,
   UpstreamResult,
 } from './ports.ts';
+import {
+  CANONICAL_SYNC_FILTER,
+  MAX_SYNC_CURSOR_LENGTH,
+  SYNC_RESOURCES,
+  type SyncResourceGroup,
+} from './contract.ts';
 import { createTokenStore } from './token-store.ts';
 
 /**
@@ -68,6 +74,82 @@ export const QF_API_ORIGIN = 'https://apis.quran.foundation';
 
 /** The versioned content prefix, from the OpenAPI document's production server entry. */
 export const QF_CONTENT_PREFIX = '/content/api/v4';
+
+/**
+ * Whether a URL the vendor put in a response body is one NoorLife would have built itself.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Content Sync is the first part of this integration where the **response** contains URLs that a
+ * naive client would follow: `next_page_url` for pagination and `snapshot_url` for a rebuild. The
+ * vendor’s own guidance is to follow `next_page_url` rather than build the cursor, which is exactly
+ * the shape of instruction that turns a response body into a request target.
+ *
+ * NoorLife does not follow either one. It **validates** them and then throws the address away:
+ *
+ *   • from `next_page_url` it lifts the `cursor` parameter and rebuilds the request from its own
+ *     constants, so pagination is preserved exactly without a URL ever being followed;
+ *   • from `snapshot_url` it takes only the fact that a snapshot is required, and builds the
+ *     snapshot path from the permission table.
+ *
+ * The check below therefore guards against a *malformed or hostile feed*, not against NoorLife’s
+ * own routing: a page whose `next_page_url` points somewhere unexpected is refused rather than
+ * silently treated as the end of the run, because silently ending a sync run early would leave a
+ * token advanced past mutations that were never applied.
+ *
+ * Absolute and relative forms are both accepted, because the vendor documents relative paths and
+ * returns absolute ones. A relative form resolves against the fixed origin, so it has nowhere to
+ * escape to; an absolute form is compared against the same origin and prefix.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+function approvedSyncUrl(raw: unknown, suffix: string): URL | null {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_SYNC_URL_LENGTH) {
+    return null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(raw, `${QF_API_ORIGIN}${QF_CONTENT_PREFIX}/`);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' || parsed.origin !== QF_API_ORIGIN) {
+    return null;
+  }
+  if (parsed.username !== '' || parsed.password !== '') {
+    return null;
+  }
+  return parsed.pathname === `${QF_CONTENT_PREFIX}${suffix}` ? parsed : null;
+}
+
+/** A vendor URL is bounded before it is parsed; an unbounded string is a memory risk, not a route. */
+const MAX_SYNC_URL_LENGTH = 2048;
+
+/**
+ * The cursor inside a `next_page_url`, or `null` when the URL is not one NoorLife recognises.
+ *
+ * Returning the cursor rather than the URL is the whole point: the client receives a value it
+ * cannot turn into a request, and the next page is built from this module’s constants.
+ */
+export function cursorFromNextPageUrl(raw: unknown): string | null {
+  const url = approvedSyncUrl(raw, '/resources/sync');
+  if (url === null) {
+    return null;
+  }
+  const cursor = url.searchParams.get('cursor');
+  return cursor === null || cursor.length === 0 || cursor.length > MAX_SYNC_CURSOR_LENGTH
+    ? null
+    : cursor;
+}
+
+/**
+ * Whether a `snapshot_url` names a snapshot of a resource NoorLife holds permission for.
+ *
+ * Both halves matter. A URL on the right host but for `translations:20` is refused, because the
+ * permission is per resource and a snapshot NoorLife may not hold is not made acceptable by
+ * arriving over an approved channel.
+ */
+export function isApprovedSnapshotUrl(raw: unknown, group: SyncResourceGroup): boolean {
+  return approvedSyncUrl(raw, `/resources/snapshots/${group}/${SYNC_RESOURCES[group]}`) !== null;
+}
 
 /**
  * The response body cap.
@@ -246,6 +328,42 @@ export function routeFor(query: QuranQuery): Route {
       return {
         path: `/recitations/${query.recitationId}/by_chapter/${query.surah}`,
         query: { page: String(query.page), per_page: String(query.perPage) },
+      };
+
+    /**
+     * One page of the change feed for NoorLife’s permitted resources.
+     *
+     * ── Every part of this request is a server value ────────────────────
+     * The path is a literal. The filter is `CANONICAL_SYNC_FILTER`, derived from the permission
+     * table. `bootstrap` is set from the *absence* of a token rather than from a client flag, so
+     * a device cannot ask for a bootstrap it was not entitled to and cannot skip one it needs.
+     * The only caller-supplied values are two opaque strings the vendor issued in the first
+     * place, and `request-schema.ts` has already bounded and character-checked both.
+     */
+    case 'sync_content_resources':
+      return {
+        path: '/resources/sync',
+        query: {
+          resources: CANONICAL_SYNC_FILTER,
+          per_page: String(query.perPage),
+          ...(query.syncToken === null ? { bootstrap: 'true' } : { sync_token: query.syncToken }),
+          ...(query.cursor === null ? {} : { cursor: query.cursor }),
+        },
+      };
+
+    /**
+     * The full contents of one permitted resource.
+     *
+     * Built from the group the client named and the id **this module looks up**, never from the
+     * `snapshot_url` the vendor returned. The vendor’s URL is still validated — see
+     * `isApprovedSnapshotUrl` — but it is used as a *signal that a snapshot is needed*, not as an
+     * address to fetch. Following a URL out of a response body is the one thing an allow-list
+     * cannot make safe in general, so this function does not do it at all.
+     */
+    case 'get_content_snapshot':
+      return {
+        path: `/resources/snapshots/${query.resourceGroup}/${SYNC_RESOURCES[query.resourceGroup]}`,
+        query: {},
       };
   }
 }

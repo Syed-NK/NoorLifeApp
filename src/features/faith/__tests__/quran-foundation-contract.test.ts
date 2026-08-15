@@ -141,17 +141,28 @@ describe('the mirrored wire contract matches the committed edge function', () =>
 
     expect([...QURAN_CONTENT_OPERATIONS]).toEqual(serverOperations);
     /*
-      Eight content reads, and no search or user operation among them.
+      Ten operations: eight content reads and the two synchronisation calls.
 
-      It was seven until verse-level recitation was approved and `list_verse_recitations` was added.
-      The count is asserted rather than merely compared to the server's list because the two lists
+      It was seven until verse-level recitation was approved, eight until Content Sync was. The
+      count is asserted rather than merely compared to the server's list because the two lists
       agreeing proves they were changed together, and the number proves the change was *this* one —
       an operation added to both sides at once would otherwise pass silently.
     */
-    expect(serverOperations).toHaveLength(8);
-    for (const forbidden of ['search', 'bookmarks', 'notes', 'sync']) {
+    expect(serverOperations).toHaveLength(10);
+    /*
+      `sync` has left this list, and only `sync`. It was here when Content Sync was believed not to
+      exist; it is now the mechanism that makes retaining Sudais audio and translation 85 beyond one
+      week lawful, so its absence can no longer be the rule. What replaces it is narrower and is
+      asserted below: the two sync operations exist by exact name, and nothing else does. Search,
+      bookmarks and notes remain unapproved and remain forbidden.
+    */
+    for (const forbidden of ['search', 'bookmarks', 'notes', 'reflect', 'collections']) {
       expect(serverOperations.some((name) => (name ?? '').includes(forbidden))).toBe(false);
     }
+    expect(serverOperations.filter((name) => (name ?? '').includes('sync'))).toEqual([
+      'sync_content_resources',
+    ]);
+    expect(serverOperations).toContain('get_content_snapshot');
   });
 
   it('never asks for more than the vendor’s documented page size', () => {

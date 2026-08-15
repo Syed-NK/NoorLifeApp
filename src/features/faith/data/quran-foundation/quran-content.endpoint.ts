@@ -13,7 +13,10 @@ import {
   type WireChapter,
   type WireEdition,
   type WirePagination,
+  type WireMutation,
+  type WireMutationType,
   type WireRecitation,
+  type WireSyncRow,
   type WireReciter,
   type WireSource,
   type WireTranslation,
@@ -347,6 +350,60 @@ function readPayload(
         .filter((entry): entry is WireRecitation => entry !== null);
       return { operation, recitations, pagination };
     }
+
+    /**
+     * A page of the change feed.
+     *
+     * ── The one place in this file that refuses a partial result ────────────
+     * Every other list here drops an unreadable entry and keeps the rest, because a page of
+     * scripture missing one verse is still worth rendering. A sync page is not a list — it is a
+     * statement about what changed, and the client advances a checkpoint token after applying it.
+     * Keeping nine of ten mutations and then storing the token would lose the tenth permanently:
+     * the vendor answers "what changed since this token", and that change is now behind it.
+     *
+     * So `readAll` rather than a filtering map, and a `null` here becomes `invalid-response`, which
+     * leaves the previous token in place and the run repeatable.
+     */
+    case 'sync_content_resources': {
+      const resources = nonEmptyString(payload.resources);
+      const syncUntilSequence = positiveInteger(payload.syncUntilSequence) ?? 0;
+      const mutations = readAll(payload.mutations, readMutation);
+      if (resources === null || typeof payload.hasMore !== 'boolean' || mutations === null) {
+        return null;
+      }
+      const nextCursor = nonEmptyString(payload.nextCursor);
+      const nextSyncToken = nonEmptyString(payload.nextSyncToken);
+      return {
+        operation,
+        resources,
+        syncUntilSequence,
+        hasMore: payload.hasMore,
+        nextCursor,
+        nextSyncToken,
+        mutations,
+      };
+    }
+
+    /**
+     * A full snapshot, which replaces every local row of one resource.
+     *
+     * Refused whole for the same reason, in a stronger form: a partially-read snapshot applied as a
+     * replacement silently deletes every row it failed to parse.
+     */
+    case 'get_content_snapshot': {
+      const group = payload.resourceGroup;
+      const rows = readAll(payload.rows, readSyncRow);
+      if ((group !== 'recitations' && group !== 'translations') || rows === null) {
+        return null;
+      }
+      const resourceId = positiveInteger(payload.resourceId);
+      const schemaVersion = positiveInteger(payload.schemaVersion) ?? 0;
+      const syncSequence = positiveInteger(payload.syncSequence) ?? 0;
+      if (resourceId === null) {
+        return null;
+      }
+      return { operation, resourceGroup: group, resourceId, schemaVersion, syncSequence, rows };
+    }
   }
 }
 
@@ -368,6 +425,101 @@ function readPayload(
  * in Faith mobile source is itself scanned for, because URL construction is the first half of making
  * a request.
  */
+/**
+ * One mutation.
+ *
+ * `snapshotRequired` is read as a boolean and nothing else. The server has already validated the
+ * vendor’s `snapshot_url` and discarded it, so there is no address here to check — and if a future
+ * server change started sending one, this reader would drop it, because the shape has nowhere to
+ * put it.
+ */
+function readMutation(value: unknown): WireMutation | null {
+  const entry = asRecord(value);
+  const sequence = positiveInteger(entry?.sequence) ?? 0;
+  const type = entry?.type;
+  const group = entry?.resourceGroup;
+  const resourceId = positiveInteger(entry?.resourceId);
+  if (entry === null || resourceId === null) {
+    return null;
+  }
+  if (typeof type !== 'string' || !MUTATION_TYPES.includes(type as WireMutationType)) {
+    return null;
+  }
+  if (group !== 'recitations' && group !== 'translations') {
+    return null;
+  }
+  if (typeof entry.snapshotRequired !== 'boolean') {
+    return null;
+  }
+  const row = entry.row === undefined ? null : readSyncRow(entry.row);
+  if (entry.row !== undefined && row === null) {
+    return null;
+  }
+  const recordKey = nonEmptyString(entry.recordKey);
+  const recordType = nonEmptyString(entry.recordType);
+  const changedAt = nonEmptyString(entry.changedAt);
+  const unavailableReason = nonEmptyString(entry.unavailableReason);
+  return {
+    sequence,
+    type: type as WireMutationType,
+    resourceGroup: group,
+    resourceId,
+    snapshotRequired: entry.snapshotRequired,
+    ...(recordKey === null ? {} : { recordKey }),
+    ...(recordType === null ? {} : { recordType }),
+    ...(changedAt === null ? {} : { changedAt }),
+    ...(unavailableReason === null ? {} : { unavailableReason }),
+    ...(row === null ? {} : { row }),
+  };
+}
+
+const MUTATION_TYPES: readonly WireMutationType[] = [
+  'RESOURCE_CREATE',
+  'RESOURCE_UPDATE',
+  'RESOURCE_INVALIDATE',
+  'RESOURCE_DELETE',
+  'ROW_CREATE',
+  'ROW_UPDATE',
+  'ROW_DELETE',
+];
+
+/**
+ * One synchronised row.
+ *
+ * Ayah identity is read from the row itself and refused when absent. Nothing here falls back to a
+ * position, an index or a filename — a recitation bound to the wrong ayah is a verse played in the
+ * wrong place, and no layer below this one could detect it.
+ */
+function readSyncRow(value: unknown): WireSyncRow | null {
+  const entry = asRecord(value);
+  const surah = positiveInteger(entry?.surah);
+  const ayah = positiveInteger(entry?.ayah);
+  if (entry === null || surah === null || ayah === null) {
+    return null;
+  }
+  if (entry.group === 'translations') {
+    const text = nonEmptyString(entry.text);
+    return text === null ? null : { group: 'translations', surah, ayah, text };
+  }
+  if (entry.group !== 'recitations') {
+    return null;
+  }
+  const url = nonEmptyString(entry.url);
+  if (url !== null && !url.startsWith('https://')) {
+    return null;
+  }
+  const duration = positiveInteger(entry.durationSeconds);
+  const bytes = positiveInteger(entry.bytes);
+  return {
+    group: 'recitations',
+    surah,
+    ayah,
+    ...(url === null ? {} : { url }),
+    ...(duration === null ? {} : { durationSeconds: duration }),
+    ...(bytes === null ? {} : { bytes }),
+  };
+}
+
 function readRecitation(value: unknown): WireRecitation | null {
   const entry = asRecord(value);
   const surah = positiveInteger(entry?.surah);

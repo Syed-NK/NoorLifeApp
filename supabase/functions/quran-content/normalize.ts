@@ -1,6 +1,7 @@
 import {
   AUDIO_BASE_URL,
   AUDIO_HOST_ALLOWLIST,
+  CANONICAL_SYNC_FILTER,
   CONTENT_SOURCE_NAME,
   MAX_AYAH,
   MAX_SURAH,
@@ -10,14 +11,21 @@ import {
   SCRIPTURE_EDITION,
   type WireChapter,
   type WireEdition,
+  type WireMutation,
+  type WireMutationType,
   type WirePagination,
   type WireRecitation,
   type WireReciter,
   type WireSource,
+  type WireSyncRow,
   type WireTranslation,
   type WireVerse,
+  SYNC_RESOURCES,
+  type SyncResourceGroup,
+  WIRE_MUTATION_TYPES,
 } from './contract.ts';
 import type { NormalizeReason, QuranQuery, TranslationAttribution } from './ports.ts';
+import { cursorFromNextPageUrl, isApprovedSnapshotUrl } from './quran-foundation-client.ts';
 
 /**
  * Upstream JSON → NoorLife's domain shapes.
@@ -713,7 +721,265 @@ export function normalizeAudioUrl(raw: unknown): string | null {
 }
 
 /**
- * One page of per-verse recitation audio.
+ * One page of the change feed.
+ *
+ * ── Why a bad page is refused rather than trimmed ───────────────────────────
+ * Everywhere else in this module a malformed row is dropped and the rest of the page is kept,
+ * because a page of scripture missing one verse is still worth showing. A sync page is the opposite:
+ * it is a **contract about what has changed**, and the client advances a checkpoint token after
+ * applying it. Dropping a mutation NoorLife could not parse would advance the token past a change
+ * that was never applied, and that change would never be offered again — a silent, permanent
+ * divergence from the vendor’s content. So anything unreadable fails the whole page and the token
+ * stays where it was.
+ *
+ * The single exception is a mutation for a resource outside NoorLife’s permission table. That is not
+ * corruption — it is scope — and it is skipped deliberately; see `normalizeMutation`.
+ */
+export function normalizeSync(body: unknown): Extract<QuranPayload, { operation: 'sync_content_resources' }> | null {
+  const sync = asRecord(asRecord(body)?.sync);
+  if (sync === null) {
+    return null;
+  }
+  const syncUntilSequence = boundedInteger(sync.sync_until_sequence, 0, Number.MAX_SAFE_INTEGER);
+  if (syncUntilSequence === null || typeof sync.has_more !== 'boolean') {
+    return null;
+  }
+  if (!Array.isArray(sync.mutations)) {
+    return null;
+  }
+
+  /*
+    Pagination, checked against what `has_more` claims. A page that says there is more and gives no
+    usable cursor cannot be continued, and treating it as the end would advance the token over
+    mutations that were never delivered — so it is a refusal, not a quiet stop.
+  */
+  const nextCursor = cursorFromNextPageUrl(sync.next_page_url);
+  if (sync.has_more && nextCursor === null) {
+    return null;
+  }
+
+  /*
+    The token appears only on the final page. One arriving mid-run would mean the vendor and this
+    parser disagree about where the run ends, and persisting it would skip the remainder.
+  */
+  const nextSyncToken = nonEmptyString(sync.next_sync_token);
+  if (sync.has_more && nextSyncToken !== null) {
+    return null;
+  }
+
+  const mutations: WireMutation[] = [];
+  for (const raw of sync.mutations) {
+    const mutation = normalizeMutation(raw);
+    if (mutation === 'out-of-scope') {
+      continue;
+    }
+    if (mutation === null) {
+      return null;
+    }
+    mutations.push(mutation);
+  }
+
+  return {
+    operation: 'sync_content_resources',
+    resources: CANONICAL_SYNC_FILTER,
+    syncUntilSequence,
+    hasMore: sync.has_more,
+    nextCursor,
+    nextSyncToken: sync.has_more ? null : nextSyncToken,
+    mutations,
+  };
+}
+
+/**
+ * One mutation: parsed, out of scope, or unreadable.
+ *
+ * Three outcomes rather than two, because "not for us" and "we could not read it" must not be
+ * confused. A mutation for `translations:20` is perfectly well-formed and simply outside the
+ * permission table, so it is skipped and the run continues. A mutation for `translations:85` whose
+ * type is unrecognised is a gap in NoorLife’s understanding of the feed, and the page is refused.
+ */
+function normalizeMutation(raw: unknown): WireMutation | null | 'out-of-scope' {
+  const record = asRecord(raw);
+  if (record === null) {
+    return null;
+  }
+  const group = nonEmptyString(record.resource_group);
+  const resourceId = boundedInteger(record.resource_id, 1, Number.MAX_SAFE_INTEGER);
+  if (group === null || resourceId === null) {
+    return null;
+  }
+  if (!isPermittedResource(group, resourceId)) {
+    return 'out-of-scope';
+  }
+  /*
+    Narrowed only after the permission check, so the type reflects the check rather than asserting
+    past it: `group` is a `SyncResourceGroup` here *because* it matched an entry in the table.
+  */
+  const permittedGroup = group as SyncResourceGroup;
+  const type = record.type;
+  if (!isMutationType(type)) {
+    return null;
+  }
+  const sequence = boundedInteger(record.sequence, 0, Number.MAX_SAFE_INTEGER);
+  if (sequence === null) {
+    return null;
+  }
+
+  /*
+    The snapshot URL is checked and then discarded. It is checked because a create or an
+    invalidation that points somewhere unexpected is a feed NoorLife should not act on; it is
+    discarded because the snapshot request is built from the permission table, so the address itself
+    is never needed and must never reach a device.
+  */
+  const snapshotRequired = record.snapshot_url !== null && record.snapshot_url !== undefined;
+  if (snapshotRequired && !isApprovedSnapshotUrl(record.snapshot_url, permittedGroup)) {
+    return null;
+  }
+
+  const row = type === 'ROW_CREATE' || type === 'ROW_UPDATE'
+    ? normalizeSyncRow(record.data, permittedGroup)
+    : null;
+  if ((type === 'ROW_CREATE' || type === 'ROW_UPDATE') && row === null) {
+    return null;
+  }
+
+  const recordKey = nonEmptyString(record.record_key);
+  const recordType = nonEmptyString(record.record_type);
+  const changedAt = nonEmptyString(record.changed_at);
+  const unavailableReason = nonEmptyString(record.unavailable_reason);
+
+  /*
+    A row deletion with no record key is unactionable — there is nothing to delete — and guessing
+    which row was meant is exactly the identity-by-position mistake this integration forbids.
+  */
+  if (type === 'ROW_DELETE' && recordKey === null) {
+    return null;
+  }
+
+  return {
+    sequence,
+    type,
+    resourceGroup: permittedGroup,
+    resourceId,
+    snapshotRequired,
+    ...(recordKey === null ? {} : { recordKey }),
+    ...(recordType === null ? {} : { recordType }),
+    ...(changedAt === null ? {} : { changedAt }),
+    ...(unavailableReason === null ? {} : { unavailableReason }),
+    ...(row === null ? {} : { row }),
+  };
+}
+
+function isMutationType(value: unknown): value is WireMutationType {
+  return typeof value === 'string' && (WIRE_MUTATION_TYPES as readonly string[]).includes(value);
+}
+
+/** Whether a group and id are the exact pair NoorLife holds a written permission for. */
+function isPermittedResource(group: string, resourceId: number): boolean {
+  return Object.entries(SYNC_RESOURCES).some(
+    ([permitted, id]) => permitted === group && id === resourceId,
+  );
+}
+
+/**
+ * A synchronised row, normalised into the shape its group takes.
+ *
+ * Ayah identity comes from the row’s own verse key, parsed with the same parser the reader uses —
+ * never from its position in the array. A row without a readable verse key is refused rather than
+ * numbered by index, because a recitation bound to the wrong ayah is a verse played in the wrong
+ * place, and nothing downstream could detect it.
+ */
+function normalizeSyncRow(raw: unknown, group: SyncResourceGroup): WireSyncRow | null {
+  const record = asRecord(raw);
+  if (record === null) {
+    return null;
+  }
+  const key = parseAnyVerseKey(record.verse_key);
+  if (key === null) {
+    return null;
+  }
+  if (group === 'translations') {
+    const text = nonEmptyString(record.text);
+    return text === null ? null : { group: 'translations', surah: key.surah, ayah: key.ayah, text };
+  }
+  const url = normalizeAudioUrl(record.url);
+  const duration = boundedInteger(record.duration, 1, 60 * 60);
+  const bytes = boundedInteger(record.file_size, 1, Number.MAX_SAFE_INTEGER);
+  return {
+    group: 'recitations',
+    surah: key.surah,
+    ayah: key.ayah,
+    ...(url === null ? {} : { url }),
+    ...(duration === null ? {} : { durationSeconds: duration }),
+    ...(bytes === null ? {} : { bytes }),
+  };
+}
+
+/**
+ * A verse key with no surah expectation.
+ *
+ * `parseVerseKey` checks the surah against the one that was requested, which is right for a reader
+ * page and wrong here: a sync feed carries changes for any surah, and there is no request to check
+ * against. Both halves are still bounded.
+ */
+function parseAnyVerseKey(value: unknown): { readonly surah: number; readonly ayah: number } | null {
+  const text = nonEmptyString(value);
+  if (text === null) {
+    return null;
+  }
+  const parts = text.split(':');
+  if (parts.length !== 2) {
+    return null;
+  }
+  const surah = boundedInteger(Number(parts[0]), MIN_SURAH, MAX_SURAH);
+  const ayah = boundedInteger(Number(parts[1]), MIN_AYAH, MAX_AYAH);
+  return surah === null || ayah === null ? null : { surah, ayah };
+}
+
+/**
+ * A full snapshot of one permitted resource.
+ *
+ * The response’s own `resource_group` and `resource_id` are checked against the group that was
+ * requested, not merely read. A snapshot answering for a different resource would otherwise replace
+ * NoorLife’s local copy of one resource with the contents of another — the most destructive thing
+ * this feed can do, since a snapshot replaces every row.
+ */
+export function normalizeSnapshot(body: unknown, group: SyncResourceGroup): Extract<QuranPayload, { operation: 'get_content_snapshot' }> | null {
+  const record = asRecord(body);
+  if (record === null) {
+    return null;
+  }
+  const resourceId = SYNC_RESOURCES[group];
+  if (nonEmptyString(record.resource_group) !== group) {
+    return null;
+  }
+  if (boundedInteger(record.resource_id, 1, Number.MAX_SAFE_INTEGER) !== resourceId) {
+    return null;
+  }
+  const schemaVersion = boundedInteger(record.schema_version, 0, Number.MAX_SAFE_INTEGER);
+  const syncSequence = boundedInteger(record.sync_sequence, 0, Number.MAX_SAFE_INTEGER);
+  if (schemaVersion === null || syncSequence === null || !Array.isArray(record.records)) {
+    return null;
+  }
+  const rows: WireSyncRow[] = [];
+  for (const raw of record.records) {
+    const row = normalizeSyncRow(raw, group);
+    if (row === null) {
+      return null;
+    }
+    rows.push(row);
+  }
+  return {
+    operation: 'get_content_snapshot',
+    resourceGroup: group,
+    resourceId,
+    schemaVersion,
+    syncSequence,
+    rows,
+  };
+}
+
+/** * One page of per-verse recitation audio.
  *
  * A verse whose URL failed validation is **omitted**, not included with a null URL: the reader's
  * play control is rendered from the presence of an entry, so an entry that cannot be played would be
@@ -843,6 +1109,16 @@ export function normalizePayload(
           pagination: page.pagination,
         },
       };
+    }
+
+    case 'sync_content_resources': {
+      const page = normalizeSync(body);
+      return page === null ? rejected('shape') : { ok: true, value: page };
+    }
+
+    case 'get_content_snapshot': {
+      const snapshot = normalizeSnapshot(body, query.resourceGroup);
+      return snapshot === null ? rejected('shape') : { ok: true, value: snapshot };
     }
   }
 }

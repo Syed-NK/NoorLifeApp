@@ -335,10 +335,20 @@ Deno.test('the approved scope is the only scope, and unapproved APIs are unreach
     [],
     'no unapproved route is named in executable code',
   );
+  /*
+    Content Sync is approved as of 2026-08-15 and is what makes retention beyond one week lawful
+    for Sudais audio and translation 85. The rule is therefore no longer "no sync route" — it is
+    that the two sync routes appear **only in the route table**, alongside every other path, and
+    nowhere else in executable code. A sync path built anywhere but `routeFor` would be a second
+    place upstream addresses are constructed, which is the property this whole file protects.
+  */
   assertEquals(
-    offenders(/resources\/sync|resources\/snapshots|content-sync/, PRODUCTION),
+    offenders(
+      /resources\/sync|resources\/snapshots/,
+      PRODUCTION.filter((file) => file.name !== CONTENT_CLIENT),
+    ),
     [],
-    'and no Content Sync route, which exists to maintain a long-lived local copy',
+    'the sync routes are named only in the client’s route table',
   );
 });
 
@@ -373,16 +383,45 @@ Deno.test('the validated query has no field a path, host or URL could occupy', (
   ) {
     assertEquals(union.includes(forbidden), false, `QuranQuery has no ${forbidden} field`);
   }
-  // Every declared field is a number, a nullable number, or the operation literal.
+
+  /*
+    ── The two string fields, and why they are not a hole ──────────────────
+    Every field used to be numeric, which made "this cannot express an address" a one-line check.
+    Content Sync adds two opaque vendor values — a checkpoint token and a page cursor — that are
+    genuinely strings and cannot be anything else.
+
+    They are allowed **by name**, not by type, so the guarantee is unchanged in the way that
+    matters: a future `readonly path: string` still fails this assertion. And neither of these two
+    reaches a path — `routeFor` puts both in the query string, which the next test pins by
+    checking that only integers are interpolated into a path template.
+  */
+  const OPAQUE_FIELDS = ['syncToken', 'cursor'];
   const fields = [...union.matchAll(/readonly ([a-zA-Z]+):\s*([^;\n}]+)/g)]
     .filter((match) => match[1] !== 'operation')
-    .map((match) => (match[2] ?? '').trim());
+    .map((match) => ({ name: match[1] ?? '', type: (match[2] ?? '').trim() }));
   assert(fields.length > 0, 'fields were found');
-  for (const type of fields) {
+  for (const field of fields) {
+    if (OPAQUE_FIELDS.includes(field.name)) {
+      assertEquals(
+        field.type === 'string | null',
+        true,
+        `${field.name} is a nullable opaque string, found: ${field.type}`,
+      );
+      continue;
+    }
+    if (field.name === 'resourceGroup') {
+      /* A closed literal union, not free text: the two groups NoorLife holds permission for. */
+      assertEquals(
+        field.type.replace(/\s+/g, ''),
+        "'recitations'|'translations'",
+        `resourceGroup is a closed union, found: ${field.type}`,
+      );
+      continue;
+    }
     assertEquals(
-      type === 'number' || type === 'number | null',
+      field.type === 'number' || field.type === 'number | null',
       true,
-      `every non-operation field is numeric, found: ${type}`,
+      `every remaining field is numeric, found: ${field.type}`,
     );
   }
 });
@@ -404,10 +443,24 @@ Deno.test('paths are built in exactly one function, from literals and integers',
   const interpolations = [...table.matchAll(/path: `[^`]*`/g)].flatMap((match) =>
     [...(match[0] ?? '').matchAll(/\$\{([^}]+)\}/g)].map((inner) => (inner[1] ?? '').trim())
   );
+  /*
+    `query.resourceGroup` is the one non-integer here, and it is safe for a different reason than
+    the others: it is a two-member literal union the request schema matched against a closed list,
+    so the only strings it can hold are `recitations` and `translations`. Its companion —
+    `SYNC_RESOURCES[query.resourceGroup]` — is a lookup into the permission table, so the resource
+    id in that path can only ever be one NoorLife holds permission for, whatever a client sent.
+  */
   assertEquals(
     [...new Set(interpolations)].sort(),
-    ['query.ayah', 'query.recitationId', 'query.surah', 'query.translationId'],
-    'only validated integers are interpolated into a path',
+    [
+      'SYNC_RESOURCES[query.resourceGroup]',
+      'query.ayah',
+      'query.recitationId',
+      'query.resourceGroup',
+      'query.surah',
+      'query.translationId',
+    ],
+    'only validated integers and the closed resource-group union are interpolated into a path',
   );
 
   /**
@@ -442,11 +495,14 @@ Deno.test('the request schema names no identity, credential or address field', (
   const fields = [...accepted.matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
   assertEquals(fields, [
     'contract_version',
+    'cursor',
     'operation',
     'page',
     'per_page',
     'recitation_id',
+    'resource_group',
     'surah',
+    'sync_token',
     'translation_id',
     'verse',
   ], 'the whole accepted schema, by exact name');

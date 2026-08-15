@@ -108,6 +108,13 @@ Deno.test('every approved operation is reachable with a well-formed body', async
     list_translation_resources: {},
     list_recitation_resources: {},
     list_verse_recitations: { surah: 18, recitation_id: 1 },
+    /*
+      Both synchronisation operations take their scope from the server, so the bootstrap case is an
+      empty body — which is exactly the point worth driving here: a well-formed sync request names
+      no resource at all.
+    */
+    sync_content_resources: {},
+    get_content_snapshot: { resource_group: 'recitations' },
   };
 
   for (const operation of QURAN_OPERATIONS) {

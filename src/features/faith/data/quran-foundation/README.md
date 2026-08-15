@@ -43,7 +43,7 @@ section, and a test asserts it.
 | Content API — chapters, verses, translations, recitations, resource catalogues | **Approved**                | Eight fixed routes in `quran-foundation-client.ts`              |
 | Search APIs                                                                    | Not approved                | No operation exists; `searchTranslations` returns `unsupported` |
 | OAuth user APIs, bookmarks, notes, reading sessions                            | Not approved                | No route, no scope requested                                    |
-| Content Sync                                                                   | Not approved and not wanted | It exists to maintain a long-lived local copy                   |
+| Content Sync                                                                   | Approved mechanism, not yet built | Documented at /api/v4/resources/sync; required for retention beyond seven days                   |
 
 The token exchange requests `scope=content` and nothing else.
 

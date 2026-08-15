@@ -13,8 +13,13 @@ import {
   MIN_PER_PAGE,
   MIN_RESOURCE_ID,
   MIN_SURAH,
+  MAX_SYNC_CURSOR_LENGTH,
+  MAX_SYNC_PER_PAGE,
+  MAX_SYNC_TOKEN_LENGTH,
   QURAN_OPERATIONS,
   type QuranOperation,
+  SYNC_RESOURCE_GROUPS,
+  type SyncResourceGroup,
 } from './contract.ts';
 import type { QuranQuery } from './ports.ts';
 
@@ -46,6 +51,41 @@ const SAFE_FIELD = /^[a-z][a-z0-9_]{0,31}$/;
 
 function safeFieldName(name: string): string | undefined {
   return SAFE_FIELD.test(name) ? name : undefined;
+}
+
+/**
+ * An opaque vendor value: a string, absent, or refused.
+ *
+ * `null` means the caller did not send one, which is meaningful for both fields — no token is a
+ * bootstrap, no cursor is the first page. A refusal is kept **distinct from absence** so that a
+ * malformed token cannot silently become a bootstrap and re-download the whole resource.
+ *
+ * The character class is the check. NoorLife cannot validate the content of a vendor token, so it
+ * validates that the value could not turn into anything other than a query parameter: unreserved
+ * and sub-delimiter characters only, no whitespace, no quotes, no slash.
+ */
+const OPAQUE_VALUE = /^[A-Za-z0-9._~:@!$*+,;=%-]+$/;
+
+function readOpaque(value: unknown, limit: number): string | null | 'invalid' {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'string' || value.length === 0 || value.length > limit) {
+    return 'invalid';
+  }
+  return OPAQUE_VALUE.test(value) ? value : 'invalid';
+}
+
+/** A sync page size, defaulted to the vendor ceiling and never above it. */
+function readSyncPerPage(value: unknown): number | null {
+  if (value === undefined) {
+    return MAX_SYNC_PER_PAGE;
+  }
+  return boundedInteger(value, 1, MAX_SYNC_PER_PAGE);
+}
+
+function isSyncResourceGroup(value: string): value is SyncResourceGroup {
+  return (SYNC_RESOURCE_GROUPS as readonly string[]).includes(value);
 }
 
 export type ReadOutcome =
@@ -155,6 +195,8 @@ const OPERATION_FIELDS: Readonly<Record<QuranOperation, readonly string[]>> = {
   list_translation_resources: [],
   list_recitation_resources: [],
   list_verse_recitations: ['surah', 'recitation_id', 'page', 'per_page'],
+  sync_content_resources: ['sync_token', 'cursor', 'per_page'],
+  get_content_snapshot: ['resource_group'],
 };
 
 /**
@@ -175,6 +217,13 @@ const OPTIONAL_FIELDS: Readonly<Record<QuranOperation, readonly string[]>> = {
   list_translation_resources: [],
   list_recitation_resources: [],
   list_verse_recitations: ['page', 'per_page'],
+  /*
+    All three are optional, and each absence means something specific: no `sync_token` is a
+    bootstrap, no `cursor` is the first page of a run, no `per_page` takes the server default.
+    None of them is a resource selector — there is no field a client could send to widen scope.
+  */
+  sync_content_resources: ['sync_token', 'cursor', 'per_page'],
+  get_content_snapshot: [],
 };
 
 /** Server-side defaults for the two paging fields. Modest, and well inside the vendor's ceiling. */
@@ -250,6 +299,51 @@ export function parseRequestBody(payload: unknown): ParseOutcome {
      * *response* side is where this operation is unusual, and `normalizeRecitations` is the control
      * there: a URL that is not `https:` on an allow-listed host is dropped.
      */
+    /**
+     * A page of the synchronisation run for NoorLife’s two permitted resources.
+     *
+     * ── What a caller may influence, and what it may not ────────────────────
+     * It may say *where in the run it is* — a checkpoint token, a page cursor, a page size. It may
+     * not say *what is being synchronised*: this operation has no resource field at all, so the
+     * canonical filter stays a server constant and widening the scope is a code change here rather
+     * than a request from a device.
+     *
+     * Both opaque values are bounded and character-checked rather than parsed. NoorLife cannot tell
+     * a good token from a bad one — only the vendor can — so what it checks is that the value could
+     * not become anything but a query parameter.
+     */
+    case 'sync_content_resources': {
+      const syncToken = readOpaque(body.sync_token, MAX_SYNC_TOKEN_LENGTH);
+      if (syncToken === 'invalid') {
+        return fail('invalid_request', 'sync_token');
+      }
+      const cursor = readOpaque(body.cursor, MAX_SYNC_CURSOR_LENGTH);
+      if (cursor === 'invalid') {
+        return fail('invalid_request', 'cursor');
+      }
+      const perPage = readSyncPerPage(body.per_page);
+      if (perPage === null) {
+        return fail('invalid_request', 'per_page');
+      }
+      return { ok: true, operation, query: { operation, syncToken, cursor, perPage } };
+    }
+
+    /**
+     * A full snapshot of one permitted resource, for a create or an invalidation.
+     *
+     * The group is the only input, and it is matched against a closed list rather than passed
+     * through — the resource id comes from `SYNC_RESOURCES` on the server. So a client that replays
+     * a `resource_id` it saw in a mutation, or invents one, reaches nothing: there is no field for
+     * it to travel in.
+     */
+    case 'get_content_snapshot': {
+      const group = body.resource_group;
+      if (typeof group !== 'string' || !isSyncResourceGroup(group)) {
+        return fail('invalid_request', 'resource_group');
+      }
+      return { ok: true, operation, query: { operation, resourceGroup: group } };
+    }
+
     case 'list_verse_recitations': {
       const surah = boundedInteger(body.surah, MIN_SURAH, MAX_SURAH);
       if (surah === null) {
