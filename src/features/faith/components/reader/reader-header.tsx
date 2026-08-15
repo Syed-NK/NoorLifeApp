@@ -27,14 +27,26 @@ import { ArabicText } from '../faith-list';
 export function ReaderHeader({
   surah,
   shown,
-  highlightAyah,
+  openedAyah,
   onOpenPicker,
   onOpenInfo,
   onOpenSettings,
 }: {
   readonly surah: SurahSummary;
   readonly shown: number;
-  readonly highlightAyah: number | null;
+  /**
+   * The verse the reader has **confirmed** it opened at, or `null`.
+   *
+   * ── The rename is the fix, not decoration ───────────────────────────────────
+   * This used to be `highlightAyah` and was the raw `?ayah=` from the route, so the header announced
+   * "Opened at verse 255" for `reader/2?ayah=255` while the column below it started at verse 1 and
+   * ended at verse 20. The announcement was a restatement of the URL, dressed as an observation
+   * about the screen.
+   *
+   * The reader now passes this only once the verse is in the rendered list *and* has been scrolled
+   * to. A screen reader user is told the reader opened somewhere only when it did.
+   */
+  readonly openedAyah: number | null;
   /** `null` when the catalogue has not loaded, which is what removes the caret rather than break it. */
   readonly onOpenPicker: (() => void) | null;
   /** Where the source, the edition and the licence are stated. */
@@ -45,7 +57,7 @@ export function ReaderHeader({
   const { dp } = useModuleMetrics();
 
   const place = surah.revelation === 'meccan' ? 'Meccan' : 'Medinan';
-  const spokenPosition = highlightAyah === null ? '' : `. Opened at verse ${highlightAyah}`;
+  const spokenPosition = openedAyah === null ? '' : `. Opened at verse ${openedAyah}`;
 
   return (
     <View style={{ rowGap: dp(6) }} testID="faith-reader-header">

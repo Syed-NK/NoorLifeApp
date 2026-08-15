@@ -21,7 +21,13 @@ import { ReaderHeader, SurahOpening, SurahPicker } from '../components/reader/re
 import { ReaderPlayer } from '../components/reader/reader-player';
 import { UnverifiedSourceNotice } from '../components/faith-states';
 import type { SurahDownloadState } from '../data/audio';
-import { hasData, type FaithResult } from '../data/faith-result';
+import { hasData, type FaithPageRequest, type FaithResult } from '../data/faith-result';
+import {
+  containsAyah,
+  mergeAyahPages,
+  planAyahTarget,
+  targetPageRequest,
+} from '../data/quran/ayah-target';
 import type {
   AyahRecitation,
   AyahText,
@@ -66,6 +72,15 @@ type ReaderPage = {
   readonly surah: SurahSummary;
   readonly verses: readonly ReaderVerse[];
   readonly nextCursor: string | null;
+  /**
+   * What became of the `?ayah=` the route asked for, if it asked for one.
+   *
+   * Travels with the page rather than being recomputed by the screen, because it is a fact about
+   * *this load*: whether the verse was in range, and whether the span that should contain it was
+   * actually fetched. The screen's job is to react to it, not to re-derive it — re-deriving is how
+   * the announcement came to disagree with the render in the first place.
+   */
+  readonly target: ReaderTarget;
   /** Why the chosen translation is missing, or `null` when it is not. */
   readonly translationFailure: TranslationFailure | null;
   /**
@@ -87,6 +102,25 @@ type ReaderPage = {
  * retrying is exactly the right advice.
  */
 type TranslationFailure = 'edition-unavailable' | 'unavailable';
+
+/**
+ * What happened to the verse a deep link named.
+ *
+ * ── Four outcomes, because they need four different things said ─────────────
+ *   `none`         the route named no verse. The overwhelmingly common case.
+ *   `loaded`       the verse is in `verses`. This is the **only** state that permits the reader to
+ *                  say it opened at that verse, and it is set by looking for the verse in what was
+ *                  fetched rather than by trusting the arithmetic that asked for it.
+ *   `out-of-range` the surah has no such verse — `2:300`. Not retryable, and the message says the
+ *                  real length instead of offering a Retry that can never succeed.
+ *   `load-failed`  the span that should have contained the verse did not all arrive. The verses that
+ *                  *did* arrive are still shown; what is withheld is the claim.
+ */
+type ReaderTarget =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'loaded'; readonly ayah: number }
+  | { readonly kind: 'out-of-range'; readonly ayah: number; readonly ayahCount: number }
+  | { readonly kind: 'load-failed'; readonly ayah: number };
 
 function translationStateOf(result: FaithResult<unknown>): TranslationFailure {
   return result.kind === 'error' && result.code === 'not-found'
@@ -126,15 +160,74 @@ function hasPage(resource: {
   return resource.result !== undefined && hasData(resource.result);
 }
 
-/** The verse the player names before anything is selected — the deep link's, or the page's first. */
+/**
+ * The verse the player names before anything is selected — the deep link's, or the page's first.
+ *
+ * Takes the **confirmed** target rather than the route parameter. Naming a verse in the transport
+ * that is not on screen is the same false claim as announcing it, one control lower down.
+ */
 function openingAyahOf(
   resource: { readonly status: string; readonly result?: FaithResult<ReaderPage> },
-  highlightAyah: number | null,
+  openedAyah: number | null,
 ): number {
   const result = resource.result;
   const first =
     result !== undefined && hasData(result) ? (result.data.verses[0]?.text.ayah ?? 1) : 1;
-  return highlightAyah ?? first;
+  return openedAyah ?? first;
+}
+
+/** The verse a load actually opened at, or `null` in every state that did not open at one. */
+function openedAyahOf(page: ReaderPage | null): number | null {
+  return page !== null && page.target.kind === 'loaded' ? page.target.ayah : null;
+}
+
+/**
+ * How long a loaded target may go unmeasured before the reader stops waiting for it.
+ *
+ * Generous on purpose. The competing failure is worse than a slow deep link: declaring a verse
+ * unreachable on a device that was two frames from laying it out would replace a working feature
+ * with an error message. Three seconds is far beyond any layout pass observed on the 320/1.5 test
+ * device and still short enough that a genuinely stuck target does not sit silently.
+ */
+const TARGET_SCROLL_TIMEOUT_MS = 3000;
+
+/**
+ * What to tell the user about a verse the route asked for and the reader could not open at.
+ *
+ * `null` in the two good cases — no verse was named, or the verse is on screen — so the ordinary
+ * reader carries no notice at all. Retry is offered only where retrying can work: a surah that has
+ * 286 verses will still have 286 after a retry, so `out-of-range` gets a plain statement of the real
+ * length instead of a button that pretends otherwise.
+ */
+function targetNoticeFor(
+  target: ReaderTarget,
+  scroll: 'pending' | 'scrolled' | 'unreachable',
+): { readonly message: string; readonly retryable: boolean } | null {
+  switch (target.kind) {
+    case 'none':
+      return null;
+    case 'out-of-range':
+      return {
+        message: `This surah has ${target.ayahCount} verses, so there is no verse ${target.ayah}. The surah is shown from the beginning.`,
+        retryable: false,
+      };
+    case 'load-failed':
+      return {
+        message: `Verse ${target.ayah} could not be loaded. The verses below did load, and are correct.`,
+        retryable: true,
+      };
+    case 'loaded':
+      /*
+        Loaded but never measured — the row exists in the data and never reached the screen. Honest
+        about the distinction: the verse is not missing, the reader simply could not move to it.
+      */
+      return scroll === 'unreachable'
+        ? {
+            message: `Verse ${target.ayah} loaded but could not be brought into view. Scroll down to reach it, or try again.`,
+            retryable: true,
+          }
+        : null;
+  }
 }
 
 /** Verses loaded after the first page, tagged with the request they belong to. */
@@ -242,7 +335,12 @@ export function ReaderScreen() {
   const focusRegistry = useMemo(() => createAyahFocusRegistry(), []);
 
   const surah = parseSurahParam(params.surah);
-  const highlightAyah = parseAyahParam(params.ayah);
+  /*
+    What the route *asked for*. Deliberately not named `highlightAyah` any more: that name described
+    a decoration, and treating it as one is why the loading path ignored it. It is a loading input,
+    and whether it was honoured is `page.target`, which is a different value with a different type.
+  */
+  const targetAyah = parseAyahParam(params.ayah);
   const translationId = translation?.id ?? null;
   const reciterId = preferences.reciterId;
 
@@ -258,10 +356,15 @@ export function ReaderScreen() {
    * and the Arabic renders with an honest note where the meaning would be — scripture does not
    * depend on a translation being available.
    */
+  /*
+    `targetAyah` is part of the key, because it is now an input to *what gets fetched* rather than
+    only to what gets highlighted. Without it, navigating from 2:12 to 2:255 inside the reader would
+    reuse the twenty-verse page cached for the first and reproduce the exact defect being corrected.
+  */
   const readerKey =
     translationStatus === 'resolving' || !preferencesReady || !translationReady
       ? null
-      : `quran.reader.${surah ?? 'none'}.${translationId ?? 'unresolved'}.${reciterId}`;
+      : `quran.reader.${surah ?? 'none'}.${targetAyah ?? 'top'}.${translationId ?? 'unresolved'}.${reciterId}`;
 
   /**
    * Pages fetched after the first, tagged with the request they belong to.
@@ -306,14 +409,35 @@ export function ReaderScreen() {
         return { kind: 'error', code: 'not-found' };
       }
       const number = surahNumber(surah);
+
       /**
-       * The summary is requested alongside the verses rather than after them. It is needed to render
-       * the header and to compute reading progress, and requesting it afterwards would serialise a
-       * cached read behind a network one.
+       * The summary comes first when — and only when — a verse was named.
+       *
+       * It is what makes `2:300` answerable before six page requests are issued: the surah's real
+       * length is the source's, and rejecting an impossible verse against it is cheaper and more
+       * honest than fetching a span and discovering the far end is empty. With no target the summary
+       * still travels in the `Promise.all` below, so the ordinary open pays nothing for this.
        */
-      const [summary, text, translated, recited] = await Promise.all([
-        quran.getSurah(number),
-        quran.listAyahs(number),
+      const summaryFirst = targetAyah === null ? null : await quran.getSurah(number);
+      if (summaryFirst !== null && !hasData(summaryFirst)) {
+        return summaryFirst;
+      }
+
+      const plan = planAyahTarget({
+        ayah: targetAyah,
+        ayahCount: summaryFirst === null ? 0 : summaryFirst.data.ayahCount,
+      });
+
+      /*
+        An ordinary open sends the ordinary request and gets the reader's ordinary page size. A
+        target sends the larger page size and reads forward until the verse is in hand.
+      */
+      const firstRequest =
+        plan.kind === 'span' ? targetPageRequest(null, plan.pageSize) : ({} as FaithPageRequest);
+
+      const [summary, firstText, firstTranslated, recited] = await Promise.all([
+        summaryFirst ?? quran.getSurah(number),
+        quran.listAyahs(number, firstRequest),
         /*
           With no resolved edition there is nothing to ask for, and asking with a guessed id is what
           produced a reader full of untranslated verses. The page still renders — scripture needs no
@@ -321,19 +445,80 @@ export function ReaderScreen() {
         */
         translationId === null
           ? Promise.resolve({ kind: 'empty' as const })
-          : quran.listTranslations(number, translationId),
+          : quran.listTranslations(number, translationId, firstRequest),
         quran.listRecitations(number, reciterId),
       ]);
 
       if (!hasData(summary)) {
         return summary;
       }
-      if (!hasData(text)) {
-        return text;
+
+      /*
+        The first page decides whether there is anything to read at all — an error or an empty there
+        is the surah failing to load, and is reported as such. Later pages are treated more gently
+        below: they can fail without costing the verses that did arrive.
+      */
+      if (!hasData(firstText)) {
+        return firstText;
       }
-      const translations = hasData(translated)
-        ? translated.data.items
-        : ([] as readonly AyahTranslation[]);
+
+      const textPages: (typeof firstText.data)[] = [firstText.data];
+      const translationPages: readonly AyahTranslation[][] = [
+        hasData(firstTranslated) ? [...firstTranslated.data.items] : [],
+      ];
+
+      /*
+        ── Reading forward to the target ─────────────────────────────────────
+        Only when a verse was named, and only until it arrives. Each request carries a cursor the
+        repository itself issued — never one computed here, which is what would make this correct
+        against one repository and silently wrong against another. See `ayah-target.ts`.
+      */
+      if (plan.kind === 'span') {
+        let cursor = firstText.data.nextCursor;
+        let reads = 0;
+        while (
+          cursor !== null &&
+          reads < plan.maxPages &&
+          !containsAyah(
+            textPages.flatMap((page) => page.items),
+            plan.ayah,
+          )
+        ) {
+          const request = targetPageRequest(cursor, plan.pageSize);
+          const [more, moreTranslated] = await Promise.all([
+            quran.listAyahs(number, request),
+            translationId === null
+              ? Promise.resolve({ kind: 'empty' as const })
+              : quran.listTranslations(number, translationId, request),
+          ]);
+          if (!hasData(more)) {
+            /*
+              A page short of the target. The verses already in hand are correct and are still shown;
+              `containsAyah` below will find the target absent and the load reports `load-failed`,
+              which is the honest description of what happened.
+            */
+            break;
+          }
+          textPages.push(more.data);
+          if (hasData(moreTranslated)) {
+            (translationPages as AyahTranslation[][]).push([...moreTranslated.data.items]);
+          }
+          cursor = more.data.nextCursor;
+          reads += 1;
+        }
+      }
+
+      const text = {
+        items: mergeAyahPages(textPages.map((page) => page.items)),
+        /*
+          The cursor of the **last page actually loaded**, so "Load next verses" continues from the
+          correct logical page rather than from page two of a reader already showing 300 verses.
+        */
+        nextCursor: textPages[textPages.length - 1]?.nextCursor ?? null,
+        total: textPages[0]?.total,
+      };
+
+      const translations = mergeAyahPages(translationPages) as readonly AyahTranslation[];
 
       /**
        * A translation that could not be fetched is reported, never silently dropped.
@@ -345,20 +530,40 @@ export function ReaderScreen() {
        * surah, which is a fact about the edition and not a failure.
        */
       const translationFailure =
-        hasData(translated) || translated.kind === 'empty' ? null : translationStateOf(translated);
+        hasData(firstTranslated) || firstTranslated.kind === 'empty'
+          ? null
+          : translationStateOf(firstTranslated);
+
+      /**
+       * ── The announcement is decided here, from the verses ───────────────────
+       * `containsAyah` searches what was actually assembled. This is the whole correction: the
+       * reader can no longer say it opened at 255 unless 255 is in the list it is about to render,
+       * however confidently the plan asked for it. A span that came back short — one page of the six
+       * failed — lands on `load-failed`, which shows the verses that did arrive and withholds the
+       * claim rather than making it about a verse that is not there.
+       */
+      const target: ReaderTarget =
+        plan.kind === 'none'
+          ? { kind: 'none' }
+          : plan.kind === 'out-of-range'
+            ? { kind: 'out-of-range', ayah: plan.ayah, ayahCount: plan.ayahCount }
+            : containsAyah(text.items, plan.ayah)
+              ? { kind: 'loaded', ayah: plan.ayah }
+              : { kind: 'load-failed', ayah: plan.ayah };
 
       return {
         kind: 'ok' as const,
         data: {
           surah: summary.data,
-          verses: joinVerses(text.data.items, translations),
-          nextCursor: text.data.nextCursor,
+          verses: joinVerses(text.items, translations),
+          nextCursor: text.nextCursor,
           translationFailure,
+          target,
           recitations: hasData(recited) ? recited.data.items : [],
-          ...(text.data.total === undefined ? {} : { total: text.data.total }),
+          ...(text.total === undefined ? {} : { total: text.total }),
         },
       };
-    }, [quran, surah, translationId, reciterId]),
+    }, [quran, surah, targetAyah, translationId, reciterId]),
   );
 
   const loaded = appended !== null && appended.key === readerKey ? appended : null;
@@ -455,6 +660,29 @@ export function ReaderScreen() {
   }, [audio, reciterId, surah]);
 
   /**
+   * Deletes this surah's downloaded audio, stopping playback first.
+   *
+   * ── Why the stop is not optional ────────────────────────────────────────────
+   * The player may have one of these very files open. Deleting the bytes out from under a live
+   * `AudioPlayer` is not a clean no-op: on Android the platform holds the descriptor and the next
+   * seek or the next source swap fails against a file that is no longer there, which surfaces as a
+   * playback error on a verse the user did nothing wrong to. `transport.stop()` releases the source
+   * before anything is removed, so the worst case is silence the user asked for.
+   *
+   * `stop` is called unconditionally rather than only when this surah is playing. The reader shows
+   * one surah, its transport only ever holds that surah's recitations, and a conditional here would
+   * be a second, weaker copy of a fact the screen already guarantees.
+   */
+  const removeDownload = useCallback(() => {
+    if (surah === null) {
+      return;
+    }
+    transport.stop();
+    void audio.removeDownload(reciterId, surah).then(() => setDownloadTick((tick) => tick + 1));
+    setDownloadTick((tick) => tick + 1);
+  }, [audio, reciterId, surah, transport]);
+
+  /**
    * Where each verse sits inside the scroll content, and the handle that moves it.
    *
    * A ref rather than state: these offsets are written by every verse's `onLayout` and read only
@@ -465,9 +693,134 @@ export function ReaderScreen() {
   const scrollRef = useRef<ScrollView | null>(null);
   const followedAyah = useRef<number | null>(null);
 
-  const rememberAyahOffset = useCallback((ayah: number, y: number) => {
-    ayahOffsets.current.set(ayah, y);
-  }, []);
+  /** The page currently loaded, where there is one. The sheet's actions need it by identity. */
+  const page = ayat.status === 'settled' && hasData(ayat.result) ? ayat.result.data : null;
+  const openedAyah = openedAyahOf(page);
+
+  /**
+   * How far the deep-linked verse has got: loaded, on screen, or given up on.
+   *
+   * ── Why "rendered" and "scrolled" are separate ──────────────────────────────
+   * Because a verse can be in the list and still be nine hundred points below the fold, which is
+   * indistinguishable from not having opened at it. The reader has to wait for the verse's own
+   * `onLayout` before it can scroll — the offset does not exist until the row has been measured —
+   * and that measurement lands one or more commits after the data does.
+   *
+   * `pending` is therefore a real state and not a formality, and `unreachable` is what it becomes if
+   * the measurement never arrives. Announcing at `pending` would be the original defect with extra
+   * steps.
+   */
+  const [targetScroll, setTargetScroll] = useState<'pending' | 'scrolled' | 'unreachable'>(
+    'pending',
+  );
+
+  /**
+   * Bumped when the target verse reports its offset, and only then.
+   *
+   * The offsets themselves stay in a ref for the reason given above — re-rendering the reader on
+   * every verse's layout pass would be hundreds of renders for a value nothing displays. This is one
+   * render, for one verse, once, and it is what turns "the row has been measured" into something an
+   * effect can depend on.
+   */
+  const [targetLayoutTick, setTargetLayoutTick] = useState(0);
+
+  const rememberAyahOffset = useCallback(
+    (ayah: number, y: number) => {
+      const previous = ayahOffsets.current.get(ayah);
+      ayahOffsets.current.set(ayah, y);
+      /*
+        ── Every change, not only the first ──────────────────────────────────
+        A verse deep in a long surah is laid out more than once: it reports a provisional `y` while
+        the verses above it are still being measured, and a corrected one afterwards. Bumping only on
+        the first record meant the reader scrolled to the provisional position — for Al-Baqarah 255
+        that was near the top of a 286-verse column, so the announcement said "opened at verse 255"
+        while the user was looking at verse 1. Observed on a release build; invisible in Jest, where
+        `onLayout` never fires at all.
+
+        Still bounded to the target verse and to a *changed* value, so this is a handful of renders
+        during the opening layout rather than one per verse per pass.
+      */
+      if (ayah === openedAyah && previous !== y) {
+        setTargetLayoutTick((tick) => tick + 1);
+      }
+    },
+    [openedAyah],
+  );
+
+  /* A new load is a new target. Reset before any of the effects below can read a stale verdict. */
+  const scrolledToTarget = useRef<number | null>(null);
+  /** The target's last reported offset, so "it stopped moving" is something the effect can see. */
+  const settledTargetOffset = useRef<number | null>(null);
+  useEffect(() => {
+    if (openedAyah === null || scrolledToTarget.current === openedAyah) {
+      return;
+    }
+    settledTargetOffset.current = null;
+    setTargetScroll('pending');
+  }, [openedAyah]);
+
+  /**
+   * Scrolls to the deep-linked verse once it has been measured.
+   *
+   * Runs on every commit where the target's offset may have appeared, and does its work exactly
+   * once per target — `scrolledToTarget` is the guard, so a bookmark toggle or an appended page
+   * cannot drag the reader back to the verse it arrived at ten minutes ago.
+   *
+   * Verse one is deliberately **not** exempted. `reader/2?ayah=1` should sit at the top, and it
+   * does: the offset for the first verse is at or near zero, so the scroll is a no-op that still
+   * ends in `scrolled` and therefore still permits the announcement.
+   */
+  useEffect(() => {
+    if (openedAyah === null || scrolledToTarget.current === openedAyah) {
+      return;
+    }
+    const offset = ayahOffsets.current.get(openedAyah);
+    if (offset === undefined) {
+      return;
+    }
+    /*
+      ── Re-scrolled while the offset is still settling ────────────────────
+      Latching on the first offset is what left a deep-linked reader sitting at verse 1 with the
+      announcement already made: verse 255 reports a provisional position long before the 286-verse
+      column has finished measuring. So the target is followed until its offset stops moving, and
+      only then treated as reached. `settledTargetOffset` is what makes "stopped moving" observable —
+      two consecutive layout passes agreeing.
+
+      The 3-second timer below is the other end of this: if the offset never settles, the reader stops
+      claiming to have opened at the verse rather than scrolling forever.
+    */
+    const settled = settledTargetOffset.current === offset;
+    settledTargetOffset.current = offset;
+    if (!settled) {
+      scrollRef.current?.scrollTo({ y: Math.max(offset - 12, 0), animated: false });
+      return;
+    }
+    scrolledToTarget.current = openedAyah;
+    scrollRef.current?.scrollTo({ y: Math.max(offset - 12, 0), animated: false });
+    /*
+      `followedAyah` is claimed at the same moment, so the *player-follow* effect below treats this
+      verse as already visited. Without it, the first transport movement after a deep link would be
+      read as an arrival and swallowed, and the reader would not follow the recitation until the
+      verse after that.
+    */
+    followedAyah.current = openedAyah;
+    setTargetScroll('scrolled');
+  }, [openedAyah, targetLayoutTick]);
+
+  /**
+   * The verse loaded but was never measured, so the reader cannot claim to have opened at it.
+   *
+   * Reachable when a row fails to lay out — a font that never resolved, a parent with no height. The
+   * timer is generous because the alternative failure is worse: declaring a verse unreachable on a
+   * slow device that was about to render it fine would replace a working deep link with an error.
+   */
+  useEffect(() => {
+    if (openedAyah === null || targetScroll !== 'pending') {
+      return;
+    }
+    const timer = setTimeout(() => setTargetScroll('unreachable'), TARGET_SCROLL_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [openedAyah, targetScroll]);
 
   /**
    * Brings the verse the player is pointed at into view.
@@ -529,16 +882,20 @@ export function ReaderScreen() {
   const deepLinkedAyah = useRef<number | null>(null);
   const focusOn = transport.focusOn;
   useEffect(() => {
-    if (highlightAyah === null || deepLinkedAyah.current === highlightAyah) {
+    /*
+      Keyed on the **confirmed** verse. Pointing the transport at a verse the load never produced
+      would put a number in the player that has no row on screen and no audio behind it.
+    */
+    if (openedAyah === null || deepLinkedAyah.current === openedAyah) {
       return;
     }
-    const recitation = recitations.find((entry) => entry.ayah === highlightAyah);
+    const recitation = recitations.find((entry) => entry.ayah === openedAyah);
     if (recitation === undefined) {
       return;
     }
-    deepLinkedAyah.current = highlightAyah;
+    deepLinkedAyah.current = openedAyah;
     focusOn(recitation);
-  }, [highlightAyah, recitations, focusOn]);
+  }, [openedAyah, recitations, focusOn]);
 
   /**
    * The furthest verse the reading log has recorded in this surah, or 0.
@@ -582,9 +939,6 @@ export function ReaderScreen() {
     },
     [save, record, readingLog],
   );
-
-  /** The page currently loaded, where there is one. The sheet's actions need it by identity. */
-  const page = ayat.status === 'settled' && hasData(ayat.result) ? ayat.result.data : null;
 
   /**
    * Closing the sheet returns the screen reader to the verse it was opened from.
@@ -661,12 +1015,13 @@ export function ReaderScreen() {
           <ReaderPlayer
             transport={transport}
             surahName={surahNameOf(ayat)}
-            ayah={openingAyahOf(ayat, highlightAyah)}
+            ayah={openingAyahOf(ayat, openedAyah)}
             reciterName={reciterName}
             totalAyat={ayahCountOf(ayat)}
             download={downloadState}
             onDownloadSurah={downloadSurah}
             onCancelDownload={cancelDownload}
+            onRemoveDownload={removeDownload}
             onOpenReciters={() => router.push(faithRoutes.reciters)}
           />
         ) : undefined
@@ -698,7 +1053,20 @@ export function ReaderScreen() {
               appended={loaded}
               loadingMore={loadingMore}
               moreFailed={moreFailed}
-              highlightAyah={highlightAyah}
+              /*
+                ── What "opened at" is allowed to mean ───────────────────────
+                The verse is **in the rendered list**: `target.kind === 'loaded'` is set by searching
+                the assembled verses, never by trusting the arithmetic that requested them. That is
+                the claim the announcement makes, and it is now true whenever it is made.
+
+                Withdrawn in one case: `unreachable`, where the verse loaded but its row was never
+                measured, so it is on the screen only in the sense that it is somewhere below it.
+                Saying "opened at verse 255" there would be the original defect in a subtler form.
+                The banner beside it explains that case rather than leaving the silence unexplained.
+              */
+              openedAyah={targetScroll === 'unreachable' ? null : openedAyah}
+              targetNotice={targetNoticeFor(loadedPage.target, targetScroll)}
+              onRetryTarget={ayat.reload}
               transport={transport}
               selectedAyah={selected?.text.ayah ?? null}
               bookmarkedIds={bookmarks.ids}
@@ -793,21 +1161,27 @@ export function ReaderScreen() {
  *                paused state as well as the idle one, so a pause leaves the verse clearly marked
  *                rather than unmarked.
  *
- * `highlightAyah` is folded into `focused` rather than drawing a fourth thing. A deep link points
- * the player at its verse the moment the page loads, so "where the route opened" and "what the
- * player is aimed at" are already the same verse; the marginal rule that used to be drawn for it
- * separately was the second vertical mark in the column the correction removes.
+ * `openedAyah` is folded into `focused` rather than drawing a fourth thing. A deep link points the
+ * player at its verse the moment the page loads, so "where the route opened" and "what the player is
+ * aimed at" are already the same verse; the marginal rule that used to be drawn for it separately was
+ * the second vertical mark in the column the correction removes.
+ *
+ * ── It takes the opened verse, not the requested one ────────────────────────
+ * The parameter used to be the raw `?ayah=`, which meant `reader/2?ayah=255` drew the focused rule on
+ * verse 255 whether or not verse 255 had been loaded — so on a reader showing verses 1–20 it drew
+ * nothing, silently, and the screen looked identical to one where the deep link had worked.
  */
 export function verseState({
   ayah,
   transport,
   selectedAyah,
-  highlightAyah,
+  openedAyah,
 }: {
   readonly ayah: number;
   readonly transport: RecitationTransport;
   readonly selectedAyah: number | null;
-  readonly highlightAyah: number | null;
+  /** The verse the reader has confirmed it opened at — never the raw route parameter. */
+  readonly openedAyah: number | null;
 }): AyahBlockState {
   if (transport.playing && transport.current?.ayah === ayah) {
     return 'active';
@@ -815,7 +1189,7 @@ export function verseState({
   if (selectedAyah === ayah) {
     return 'selected';
   }
-  if (transport.focus?.ayah === ayah || highlightAyah === ayah) {
+  if (transport.focus?.ayah === ayah || openedAyah === ayah) {
     return 'focused';
   }
   return 'idle';
@@ -825,7 +1199,9 @@ export function verseState({
 function ReaderBody({
   page,
   appended,
-  highlightAyah,
+  openedAyah,
+  targetNotice,
+  onRetryTarget,
   loadingMore,
   moreFailed,
   transport,
@@ -844,7 +1220,11 @@ function ReaderBody({
 }: {
   readonly page: ReaderPage;
   readonly appended: AppendedPages | null;
-  readonly highlightAyah: number | null;
+  /** The verse the reader confirmed it opened at and scrolled to. `null` in every other case. */
+  readonly openedAyah: number | null;
+  /** What to say when a requested verse could not be opened at. `null` when nothing went wrong. */
+  readonly targetNotice: { readonly message: string; readonly retryable: boolean } | null;
+  readonly onRetryTarget: () => void;
   readonly loadingMore: boolean;
   readonly moreFailed: boolean;
   readonly transport: RecitationTransport;
@@ -891,11 +1271,24 @@ function ReaderBody({
       <ReaderHeader
         surah={page.surah}
         shown={items.length}
-        highlightAyah={highlightAyah}
+        openedAyah={openedAyah}
         onOpenPicker={hasCatalogue ? onOpenPicker : null}
         onOpenInfo={onOpenInfo}
         onOpenSettings={onOpenSettings}
       />
+
+      {/*
+        The one place the reader says a requested verse did not open. Above the scripture, because it
+        changes what the column below is: not the verses you asked for, but the surah from its start.
+      */}
+      {targetNotice === null ? null : (
+        <ModuleStatusBanner
+          tone="warning"
+          message={targetNotice.message}
+          {...(targetNotice.retryable ? { actionLabel: 'Try again', onAction: onRetryTarget } : {})}
+          testID="faith-reader-target-unavailable"
+        />
+      )}
 
       <UnverifiedSourceNotice
         source={items[0]?.text.source ?? { name: 'Unknown', verified: false }}
@@ -936,7 +1329,7 @@ function ReaderBody({
               ayah: item.text.ayah,
               transport,
               selectedAyah,
-              highlightAyah,
+              openedAyah,
             })}
             bookmarked={bookmarkedIds.has(`${item.text.surah}:${item.text.ayah}`)}
             read={furthestRead >= item.text.ayah}
