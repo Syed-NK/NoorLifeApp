@@ -8,6 +8,7 @@ import type {
   NormalizeReason,
   OperationalLogRecord,
   QuranContentDependencies,
+  UpstreamMalformedReason,
   UpstreamOutcomeKind,
 } from './ports.ts';
 
@@ -96,6 +97,7 @@ type LogDraft = {
   auth_reason: AuthFailureReason | null;
   operation: QuranOperation | null;
   upstream_outcome: UpstreamOutcomeKind | null;
+  upstream_reason: UpstreamMalformedReason | null;
   upstream_attempts: number;
   token_renewed: boolean;
   catalogue_fetched: boolean;
@@ -126,6 +128,7 @@ export function createQuranContentHandler(
       auth_reason: null,
       operation: null,
       upstream_outcome: null,
+      upstream_reason: null,
       upstream_attempts: 0,
       token_renewed: false,
       catalogue_fetched: false,
@@ -147,6 +150,7 @@ export function createQuranContentHandler(
         auth_reason: draft.auth_reason,
         operation: draft.operation,
         upstream_outcome: draft.upstream_outcome,
+        upstream_reason: draft.upstream_reason,
         upstream_attempts: draft.upstream_attempts,
         token_renewed: draft.token_renewed,
         catalogue_fetched: draft.catalogue_fetched,
@@ -357,12 +361,34 @@ export function createQuranContentHandler(
           return fail('timeout');
 
         case 'transient':
+          /**
+           * The vendor failed. A `502`, and the distinction from `malformed` below is recorded in
+           * `upstream_outcome` for whoever investigates rather than told to the client.
+           */
+          return fail('upstream_unavailable');
+
         case 'malformed':
           /**
-           * The vendor failed, or answered something this contract does not recognise. Both are
-           * `502`: the distinction between them is recorded in `upstream_outcome` for whoever
-           * investigates, and is not the client's business.
+           * The vendor answered something this contract does not recognise — and **which** something
+           * is recorded here, in the log alone.
+           *
+           * `malformed` stood for five unrelated situations with five different remedies, which is
+           * why a snapshot failing on every attempt was undiagnosable: a contract disagreement, an
+           * empty body, either of the two size bounds and an unparseable body all logged the same
+           * word. The reason is a closed enum of branch names — see `UpstreamMalformedReason` — so it
+           * narrows the investigation without carrying a status code, a byte count or a byte of what
+           * was rejected.
+           *
+           * The response is unchanged and stays deliberately generic: the same
+           * `502 upstream_unavailable` body every other vendor failure produces. Which branch refused
+           * is an operational fact, not something a client is told.
+           *
+           * `streamed_too_large` is the member that carried this route to its own bound: both approved
+           * snapshots reported it against the 1 MiB limit, and both fit inside the 8 MiB one they now
+           * have. It stays exactly as it is — a snapshot past *that* bound reports the same word, and
+           * the client still sees the same generic refusal either way.
            */
+          draft.upstream_reason = outcome.reason;
           return fail('upstream_unavailable');
       }
     } catch {

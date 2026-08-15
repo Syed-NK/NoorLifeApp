@@ -254,6 +254,55 @@ exemption in §8.2 stays unmet.
 No endpoint has been guessed. The two paths above are quoted from the vendor's versioned
 documentation.
 
+### 9.4 Live verification — recorded 2026-08-16
+
+Authenticated runs against the deployed `quran-content` function, project `dxchgpshydsgfvyydyeb`. No
+secret, credential, header, URL, cursor, token, verse, translation text or audio address was printed
+by any run, and none is recorded here.
+
+| Check | Result |
+|---|---|
+| Content Sync bootstrap | **HTTP 200**, final sync token present |
+| Bootstrap mutations returned | `resource_group=translations`, `mutation_type=RESOURCE_CREATE` — **and nothing for `recitations`** |
+| `recitations` snapshot | **HTTP 200**, `resource_group=recitations`, `resource_id=3`, **6,236 rows** |
+| `translations` snapshot | **HTTP 200**, `resource_group=translations`, `resource_id=85`, **6,236 rows** |
+| Client attempting to override the approved scope | **HTTP 400 `invalid_request`** |
+| Request for an unapproved snapshot resource | **HTTP 400 `invalid_request`** |
+
+6,236 is the complete ayah count of the Qur'an, so **both approved snapshots returned all 6,236 ayat**
+and each row carried ayah identity through NoorLife's normaliser unchanged.
+
+**What this settles.** The §9.3 identifier question is answered for the *snapshot* route:
+`recitations:3` addresses the ayah-recitation resource — the same `id 3 = Abdur-Rahman as-Sudais`
+that `/recitations/{id}/by_chapter/{n}` takes — and it returns a complete, ayah-identified body.
+
+**What this does not settle, stated plainly.** The bootstrap returned **only** the translation
+`RESOURCE_CREATE`. **No recitation mutation was observed on the sync feed**, and none may be
+described as observed. NoorLife's side is proven correct in both directions — the outbound canonical
+filter carries `recitations:3;translations:85` onto the wire, and the normaliser keeps both documented
+`RESOURCE_CREATE` mutations when both are present — so the absence is vendor-side. It is either a
+resource Content Sync does not yet emit, or one that arrives on a later incremental run. **This is an
+open question for Quran Foundation.**
+
+Because the recitation resource has not been seen to move through the sync feed, the extended-retention
+exemption in §8.2 **stays unmet**. A complete snapshot is not the same fact as a working change feed,
+and retention beyond one week depends on the second.
+
+### 9.5 The read bounds this required
+
+Both snapshots exceed the function's original 1 MiB response bound. Measured by a temporary,
+since-removed diagnostic and then fixed with a route-specific limit:
+
+| Scope | Bound |
+|---|---|
+| Every ordinary Content API operation, and `/resources/sync` | **1 MiB** (`MAX_RESPONSE_BYTES`, unchanged) |
+| Approved snapshots only (`/resources/snapshots/{group}/{id}`) | **8 MiB** (`MAX_SNAPSHOT_RESPONSE_BYTES`) |
+
+8 MiB is the upper edge of the larger measured band and carries no added margin. The only surviving
+diagnostic is `upstream_reason`, a closed enum of branch names in the operational log — it can carry
+no byte count, status code, resource id, URL, token or payload fragment. No size-band field, no 32 MiB
+measurement path and no exact-size logging remains anywhere in the function.
+
 ---
 
 ## 4. Required attribution

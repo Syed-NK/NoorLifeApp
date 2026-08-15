@@ -171,7 +171,12 @@ Deno.test('a vendor timeout is a 504 and a vendor fault is a 502', async () => {
   const transient = handlerFor({ kind: 'transient', attempts: 1, tokenRenewed: false });
   assertEquals((await transient.handle(jsonRequest(LIST))).status, 502);
 
-  const malformed = handlerFor({ kind: 'malformed', attempts: 1, tokenRenewed: false });
+  const malformed = handlerFor({
+    kind: 'malformed',
+    reason: 'contract_status',
+    attempts: 1,
+    tokenRenewed: false,
+  });
   assertEquals((await malformed.handle(jsonRequest(LIST))).status, 502);
 });
 
@@ -179,10 +184,91 @@ Deno.test('the two 502 causes stay distinguishable in the log', async () => {
   const transient = handlerFor({ kind: 'transient', attempts: 1, tokenRenewed: false });
   await transient.handle(jsonRequest(LIST));
   assertEquals(transient.logger.entries[0]?.upstream_outcome, 'transient');
+  assertEquals(
+    transient.logger.entries[0]?.upstream_reason,
+    null,
+    'a vendor outage has no boundary branch to name',
+  );
 
-  const malformed = handlerFor({ kind: 'malformed', attempts: 1, tokenRenewed: false });
+  const malformed = handlerFor({
+    kind: 'malformed',
+    reason: 'contract_status',
+    attempts: 1,
+    tokenRenewed: false,
+  });
   await malformed.handle(jsonRequest(LIST));
   assertEquals(malformed.logger.entries[0]?.upstream_outcome, 'malformed');
+});
+
+Deno.test('every malformed branch reaches the log, and none of them reaches the client', async () => {
+  /**
+   * The diagnostic that `get_content_snapshot` needed.
+   *
+   * `malformed` stood for five unrelated situations — a contract status, an empty body, either of the
+   * two size bounds, and an unparseable body — with five different remedies and one log line between
+   * them. Each is asserted twice here: that the branch name reaches the operational record, and that
+   * the response it produces is byte-identical to every other one, so the diagnostic exists in the log
+   * and nowhere a caller can read it.
+   */
+  const reasons = [
+    'contract_status',
+    'empty_body',
+    'declared_too_large',
+    'streamed_too_large',
+    'invalid_json',
+  ] as const;
+
+  let firstBody: string | null = null;
+  for (const reason of reasons) {
+    const { handle, logger } = handlerFor({
+      kind: 'malformed',
+      reason,
+      attempts: 1,
+      tokenRenewed: false,
+    });
+    const response = await handle(jsonRequest(LIST));
+    const text = await response.text();
+
+    assertEquals(response.status, 502, reason);
+    assertEquals(logger.entries[0]?.upstream_outcome, 'malformed', reason);
+    assertEquals(logger.entries[0]?.upstream_reason, reason, `${reason} reaches the log`);
+    assertEquals(text.includes(reason), false, `${reason} does not reach the client`);
+
+    firstBody ??= text;
+    assertEquals(text, firstBody, 'every branch produces the identical generic refusal');
+  }
+});
+
+Deno.test('an oversized snapshot is a generic 502 that names only its branch', async () => {
+  /**
+   * The route with its own bound, checked at the handler.
+   *
+   * A snapshot past **8 MiB** reports the same `streamed_too_large` an ordinary route reports past
+   * 1 MiB, and the caller is told neither which bound was passed nor by how much — the response is the
+   * same generic refusal every other vendor failure produces. The bound is an operational fact; the
+   * client's answer is that Qur'an content is unavailable.
+   */
+  const { handle, logger } = handlerFor({
+    kind: 'malformed',
+    reason: 'streamed_too_large',
+    attempts: 1,
+    tokenRenewed: false,
+  });
+  const response = await handle(
+    jsonRequest({
+      contract_version: 1,
+      operation: 'get_content_snapshot',
+      resource_group: 'recitations',
+    }),
+  );
+  const text = await response.text();
+
+  assertEquals(response.status, 502);
+  assertEquals(logger.entries[0]?.upstream_reason, 'streamed_too_large');
+  assertEquals(logger.entries[0]?.operation, 'get_content_snapshot');
+  for (const leak of ['too_large', 'mib', 'bytes', '8388608', '1048576', 'snapshot']) {
+    assertEquals(text.includes(leak), false, `${leak} does not reach the client`);
+  }
 });
 
 Deno.test('the upstream budget aborts the connection and wins the race', async () => {
@@ -338,6 +424,7 @@ Deno.test('exactly one log line is emitted per request, and it carries the opera
       'token_renewed',
       'upstream_attempts',
       'upstream_outcome',
+      'upstream_reason',
     ],
     'the record has no field that could hold a surah, a verse, an edition or a subject',
   );

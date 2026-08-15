@@ -1,6 +1,7 @@
 import { assert, assertEquals } from './assert.ts';
 import {
   createQuranFoundationClient,
+  MAX_RESPONSE_BYTES,
   MAX_RETRY_AFTER_SECONDS,
   QF_API_ORIGIN,
   QF_CONTENT_PREFIX,
@@ -265,7 +266,9 @@ Deno.test('a body that is not JSON is malformed rather than passed through', asy
       headers: { 'content-type': 'text/html' },
     })
   );
-  assertEquals((await clientWith(call).read(CHAPTERS, neverAborted())).kind, 'malformed');
+  const result = await clientWith(call).read(CHAPTERS, neverAborted());
+  assert(result.kind === 'malformed', 'malformed');
+  assertEquals(result.reason, 'invalid_json');
 });
 
 Deno.test('an over-large body is refused without being read into memory', async () => {
@@ -275,7 +278,115 @@ Deno.test('an over-large body is refused without being read into memory', async 
       headers: { 'content-type': 'application/json', 'content-length': '99999999' },
     })
   );
-  assertEquals((await clientWith(call).read(CHAPTERS, neverAborted())).kind, 'malformed');
+  const result = await clientWith(call).read(CHAPTERS, neverAborted());
+  assert(result.kind === 'malformed', 'malformed');
+  assertEquals(result.reason, 'declared_too_large', 'refused on the declared length, unread');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The five malformed branches, told apart
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Why this section exists, and why it is not a bigger `MAX_RESPONSE_BYTES`.
+ *
+ * `get_content_snapshot` answered `502 upstream_unavailable` on every attempt with
+ * `upstream_outcome: malformed`, and that one word covered five unrelated situations: a status this
+ * contract has no representation for, an empty body, a body the vendor *declared* too large, a body
+ * that ran past the bound while streaming, and bytes that would not parse. Two of those mean the cap
+ * is the limit and three mean it is not — so raising the cap first would have been a guess that could
+ * only hide the answer behind a larger buffer.
+ *
+ * Each case below pins one branch. Together they are what makes a single authenticated run against
+ * the deployed function able to say which of the five is actually happening.
+ */
+
+Deno.test('a body streamed past the bound is told apart from one declared past it', async () => {
+  /*
+    No `Content-Length`, so the declared check cannot fire and the bound is reached mid-stream — which
+    is what a chunked whole-resource snapshot looks like. The distinction is the point: `declared` and
+    `streamed` are the same cap and different vendor behaviour.
+  */
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const chunk = new Uint8Array(64 * 1024).fill(0x20);
+      for (let sent = 0; sent <= MAX_RESPONSE_BYTES; sent += chunk.byteLength) {
+        controller.enqueue(chunk);
+      }
+      controller.close();
+    },
+  });
+  const call = recordingFetch((request) =>
+    isTokenCall(request.url)
+      ? tokenResponse('stream')
+      : new Response(stream, { status: 200, headers: { 'content-type': 'application/json' } })
+  );
+
+  const result = await clientWith(call).read(CHAPTERS, neverAborted());
+  assert(result.kind === 'malformed', 'malformed');
+  assertEquals(result.reason, 'streamed_too_large');
+});
+
+Deno.test('a body exactly at the bound is read, not refused', async () => {
+  /*
+    The other side of the same line. A cap that refused the byte it was set to would make every
+    measurement taken through it one byte pessimistic, and `streamed_too_large` would then be a claim
+    about the cap rather than about the snapshot.
+  */
+  const padding = 'x'.repeat(MAX_RESPONSE_BYTES - '{"chapters":[],"pad":""}'.length);
+  const body = JSON.stringify({ chapters: [], pad: padding });
+  assertEquals(
+    new TextEncoder().encode(body).byteLength,
+    MAX_RESPONSE_BYTES,
+    'exactly at the bound',
+  );
+
+  const call = recordingFetch((request) =>
+    isTokenCall(request.url)
+      ? tokenResponse('edge')
+      : new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })
+  );
+  assertEquals((await clientWith(call).read(CHAPTERS, neverAborted())).kind, 'ok');
+});
+
+Deno.test('an empty 200 is its own branch, not a parse failure', async () => {
+  for (const empty of [null, '']) {
+    const call = recordingFetch((request) =>
+      isTokenCall(request.url)
+        ? tokenResponse('empty')
+        : new Response(empty, { status: 200, headers: { 'content-type': 'application/json' } })
+    );
+    const result = await clientWith(call).read(CHAPTERS, neverAborted());
+    assert(result.kind === 'malformed', `malformed for ${JSON.stringify(empty)}`);
+    assertEquals(result.reason, 'empty_body', JSON.stringify(empty));
+  }
+});
+
+Deno.test('a contract status names the branch and never the status itself', async () => {
+  for (const status of [400, 422, 418]) {
+    const call = recordingFetch((request) =>
+      isTokenCall(request.url)
+        ? tokenResponse('contract')
+        : jsonResponse({ error: 'must not be forwarded' }, status)
+    );
+    const result = await clientWith(call).read(CHAPTERS, neverAborted());
+    assert(result.kind === 'malformed', `malformed for ${status}`);
+    assertEquals(result.reason, 'contract_status', String(status));
+    /*
+      The vendor's own status is a fact about its response, and none of those cross this boundary.
+      There is no field on the outcome that could hold one — this asserts the whole value, serialised.
+    */
+    assertEquals(
+      JSON.stringify(result).includes(String(status)),
+      false,
+      'the upstream status does not travel',
+    );
+    assertEquals(
+      JSON.stringify(result).includes('must not be forwarded'),
+      false,
+      'and neither does the body',
+    );
+  }
 });
 
 Deno.test('an aborted request is a timeout, and a dropped connection is transient', async () => {

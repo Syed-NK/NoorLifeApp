@@ -737,6 +737,138 @@ Deno.test('the one-week ceiling is enforced at the point a response declares its
 // Logging
 // ─────────────────────────────────────────────────────────────────────────────
 
+Deno.test('the bounded reader has exactly one over-size path, and it stops there', () => {
+  /**
+   * The property a behavioural test cannot pin: not that the reader *does* stop at its bound, which
+   * `snapshot-limit_test.ts` proves from the producer's side, but that there exists **no branch** in
+   * which it carries on. The temporary measurement pass was exactly such a branch, and that is the
+   * shape of thing reintroduced by somebody who wants one more number.
+   *
+   * Four statements together: the bound arrives as a parameter rather than as a constant the reader
+   * chooses, bytes are retained in exactly one place, the over-size branch cancels and returns, and no
+   * branch in the loop can continue past the bound.
+   */
+  const client = PRODUCTION.find((file) => file.name === CONTENT_CLIENT);
+  assert(client !== undefined, 'the content client is in the scan');
+  const reader =
+    /async function readBoundedBody\(response: Response, limitBytes: number\)[\s\S]*?\n}/
+      .exec(client.code)?.[0] ?? '';
+  assert(reader.length > 0, 'the bounded reader was found, and takes its bound as a parameter');
+
+  assertEquals(
+    [...reader.matchAll(/chunks\s*\.\s*push\s*\(/g)].length,
+    1,
+    'bytes are retained in exactly one place',
+  );
+  assertEquals(
+    [...reader.matchAll(/total > limitBytes/g)].length,
+    1,
+    'the bound is compared in exactly one place',
+  );
+  assertEquals(
+    /if \(total > limitBytes\) \{[\s\S]{0,900}?await reader\.cancel\(\);\s*\n\s*return \{ kind: 'refused', reason: 'streamed_too_large' \};/
+      .test(reader),
+    true,
+    'and passing it cancels the stream and returns immediately',
+  );
+  assertEquals(
+    /\bcontinue;/.test(reader),
+    false,
+    'there is no branch that keeps reading past the bound',
+  );
+
+  /* The reader names no size constant of its own: the number is whatever the route supplied. */
+  assertEquals(
+    /MAX_RESPONSE_BYTES|MAX_SNAPSHOT_RESPONSE_BYTES/.test(reader),
+    false,
+    'the reader cannot pick its own bound',
+  );
+});
+
+Deno.test('the enlarged snapshot bound is reachable from exactly one route definition', () => {
+  /**
+   * The containment property, read structurally rather than behaviourally. `maxResponseBytes` is named
+   * three times in the whole function and nowhere else in it — the optional field on `Route`, the
+   * single route entry that sets it, and the call site that reads it off the route — so a second
+   * operation acquiring the larger bound is a visible diff.
+   */
+  const client = PRODUCTION.find((file) => file.name === CONTENT_CLIENT);
+  assert(client !== undefined, 'the content client is in the scan');
+  assertEquals(
+    [...offenders(/maxResponseBytes|MAX_SNAPSHOT_RESPONSE_BYTES/, PRODUCTION)].sort(),
+    [CONTENT_CLIENT],
+    'no module outside the client knows the snapshot bound exists',
+  );
+  assertEquals(
+    [...client.code.matchAll(/maxResponseBytes/g)].length,
+    3,
+    'declared on the route type, set once, read once',
+  );
+
+  /** Both limits are literals a reviewer can read, and neither is read from the environment. */
+  assertEquals(
+    /MAX_RESPONSE_BYTES = 1_048_576/.test(client.code),
+    true,
+    'the ordinary bound is a fixed 1 MiB literal',
+  );
+  assertEquals(
+    /MAX_SNAPSHOT_RESPONSE_BYTES = 8_388_608/.test(client.code),
+    true,
+    'the snapshot bound is a fixed 8 MiB literal',
+  );
+  assertEquals(
+    /(MAX_RESPONSE_BYTES|MAX_SNAPSHOT_RESPONSE_BYTES)[^\n]*Deno\.env/.test(client.code),
+    false,
+    'neither bound is configurable',
+  );
+
+  const table =
+    /export function routeFor\(query: QuranQuery\): Route \{([\s\S]*?)\n\}/.exec(client.code)
+      ?.[1] ??
+      '';
+  assert(table.length > 0, 'the route table was found');
+  assertEquals(
+    [...table.matchAll(/maxResponseBytes:/g)].length,
+    1,
+    'exactly one route in the table names a bound of its own',
+  );
+  /*
+    And it is the snapshot route. Located by the path that precedes it in the same entry, so the
+    assertion fails if the allowance is ever moved to a neighbouring case.
+  */
+  assertEquals(
+    /path: `\/resources\/snapshots\/\$\{query\.resourceGroup\}[^`]*`,\s*\n\s*query: \{\},[\s\S]{0,900}?maxResponseBytes: MAX_SNAPSHOT_RESPONSE_BYTES/
+      .test(table),
+    true,
+    'and the route that carries it is the snapshot route',
+  );
+});
+
+Deno.test('no trace of the temporary size measurement survives anywhere', () => {
+  /**
+   * The diagnostic was deliberately temporary: it existed to choose a number, the number is chosen, and
+   * leaving the apparatus behind would leave a code path that reads a response it has already refused.
+   *
+   * Scanned across production **and** tests, because a band literal left in a fixture or an assertion is
+   * how a removed field quietly comes back. `SCANNABLE` excludes only this file, which necessarily
+   * names everything it forbids.
+   */
+  for (
+    const [symbol, pattern] of [
+      ['MAX_MEASURED_BYTES', /MAX_MEASURED_BYTES/],
+      ['measureOversizeBand', /measureOversizeBand/],
+      ['SnapshotSizeBand', /SnapshotSizeBand/],
+      ['sizeBandFor', /sizeBandFor/],
+      ['sizeBand', /\bsizeBand\b/],
+      ['upstream_size_band', /upstream_size_band/],
+      ['a band literal', /over_[0-9]+_(to_[0-9]+_)?mib/],
+      ['the 32 MiB ceiling', /33_554_432|33554432/],
+    ] as const
+  ) {
+    assertEquals(offenders(pattern, SCANNABLE), [], `${symbol} is gone from every file`);
+  }
+});
+
 Deno.test('there is exactly one console call in the production source', () => {
   const withConsole = PRODUCTION.filter((file) => /console\s*\.\s*[a-z]+\s*\(/.test(file.code));
   assertEquals(withConsole.map((file) => file.name), ['production.ts'], 'only the logger logs');

@@ -28,6 +28,28 @@ translation defect) is implemented and verified. Nothing else had been built whe
 > The one Edge change genuinely still outstanding is the **unbuilt** `bismillah_pre` field in §6 —
 > future work, not a pending deployment.
 
+> ### Content Sync — live verification passed, recorded 2026-08-16
+>
+> **`quran-content` Content Sync is verified against the live API.** Bootstrap returns HTTP 200 with a
+> final sync token; both approved snapshots return HTTP 200 with **all 6,236 ayat** —
+> `recitations` **resource ID 3** (Abdur-Rahman as-Sudais) and `translations` **resource ID 85**. Both
+> rejection gates hold: a client attempting to override the approved scope and a request for an
+> unapproved snapshot resource each answer `400 invalid_request`. No secret, credential, URL, token or
+> content was printed by any run.
+>
+> Two things this does **not** establish, and neither may be written up as if it did:
+>
+> - **The bootstrap returned only the translation `RESOURCE_CREATE` mutation.** No recitation mutation
+>   has been observed on the sync feed. NoorLife's outbound filter carries `recitations:3;translations:85`
+>   and its normaliser keeps both documented mutations when both arrive — both proven by test — so the
+>   absence is vendor-side and is an **open question for Quran Foundation**.
+> - **The §8.2 extended-retention exemption stays unmet.** A complete snapshot is not a working change
+>   feed, and retention beyond one week depends on the second.
+>
+> Read bounds, as shipped: **1 MiB** for every ordinary Content API operation and for `/resources/sync`;
+> **8 MiB** for approved snapshots only. The full evidence table is
+> [`QURAN_FOUNDATION_AUDIO_PERMISSION.md`](QURAN_FOUNDATION_AUDIO_PERMISSION.md) §9.4–§9.5.
+
 > ### Quran-derived Dhikr — permission status, recorded 2026-08-15
 >
 > **Quran Foundation has confirmed that a Quran-derived Dhikr selector is permitted under NoorLife's

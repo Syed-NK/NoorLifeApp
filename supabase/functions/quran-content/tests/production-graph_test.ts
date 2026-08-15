@@ -150,6 +150,7 @@ Deno.test('the production logger is the only thing that can write a line', () =>
       auth_reason: null,
       operation: 'list_verses',
       upstream_outcome: 'unconfigured',
+      upstream_reason: null,
       upstream_attempts: 0,
       token_renewed: false,
       catalogue_fetched: false,
@@ -188,7 +189,163 @@ Deno.test('the production logger is the only thing that can write a line', () =>
       'token_renewed',
       'upstream_attempts',
       'upstream_outcome',
+      'upstream_reason',
     ],
     'the serialiser writes exactly the allow-listed keys',
   );
+});
+
+Deno.test('the complete key set is pinned on a size refusal too', () => {
+  /**
+   * The allow-list serialiser enumerates its keys precisely so a widened `OperationalLogRecord` is
+   * invisible to the log until somebody adds a line to it — a diff a reviewer sees. The temporary
+   * size-band key was one such line and is gone; this proves the key set went back to exactly what it
+   * was, on the record shape an oversized snapshot now produces.
+   *
+   * Pinning the same list twice is deliberate: the assertion above runs on a `unconfigured` record and
+   * this one on a `streamed_too_large` record, so a serialiser that varied its keys by outcome would
+   * pass exactly one of them.
+   */
+  const original = console.log;
+  const written: string[] = [];
+  console.log = (value: unknown) => {
+    written.push(String(value));
+  };
+  const { logger } = createProductionDependencies(EMPTY);
+  try {
+    logger.record({
+      event: 'quran_content_request',
+      request_id: 'quran_req_00000000-0000-4000-8000-000000000003',
+      contract_version: 1,
+      http_status: 502,
+      outcome: 'error',
+      error_code: 'upstream_unavailable',
+      error_field: null,
+      auth_reason: null,
+      operation: 'get_content_snapshot',
+      upstream_outcome: 'malformed',
+      upstream_reason: 'streamed_too_large',
+      upstream_attempts: 1,
+      token_renewed: false,
+      catalogue_fetched: false,
+      catalogue_outcome: null,
+      normalize_reason: null,
+      retry_after_seconds: null,
+      operator_alert: null,
+      duration_ms: 11,
+    });
+  } finally {
+    console.log = original;
+  }
+
+  assertEquals(written.length, 1);
+  const line = written[0] ?? '';
+  const record = JSON.parse(line);
+  assertEquals(record.upstream_reason, 'streamed_too_large');
+  assertEquals(Object.keys(record).sort(), [
+    'auth_reason',
+    'catalogue_fetched',
+    'catalogue_outcome',
+    'contract_version',
+    'duration_ms',
+    'error_code',
+    'error_field',
+    'event',
+    'http_status',
+    'normalize_reason',
+    'operation',
+    'operator_alert',
+    'outcome',
+    'request_id',
+    'retry_after_seconds',
+    'token_renewed',
+    'upstream_attempts',
+    'upstream_outcome',
+    'upstream_reason',
+  ], 'the complete key set, with no size vocabulary in it');
+
+  /**
+   * And a size refusal carries no size. Neither bound, no byte count, no resource group and nothing
+   * about which of the two snapshots it was — a line that named the group would say which resource a
+   * user was synchronising.
+   */
+  for (
+    const forbidden of [
+      '1048576',
+      '8388608',
+      'bytes',
+      'mib',
+      'content-length',
+      'apis.quran.foundation',
+      'recitations',
+      'translations',
+      'verse',
+    ]
+  ) {
+    assertEquals(line.includes(forbidden), false, `${forbidden} is not in the line`);
+  }
+});
+Deno.test('the new upstream diagnostic is a closed enum, and carries nothing else', () => {
+  /**
+   * `upstream_reason` is the one field added for the snapshot investigation, and it is the field most
+   * likely to be widened later by somebody who wants "just a bit more detail". This drives the real
+   * serialiser with each of its five values and asserts the emitted line contains the branch name and
+   * nothing that could identify content, a caller or the vendor's own answer.
+   */
+  const original = console.log;
+  const written: string[] = [];
+  console.log = (value: unknown) => {
+    written.push(String(value));
+  };
+  const { logger } = createProductionDependencies(EMPTY);
+  try {
+    for (
+      const reason of [
+        'contract_status',
+        'empty_body',
+        'declared_too_large',
+        'streamed_too_large',
+        'invalid_json',
+      ] as const
+    ) {
+      logger.record({
+        event: 'quran_content_request',
+        request_id: 'quran_req_00000000-0000-4000-8000-000000000002',
+        contract_version: 1,
+        http_status: 502,
+        outcome: 'error',
+        error_code: 'upstream_unavailable',
+        error_field: null,
+        auth_reason: null,
+        operation: 'get_content_snapshot',
+        upstream_outcome: 'malformed',
+        upstream_reason: reason,
+        upstream_attempts: 1,
+        token_renewed: false,
+        catalogue_fetched: false,
+        catalogue_outcome: null,
+        normalize_reason: null,
+        retry_after_seconds: null,
+        operator_alert: null,
+        duration_ms: 7,
+      });
+    }
+  } finally {
+    console.log = original;
+  }
+
+  assertEquals(written.length, 5);
+  for (const line of written) {
+    const record = JSON.parse(line);
+    assertEquals(record.upstream_outcome, 'malformed');
+    assert(typeof record.upstream_reason === 'string', 'the branch name is written');
+    /*
+      A `502` from the vendor and a `502` from NoorLife are different facts, and only the second is
+      this function's own. No upstream status crosses the boundary, so none can appear in a line.
+    */
+    assertEquals(record.http_status, 502, 'NoorLife’s own status, which is the only one logged');
+    for (const forbidden of ['content-length', 'apis.quran.foundation', 'x-auth-token', 'bytes']) {
+      assertEquals(line.includes(forbidden), false, `${forbidden} is not in the line`);
+    }
+  }
 });

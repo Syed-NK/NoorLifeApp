@@ -82,6 +82,15 @@ export const structuredLogger: Logger = {
         auth_reason: entry.auth_reason,
         operation: entry.operation,
         upstream_outcome: entry.upstream_outcome,
+        /**
+         * The third closed enum, and the newest.
+         *
+         * `upstream_reason` names which branch of the vendor boundary refused a response — a contract
+         * status, an empty body, either size bound, or an unparseable body. Like the two below it is a
+         * union of string literals fixed in `ports.ts`, so there is no shape in which a status code, a
+         * byte count, a response body, an audio URL, a resource id or a verse could arrive in it.
+         */
+        upstream_reason: entry.upstream_reason,
         upstream_attempts: entry.upstream_attempts,
         token_renewed: entry.token_renewed,
         catalogue_fetched: entry.catalogue_fetched,

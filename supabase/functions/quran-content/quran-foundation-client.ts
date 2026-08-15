@@ -5,6 +5,7 @@ import type {
   QuranUpstream,
   TokenSource,
   TranslationAttribution,
+  UpstreamMalformedReason,
   UpstreamOutcome,
   UpstreamResult,
 } from './ports.ts';
@@ -76,6 +77,39 @@ export const QF_API_ORIGIN = 'https://apis.quran.foundation';
 export const QF_CONTENT_PREFIX = '/content/api/v4';
 
 /**
+ * The prefix Quran Foundation's Content Sync documentation uses in its **relative** examples.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── The defect this constant fixes ──────────────────────────────────────────
+ * The Content Sync tutorial and the `resources-sync` / `resources-snapshot` reference pages write the
+ * URLs a response carries in exactly this form:
+ *
+ *     /api/v4/resources/sync?cursor=...
+ *     /api/v4/resources/snapshots/recitations/3
+ *
+ * They are **root-relative**, and they omit the `/content` mount point that the production server
+ * entry carries. A root-relative reference ignores the path of whatever base it is resolved against,
+ * so resolving one against `https://apis.quran.foundation/content/api/v4/` produced
+ * `https://apis.quran.foundation/api/v4/resources/sync` — right host, wrong path — and
+ * `approvedSyncUrl` then refused it.
+ *
+ * The consequence was not a refused URL; it was a refused **page**. `normalizeSync` requires a usable
+ * cursor whenever `has_more` is true, so a bootstrap run answered `502 upstream_unavailable` behind an
+ * `upstream_outcome: ok` and a `normalize_reason: shape`. Refusing was the correct behaviour for a
+ * page whose continuation could not be read — advancing a sync token over undelivered mutations loses
+ * them permanently — so the fault was entirely in what counted as readable.
+ *
+ * ── Why this is a second accepted prefix rather than a looser check ─────────
+ * The alternative is to compare only the tail of the path, or to resolve against the origin root and
+ * accept whatever comes back. Both would accept `/content/api/v4/../../anything/resources/sync` and
+ * every other path that happens to end the right way. This is an exact second literal, matched in
+ * full, and only for a reference that carries no scheme and no authority of its own — so the set of
+ * accepted addresses grows by exactly the one form the vendor documents.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const QF_DOCUMENTED_PREFIX = '/api/v4';
+
+/**
  * Whether a URL the vendor put in a response body is one NoorLife would have built itself.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -99,12 +133,42 @@ export const QF_CONTENT_PREFIX = '/content/api/v4';
  * Absolute and relative forms are both accepted, because the vendor documents relative paths and
  * returns absolute ones. A relative form resolves against the fixed origin, so it has nowhere to
  * escape to; an absolute form is compared against the same origin and prefix.
+ *
+ * ── The three approved forms, and nothing else ───────────────────────────────
+ * Exactly three spellings of one address are accepted, and every one of them names the same path on
+ * the same fixed origin:
+ *
+ *   1. the vendor's documented root-relative form, `/api/v4{suffix}`, which omits the `/content`
+ *      mount point — see `QF_DOCUMENTED_PREFIX` for the failure this cost;
+ *   2. a base-relative form with no leading slash, e.g. `resources/sync?cursor=…`, which resolves
+ *      inside `/content/api/v4/` and is what the existing tests already covered;
+ *   3. the exact absolute form, `https://apis.quran.foundation/content/api/v4{suffix}`.
+ *
+ * A reference that declares its own scheme is held to (3) alone: it has said where it wants to go, so
+ * it must have said the whole approved address. Only a reference with no scheme and no authority —
+ * one that has *no* opinion about the host — may be read under (1) or (2), because for those the host
+ * comes from this module's own constant and not from the response.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 function approvedSyncUrl(raw: unknown, suffix: string): URL | null {
   if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_SYNC_URL_LENGTH) {
     return null;
   }
+  /**
+   * Two rejections that happen before parsing, because parsing is where they would be laundered.
+   *
+   * A leading `//` is a protocol-relative reference: it names a **host**, not a path, so it can never
+   * be one of the relative forms above however harmless the rest of it looks. And a backslash is
+   * rewritten to a forward slash by the URL parser for special schemes, which makes `/\evil.example/x`
+   * a host and not a path — refusing the character outright is cheaper than reasoning about which
+   * position it occupies, and no address the vendor documents contains one.
+   */
+  if (raw.startsWith('//') || raw.includes('\\')) {
+    return null;
+  }
+  /** Whether the reference names its own scheme, and is therefore held to the absolute form alone. */
+  const declaresScheme = /^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw);
+
   let parsed: URL;
   try {
     parsed = new URL(raw, `${QF_API_ORIGIN}${QF_CONTENT_PREFIX}/`);
@@ -117,7 +181,15 @@ function approvedSyncUrl(raw: unknown, suffix: string): URL | null {
   if (parsed.username !== '' || parsed.password !== '') {
     return null;
   }
-  return parsed.pathname === `${QF_CONTENT_PREFIX}${suffix}` ? parsed : null;
+  if (parsed.pathname === `${QF_CONTENT_PREFIX}${suffix}`) {
+    return parsed;
+  }
+  /*
+    The documented root-relative form, accepted only for a reference that named no scheme of its own.
+    `pathname` is the parser's normalised output, so `..` segments have already been resolved and
+    cannot leave a path that matches this literal in full.
+  */
+  return !declaresScheme && parsed.pathname === `${QF_DOCUMENTED_PREFIX}${suffix}` ? parsed : null;
 }
 
 /** A vendor URL is bounded before it is parsed; an unbounded string is a memory risk, not a route. */
@@ -158,8 +230,46 @@ export function isApprovedSnapshotUrl(raw: unknown, group: SyncResourceGroup): b
  * of magnitude. It is not a policy about content size — it is a bound on an unbounded read, which is
  * a memory risk against Supabase's function limit and the failure mode of a proxy returning an HTML
  * error page or a stream that never terminates.
+ *
+ * ── Unchanged, and that is the point ────────────────────────────────────────
+ * Two live diagnostic runs later this number is exactly what it always was. It is the bound for every
+ * ordinary Content API operation and for `/resources/sync`, whose pages are bounded by
+ * `MAX_SYNC_PER_PAGE` and come nowhere near it. Only one route was ever the problem, and only that one
+ * route has its own bound — see `MAX_SNAPSHOT_RESPONSE_BYTES`. Widening this constant would have
+ * relaxed the memory bound on eight routes to fix a fault on the ninth.
  */
 export const MAX_RESPONSE_BYTES = 1_048_576;
+
+/**
+ * The read bound for `get_content_snapshot`, and for nothing else.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Eight mebibytes, and where the number came from ─────────────────────────
+ * Measured, not estimated. Two authenticated diagnostic runs against the deployed function reported
+ * the size of each approved snapshot as a doubling band:
+ *
+ *   • `recitations:3`   — `over_4_to_8_mib`
+ *   • `translations:85` — `over_2_to_4_mib`
+ *
+ * Eight mebibytes is the upper bound of the larger observed band. It is therefore the **smallest**
+ * limit that admits both measured snapshots, and it is that exact figure rather than that figure plus
+ * a safety margin: a margin would be an unmeasured number bolted onto a measured one, which is how the
+ * estimate this investigation twice refused to make gets in through the back door. If a future
+ * snapshot outgrows it, the honest answer is another measurement and another deliberate change — not
+ * headroom nobody costed.
+ *
+ * ── What this does not do ───────────────────────────────────────────────────
+ * It does not defer the bound, drain past it, or treat it as advisory. A snapshot response is read up
+ * to this many bytes and refused the moment it passes them, on exactly the same terms
+ * `MAX_RESPONSE_BYTES` refuses an ordinary route — same `streamed_too_large`, same cancellation, same
+ * generic `502`. The only difference between the two routes is the number.
+ *
+ * Retention is bounded by the same figure, so the worst case this function will hold is one snapshot
+ * of eight mebibytes rather than an unbounded read. The request budget still applies on top: the
+ * upstream `AbortSignal` remains the outer limit whatever the byte bound says.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const MAX_SNAPSHOT_RESPONSE_BYTES = 8_388_608;
 
 /**
  * The largest `Retry-After` this adapter will pass on.
@@ -219,6 +329,16 @@ type Route = {
   /** Built only from integers and literals. No caller string reaches a path segment. */
   readonly path: string;
   readonly query: Readonly<Record<string, string>>;
+  /**
+   * This route's own read bound, when it needs one. Absent means `MAX_RESPONSE_BYTES`.
+   *
+   * Set by exactly one entry in the table below and absent on all eight others, so the larger bound
+   * is reachable from one route definition and no other. Putting it here rather than passing the
+   * operation down to the reader keeps the route table the single place an operation's outbound
+   * behaviour is decided, which is the same property that makes `routeFor` the only place a path is
+   * built.
+   */
+  readonly maxResponseBytes?: number;
 };
 
 /**
@@ -364,6 +484,17 @@ export function routeFor(query: QuranQuery): Route {
       return {
         path: `/resources/snapshots/${query.resourceGroup}/${SYNC_RESOURCES[query.resourceGroup]}`,
         query: {},
+        /**
+         * The **only** route with a bound of its own, and the same one for both permitted groups.
+         *
+         * A whole-resource snapshot is a different kind of response from a page of fifty verses, and
+         * the measured sizes say so. Both groups get this figure because both were measured and the
+         * larger of the two is what set it — a per-group bound would be two numbers to keep true
+         * where one suffices, and the smaller group would gain nothing from a tighter one.
+         *
+         * Every other route keeps `MAX_RESPONSE_BYTES` as a hard stop, including `/resources/sync`.
+         */
+        maxResponseBytes: MAX_SNAPSHOT_RESPONSE_BYTES,
       };
   }
 }
@@ -391,18 +522,46 @@ async function discard(response: Response): Promise<void> {
   }
 }
 
-/** Reads at most `MAX_RESPONSE_BYTES`, then stops. `null` means "no usable body". */
-async function readBoundedText(response: Response): Promise<string | null> {
+/**
+ * A body this adapter was able to read, or the named branch that refused it.
+ *
+ * The refusal carries a `UpstreamMalformedReason` rather than `null`, which is the whole point: every
+ * one of these situations used to arrive at the handler as the single word `malformed`, and they have
+ * different remedies. Nothing about the body itself — not a byte count, not a prefix, not a content
+ * type — travels with the reason; see `UpstreamMalformedReason`.
+ */
+type BoundedBody =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'refused'; readonly reason: UpstreamMalformedReason };
+
+/**
+ * Reads at most `limitBytes`, then stops — and says which bound or fault stopped it.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── One bound, supplied by the route ────────────────────────────────────────
+ * `limitBytes` is `MAX_RESPONSE_BYTES` for eight of the nine routes and
+ * `MAX_SNAPSHOT_RESPONSE_BYTES` for `get_content_snapshot`. It is a **parameter** rather than a branch
+ * so there is exactly one over-size code path in this function: whichever number arrives, the body is
+ * read up to it, refused the instant it passes it, and the stream cancelled. There is no route on
+ * which reading continues past its own bound, and no shape in this function for one.
+ *
+ * ── Retention is the bound, not a multiple of it ────────────────────────────
+ * Chunks are retained only while `total` is within `limitBytes`, and the first chunk that carries the
+ * total past it returns without being pushed. So the most this function will ever hold for a request
+ * is one bound's worth of bytes plus the single chunk that overran — and that chunk is released with
+ * the reader rather than merged.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+async function readBoundedBody(response: Response, limitBytes: number): Promise<BoundedBody> {
   const declared = response.headers.get('content-length');
-  if (
-    declared !== null && /^[0-9]+$/.test(declared.trim()) && Number(declared) > MAX_RESPONSE_BYTES
-  ) {
+  if (declared !== null && /^[0-9]+$/.test(declared.trim()) && Number(declared) > limitBytes) {
+    // The vendor said up front that the body is larger than this route's bound. Nothing is read.
     await discard(response);
-    return null;
+    return { kind: 'refused', reason: 'declared_too_large' };
   }
   const body = response.body;
   if (body === null) {
-    return '';
+    return { kind: 'refused', reason: 'empty_body' };
   }
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
@@ -414,23 +573,38 @@ async function readBoundedText(response: Response): Promise<string | null> {
         break;
       }
       total += value.byteLength;
-      if (total > MAX_RESPONSE_BYTES) {
+      if (total > limitBytes) {
+        /*
+          Distinct from `declared_too_large` because the two say different things about the vendor: a
+          chunked or `Content-Length`-less response that runs past the bound is what an oversized
+          snapshot looks like, and a declared one is what a response that knows its own size looks
+          like. Both live snapshots reported this one, which is why the snapshot bound exists.
+
+          Fail-closed, and immediately: the reader is cancelled, the overrunning chunk is never
+          retained, and nothing partial is parsed or returned.
+        */
         await reader.cancel();
-        return null;
+        return { kind: 'refused', reason: 'streamed_too_large' };
       }
       chunks.push(value);
     }
   } catch {
-    // A truncated or aborted body. Nothing about the failure is captured.
-    return null;
+    /*
+      A truncated or aborted body. Nothing about the failure is captured — the exception is not read,
+      not described and not re-thrown. What was received cannot be parsed, which is the same statement
+      `invalid_json` makes about an HTML error page.
+    */
+    return { kind: 'refused', reason: 'invalid_json' };
   }
+
   const merged = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {
     merged.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(merged);
+  const text = new TextDecoder().decode(merged);
+  return text === '' ? { kind: 'refused', reason: 'empty_body' } : { kind: 'text', text };
 }
 
 /**
@@ -549,15 +723,15 @@ export function createQuranFoundationClient(config: QuranFoundationClientConfig)
 
     // From here on a request was issued and answered, whatever the answer turned out to be.
     if (response.status === 200) {
-      const text = await readBoundedText(response);
-      if (text === null || text === '') {
-        return { outcome: { kind: 'malformed' }, issued: true };
+      const body = await readBoundedBody(response, route.maxResponseBytes ?? MAX_RESPONSE_BYTES);
+      if (body.kind === 'refused') {
+        return { outcome: { kind: 'malformed', reason: body.reason }, issued: true };
       }
       try {
-        return { outcome: { kind: 'ok', body: JSON.parse(text) }, issued: true };
+        return { outcome: { kind: 'ok', body: JSON.parse(body.text) }, issued: true };
       } catch {
         // Not JSON at all — an HTML error page from a proxy, or a truncated body.
-        return { outcome: { kind: 'malformed' }, issued: true };
+        return { outcome: { kind: 'malformed', reason: 'invalid_json' }, issued: true };
       }
     }
 
@@ -593,8 +767,12 @@ export function createQuranFoundationClient(config: QuranFoundationClientConfig)
          * `400`, `422`, a `3xx` that `redirect: 'error'` did not already refuse, and anything else.
          * All of them mean this request and the vendor's contract disagree, which sends whoever
          * investigates toward the request shape rather than toward vendor availability.
+         *
+         * `contract_status` says exactly that and no more. **Which** status arrived is a fact about
+         * the vendor's response, and none of those cross this boundary — the body has already been
+         * discarded unread two statements above.
          */
-        return { outcome: { kind: 'malformed' }, issued: true };
+        return { outcome: { kind: 'malformed', reason: 'contract_status' }, issued: true };
     }
   };
 

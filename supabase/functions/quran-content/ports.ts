@@ -267,8 +267,13 @@ export type UpstreamOutcome =
   | { readonly kind: 'timeout' }
   /** A 5xx, a connection reset, a refused redirect, or an over-large body. */
   | { readonly kind: 'transient' }
-  /** A `200` that was not JSON, or a status this contract has no representation for. */
-  | { readonly kind: 'malformed' }
+  /**
+   * A `200` that was not usable JSON, or a status this contract has no representation for.
+   *
+   * `reason` names **which** of those it was. See `UpstreamMalformedReason` for why the distinction
+   * had to exist and for what the values may not carry.
+   */
+  | { readonly kind: 'malformed'; readonly reason: UpstreamMalformedReason }
   /**
    * **No credential is configured**, so nothing left the process.
    *
@@ -280,6 +285,47 @@ export type UpstreamOutcome =
   | { readonly kind: 'unconfigured' };
 
 export type UpstreamOutcomeKind = UpstreamOutcome['kind'];
+
+/**
+ * Why an upstream response could not be turned into a body this function would read.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── The failure this enum exists for ────────────────────────────────────────
+ * `get_content_snapshot` answered `502 upstream_unavailable` on every attempt, logging
+ * `upstream_outcome: malformed` — and that single word stood for five unrelated situations with five
+ * different remedies. A contract disagreement (`400`/`422`) means the *request* is wrong. An empty
+ * body means the vendor answered nothing. A body over the read bound means NoorLife's own cap is the
+ * limit, and whether that bound was hit on the declared length or on the stream says whether the
+ * vendor sent a `Content-Length` at all. Invalid or truncated JSON means a proxy answered instead.
+ * There is no way to choose between "fix the request" and "the snapshot is simply larger than one
+ * megabyte" from a log line that says only `malformed`.
+ *
+ * ── What these values may and may not carry ─────────────────────────────────
+ * The same rule `NormalizeReason` is written under, for the same reason: each member names **the
+ * branch that refused**, never what the branch saw. There is no member here that can hold a response
+ * body, a verse, a translation, an audio URL, a resource id, a verse identifier, a user identifier, a
+ * header, a token, a byte count or a raw exception message — and there is no free-text member, so no
+ * call site can add one without adding a member to this union and having that addition reviewed.
+ *
+ * In particular there is deliberately **no upstream status code** here. `contract_status` says a
+ * status outside this contract's vocabulary arrived; which one is a fact about the vendor's response,
+ * and none of those cross this boundary.
+ *
+ * It reaches the allow-listed operational log and nothing else. The client response for every member
+ * is the same generic `502 upstream_unavailable`.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export type UpstreamMalformedReason =
+  /** A status this contract has no representation for — `400`, `422`, an unrefused `3xx`, anything. */
+  | 'contract_status'
+  /** A `200` with no body at all, or one that decoded to the empty string. */
+  | 'empty_body'
+  /** A `200` whose `Content-Length` declared more than `MAX_RESPONSE_BYTES` before a byte was read. */
+  | 'declared_too_large'
+  /** A `200` whose stream passed `MAX_RESPONSE_BYTES` while being read, and was cancelled. */
+  | 'streamed_too_large'
+  /** The bytes that arrived were not parseable JSON — an HTML error page, or a truncated body. */
+  | 'invalid_json';
 
 /**
  * Who translated an edition, and what that edition is called.
@@ -480,6 +526,14 @@ export type OperationalLogRecord = {
    */
   readonly operation: QuranOperation | null;
   readonly upstream_outcome: UpstreamOutcomeKind | null;
+  /**
+   * Which branch of the boundary refused a vendor response, or `null` when none did.
+   *
+   * Non-null exactly when `upstream_outcome` is `malformed`, which is the one outcome that stood for
+   * five unrelated situations. A closed enum of branch names; see `UpstreamMalformedReason` for why
+   * it can carry no status code, no byte count and no response content of any kind.
+   */
+  readonly upstream_reason: UpstreamMalformedReason | null;
   /** How many upstream attempts were made. At most two, and the second only after a `401`. */
   readonly upstream_attempts: number;
   /** True when a fresh token was obtained mid-request. A rising count is a real signal. */
