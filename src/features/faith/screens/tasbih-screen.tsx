@@ -34,6 +34,7 @@ import {
 import { faithNavKeys, faithRoutes } from '../faith-routes';
 import { useFaithPreferences } from '../hooks/use-faith-preferences';
 import { useHaptics } from '../hooks/use-haptics';
+import { useSelectedQuranDhikrTitle } from '../hooks/use-quran-dhikr';
 import { useTasbih } from '../hooks/use-tasbih';
 
 /**
@@ -60,9 +61,17 @@ import { useTasbih } from '../hooks/use-tasbih';
  *
  * ── The content boundary ────────────────────────────────────────────────────
  * The mock fills the current-dhikr row with a well-known phrase. That establishes layout, not
- * authorisation: NoorLife holds no licensed dhikr text, so the row reports honestly that none is
- * selected and the selector's verified section stays shut. No Arabic, transliteration, translation
- * or reference appears here. See `dhikr-catalogue.ts`.
+ * authorisation.
+ *
+ * Quran Foundation has since given written permission for a Quran-derived Dhikr selector, so the row
+ * is now wired to the **title** of a selected reference — resolved from a stored catalogue id, never
+ * a copied string. What has not happened is NoorLife's own scholarly review, so the production
+ * catalogue holds no approved entry, nothing resolves, and the row reads "Not selected". That is the
+ * honest state and not a placeholder.
+ *
+ * **No Arabic, transliteration, translation or reference is rendered on this screen** in any state.
+ * The counter counts; the selector is where content lives. See `data/dhikr/` for the gate and
+ * `docs/QURAN_FOUNDATION_DHIKR_PERMISSION.md` for what was granted.
  */
 
 const TARGET_STEP = 1;
@@ -101,6 +110,11 @@ export function TasbihScreen() {
   }, [increment, haptics, roundsSoFar]);
 
   const openSelector = useCallback(() => router.push(faithRoutes.dhikr), [router]);
+  /*
+    Resolved from the stored id against the in-memory catalogue — no fetch, so opening the counter
+    still costs nothing. `null` while the catalogue holds no approved entry, which is today.
+  */
+  const selectedDhikrTitle = useSelectedQuranDhikrTitle();
 
   return (
     <FaithScreen
@@ -139,6 +153,7 @@ export function TasbihScreen() {
               target={session.target}
               hapticsEnabled={preferences.hapticsEnabled}
               onToggleHaptics={(next) => void update({ hapticsEnabled: next })}
+              selectedDhikrTitle={selectedDhikrTitle}
               onOpenSelector={openSelector}
               onUndo={() => {
                 haptics.undo();
@@ -441,6 +456,7 @@ function BeadMaterialCard({
  */
 function DhikrControlCard({
   counter,
+  selectedDhikrTitle,
   target,
   hapticsEnabled,
   onToggleHaptics,
@@ -449,6 +465,15 @@ function DhikrControlCard({
   onAdjustTarget,
 }: {
   readonly counter: CounterLabel;
+  /**
+   * The title of the selected Quran-derived reference, or `null` when none is selected.
+   *
+   * Resolved from the catalogue through a stored **id**, never from a copied string, so a reference
+   * that is corrected or withdrawn upstream stops being named here on the next launch. `null` is the
+   * only value this can take while no scholarly-reviewed entry exists, which is why the row still
+   * reads "Not selected" today — the wiring is real and the catalogue is empty.
+   */
+  readonly selectedDhikrTitle: string | null;
   readonly target: number;
   readonly hapticsEnabled: boolean;
   readonly onToggleHaptics: (next: boolean) => void;
@@ -481,8 +506,14 @@ function DhikrControlCard({
             </ModuleText>
             <View style={styles.flex} />
             {/*
-            The mock shows a well-known phrase here. That is layout, not authorisation — NoorLife
-            holds no licensed dhikr text, so this says so rather than shipping a remembered string.
+            The mock shows a well-known phrase here. That is layout, not authorisation.
+
+            What fills this now is the *title* of a scholarly-reviewed Quran reference the user
+            selected, resolved from the catalogue through a stored id. It is not the dhikr's Arabic
+            and not a remembered string: no scripture is held in the bundle, and a title copied into
+            user storage would survive a correction upstream. With no approved entry in the catalogue
+            there is nothing to resolve, so this reads "Not selected" — honestly, and for a reason
+            the selector screen states in full.
           */}
             <ModuleText
               token="body"
@@ -491,7 +522,7 @@ function DhikrControlCard({
               style={styles.shrink}
               testID="faith-tasbih-dhikr-value"
             >
-              Not selected
+              {selectedDhikrTitle ?? 'Not selected'}
             </ModuleText>
           </View>
           <PressableScale

@@ -81,6 +81,23 @@ export const faithStorageKeys = {
    * recitation through the repository at the moment it is played.
    */
   quranPlaylists: `${NAMESPACE}.quran.playlists`,
+  /**
+   * Cached Arabic and translations for the Quran-derived Dhikr selector.
+   *
+   * Quran Foundation content, held under the retention rules in
+   * `docs/QURAN_FOUNDATION_DHIKR_PERMISSION.md` — Arabic refreshed rather than expired, translations
+   * capped at one week. See `faith-dhikr-cache.ts`.
+   */
+  dhikrContentCache: `${NAMESPACE}.dhikr.content-cache`,
+  /**
+   * The user's own Dhikr state: selected reference, favourites, recents.
+   *
+   * ── Deliberately a *separate key* from the cache above ──────────────────────
+   * Content expires; this does not. Retained indefinitely under the same permission, and split so
+   * that a translation ageing out cannot take a user's selection or their counter history with it.
+   * Holds catalogue ids and nothing else — no scripture, no translation, no title.
+   */
+  dhikrUserState: `${NAMESPACE}.dhikr.user-state`,
 } as const;
 
 export type FaithStorageKey = (typeof faithStorageKeys)[keyof typeof faithStorageKeys];

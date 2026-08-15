@@ -29,8 +29,20 @@ import type { CounterLabel } from '../tasbih.repository';
 export type DhikrLockReason =
   /** Licensing or permission is outstanding with a named source. Nothing the user can do. */
   | 'permission-pending'
-  /** The upstream provider is reachable in principle but has not confirmed this use. */
-  | 'provider-unconfirmed'
+  /**
+   * The provider has confirmed the use, and **NoorLife's own scholarly review has not happened yet**.
+   *
+   * ── Why this replaced `provider-unconfirmed` ────────────────────────────────
+   * Because the provider is now confirmed and the old reason had become false. Quran Foundation has
+   * given written permission for a Quran-derived Dhikr selector under NoorLife's existing Content
+   * API access — no new scope, no fee, no production approval outstanding.
+   *
+   * What that grant explicitly does **not** supply is a religious judgement about which ayat are
+   * appropriate as dhikr, what count is recommended, or what context belongs with them. That review
+   * is NoorLife's obligation and is the only thing still holding this section shut. Keeping one
+   * reason for both would have let "the vendor said yes" quietly read as "so we can ship it".
+   */
+  | 'awaiting-scholarly-review'
   /** A network-backed section with no connection right now. Retryable. */
   | 'offline'
   /** The provider answered, and answered badly. Distinct from offline: the device is fine. */
@@ -85,30 +97,43 @@ export type DhikrSection = {
  * it. Requests are outstanding with Sunnah.com and Darussalam, and the screen says so — including
  * that no content has been copied in the meantime.
  *
- * ── Why `quran` is `provider-unconfirmed` and not populated ─────────────────
- * The Quran Foundation boundary already exists and is authenticated; what does not exist is
- * confirmation that this *use* is covered, and a reference list from a qualified content authority.
- * Deciding which ayat constitute dhikr is editorial religious work, and a developer picking them
- * from memory is precisely the failure that produced the five removed presets. So the boundary is
- * modelled and the list is not written here.
+ * ── Why `quran` is `awaiting-scholarly-review` and not populated ────────────
+ * The Quran Foundation boundary exists, is authenticated, and — as of 2026-08 — is **permitted** for
+ * exactly this use in writing. What does not exist is a reference list from a qualified content
+ * authority. Deciding which ayat constitute dhikr is editorial religious work, and a developer
+ * picking them from memory is precisely the failure that produced the five removed presets. So the
+ * whole architecture is built (`data/dhikr/`), the gate is enforced, and the list is empty.
+ *
+ * ── The section's state comes from the caller now ───────────────────────────
+ * `quranState` is a parameter rather than a constant, because whether this section has content is a
+ * runtime question about an approved catalogue and a live fetch, not a fact that can be written
+ * down here. It defaults to the shut state so a caller that has not wired the resolver cannot
+ * accidentally present an open one.
  */
 export function dhikrCatalogue(input: {
   readonly personal: readonly CounterLabel[];
   readonly favourites: readonly string[];
   readonly recent: readonly string[];
+  readonly quranState?: DhikrSectionState;
 }): readonly DhikrSection[] {
   return [
+    /*
+      Quran-derived first. It is the section carrying content NoorLife vouches for, and the ordering
+      is the strongest available signal of which list is which — personal counters must never be the
+      first thing a user reads under a heading about dhikr.
+    */
+    {
+      id: 'quran',
+      title: 'Quran-derived Dhikr',
+      summary:
+        'Scholarly-reviewed references, resolved live from Quran Foundation with the translator credited',
+      state: input.quranState ?? { kind: 'locked', reason: 'awaiting-scholarly-review' },
+    },
     {
       id: 'verified',
       title: 'Verified Dhikr',
       summary: 'Sourced text with a named reference and a licensed translation',
       state: { kind: 'locked', reason: 'permission-pending' },
-    },
-    {
-      id: 'quran',
-      title: 'Quran-derived Dhikr',
-      summary: 'Resolved live from the Quran provider, with the translator credited',
-      state: { kind: 'locked', reason: 'provider-unconfirmed' },
     },
     {
       id: 'personal',
@@ -148,10 +173,10 @@ export function lockMessage(reason: DhikrLockReason): { title: string; body: str
         title: 'Not available yet',
         body: 'NoorLife has asked the rights holders for permission to include this text. Until that is granted, nothing is shown here — no copied text, and no placeholders.',
       };
-    case 'provider-unconfirmed':
+    case 'awaiting-scholarly-review':
       return {
-        title: 'Awaiting provider confirmation',
-        body: 'The Quran provider has not yet confirmed this use, and NoorLife will not choose which verses count as dhikr on its own. This opens once an approved reference list is in place.',
+        title: 'Awaiting scholarly review',
+        body: 'Quran Foundation has given permission for this, and NoorLife will not choose which verses count as dhikr on its own. Nothing appears here until each reference has been reviewed and approved by a qualified reviewer.',
       };
     case 'offline':
       return {

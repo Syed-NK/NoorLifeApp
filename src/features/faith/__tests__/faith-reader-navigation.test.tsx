@@ -428,9 +428,24 @@ describe('content information', () => {
     expect(await view.findByText(/Quran Foundation Content API/)).toBeTruthy();
   });
 
-  it('states what is licensed and what is still sample data', async () => {
+  /**
+   * ── "Sample data" stopped being true, and the copy had not caught up ────────
+   * The Hadith, Dua and mosque fixtures were deleted; those repositories now answer
+   * `not-configured`. So the screen's claim that they were "sample data while their sources are
+   * being arranged" understated it — there is no content at all — and its claim that "search covers
+   * narrations and duas" was outright false, because with no provider behind either, search covers
+   * nothing.
+   *
+   * The assertions below pin the corrected statements *and* the absence of the old one, so a
+   * regression that restores the friendlier wording fails here rather than shipping.
+   */
+  it('states what is licensed and what has no source at all', async () => {
     const view = await withRepositories(<ContentInfoScreen />);
     expect(await view.findByTestId('faith-content-info-scope')).toBeTruthy();
-    expect(await view.findByText(/Searching the Qur’an is not available/)).toBeTruthy();
+    expect(await view.findByText(/Search is not available/)).toBeTruthy();
+    expect(await view.findByText(/no content source in this build/i)).toBeTruthy();
+    // The false claim must be gone, not merely reworded around.
+    expect(view.queryByText(/search covers narrations and duas/i)).toBeNull();
+    expect(view.queryByText(/are sample data/i)).toBeNull();
   });
 });

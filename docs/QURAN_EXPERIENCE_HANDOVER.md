@@ -28,6 +28,24 @@ translation defect) is implemented and verified. Nothing else had been built whe
 > The one Edge change genuinely still outstanding is the **unbuilt** `bismillah_pre` field in §6 —
 > future work, not a pending deployment.
 
+> ### Quran-derived Dhikr — permission status, recorded 2026-08-15
+>
+> **Quran Foundation has confirmed that a Quran-derived Dhikr selector is permitted under NoorLife's
+> existing Content API access and Developer Terms.** No additional API scope, licence, fee,
+> production approval or periodic report is required, and no new Edge operation is needed — the
+> feature is served by `list_verses` and `list_verse_translations`, both already in the approved
+> allow-list.
+>
+> The full record is [`QURAN_FOUNDATION_DHIKR_PERMISSION.md`](QURAN_FOUNDATION_DHIKR_PERMISSION.md).
+> Nothing about this feature is waiting on Quran Foundation. Three things are still outstanding and
+> are **not** resolved by that grant:
+>
+> | Outstanding | Why it is not resolved by the permission |
+> |---|---|
+> | **Scholarly review** of the curated references | A vendor's API permission is not a religious judgement. It is NoorLife's obligation, and until it is met the production catalogue holds **zero** entries and the selector says so. |
+> | **Content Sync for translations** | Still the open question of §9 of the audio record. Until a vendor-confirmed mechanism exists, the one-week translation cache ceiling stays. |
+> | **Sudais audio synchronisation** | Explicitly out of scope of this confirmation. §8 and §9 below are unchanged. |
+
 ---
 
 ## 0a. Decisions taken (2026-08-11)

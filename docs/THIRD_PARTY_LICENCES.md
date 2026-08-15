@@ -35,6 +35,27 @@ what it must list.
 
 ---
 
+## Content attribution — Quran Foundation
+
+Not a package licence, and recorded here because this is the file somebody checks when asking "what
+must NoorLife display, and where". Two separate written permissions govern Quran Foundation content,
+each with its own required string and its own scope. Neither extends the other.
+
+| Content | Required string, displayed **exactly** | Grant record |
+|---|---|---|
+| Quran text and translations — reader, daily ayah, and the Quran-derived Dhikr selector | `Quran text and translations provided by Quran Foundation (Quran.com).` | [`QURAN_FOUNDATION_DHIKR_PERMISSION.md`](QURAN_FOUNDATION_DHIKR_PERMISSION.md) |
+| Recitation, resource ID 3 (Abdur-Rahman as-Sudais) | `Recitation by Abdur-Rahman as-Sudais. Audio provided by Quran Foundation (Quran.com).` | [`QURAN_FOUNDATION_AUDIO_PERMISSION.md`](QURAN_FOUNDATION_AUDIO_PERMISSION.md) |
+
+**The translator's name is a separate, additional obligation.** The string above credits the source;
+it does not credit the translator, and displaying one does not satisfy the other. Every translation
+shown anywhere in the app carries its translator's name.
+
+Both strings live as single constants in `src/`, are asserted byte for byte by test, and must not be
+duplicated as literals — a paraphrase that drifted at one call site would be an attribution failure
+that reads as a typo.
+
+---
+
 ## `@photostructure/tz-lookup` — the entry this file was created for
 
 | Field | Value |

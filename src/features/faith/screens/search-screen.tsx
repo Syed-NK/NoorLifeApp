@@ -37,9 +37,62 @@ type SearchHits = {
 type SearchOutcome = {
   readonly hits: SearchHits;
   readonly total: number;
-  /** True when the Qur'an repository reported that search is not available to it. */
-  readonly quranSearchUnsupported: boolean;
+  /**
+   * Which strands actually ran, asked of the repositories rather than assumed.
+   *
+   * ── The claim this replaced ─────────────────────────────────────────────────
+   * The screen used to say "these results cover narrations and duas only" whenever Qur'an search was
+   * unsupported. That sentence was false in this build: Hadith and Dua have **no configured
+   * provider** — `unconfigured-content.repository.ts` answers `not-configured` for both — so search
+   * covered nothing at all, while telling the user it covered two things.
+   *
+   * The flags are derived from each repository's own answer, so the copy can only ever name a strand
+   * that was genuinely searched. When a provider is wired in, the sentence starts including it
+   * without anybody editing a string.
+   */
+  readonly searched: SearchedStrands;
 };
+
+type SearchedStrands = {
+  readonly quran: boolean;
+  readonly hadith: boolean;
+  readonly duas: boolean;
+};
+
+/** Whether a repository answered as a working provider rather than as an absent one. */
+function strandRan(result: { readonly kind: string; readonly code?: string }): boolean {
+  /*
+    `not-configured` and `unsupported` both mean "this source cannot answer". A transient failure is
+    deliberately counted as *ran*: the strand exists and was consulted, and reporting it as absent
+    would turn a bad connection into a permanent statement about the product.
+  */
+  return !(
+    result.kind === 'error' &&
+    (result.code === 'not-configured' || result.code === 'unsupported')
+  );
+}
+
+/** The one sentence describing coverage, composed from what actually ran. */
+export function searchCoverageMessage(searched: SearchedStrands): string | null {
+  const covered = [
+    searched.quran ? 'Qur’an translations' : null,
+    searched.hadith ? 'narrations' : null,
+    searched.duas ? 'duas' : null,
+  ].filter((item): item is string => item !== null);
+
+  if (covered.length === 3) {
+    /* Everything is wired. There is nothing to warn about, so nothing is said. */
+    return null;
+  }
+  if (covered.length === 0) {
+    return 'Search is not available yet. No content source in this build can be searched.';
+  }
+  const list =
+    covered.length === 1
+      ? covered[0]
+      : `${covered.slice(0, -1).join(', ')} and ${covered[covered.length - 1]}`;
+  return `Search covers ${list} only. The other sources are not available in this build yet.`;
+}
 
 /**
  * Search across Qur'an translations, Hadith and duas.
@@ -50,12 +103,17 @@ type SearchOutcome = {
  * no-results state on the way to a valid query, which reads as "nothing found" for a term
  * that was only half typed.
  *
- * ── Qur'an search may be unavailable, and the screen says so ────────────────
+ * ── The screen names only the sources it actually searched ──────────────────
  * Quran Foundation's approval covers the **Content** APIs; their Search APIs are a separate scope
- * NoorLife does not have. When the approved Qur'an repository is wired in it reports search as
- * unsupported, and this screen states that above the results rather than rendering an empty Qur'an
- * section — an absent section reads as "no verse matched", which would be a claim this build cannot
- * make. Hadith and dua search are NoorLife's own data and are unaffected.
+ * NoorLife does not have, so the approved repository reports search as unsupported. Hadith and Dua
+ * have no configured provider at all and answer `not-configured`.
+ *
+ * The banner used to be a fixed sentence — "these results cover narrations and duas only" — written
+ * when those two were fixtures that really did return rows. They are not fixtures any more, and the
+ * sentence had quietly become false in the worst direction: it told a user two sources had been
+ * searched when nothing had been. `searchCoverageMessage` composes the sentence from each
+ * repository's own answer, so it can only ever name a strand that ran, and it says nothing at all
+ * once every strand does.
  *
  * Arabic is not searched even where search works: a search that silently only covered translations
  * while appearing to cover scripture would be misleading. The caption says what is searched.
@@ -132,19 +190,19 @@ function SearchBody() {
 
       const total = hits.ayat.length + hits.hadith.length + hits.duas.length;
       /**
-       * `unsupported` is the repository saying it has no approved search source, which is different
-       * from a search that ran and matched nothing — and different again from a search that failed.
-       * Only the first produces the notice.
-       */
-      const quranSearchUnsupported = ayat.kind === 'error' && ayat.code === 'unsupported';
-
-      /**
        * An empty result is returned as `ok` rather than as `no-results` so the notice above it
        * survives. The no-results *presentation* is still rendered — by the screen, from the same
        * component the framework would have used — because "nothing matched" and "we could not search
        * part of this" are two facts a user needs at once, and the result union carries one at a time.
        */
-      return { kind: 'ok' as const, data: { hits, total, quranSearchUnsupported } };
+      const searched: SearchedStrands = {
+        /* A skipped Qur'an strand — no edition resolved — has not been searched either. */
+        quran: translation !== null && strandRan(ayat),
+        hadith: strandRan(narrations),
+        duas: strandRan(supplications),
+      };
+
+      return { kind: 'ok' as const, data: { hits, total, searched } };
     }, [query, quran, hadith, dua, translation]),
   );
 
@@ -211,15 +269,21 @@ function SearchBody() {
         loadingRows={3}
         testID="faith-search-results"
       >
-        {({ hits, total, quranSearchUnsupported }) => (
+        {({ hits, total, searched }) => (
           <View style={{ rowGap: dp(moduleLayout.cardGap) }}>
-            {quranSearchUnsupported ? (
+            {/*
+              One banner, naming only what was actually searched. It replaces a fixed sentence that
+              claimed coverage of narrations and duas while both providers were unconfigured — see
+              `SearchOutcome.searched`. `null` when everything ran, so a fully wired build carries no
+              notice at all.
+            */}
+            {searchCoverageMessage(searched) === null ? null : (
               <ModuleStatusBanner
                 tone="info"
-                message="Qur’an search is not available yet. These results cover narrations and duas only."
+                message={searchCoverageMessage(searched) ?? ''}
                 testID="faith-search-quran-unsupported"
               />
-            ) : null}
+            )}
             {total === 0 ? (
               <FaithNoResultsState query={query} testID="faith-search-results" />
             ) : null}

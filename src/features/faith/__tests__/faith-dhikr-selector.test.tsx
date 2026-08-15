@@ -93,14 +93,29 @@ describe('locked sections are shut, not faked', () => {
     expect(message).toMatch(/no placeholders/i);
   });
 
-  it('shows Quran-derived dhikr as awaiting the provider, and does not curate a list', async () => {
+  /**
+   * ── This assertion was inverted by the 2026-08 permission ───────────────────
+   * It used to require the notice to say the *provider* had not confirmed this use. That became
+   * false: Quran Foundation gave written permission for a Quran-derived Dhikr selector under
+   * NoorLife's existing Content API access, with no new scope, fee or production approval.
+   *
+   * What is still outstanding is NoorLife's **own scholarly review**, which the vendor's terms say
+   * nothing about. So the notice must now say that — and it must not blame the provider for a gap
+   * that is NoorLife's. The "will not choose which verses" sentence survives unchanged, because the
+   * reason it was there is the reason the section is still shut.
+   */
+  it('shows Quran-derived dhikr as awaiting scholarly review, and does not curate a list', async () => {
     const view = await renderSelector();
 
     const notice = await view.findByTestId('faith-dhikr-quran-locked');
     const message = String(notice.props.accessibilityLabel);
-    expect(message).toMatch(/provider/i);
+    expect(message).toMatch(/awaiting scholarly review/i);
+    // The permission is in place, and the notice says so rather than implying the vendor is the gap.
+    expect(message).toMatch(/quran foundation has given permission/i);
     // NoorLife will not decide which verses count as dhikr on its own — that is the whole reason.
     expect(message).toMatch(/will not choose which verses/i);
+    // And it must not have kept the old, now-false claim that the provider has not confirmed.
+    expect(message).not.toMatch(/not yet confirmed/i);
   });
 
   it('renders no Arabic anywhere on the screen', async () => {
@@ -120,7 +135,7 @@ describe('locked sections are shut, not faked', () => {
   it('names every lock reason distinctly', () => {
     const reasons: readonly DhikrLockReason[] = [
       'permission-pending',
-      'provider-unconfirmed',
+      'awaiting-scholarly-review',
       'offline',
       'provider-unavailable',
     ];

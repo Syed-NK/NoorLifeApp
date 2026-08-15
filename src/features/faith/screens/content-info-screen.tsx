@@ -172,13 +172,25 @@ function ContentInfoBody() {
           <ModuleText token="cardTitle" numberOfLines={2} accessibilityRole="header">
             What is licensed, and what is not
           </ModuleText>
+          {/*
+            ── Two claims corrected here ─────────────────────────────────────
+            The first said Hadith, duas and mosques were "sample data". They are not: the fixtures
+            were deleted, and those providers now answer `not-configured` — there is no content at
+            all, which is a stronger and simpler statement.
+
+            The second said "search covers narrations and duas". That followed from the sample data
+            existing, and became false when it was removed: with no provider behind either, search
+            covers nothing. Stating only what is enabled means, in this build, stating that search is
+            unavailable.
+          */}
           <ModuleText token="body" numberOfLines={8}>
-            Qur’an content is licensed. Hadith narrations, duas and mosque listings are sample data
-            while their sources are being arranged, and every screen showing them says so.
+            Qur’an text and translations are licensed and live. Hadith narrations, duas and mosque
+            listings have no content source in this build — those screens show nothing rather than
+            sample content, and each says so.
           </ModuleText>
-          <ModuleText token="body" numberOfLines={4}>
-            Searching the Qur’an is not available. NoorLife’s access covers Qur’an content only, not
-            the search service, so search covers narrations and duas.
+          <ModuleText token="body" numberOfLines={5}>
+            Search is not available. NoorLife’s Qur’an access covers content only, not the search
+            service, and there is no narration or dua source to search either.
           </ModuleText>
         </View>
       </ModuleCard>

@@ -14,7 +14,11 @@ import {
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
+import { ArabicText } from '../components/faith-list';
 import { FaithScreen } from '../components/faith-screen';
+import { QURAN_CONTENT_ATTRIBUTION } from '../data/dhikr/quran-content-attribution';
+import { referenceLabel } from '../data/dhikr/quran-dhikr-catalogue';
+import type { ResolvedDhikr } from '../data/dhikr/quran-dhikr.repository';
 import {
   dhikrCatalogue,
   DHIKR_CATEGORIES,
@@ -22,9 +26,11 @@ import {
   matchesQuery,
   type DhikrCategoryId,
   type DhikrSection,
+  type DhikrSectionState,
 } from '../data/tasbih/dhikr-catalogue';
 import { DEFAULT_COUNTER, MAX_LABEL_LENGTH } from '../data/tasbih/local-tasbih.repository';
 import { faithNavKeys } from '../faith-routes';
+import { useQuranDhikr } from '../hooks/use-quran-dhikr';
 import { useTasbih } from '../hooks/use-tasbih';
 
 /**
@@ -79,10 +85,71 @@ function SelectorBody() {
     [tasbih.labels],
   );
 
+  /**
+   * The Quran-derived section's live state — the catalogue's gate, the source, and the cache.
+   *
+   * With no scholarly-reviewed entry the hook reports `awaiting-review`, which is mapped to the
+   * locked state below rather than to an empty list. "Nothing matched" and "nothing has been
+   * approved yet" are different sentences and only one of them is true.
+   */
+  const quran = useQuranDhikr();
+
+  const quranState = useMemo<DhikrSectionState>(() => {
+    switch (quran.state.kind) {
+      case 'loading':
+        return { kind: 'loading' };
+      case 'awaiting-review':
+        return { kind: 'locked', reason: 'awaiting-scholarly-review' };
+      case 'failed':
+        /*
+          A resolution failure is a *provider* problem, not a permission one. Reported as such so a
+          user who is simply offline is not told their content is awaiting review.
+        */
+        return { kind: 'locked', reason: 'provider-unavailable' };
+      case 'ready':
+        return { kind: 'ready', entries: [] };
+    }
+  }, [quran.state]);
+
   const sections = useMemo(
-    () => dhikrCatalogue({ personal, favourites: [], recent: [] }),
-    [personal],
+    () =>
+      dhikrCatalogue({
+        personal,
+        favourites: quran.userState.favouriteEntryIds,
+        recent: quran.userState.recentEntryIds,
+        quranState,
+      }),
+    [personal, quran.userState, quranState],
   );
+
+  /**
+   * Search over local catalogue metadata and verified loaded content only.
+   *
+   * Titles, references and the translation text that has **already resolved** — never a query sent
+   * to the source, and never a search over text this app has not verified the binding of. A search
+   * box that queried upstream would be a second, unaudited retrieval path into scripture.
+   */
+  const quranMatches = useMemo(() => {
+    if (quran.state.kind !== 'ready') {
+      return [];
+    }
+    const needle = query.trim().toLowerCase();
+    if (needle.length === 0) {
+      return quran.state.entries;
+    }
+    /*
+      The category chips narrow to a whole *section* — see `visible` below — so no per-entry category
+      filter is applied here. The only narrowing this list does is the search.
+    */
+    return quran.state.entries.filter(
+      (item) =>
+        item.entry.title.toLowerCase().includes(needle) ||
+        referenceLabel(item.entry).includes(needle) ||
+        /* Loaded translations only. Arabic is not searched: a query is typed in the interface's
+           script, and matching it against scripture would be a transliteration guess. */
+        item.verses.some((verse) => verse.translation.toLowerCase().includes(needle)),
+    );
+  }, [quran.state, query]);
 
   /*
     A category filter narrows to the one section it belongs to. Every category except Quranic and
@@ -119,6 +186,11 @@ function SelectorBody() {
         <SectionCard
           key={section.id}
           section={section}
+          quranEntries={section.id === 'quran' ? quranMatches : []}
+          selectedEntryId={quran.userState.selectedEntryId}
+          favouriteEntryIds={quran.userState.favouriteEntryIds}
+          onChooseQuranEntry={(entryId) => void quran.select(entryId)}
+          onToggleFavourite={(entryId) => void quran.favourite(entryId)}
           personal={matches}
           activeCounterId={tasbih.session?.counterId ?? null}
           renaming={renaming}
@@ -270,6 +342,11 @@ function Chip({
 
 function SectionCard({
   section,
+  quranEntries,
+  selectedEntryId,
+  favouriteEntryIds,
+  onChooseQuranEntry,
+  onToggleFavourite,
   personal,
   activeCounterId,
   renaming,
@@ -282,6 +359,12 @@ function SectionCard({
   onRemove,
 }: {
   readonly section: DhikrSection;
+  /** Resolved Quran-derived entries, for the `quran` section only. Empty for every other. */
+  readonly quranEntries: readonly ResolvedDhikr[];
+  readonly selectedEntryId: string | null;
+  readonly favouriteEntryIds: readonly string[];
+  readonly onChooseQuranEntry: (entryId: string) => void;
+  readonly onToggleFavourite: (entryId: string) => void;
   readonly personal: readonly { readonly id: string; readonly name: string }[];
   readonly activeCounterId: string | null;
   readonly renaming: string | null;
@@ -315,6 +398,16 @@ function SectionCard({
 
         {section.state.kind === 'locked' ? (
           <LockedNotice reason={section.state.reason} sectionId={section.id} />
+        ) : null}
+
+        {section.id === 'quran' && section.state.kind === 'ready' ? (
+          <QuranDhikrList
+            entries={quranEntries}
+            selectedEntryId={selectedEntryId}
+            favouriteEntryIds={favouriteEntryIds}
+            onChoose={onChooseQuranEntry}
+            onToggleFavourite={onToggleFavourite}
+          />
         ) : null}
 
         {section.id === 'personal' && section.state.kind !== 'locked' ? (
@@ -503,6 +596,162 @@ function PersonalList({
   );
 }
 
+/**
+ * The Quran-derived entries, each with its reference, its Arabic, its translation and its translator.
+ *
+ * ── Every row carries its own attribution, and cannot not carry it ──────────
+ * The translator is rendered from `verse.translator`, which `resolveDhikrReference` refuses to
+ * produce without one — an unattributed translation never reaches this component, so there is no
+ * branch here that could omit the credit under a layout squeeze. The source attribution is stated
+ * once for the section, from the single constant the permission pins.
+ *
+ * ── Arabic is rendered through `ArabicText`, unmodified ─────────────────────
+ * The same component the reader uses, which passes its children through untouched — no trim, no
+ * normalise, no `numberOfLines` that could ellipsize a verse. This is the last place the scripture
+ * passes before it is drawn.
+ */
+function QuranDhikrList({
+  entries,
+  selectedEntryId,
+  favouriteEntryIds,
+  onChoose,
+  onToggleFavourite,
+}: {
+  readonly entries: readonly ResolvedDhikr[];
+  readonly selectedEntryId: string | null;
+  readonly favouriteEntryIds: readonly string[];
+  readonly onChoose: (entryId: string) => void;
+  readonly onToggleFavourite: (entryId: string) => void;
+}) {
+  const { dp } = useModuleMetrics();
+
+  if (entries.length === 0) {
+    /*
+      Reachable only by a search that matched nothing — the no-approved-entries case is the locked
+      state above, not this one. Worded so the two cannot be confused.
+    */
+    return (
+      <ModuleText token="body" testID="faith-dhikr-quran-no-matches">
+        No approved selection matches that search.
+      </ModuleText>
+    );
+  }
+
+  return (
+    <View style={{ rowGap: dp(10) }} testID="faith-dhikr-quran-list">
+      {entries.map((item) => {
+        const selected = selectedEntryId === item.entry.id;
+        const favourited = favouriteEntryIds.includes(item.entry.id);
+        const reference = referenceLabel(item.entry);
+
+        return (
+          <View key={item.entry.id} style={[styles.row, { columnGap: dp(8) }]}>
+            <PressableScale
+              onPress={() => onChoose(item.entry.id)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              /*
+                The spoken label names the reference and the translator. An attribution present
+                visually and absent from the accessible name is not an attribution that has been
+                displayed — the same rule the reciter screen applies to the Sudais credit.
+              */
+              accessibilityLabel={`${item.entry.title}. Quran ${reference}. Translated by ${item.translator}.${
+                selected ? ' Currently selected.' : ''
+              }`}
+              style={[
+                styles.flex,
+                styles.quranEntry,
+                {
+                  borderRadius: dp(moduleLayout.radiusSmall),
+                  padding: dp(12),
+                  rowGap: dp(6),
+                  borderColor: selected ? EMERALD : moduleNeutrals.border,
+                },
+              ]}
+              testID={`faith-dhikr-quran-entry-${item.entry.id}`}
+            >
+              <View style={[styles.row, { columnGap: dp(8) }]}>
+                <ModuleText
+                  token="body"
+                  color={moduleNeutrals.textPrimary}
+                  numberOfLines={2}
+                  style={styles.flex}
+                >
+                  {item.entry.title}
+                </ModuleText>
+                <ModuleText token="caption" numberOfLines={1}>
+                  {`Quran ${reference}`}
+                </ModuleText>
+              </View>
+
+              {item.verses.map((verse) => (
+                <View key={verse.verseKey} style={{ rowGap: dp(4) }}>
+                  <ArabicText testID={`faith-dhikr-arabic-${verse.verseKey}`}>
+                    {verse.arabic}
+                  </ArabicText>
+                  {/*
+                    Empty when the one-week translation ceiling has dropped it while the Arabic
+                    legitimately remains. The line below says so rather than leaving a gap that
+                    reads as "this verse has no meaning".
+                  */}
+                  {verse.translation === '' ? (
+                    <ModuleText
+                      token="caption"
+                      numberOfLines={2}
+                      testID={`faith-dhikr-translation-refreshing-${verse.verseKey}`}
+                    >
+                      The translation is being refreshed.
+                    </ModuleText>
+                  ) : (
+                    <ModuleText token="caption" numberOfLines={6}>
+                      {verse.translation}
+                    </ModuleText>
+                  )}
+                </View>
+              ))}
+
+              {item.entry.contextNote === null ? null : (
+                <ModuleText token="caption" numberOfLines={4}>
+                  {item.entry.contextNote}
+                </ModuleText>
+              )}
+
+              {item.translator === '' ? null : (
+                <ModuleText
+                  token="caption"
+                  numberOfLines={2}
+                  testID={`faith-dhikr-translator-${item.entry.id}`}
+                >
+                  {`Translated by ${item.translator}`}
+                </ModuleText>
+              )}
+            </PressableScale>
+
+            <RowButton
+              icon={favourited ? 'check' : 'edit'}
+              label={
+                favourited
+                  ? `Remove ${item.entry.title} from favourites`
+                  : `Add ${item.entry.title} to favourites`
+              }
+              onPress={() => onToggleFavourite(item.entry.id)}
+              testID={`faith-dhikr-favourite-${item.entry.id}`}
+            />
+          </View>
+        );
+      })}
+
+      {/*
+        The exact string the permission requires, from its single constant, stated once for the
+        section it governs. See `quran-content-attribution.ts` for why it is never retyped.
+      */}
+      <ModuleText token="caption" numberOfLines={3} testID="faith-dhikr-quran-attribution">
+        {QURAN_CONTENT_ATTRIBUTION}
+      </ModuleText>
+    </View>
+  );
+}
+
 /** The marker that keeps a private label from reading as verified content. */
 export function PersonalTag({ testID }: { readonly testID?: string }) {
   const { dp } = useModuleMetrics();
@@ -667,5 +916,9 @@ const styles = StyleSheet.create({
   },
   tag: {
     backgroundColor: `${EMERALD}1A`,
+  },
+  quranEntry: {
+    borderWidth: 1,
+    backgroundColor: moduleNeutrals.surface,
   },
 });
