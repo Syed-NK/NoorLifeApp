@@ -44,6 +44,26 @@ export type FaithRowProps = {
   readonly onPress?: () => void;
   /** Replaces the trailing chevron — a bookmark toggle, a checkbox. */
   readonly trailing?: ReactNode;
+  /**
+   * Declares that `trailing` contains its own focusable control — a `Switch`, a button.
+   *
+   * ── The release defect this prop exists to prevent ──────────────────────────
+   * A row with no `onPress` used to wrap `body` in `<View accessible>`. On Android, `accessible` means
+   * *this subtree is one node*: the platform collapses everything inside it into a single
+   * `android.view.ViewGroup` and stops exposing the children. The prayer-reminder rows put a `Switch`
+   * in `trailing`, so the master switch and all five per-prayer switches disappeared from the
+   * accessibility hierarchy — the dump showed a `ViewGroup` with `clickable=false` where a
+   * `android.widget.Switch` should have been, and neither TalkBack nor an accessibility-driven tap
+   * could reach `onValueChange`. Nothing about the JavaScript was wrong, which is why Jest never saw
+   * it: `fireEvent` calls the prop directly and never goes near the platform's view tree.
+   *
+   * When this is set the row container is **not** `accessible`. The label moves onto the text column,
+   * which becomes its own group, and the control in `trailing` stays an independent node with its own
+   * name, value and hint. Verify with `uiautomator dump`, not with Jest alone.
+   *
+   * A row is never both `onPress` and `trailingInteractive` — see the note in the component.
+   */
+  readonly trailingInteractive?: boolean;
   readonly accessibilityLabel?: string;
   readonly testID: string;
 };
@@ -58,11 +78,23 @@ export function FaithRow({
   arabic,
   onPress,
   trailing,
+  trailingInteractive = false,
   accessibilityLabel,
   testID,
 }: FaithRowProps) {
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
+
+  const rowLabel = accessibilityLabel ?? `${title}${subtitle === undefined ? '' : `, ${subtitle}`}`;
+
+  /*
+    The label lands on the text column instead of the row when the row carries its own control, so
+    the column is one readable group and the control beside it stays a separate node. Spread rather
+    than branched into the JSX so the non-interactive case keeps exactly the tree it had.
+  */
+  const textGroupProps = trailingInteractive
+    ? { accessible: true, accessibilityLabel: rowLabel, testID: `${testID}-text` }
+    : {};
 
   const body = (
     <View
@@ -85,7 +117,7 @@ export function FaithRow({
       ) : icon === undefined ? null : (
         <AppIcon name={icon} size={dp(22)} color={iconColor ?? theme.ink} />
       )}
-      <View style={styles.flex}>
+      <View style={styles.flex} {...textGroupProps}>
         <ModuleText token="rowLabel" numberOfLines={2}>
           {title}
         </ModuleText>
@@ -112,15 +144,28 @@ export function FaithRow({
     </View>
   );
 
+  /*
+    ── A row with its own control: the container is transparent to accessibility ──
+    No `accessible`, so nothing is merged. The text column carries the label (above) and the control
+    in `trailing` remains an independently focusable, independently clickable node — on Android, an
+    `android.widget.Switch` rather than a `ViewGroup` that swallowed one.
+
+    Deliberately not also pressable. Making the whole row toggle the switch would put a second
+    handler on the same gesture, and the two orders it can fire in — row-then-switch on touch,
+    switch-only under an accessibility action — are exactly how a double toggle that lands back on
+    the original value gets shipped. One control, one handler; the switch is already a 48 dp target.
+  */
+  if (trailingInteractive) {
+    return (
+      <View testID={testID} accessible={false}>
+        {body}
+      </View>
+    );
+  }
+
   if (onPress === undefined) {
     return (
-      <View
-        accessible
-        accessibilityLabel={
-          accessibilityLabel ?? `${title}${subtitle === undefined ? '' : `, ${subtitle}`}`
-        }
-        testID={testID}
-      >
+      <View accessible accessibilityLabel={rowLabel} testID={testID}>
         {body}
       </View>
     );
@@ -130,9 +175,7 @@ export function FaithRow({
     <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={
-        accessibilityLabel ?? `${title}${subtitle === undefined ? '' : `, ${subtitle}`}`
-      }
+      accessibilityLabel={rowLabel}
       testID={testID}
     >
       {body}

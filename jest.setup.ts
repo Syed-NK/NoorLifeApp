@@ -52,6 +52,16 @@
  * router and the audio doubles.
  */
 import { resetSurahCatalogueWarmup } from '@features/faith/data/quran-catalogue-warmup';
+/**
+ * The second process-wide cache, and it is here for exactly the reason the first one is.
+ *
+ * Faith preferences are now a module singleton rather than per-hook state — that *is* the correction,
+ * since a per-call-site copy is what made the prayer master switch unable to see its own write. A
+ * singleton necessarily survives between tests in the same worker, so one suite enabling notifications
+ * would leave them enabled for the next, and the leak would show up as a test that passes alone and
+ * fails in sequence. Cleared centrally, like the router and the catalogue.
+ */
+import { resetFaithPreferencesStore } from '@features/faith/state/faith-preferences-store';
 
 const mockRouterInstance = {
   push: jest.fn(),
@@ -1029,6 +1039,11 @@ beforeEach(() => {
    * and would assert against data it never supplied.
    */
   resetSurahCatalogueWarmup();
+  /*
+    Preferences are reset *before* AsyncStorage is touched by the next test, so the store re-hydrates
+    from whatever that test seeds rather than replaying the previous one's snapshot.
+  */
+  resetFaithPreferencesStore();
   // The profile row is writable, so it is restored between tests.
   Object.assign(mockProfileRow, MOCK_PROFILE_DEFAULTS);
 

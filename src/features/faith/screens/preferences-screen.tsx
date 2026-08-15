@@ -15,7 +15,7 @@ import type { CalculationMethod } from '../data/prayer-times.repository';
 
 import { useFaithRepositories } from '../di/faith-repository-context';
 import { faithNavKeys, faithRoutes } from '../faith-routes';
-import { DEFAULT_RECITER_NAME } from '../storage/faith-preferences';
+import { DEFAULT_RECITER_NAME, type FaithPreferences } from '../storage/faith-preferences';
 import { useFaithPreferences } from '../hooks/use-faith-preferences';
 import { useFaithResource } from '../hooks/use-faith-resource';
 import { usePrayerNotifications } from '../hooks/use-prayer-notifications';
@@ -99,7 +99,14 @@ function PreferencesBody() {
    * because 35 alarms could not be created would be the worse outcome, and `reconcilePrayerAlerts`
    * already retains the previous schedule rather than destroying it on failure.
    */
-  const save = async (patch: Parameters<typeof update>[0], message: string) => {
+  /*
+    A plain patch rather than the store's wider `FaithPreferencesPatch`, which also accepts an
+    updater function. This screen's saves are all "set this field to this value", and the object form
+    is what lets the reschedule below be decided by *reading the patch* — none of these fields
+    derives from its own previous value, so the extra generality would buy nothing and cost the
+    check.
+  */
+  const save = async (patch: Partial<FaithPreferences>, message: string) => {
     await update(patch);
     setSaved(message);
     if (patch.calculationMethod !== undefined || patch.asrMethod !== undefined) {
@@ -217,25 +224,40 @@ function PreferencesBody() {
                   void save({ asrMethod: value ? 'hanafi' : 'standard' }, 'Asr convention updated.')
                 }
                 accessibilityLabel="Hanafi Asr timing"
+                accessibilityHint="Switches Asr between the standard and Hanafi shadow-length conventions"
                 testID="faith-preference-asr"
               />
             }
+            trailingInteractive
             testID="faith-preference-asr-row"
           />,
           <FaithRow
             key="transliteration"
-            title="Show transliteration"
-            subtitle="Adds a romanised reading aid beneath duas"
+            /*
+              ── Both halves of this row were untrue ───────────────────────────
+              It said "Show transliteration" over a flag that named no content, and "Adds a romanised
+              reading aid beneath duas" for a Duas feature with no provider behind it. The flag is now
+              Qur'an-scoped, and the subtitle states the one thing a user needs to know before
+              switching it on: no transliteration source is enabled yet, so this saves a choice rather
+              than changing what is on screen. See `FaithPreferences.showQuranTransliteration`.
+            */
+            title="Show Qur’an transliteration"
+            subtitle="Saved for when a transliteration source is available — nothing is shown yet"
             trailing={
               <Switch
-                value={preferences.showTransliteration}
+                value={preferences.showQuranTransliteration}
                 onValueChange={(value) =>
-                  void save({ showTransliteration: value }, 'Transliteration preference saved.')
+                  void save(
+                    { showQuranTransliteration: value },
+                    'Qur’an transliteration preference saved.',
+                  )
                 }
-                accessibilityLabel="Show transliteration"
+                accessibilityLabel="Show Qur’an transliteration"
+                accessibilityHint="Saves your choice. No transliteration source is enabled in this build yet"
                 testID="faith-preference-transliteration"
               />
             }
+            trailingInteractive
             testID="faith-preference-transliteration-row"
           />,
         ]}

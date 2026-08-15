@@ -10,7 +10,7 @@ import {
   isTasbihMaterialId,
   type TasbihMaterialId,
 } from '../data/tasbih/tasbih-materials';
-import { faithStorageKeys, hasString, isRecord, readJson, writeJson } from './faith-storage';
+import { faithStorageKeys, hasString, isRecord, readJson, writeChecked } from './faith-storage';
 
 /**
  * The user's Faith preferences.
@@ -117,8 +117,29 @@ export type FaithPreferences = {
    */
   readonly prayerNotificationsEnabled: boolean;
   readonly prayerNotifications: readonly PrayerNotificationPreference[];
-  /** Show transliteration beneath Arabic in the Duas screen. */
-  readonly showTransliteration: boolean;
+  /**
+   * Show a romanised reading aid beneath **Qur'an** Arabic.
+   *
+   * ── Why this is scoped in its name, and what it replaced ────────────────────
+   * It was `showTransliteration`, unscoped, documented as "show transliteration beneath Arabic in the
+   * Duas screen", defaulted to `true`, and **read by nothing**. Three separate problems in one
+   * field:
+   *
+   *   1. It named no scope, so the first surface to consume it would have silently decided what it
+   *      meant for every other. Qur'an transliteration and a future Dua transliteration are different
+   *      content, from different sources, under different permissions; one boolean for both is a
+   *      setting that cannot be turned on for one and off for the other, and the user would have no
+   *      way to discover why.
+   *   2. It described a Duas capability that does not exist. The Dua provider is unconfigured —
+   *      there is no dua content in this build, so there is nothing to transliterate — and a default
+   *      of `true` therefore switched on a feature that is not there.
+   *   3. Nothing read it, so neither problem could be caught by using the app.
+   *
+   * Scoped to the Qur'an, which is the content NoorLife actually has. **No Dua flag is created**: a
+   * preference for content that does not exist is not a preference, and it would be enabling a
+   * non-existent capability by another name. One is added when there is dua content to apply it to.
+   */
+  readonly showQuranTransliteration: boolean;
   /**
    * Haptic feedback on the tasbih counter.
    *
@@ -284,7 +305,15 @@ export const defaultFaithPreferences: FaithPreferences = {
   asrMethod: 'standard',
   prayerNotificationsEnabled: false,
   prayerNotifications: DEFAULT_NOTIFICATIONS,
-  showTransliteration: true,
+  /**
+   * Off by default, where the unscoped flag it replaces was on.
+   *
+   * A reading aid over scripture is an addition to the page, and switching one on for everybody
+   * without being asked is the same class of default as opting a user into five daily notifications.
+   * The old `true` was not a decision anybody made about the Qur'an — it was a default chosen for a
+   * Duas feature that does not exist.
+   */
+  showQuranTransliteration: false,
   hapticsEnabled: true,
   tasbihMaterialId: DEFAULT_TASBIH_MATERIAL_ID,
   locationLabel: null,
@@ -313,6 +342,13 @@ function isPreferences(value: unknown): value is Partial<FaithPreferences> {
 type LegacyShape = {
   readonly translationId?: unknown;
   readonly reciterId?: unknown;
+  /**
+   * The unscoped transliteration flag, as written by builds before it was split.
+   *
+   * Read from the legacy shape rather than from `merged`, because its meaning is exactly what is in
+   * question: it was documented for Duas, defaulted to `true`, and consumed by nothing.
+   */
+  readonly showTransliteration?: unknown;
 };
 
 /**
@@ -359,6 +395,35 @@ export function migratePreferences(stored: unknown): FaithPreferences {
     : DEFAULT_TASBIH_MATERIAL_ID;
 
   /**
+   * The transliteration preference, migrated from the unscoped flag it replaces.
+   *
+   * ── The ambiguity, stated, and how it is resolved ───────────────────────────
+   * A stored `showTransliteration` is genuinely ambiguous. `true` is both "the user switched this on"
+   * and "this install has never been touched", because the old default was `true` — and nothing read
+   * the flag, so there was no behaviour a user could have been reacting to either way. There is no
+   * evidence in the blob that distinguishes them.
+   *
+   * So the migration takes the only unambiguous half. A stored **`false`** can only have come from
+   * somebody deliberately switching it off — no default ever produced it — and that decision is
+   * carried across and honoured. A stored `true` is treated as the untouched default it almost
+   * certainly is, and lands on the new default of `false`.
+   *
+   * That errs toward *not* enabling something on the user's behalf, which is the right direction for
+   * a flag whose old value switched on a capability that did not exist. Anyone who did want it is one
+   * tap away on a row that now says truthfully what it applies to; anyone who is silently opted in
+   * has no such signal.
+   *
+   * A blob written by the current build carries `showQuranTransliteration` and is honoured directly —
+   * that value is unambiguous, because this field has only ever meant one thing.
+   */
+  const showQuranTransliteration =
+    typeof record.showQuranTransliteration === 'boolean'
+      ? record.showQuranTransliteration
+      : legacy.showTransliteration === false
+        ? false
+        : defaultFaithPreferences.showQuranTransliteration;
+
+  /**
    * A blob written by the current build, carrying a whole choice.
    *
    * Kept as-is when the user chose it. When NoorLife chose it, a retired id is dropped so a fresh
@@ -376,6 +441,7 @@ export function migratePreferences(stored: unknown): FaithPreferences {
         translationDefaultSeeded: true,
         reciterId,
         reciterChosenByUser,
+        showQuranTransliteration,
       };
     }
     /**
@@ -414,6 +480,7 @@ export function migratePreferences(stored: unknown): FaithPreferences {
     reciterId,
     reciterChosenByUser,
     tasbihMaterialId,
+    showQuranTransliteration,
   };
 }
 
@@ -434,11 +501,52 @@ export async function readFaithPreferences(): Promise<FaithPreferences> {
   return migratePreferences(stored);
 }
 
+/** The outcome of one read-modify-write, with the persistence result kept separate from the value. */
+export type FaithPreferencesMutation = {
+  /** The merged preferences. Correct in memory even when `persisted` is false. */
+  readonly preferences: FaithPreferences;
+  /**
+   * Whether the merged value reached durable storage.
+   *
+   * Separate from `preferences` because the two genuinely differ: a rejected write leaves the app
+   * holding the value the user asked for and the device holding the value before it. Collapsing them
+   * would make the next launch silently disagree with the screen the user is looking at, which is
+   * exactly the class of claim this module refuses to make.
+   */
+  readonly persisted: boolean;
+};
+
+/**
+ * The module's only read-modify-write of the preference blob.
+ *
+ * ── Why the patch is computed from a function ───────────────────────────────
+ * So the patch is derived from what storage *actually holds at the moment of writing*, not from a
+ * value the caller captured earlier. A caller that read preferences, waited for a user to press
+ * something and then wrote `{ prayerNotifications: [...derivedFromThatOldRead] }` would silently
+ * discard anything written in between — the per-prayer switches and the master switch are two such
+ * writers, and they are one tap apart.
+ *
+ * Callers must **not** rely on this for mutual exclusion: two overlapping calls still interleave
+ * their read and write halves. Serialisation is the store's job — see `faith-preferences-store.ts`,
+ * which is the only production caller and queues every mutation through one chain.
+ */
+export async function mutateFaithPreferences(
+  updater: (current: FaithPreferences) => Partial<FaithPreferences>,
+): Promise<FaithPreferencesMutation> {
+  const current = await readFaithPreferences();
+  const next: FaithPreferences = { ...current, ...updater(current) };
+  /*
+    `writeChecked` rather than `writeJson`: a preference that failed to persist is reported. The rest
+    of this file's reads stay total — a corrupt blob still degrades to defaults — but a write the
+    device refused is something the user can act on, and hiding it is what makes a setting appear to
+    save and then come back wrong.
+  */
+  const persisted = await writeChecked(faithStorageKeys.preferences, next);
+  return { preferences: next, persisted };
+}
+
 export async function writeFaithPreferences(
   update: Partial<FaithPreferences>,
 ): Promise<FaithPreferences> {
-  const current = await readFaithPreferences();
-  const next: FaithPreferences = { ...current, ...update };
-  await writeJson(faithStorageKeys.preferences, next);
-  return next;
+  return (await mutateFaithPreferences(() => update)).preferences;
 }

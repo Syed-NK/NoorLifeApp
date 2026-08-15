@@ -37,7 +37,7 @@ import { usePrayerNotifications } from '../hooks/use-prayer-notifications';
  */
 export function PrayerRemindersScreen() {
   const { dp } = useModuleMetrics();
-  const { preferences } = useFaithPreferences();
+  const { preferences, persistenceError } = useFaithPreferences();
   const notifications = usePrayerNotifications();
   const [tested, setTested] = useState<'sent' | 'failed' | null>(null);
 
@@ -62,6 +62,19 @@ export function PrayerRemindersScreen() {
           testID="faith-prayer-reminders-notice"
         />
 
+        {/*
+          A failed write is reported where it happened rather than swallowed. Without this a switch
+          moves, the schedule is rebuilt from the new value, and the next launch reads the old one
+          back from storage — the switch appears to have undone itself for no stated reason.
+        */}
+        {persistenceError === null ? null : (
+          <ModuleStatusBanner
+            tone="warning"
+            message={persistenceError}
+            testID="faith-prayer-reminders-persistence-error"
+          />
+        )}
+
         {tested === null ? null : (
           <FaithSuccessBanner
             message={
@@ -79,20 +92,32 @@ export function PrayerRemindersScreen() {
             <FaithRow
               key="master"
               title="Enable prayer notifications"
-              subtitle={
-                status?.preferenceEnabled === true
-                  ? 'Alerts are scheduled at each prayer time'
-                  : 'No alerts are scheduled'
-              }
+              /*
+                ── The copy defect this replaces ─────────────────────────────
+                This used to read "Alerts are scheduled at each prayer time" whenever
+                `preferenceEnabled` was true. The preference being on is a statement about a switch,
+                not about the platform: with permission denied, no location, or a scheduling call the
+                device refused, nothing was pending and the row still said alerts were scheduled.
+                `masterSubtitle` reads the reconciled pending state instead, and says "scheduled"
+                only when `schedule.kind === 'scheduled'` — which is only reachable after matching
+                identifiers were found in the platform's own pending list.
+              */
+              subtitle={masterSubtitle(status)}
               icon="notification"
               trailing={
                 <Switch
                   value={preferences.prayerNotificationsEnabled}
                   onValueChange={(value) => void notifications.setMasterEnabled(value)}
                   accessibilityLabel="Enable prayer notifications"
+                  accessibilityHint="Turns all prayer reminders on or off"
                   testID="faith-prayer-notifications-master"
                 />
               }
+              /*
+                Keeps the row container out of the accessibility tree so the switch stays an
+                `android.widget.Switch` in its own right. See `FaithRowProps.trailingInteractive`.
+              */
+              trailingInteractive
               testID="faith-prayer-notifications-master-row"
             />,
           ]}
@@ -106,7 +131,13 @@ export function PrayerRemindersScreen() {
             <FaithRow
               key={prayer}
               title={capitalise(prayer)}
-              subtitle={enabledFor(prayer) ? 'Alert at the prayer time' : 'Off'}
+              /*
+                The per-prayer row says what the *preference* is, and says so in preference words.
+                Whether that preference produced a pending request is the master row's and the status
+                panel's business — five rows each claiming "scheduled" would be five chances to make
+                a promise the platform has not confirmed.
+              */
+              subtitle={perPrayerSubtitle(enabledFor(prayer), status)}
               icon="notification"
               trailing={
                 <Switch
@@ -114,9 +145,15 @@ export function PrayerRemindersScreen() {
                   onValueChange={(value) => void notifications.setPrayerEnabled(prayer, value)}
                   disabled={!preferences.prayerNotificationsEnabled}
                   accessibilityLabel={`${capitalise(prayer)} alert`}
+                  accessibilityHint={
+                    preferences.prayerNotificationsEnabled
+                      ? `Turns the ${capitalise(prayer)} reminder on or off`
+                      : 'Enable prayer notifications first'
+                  }
                   testID={`faith-prayer-reminder-${prayer}`}
                 />
               }
+              trailingInteractive
               accessibilityLabel={`${capitalise(prayer)} alert, ${enabledFor(prayer) ? 'on' : 'off'}.`}
               testID={`faith-prayer-reminder-row-${prayer}`}
             />
@@ -133,12 +170,32 @@ export function PrayerRemindersScreen() {
         <ModuleCard testID="faith-prayer-notification-status">
           <View style={{ rowGap: dp(6) }}>
             <ModuleText token="cardHeading">Status</ModuleText>
+            {/*
+              The master preference and the OS permission, on separate lines, because they are
+              separate facts and the old copy conflated them. "Reminders on" and "the device will
+              show them" have independent answers, and either one alone explains a missed prayer.
+            */}
+            <StatusLine
+              label="Reminders preference"
+              value={preferences.prayerNotificationsEnabled ? 'On' : 'Off'}
+              testID="preference"
+            />
+            <StatusLine
+              label="Prayers selected"
+              value={selectedPrayersText(preferences.prayerNotifications)}
+              testID="selected"
+            />
             <StatusLine
               label="Notification permission"
               value={permissionText(status)}
               testID="permission"
             />
             <StatusLine label="Exact alarms" value={exactAlarmText(status)} testID="exact-alarms" />
+            <StatusLine
+              label="Last reconciliation"
+              value={reconciliationText(status, notifications.busy)}
+              testID="reconciliation"
+            />
             <StatusLine label="Sound" value={prayerAlertSoundLabel()} testID="sound" />
             <StatusLine
               label="Location used for scheduling"
@@ -151,7 +208,20 @@ export function PrayerRemindersScreen() {
               testID="method"
             />
             <StatusLine label="Next scheduled alert" value={nextAlertText(status)} testID="next" />
-            <StatusLine label="Schedule" value={freshnessText(status)} testID="freshness" />
+            <StatusLine
+              label="Pending requests"
+              value={pendingRequestsText(status)}
+              testID="freshness"
+            />
+            {/*
+              The last line, and the one the other seven exist to qualify. `deliveryVerifiable` is a
+              field on the status precisely so this cannot quietly become "working" — see the type.
+            */}
+            <StatusLine
+              label="Delivery"
+              value="Cannot be confirmed — NoorLife sees pending requests, not deliveries"
+              testID="delivery"
+            />
           </View>
         </ModuleCard>
 
@@ -221,6 +291,51 @@ function StatusLine({
   );
 }
 
+/**
+ * The master row's subtitle, derived from pending requests rather than from the switch.
+ *
+ * The word "scheduled" appears on exactly one branch: `kind === 'scheduled'`, which
+ * `reconcilePrayerAlerts` only returns after it has matched its stored identifiers against the
+ * platform's own pending list. Every other state says what is actually true instead — including the
+ * one that used to be indistinguishable from success, where the preference is on and the schedule
+ * failed.
+ */
+function masterSubtitle(status: PrayerAlertStatus | null): string {
+  if (status === null) {
+    return 'Checking what is scheduled…';
+  }
+  if (!status.preferenceEnabled) {
+    return 'Off — nothing is scheduled';
+  }
+  switch (status.schedule.kind) {
+    case 'scheduled':
+      return `On — ${countLabel(status.schedule.count)} pending on this device`;
+    case 'stale':
+      return `On — ${countLabel(status.schedule.count)} pending, from settings that have since changed`;
+    case 'failed':
+      return `On, but nothing could be scheduled — ${failureReason(status.schedule.reason)}`;
+    case 'none':
+      /* Master on with every prayer off. The preference is on; there is correctly nothing pending. */
+      return 'On — no prayers selected, so nothing is scheduled';
+  }
+}
+
+/**
+ * A per-prayer row's subtitle. Preference words only.
+ *
+ * The one qualification it does make is the case where the switch is on and the module as a whole has
+ * nothing pending — otherwise five rows would read "Alert at the prayer time" over a schedule that
+ * does not exist, which is the same claim the master row was corrected for.
+ */
+function perPrayerSubtitle(enabled: boolean, status: PrayerAlertStatus | null): string {
+  if (!enabled) {
+    return 'Off';
+  }
+  return status !== null && status.preferenceEnabled && status.schedule.kind === 'scheduled'
+    ? 'Alert at the prayer time'
+    : 'Selected';
+}
+
 function bannerMessage(status: PrayerAlertStatus | null): string {
   if (status === null) {
     return 'Checking your notification settings…';
@@ -231,11 +346,70 @@ function bannerMessage(status: PrayerAlertStatus | null): string {
   if (status.permission !== 'granted') {
     return 'Your choices are saved, but this device is not allowing NoorLife to show notifications, so nothing will be delivered.';
   }
-  /*
-    The honest ceiling, stated even in the good case. NoorLife knows what is pending; it cannot know
-    what arrives.
-  */
-  return 'Alerts are scheduled on this device. NoorLife cannot confirm delivery — silent mode, Focus and battery settings can each suppress a notification.';
+  switch (status.schedule.kind) {
+    case 'scheduled':
+      /*
+        The honest ceiling, stated even in the good case. NoorLife knows what is pending; it cannot
+        know what arrives.
+      */
+      return `${countLabel(status.schedule.count)} are pending on this device. NoorLife cannot confirm delivery — silent mode, Focus and battery settings can each suppress a notification.`;
+    case 'stale':
+      return 'Alerts are pending, but they were built before your current settings. Refresh the schedule to rebuild them.';
+    case 'failed':
+      return `Nothing is scheduled — ${failureReason(status.schedule.reason)}.`;
+    case 'none':
+      return 'No prayers are selected, so nothing is scheduled.';
+  }
+}
+
+/** Why the last reconciliation produced no schedule, in one clause that fits mid-sentence. */
+function failureReason(
+  reason: Extract<PrayerAlertStatus['schedule'], { kind: 'failed' }>['reason'],
+) {
+  switch (reason) {
+    case 'permission':
+      return 'this device is not allowing NoorLife to show notifications';
+    case 'location':
+      return 'no location is set for prayer times';
+    case 'calculation':
+      return 'prayer times could not be calculated';
+    case 'platform-refused':
+      return 'the device refused to create the alerts';
+  }
+}
+
+function countLabel(count: number): string {
+  return count === 1 ? '1 alert' : `${count} alerts`;
+}
+
+function selectedPrayersText(
+  entries: readonly { readonly prayer: PrayerKey; readonly enabled: boolean }[],
+): string {
+  const on = entries.filter((entry) => entry.enabled).map((entry) => capitalise(entry.prayer));
+  return on.length === 0 ? 'None' : on.join(', ');
+}
+
+/**
+ * Whether the app's picture of the schedule is current, which is separate from whether that schedule
+ * exists. A reconciliation can succeed and correctly find nothing.
+ */
+function reconciliationText(status: PrayerAlertStatus | null, busy: boolean): string {
+  if (busy) {
+    return 'Checking now…';
+  }
+  if (status === null) {
+    return 'Not yet run';
+  }
+  switch (status.schedule.kind) {
+    case 'scheduled':
+      return 'Matched the device’s pending list';
+    case 'stale':
+      return 'Could not run — pending alerts left in place';
+    case 'failed':
+      return `Failed — ${failureReason(status.schedule.reason)}`;
+    case 'none':
+      return 'Ran — nothing to schedule';
+  }
 }
 
 function permissionText(status: PrayerAlertStatus | null): string {
@@ -275,7 +449,15 @@ function nextAlertText(status: PrayerAlertStatus | null): string {
   return 'None scheduled';
 }
 
-function freshnessText(status: PrayerAlertStatus | null): string {
+/**
+ * How many requests the platform is actually holding — the only number on this screen that comes
+ * from the device rather than from a preference.
+ *
+ * `failed` reports the *retained* count, because a failed reconciliation does not cancel what was
+ * already pending: the previous schedule is deliberately left in place, and saying "0" while five
+ * alerts are still queued would be as wrong as the claim this screen was corrected for.
+ */
+function pendingRequestsText(status: PrayerAlertStatus | null): string {
   const schedule = status?.schedule;
   switch (schedule?.kind) {
     case 'scheduled':
@@ -283,15 +465,11 @@ function freshnessText(status: PrayerAlertStatus | null): string {
     case 'stale':
       return `${schedule.count} pending, but out of date`;
     case 'failed':
-      return schedule.reason === 'permission'
-        ? 'Not scheduled — permission needed'
-        : schedule.reason === 'location'
-          ? 'Not scheduled — no location'
-          : schedule.reason === 'calculation'
-            ? 'Not scheduled — times unavailable'
-            : 'Not scheduled — the device refused';
+      return schedule.retainedCount === 0
+        ? 'None pending'
+        : `${schedule.retainedCount} pending from the previous schedule`;
     case 'none':
-      return 'Nothing scheduled';
+      return 'None pending';
     default:
       return 'Checking…';
   }

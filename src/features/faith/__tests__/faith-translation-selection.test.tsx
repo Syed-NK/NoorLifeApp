@@ -403,7 +403,12 @@ describe('migrating a stored preference', () => {
     });
     expect(migrated.calculationMethod).toBe('egyptian');
     expect(migrated.locationLabel).toBe('Manchester');
-    expect(migrated.showTransliteration).toBe(false);
+    /*
+      The unscoped `showTransliteration` was split into a Qur'an-scoped flag. A stored `false` is the
+      one unambiguous legacy value — no default ever produced it — so it is carried across and the
+      user's deliberate "off" survives the rename. See `migratePreferences`.
+    */
+    expect(migrated.showQuranTransliteration).toBe(false);
   });
 
   it('defaults the reciter to Sudais, resource id 3', () => {
