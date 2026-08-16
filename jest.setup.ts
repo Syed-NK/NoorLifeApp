@@ -343,10 +343,7 @@ type MockAudioPlaylist = {
   readonly skipTo: (index: number) => void;
   readonly seekTo: (seconds: number) => Promise<void>;
   readonly add: (source: { uri: string }) => void;
-  readonly addListener: (
-    event: string,
-    listener: (data: never) => void,
-  ) => { remove: () => void };
+  readonly addListener: (event: string, listener: (data: never) => void) => { remove: () => void };
 };
 
 /** How many native playlists have been constructed. A rebuild mid-surah shows up here. */
@@ -371,9 +368,7 @@ function mockCreatePlaylist(initial: { uri: string }[]): MockAudioPlaylist {
     didJustFinish: false,
   };
   const statusListeners = new Set<(next: MockPlaylistStatus) => void>();
-  const trackListeners = new Set<
-    (data: { previousIndex: number; currentIndex: number }) => void
-  >();
+  const trackListeners = new Set<(data: { previousIndex: number; currentIndex: number }) => void>();
 
   const emit = (): void => {
     for (const listener of [...statusListeners]) {
@@ -762,6 +757,19 @@ let mockFsResponder: (url: string) => Uint8Array | Error = () => mockAudioBytes(
 /** Free space the double reports, so the low-storage branch is reachable. */
 let mockFsFreeBytes = 8 * 1024 * 1024 * 1024;
 
+/** URIs whose next write throws, so a partially-written generation is reachable in a test. */
+const mockFsWriteFailures = new Set<string>();
+
+/**
+ * Called with the URI of every file write, before the bytes land.
+ *
+ * The hook a session-cancellation test needs. "The user signed out *while* the generation was being
+ * staged" is a claim about an instant in the middle of `publishGeneration`, and the only honest way
+ * to reach that instant is from inside the write itself — anything else invalidates the session
+ * before or after the region under test and proves a different thing.
+ */
+let mockFsWriteListener: ((uri: string) => void) | null = null;
+
 /** A buffer that begins with an ID3 tag, which is what `isPlausibleAudio` accepts. */
 function mockAudioBytes(size: number): Uint8Array {
   const bytes = new Uint8Array(size);
@@ -785,6 +793,22 @@ export const mockFileSystem = {
   setFreeBytes(value: number): void {
     mockFsFreeBytes = value;
   },
+  /**
+   * Makes a write to one URI throw, so a mid-publication failure is reachable.
+   *
+   * The generation publisher's whole claim is that a failure between two durable writes cannot expose
+   * a mixed state. Proving that needs the second write to actually fail.
+   */
+  failWritesTo(uri: string): void {
+    mockFsWriteFailures.add(uri);
+  },
+  clearWriteFailures(): void {
+    mockFsWriteFailures.clear();
+  },
+  /** Observes every write as it happens. See `mockFsWriteListener`. */
+  onWrite(listener: ((uri: string) => void) | null): void {
+    mockFsWriteListener = listener;
+  },
   /** Places a file directly, bypassing the transfer. `lastModified` drives expiry tests. */
   seed(uri: string, bytes: Uint8Array, lastModified: number = Date.now()): void {
     mockFsFiles.set(uri, { bytes, lastModified });
@@ -793,6 +817,8 @@ export const mockFileSystem = {
     mockFsFiles.clear();
     mockFsResponder = () => mockAudioBytes(4096);
     mockFsFreeBytes = 8 * 1024 * 1024 * 1024;
+    mockFsWriteFailures.clear();
+    mockFsWriteListener = null;
   },
 };
 
@@ -828,10 +854,33 @@ jest.mock('expo-file-system', () => {
     create(): void {
       // Nothing to do: the flat map needs no directory entry, and `create` is idempotent by design.
     }
-    list(): MockFile[] {
-      return [...mockFsFiles.keys()]
-        .filter((uri) => uri.startsWith(`${this.uri}/`))
-        .map((uri) => new MockFile(uri));
+    /**
+     * Immediate children, as the real API returns them: files as `File`, subdirectories as
+     * `Directory`.
+     *
+     * The flat map holds no directory entries, so a child is a directory exactly when something
+     * exists below it. Generations *are* directories under one root and the sweeper tells them apart
+     * from files by `instanceof`, so a double that returned everything as a file would let a broken
+     * sweep pass.
+     */
+    list(): (MockFile | MockDirectory)[] {
+      const prefix = `${this.uri}/`;
+      const seen = new Set<string>();
+      const out: (MockFile | MockDirectory)[] = [];
+      for (const uri of mockFsFiles.keys()) {
+        if (!uri.startsWith(prefix)) {
+          continue;
+        }
+        const rest = uri.slice(prefix.length);
+        const slash = rest.indexOf('/');
+        const name = slash === -1 ? rest : rest.slice(0, slash);
+        if (seen.has(name)) {
+          continue;
+        }
+        seen.add(name);
+        out.push(slash === -1 ? new MockFile(prefix + name) : new MockDirectory(prefix + name));
+      }
+      return out;
     }
     delete(): void {
       for (const uri of [...mockFsFiles.keys()]) {
@@ -858,6 +907,45 @@ jest.mock('expo-file-system', () => {
     }
     get lastModified(): number | null {
       return mockFsFiles.get(this.uri)?.lastModified ?? null;
+    }
+    /**
+     * Text I/O, added for the file-backed synchronised generations.
+     *
+     * Encoded to UTF-8 on write and decoded on read rather than held as a string, so `size` is the
+     * real byte length and a test asserting a checksum or a byte count asserts the same thing
+     * production would.
+     */
+    create(): void {
+      if (!mockFsFiles.has(this.uri)) {
+        mockFsFiles.set(this.uri, { bytes: new Uint8Array(0), lastModified: Date.now() });
+      }
+    }
+    write(content: string | Uint8Array): void {
+      /* Before the failure check and before the bytes land, so an observer sees every attempt. */
+      mockFsWriteListener?.(this.uri);
+      if (mockFsWriteFailures.has(this.uri)) {
+        throw new Error('ENOSPC');
+      }
+      const bytes =
+        typeof content === 'string' ? new TextEncoder().encode(content) : new Uint8Array(content);
+      mockFsFiles.set(this.uri, { bytes, lastModified: Date.now() });
+    }
+    textSync(): string {
+      const entry = mockFsFiles.get(this.uri);
+      if (entry === undefined) {
+        throw new Error('ENOENT');
+      }
+      return new TextDecoder().decode(entry.bytes);
+    }
+    async text(): Promise<string> {
+      return await Promise.resolve(this.textSync());
+    }
+    bytesSync(): Uint8Array {
+      const entry = mockFsFiles.get(this.uri);
+      if (entry === undefined) {
+        throw new Error('ENOENT');
+      }
+      return entry.bytes;
     }
     delete(): void {
       if (!mockFsFiles.has(this.uri)) {

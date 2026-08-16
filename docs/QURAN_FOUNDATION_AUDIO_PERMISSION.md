@@ -103,8 +103,16 @@ Neither condition requires deleting audio after seven days. A hard seven-day exp
 
 ### 8.1 What ships today, and the user impact
 
-**Unchanged. The seven-day read-time expiry remains in force for every reciter, including resource
-ID 3.**
+> **Reconciled 2026-08-16.** This section described the ceiling on resource ID 3 as though the
+> licence required it. It does not, and never did. **The permission in §1 is granted, written and
+> unconditional**: resource ID 3 may be retained beyond one week. The seven-day expiry on Sudais audio
+> is **NoorLife's own conservative choice**, taken while no synchronisation mechanism existed, and it
+> is a self-imposed restriction rather than a licence obligation. Nothing below may be read as "the
+> vendor requires this to expire". What follows describes the **current mobile behaviour**, which is
+> now the thing that is wrong.
+
+**Current mobile behaviour: the seven-day read-time expiry is still applied to every reciter,
+including resource ID 3.**
 
 Concretely, for a user who has downloaded a surah of Sudais recitation:
 
@@ -135,25 +143,39 @@ synchronisation is implemented** — that is, when all of the following hold:
 
 Until every one of those holds, the ceiling stays.
 
+**Where each condition stands, 2026-08-16:**
+
+| | Condition | Status |
+|---|---|---|
+| 1 | Content Sync confirmed | **Met.** Documented, published, implemented server-side and live-verified — §9.4. |
+| 2 | Connected check every seven connected days | **Not met — not built.** The server operation and the device's checkpoint store both exist; no code path runs the check. See §8.5. |
+| 3 | Corrections applied promptly | **Not met, and partly unresolved.** No recitation mutation has been observed on the feed; the only demonstrated correction path for audio is snapshot comparison. See §8.4. |
+| 4 | Available offline past the window | **Not met.** The mobile expiry still deletes access at seven days. |
+
+So the ceiling stays for now — but for a **different and narrower reason** than when this section was
+written. The blocker is no longer "there is no mechanism". The mechanism exists and is verified. The
+blocker is that the device does not yet use it.
+
 **Every other resource retains its existing applicable policy.** The seven-day ceiling is the
 general content-caching rule and is not lifted for any other reciter, any other audio, or any other
 content type. The exemption, when it arrives, is keyed on the resource id.
 
 ### 8.3 What is implemented now
 
-> **Status of the extended-retention feature: NOT IMPLEMENTED.**
+> **Status of the extended-retention feature: NOT IMPLEMENTED ON THE DEVICE.**
 >
 > The permission to retain resource ID 3 offline beyond one week has been **granted** and is **not
-> built**. Nothing in this repository may describe it as delivered, available, shipped or complete
-> until every condition in §8.2 holds. Stated plainly so the distinction cannot be lost:
+> built into the app**. The server side is built and verified; the mobile side is not. Nothing in this
+> repository may describe the feature as delivered, available, shipped or complete until every
+> condition in §8.2 holds. Stated plainly so the distinction cannot be lost:
 >
 > | | Position |
 > |---|---|
 > | What Quran Foundation permits | Resource ID 3 may remain available offline **beyond seven days** |
-> | What NoorLife ships today | A **hard seven-day read-time expiry** on resource ID 3, the same as every other reciter |
+> | What NoorLife ships today | A **hard seven-day read-time expiry** on resource ID 3, the same as every other reciter — NoorLife's own choice, not a licence requirement |
 > | What C7 requires of a connected device | Check for corrections, updates or removals **at least every seven connected days** |
 > | What C9 requires of an offline device | Keep permitted audio **available** past that window, and synchronise at the next opportunity |
-> | Why the ceiling stays | There is no synchronisation mechanism, so lifting it would satisfy C9 by breaking C7 and C8 |
+> | Why the ceiling stays | **Corrected 2026-08-16.** No longer "there is no mechanism" — there is one, and it is verified. The device does not yet run it, and one interpretation question is open (§8.4). |
 >
 > The user-visible consequence is unchanged and is stated in §8.1: a user who downloads a surah and
 > goes offline for eight days loses audio NoorLife has written permission to retain. That is a real
@@ -171,12 +193,68 @@ Only what is safe without the synchronisation mechanism:
   in `src/`.
 - No change to retention, no new download behaviour, no Edge Function operation, no deployment.
 
-**No Content Sync endpoint has been invented, and none may be.** Quran Foundation's published
-documentation contains no such API (§9), and NoorLife's approval covers the Content API only. The
-approved allow-list in `supabase/functions/quran-content/contract.ts` is a closed union of eight
-operations; satisfying C7 must not be attempted by adding a ninth, by guessing a route, or by
-reinterpreting `list_verse_recitations` as a synchronisation mechanism. The mechanism has to be
-confirmed by the vendor first — see §9, which remains open.
+> **Superseded 2026-08-16.** The paragraph that stood here said *"No Content Sync endpoint has been
+> invented, and none may be. Quran Foundation's published documentation contains no such API (§9)."*
+> That was written against the research failure recorded in §9.1 and is **factually wrong**. Content
+> Sync is documented, published, implemented behind the approved allow-list, and live-verified in
+> §9.4. It is retained here only as the record of what was believed.
+
+The rule the superseded paragraph was protecting is still in force, restated correctly: **no endpoint
+may be guessed.** The allow-list in `supabase/functions/quran-content/contract.ts` is a closed union;
+`sync_content_resources` and `get_content_snapshot` were added from the vendor's own versioned
+documentation, not inferred, and `list_verse_recitations` must never be reinterpreted as a
+synchronisation mechanism.
+
+### 8.4 The one assumption that needs Quran Foundation's confirmation
+
+**Stated here rather than made silently, because it is a licence interpretation and not an
+engineering choice.**
+
+C8 requires corrections, updates and removals to be applied promptly. For **translations:85** the
+mechanism is demonstrated: the feed emits `RESOURCE_CREATE`, and NoorLife replaces the resource.
+
+For **recitations:3** it is not. Across every verification run the bootstrap has returned **only** the
+translation mutation; **no recitation mutation has ever been observed on the sync feed**, and none may
+be described as observed. The recitation *snapshot* is live-verified — HTTP 200, resource 3, all 6,236
+rows — so the only correction mechanism NoorLife can actually demonstrate for audio is:
+
+> **Assumption A1.** Periodically re-fetching the `recitations:3` snapshot and comparing it against
+> the local manifest — row set, record keys and sequences — constitutes the C8 correction-and-removal
+> mechanism for audio, in the absence of recitation mutations on the change feed.
+
+If A1 is how Quran Foundation intends recitation corrections to reach clients, NoorLife's connected
+check for audio is a snapshot comparison rather than a mutation stream, and C7/C8 are satisfiable
+today. If it is not — if recitation mutations are expected on the feed and their absence is a defect
+or a not-yet-enabled resource — then NoorLife needs to know that instead, because the connected check
+would have to wait for them.
+
+**Two questions for Quran Foundation:**
+
+1. Does Content Sync emit mutations for `recitations` resources, and specifically for resource 3? If
+   so, under what circumstances — is a bootstrap expected to announce the resource, or do mutations
+   appear only when the recitation changes?
+2. Is A1 an acceptable C7/C8 mechanism for audio in the meantime?
+
+Until one of those is answered, **A1 is an assumption on the record and not a position NoorLife has
+adopted.** No extended-retention behaviour may ship that depends on it without saying so.
+
+### 8.5 What this means for the seven-day expiry, precisely
+
+Three statements that must not be collapsed into each other:
+
+| | |
+|---|---|
+| **The permission** | Granted, written, unconditional. Resource ID 3 may be retained beyond one week. Not in doubt and never was. |
+| **The obligation** | C7 requires a connected device to check at least every seven **connected** days. It is a check obligation. It has never been a deletion rule, and an offline device is expressly permitted to keep permitted audio and synchronise at its next opportunity (C9). |
+| **The current code** | Deletes access to Sudais audio seven days after **download**, regardless of connectivity and regardless of whether a check was possible. |
+
+The third is wrong on its own terms. It measures the wrong clock — *download age* rather than *time
+since the last successful connected check* — so it penalises exactly the user C9 protects: the one who
+is offline. Correcting it means keeping the two timestamps apart, which
+`src/features/faith/storage/faith-sync-checkpoint.ts` (`lastSyncedAt`) and
+`src/features/faith/storage/faith-audio-manifest.ts` (`downloadedAt`, `lastSyncedAt`, and the
+`stale-check-due` state that stays playable) were both built to do — and which the shipping download
+path does not yet use.
 
 ---
 

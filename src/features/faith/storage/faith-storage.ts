@@ -137,6 +137,38 @@ export const faithStorageKeys = {
    * Holds no URL and no host. See `faith-audio-manifest.ts`.
    */
   quranAudioManifest: `${NAMESPACE}.quran.audio-manifest`,
+  /**
+   * When the Sudais recitation resource was last reconciled, and how it was reached.
+   *
+   * ── Why this is not the sync checkpoint's clock ──────────────────────────
+   * `quranSyncCheckpoint.lastSyncedAt` says when the **change feed** was last read to completion.
+   * This says when **resource 3's contents** were last compared against what is on the device. They
+   * are different obligations and they come due independently: a feed that reports nothing is a
+   * successful feed read and tells you nothing about the audio.
+   *
+   * Keeping them apart is what stops one masquerading as the other — which matters here more than
+   * usual, because the feed has never emitted a recitation mutation, so the audio clock is the only
+   * evidence that the audio was ever checked at all.
+   *
+   * Holds two timestamps and one closed enum. No content, no URL, no id beyond the approved one.
+   * See `faith-recitation-check.ts`.
+   */
+  quranRecitationCheck: `${NAMESPACE}.quran.recitation-check`,
+  /**
+   * Which published generation of synchronised content is active. **Two fields, nothing else.**
+   *
+   * ── Why the content is not here ─────────────────────────────────────────
+   * Translation 85 and recitation 3 are 6,236 rows each; the live snapshots measured
+   * `over_2_to_4_mib` and `over_4_to_8_mib`, and the transformed JSON is larger still. AsyncStorage
+   * is one SQLite database with a shared cursor window — storing rows of that size is a production
+   * failure that an in-memory test double would never reveal, and raising the database size or
+   * sharding across keys moves it rather than removes it.
+   *
+   * So the rows are file-backed and this key holds `{version, generationId}` — a few dozen bytes.
+   * Writing it is the single act that publishes a generation, which is what makes a crash unable to
+   * expose translations from one run beside recitations from another. See `faith-sync-generation.ts`.
+   */
+  quranGenerationPointer: `${NAMESPACE}.quran.generation-pointer`,
 } as const;
 
 export type FaithStorageKey = (typeof faithStorageKeys)[keyof typeof faithStorageKeys];

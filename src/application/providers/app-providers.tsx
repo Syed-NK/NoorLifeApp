@@ -1,5 +1,6 @@
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ContentSyncCoordinator } from '@features/faith/di/content-sync-coordinator';
 import { QuranCatalogueWarmup } from '@features/faith/di/quran-warmup';
 import { EntitlementProvider } from '@features/subscription/services/entitlement-context';
 
@@ -61,6 +62,20 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
                       and warming before sign-in would spend a call that can only be refused.
                     */}
                     <QuranCatalogueWarmup />
+                    {/*
+                      Renders nothing. The **one** production owner of Content Sync: it runs the
+                      seven-connected-day check when a session becomes ready, when the app returns to
+                      the foreground, and when connectivity becomes confirmed.
+
+                      Here rather than in a Faith screen because this must exist once per signed-in
+                      session, not once per navigation — Prayer, Reader and Reciter all mount
+                      repeatedly, and an effect in any of them would start a run per visit. Inside
+                      Auth for the same reason the warmup is: nothing may be requested before auth
+                      restoration resolves.
+
+                      It synchronises metadata only. No audio download is ever started from here.
+                    */}
+                    <ContentSyncCoordinator />
                     {children}
                   </EntitlementProvider>
                 </AuthProvider>
