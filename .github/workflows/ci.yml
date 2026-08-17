@@ -54,12 +54,18 @@ jobs:
         # Trailing whitespace, leading tab/space damage and conflict markers in
         # the diff this PR actually introduces.
         run: |
+          set -euo pipefail
           if [ -n "${GITHUB_BASE_REF:-}" ]; then
-            git fetch --no-tags --depth=0 origin "$GITHUB_BASE_REF"
-            git diff --check "origin/$GITHUB_BASE_REF...HEAD"
+            git fetch --no-tags origin \
+              "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
+            base="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)"
+          elif git rev-parse --verify -q HEAD~1 >/dev/null; then
+            base="$(git rev-parse HEAD~1)"
           else
-            git diff --check "${{ github.event.before }}..HEAD" || git diff --check HEAD~1..HEAD
+            echo "No base to compare against; skipping."
+            exit 0
           fi
+          git diff --check "$base" HEAD
 
   secrets:
     name: Secret scan
@@ -115,13 +121,19 @@ jobs:
       - name: Detect changes under supabase/functions
         id: changed
         run: |
+          set -euo pipefail
           if [ -n "${GITHUB_BASE_REF:-}" ]; then
-            git fetch --no-tags --depth=0 origin "$GITHUB_BASE_REF"
-            base="origin/$GITHUB_BASE_REF"
+            git fetch --no-tags origin \
+              "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
+            base="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)"
+          elif git rev-parse --verify -q HEAD~1 >/dev/null; then
+            base="$(git rev-parse HEAD~1)"
           else
-            base="HEAD~1"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "No base to compare against; running Deno verification."
+            exit 0
           fi
-          if git diff --quiet "$base...HEAD" -- supabase/functions; then
+          if git diff --quiet "$base" HEAD -- supabase/functions; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No changes under supabase/functions; skipping Deno verification."
           else
