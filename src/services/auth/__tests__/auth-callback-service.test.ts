@@ -523,7 +523,8 @@ describe('an unconfigured build', () => {
     jest.resetModules();
     jest.doMock('@/lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
     // eslint-disable-next-line @typescript-eslint/no-require-imports -- re-required under the new mock.
-    const unconfigured = require('../auth-callback.service') as typeof import('../auth-callback.service');
+    const unconfigured =
+      require('../auth-callback.service') as typeof import('../auth-callback.service');
 
     expect(await unconfigured.processAuthCallback(callbackFor())).toEqual({
       status: 'failed',

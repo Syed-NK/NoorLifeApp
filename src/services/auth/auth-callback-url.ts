@@ -216,7 +216,10 @@ function resolveDeclaredFlow(
  * nothing better. `error_description` is never consulted — its text is a server-authored sentence,
  * and a substring test against it is both fragile and an invitation to keep the string around.
  */
-function mapCallbackError(errorCode: string | undefined, error: string | undefined): AuthCallbackErrorCode {
+function mapCallbackError(
+  errorCode: string | undefined,
+  error: string | undefined,
+): AuthCallbackErrorCode {
   switch ((errorCode ?? '').toLowerCase()) {
     case 'otp_expired':
     case 'token_expired':
@@ -408,8 +411,7 @@ export function parseAuthCallback(url: unknown): ParsedAuthCallback {
     return rejected('invalid-link');
   }
   const rawFlowId = values.get(AUTH_CALLBACK_PARAMS.flowId);
-  const flowId =
-    rawFlowId !== undefined && AUTH_FLOW_ID_PATTERN.test(rawFlowId) ? rawFlowId : null;
+  const flowId = rawFlowId !== undefined && AUTH_FLOW_ID_PATTERN.test(rawFlowId) ? rawFlowId : null;
 
   return { kind: 'callback', code, flowId, requestId: rawRequestId, declaredFlow: declared.flow };
 }

@@ -66,8 +66,7 @@ export const FAITH_PREFERENCES_PERSISTENCE_ERROR =
   'This change could not be saved on this device. It will apply until you close NoorLife.';
 
 export type FaithPreferencesPatch =
-  | Partial<FaithPreferences>
-  | ((current: FaithPreferences) => Partial<FaithPreferences>);
+  Partial<FaithPreferences> | ((current: FaithPreferences) => Partial<FaithPreferences>);
 
 type Listener = () => void;
 

@@ -298,7 +298,8 @@ export const privacySecurityCopy = {
       mismatch: 'Unavailable until both passwords match.',
       submitting: 'Your password change is being sent.',
       'session-unavailable': 'Unavailable because NoorLife cannot confirm your session.',
-      'provider-unsupported': 'Unavailable because your password is managed by your sign-in provider.',
+      'provider-unsupported':
+        'Unavailable because your password is managed by your sign-in provider.',
     },
     saving: 'Updating your password',
     success: 'Password updated.',
@@ -408,8 +409,7 @@ export const privacySecurityCopy = {
     'same-password': 'That is already your current password. Choose a different one.',
     'reauthentication-required':
       'For your security, confirm it is you before changing your password.',
-    'invalid-reauthentication-code':
-      'That code was not accepted. Request a new one and try again.',
+    'invalid-reauthentication-code': 'That code was not accepted. Request a new one and try again.',
     'invalid-email': 'Enter a valid email address.',
     /** Deliberately no wider than what Supabase was willing to disclose. */
     'email-already-used': 'That address cannot be used. Try a different one.',

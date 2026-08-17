@@ -108,7 +108,9 @@ describe('expiry', () => {
     const now = 1_000_000;
     const id = await rememberPendingFlow('recovery', now);
 
-    expect(await claimPendingFlow(id, now + PENDING_FLOW_TTL_MS + 1)).toEqual({ status: 'unknown' });
+    expect(await claimPendingFlow(id, now + PENDING_FLOW_TTL_MS + 1)).toEqual({
+      status: 'unknown',
+    });
   });
 
   it('honours a record inside its TTL', async () => {
@@ -236,9 +238,7 @@ describe('the module never reaches for a secret', () => {
    * The header documents exactly what may never be stored, so it names every forbidden term. Scanning
    * the raw file would match that prose and fail permanently — the documentation would be the defect.
    */
-  const code = source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
   it.each([
     'access_token',

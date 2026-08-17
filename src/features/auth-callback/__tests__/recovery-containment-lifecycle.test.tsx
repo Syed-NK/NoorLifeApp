@@ -7,9 +7,7 @@ import * as authService from '@services/auth/auth.service';
 import { AppProviders } from '@application/providers/app-providers';
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 import { useAuthCallbackActions } from '@application/providers/auth-callback-provider';
-import {
-  type AccountSecurityPort,
-} from '@services/account/account-security.contract';
+import { type AccountSecurityPort } from '@services/account/account-security.contract';
 import {
   clearRecoveryPending,
   readRecoveryPending,
@@ -102,7 +100,9 @@ function fakeSecurityPort(options: { readonly onUpdate?: () => void } = {}): Acc
  * the screen correctly treats as "not ready" and refuses to submit. A test that pressed before then
  * would be asserting against a disabled form.
  */
-async function renderPasswordScreen(options: { readonly grant?: boolean; readonly port?: AccountSecurityPort } = {}) {
+async function renderPasswordScreen(
+  options: { readonly grant?: boolean; readonly port?: AccountSecurityPort } = {},
+) {
   const view = await render(
     <AppProviders>
       {options.grant === false ? null : <GrantRecovery userId={SESSION_USER_ID} />}

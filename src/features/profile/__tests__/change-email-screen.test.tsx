@@ -46,12 +46,14 @@ const SUMMARY: AccountSecuritySummary = {
 
 type Fake = AccountSecurityPort & { readonly requests: jest.Mock; readonly reads: jest.Mock };
 
-function fakePort(options: {
-  readonly summary?: Partial<AccountSecuritySummary>;
-  /** Applied to the summary after a successful request, as Supabase's `new_email` would be. */
-  readonly afterRequest?: Partial<AccountSecuritySummary>;
-  readonly fails?: AccountSecurityError;
-} = {}): Fake {
+function fakePort(
+  options: {
+    readonly summary?: Partial<AccountSecuritySummary>;
+    /** Applied to the summary after a successful request, as Supabase's `new_email` would be. */
+    readonly afterRequest?: Partial<AccountSecuritySummary>;
+    readonly fails?: AccountSecurityError;
+  } = {},
+): Fake {
   let current: AccountSecuritySummary = { ...SUMMARY, ...options.summary };
 
   const reads = jest.fn(() => Promise.resolve(current));
@@ -92,9 +94,7 @@ describe('the form', () => {
   it('shows the current authenticated address, read-only', async () => {
     await renderScreen(fakePort());
 
-    expect(screen.getByTestId('change-email-current-value')).toHaveTextContent(
-      'ahmed@example.com',
-    );
+    expect(screen.getByTestId('change-email-current-value')).toHaveTextContent('ahmed@example.com');
     // A read-only row, not an editable field: there is exactly one text input on the screen.
     expect(screen.getByTestId('change-email-new')).toBeTruthy();
     expect(screen.queryByTestId('change-email-current-input')).toBeNull();
@@ -143,8 +143,16 @@ describe('the submit gate', () => {
     ['no local part', '@example.com', privacySecurityCopy.email.errors.invalid],
     ['an internal space', 'some one@example.com', privacySecurityCopy.email.errors.invalid],
     ['the current address', 'ahmed@example.com', privacySecurityCopy.email.errors.unchanged],
-    ['the current address in another case', 'AHMED@Example.COM', privacySecurityCopy.email.errors.unchanged],
-    ['the current address padded', '  ahmed@example.com  ', privacySecurityCopy.email.errors.unchanged],
+    [
+      'the current address in another case',
+      'AHMED@Example.COM',
+      privacySecurityCopy.email.errors.unchanged,
+    ],
+    [
+      'the current address padded',
+      '  ahmed@example.com  ',
+      privacySecurityCopy.email.errors.unchanged,
+    ],
     [
       'the current address padded and re-cased',
       '  Ahmed@Example.COM ',
@@ -241,9 +249,7 @@ describe('the submit gate', () => {
 
     await fireEvent.changeText(field(), '  AHMED@example.COM ');
 
-    expect(screen.getByTestId('change-email-current-value')).toHaveTextContent(
-      'Ahmed@Example.com',
-    );
+    expect(screen.getByTestId('change-email-current-value')).toHaveTextContent('Ahmed@Example.com');
     expect(submit().props.accessibilityState.disabled).toBe(true);
   });
 
@@ -251,9 +257,7 @@ describe('the submit gate', () => {
     await renderScreen(fakePort());
 
     expect(submit().props.accessibilityState.disabled).toBe(true);
-    expect(submit().props.accessibilityHint).toBe(
-      privacySecurityCopy.email.submitDisabledHint,
-    );
+    expect(submit().props.accessibilityHint).toBe(privacySecurityCopy.email.submitDisabledHint);
   });
 
   it('swaps to the action hint once it is enabled', async () => {
@@ -269,13 +273,9 @@ describe('the submit gate', () => {
     // comes back. The fill changes; nothing else does.
     await renderScreen(fakePort());
 
-    const disabledStyle = StyleSheet.flatten(
-      submit().props.style as StyleProp<ViewStyle>,
-    );
+    const disabledStyle = StyleSheet.flatten(submit().props.style as StyleProp<ViewStyle>);
     await fireEvent.changeText(field(), 'new@example.com');
-    const enabledStyle = StyleSheet.flatten(
-      submit().props.style as StyleProp<ViewStyle>,
-    );
+    const enabledStyle = StyleSheet.flatten(submit().props.style as StyleProp<ViewStyle>);
 
     expect(disabledStyle.height).toBeGreaterThanOrEqual(44);
     expect(enabledStyle.height).toBe(disabledStyle.height);
@@ -288,9 +288,7 @@ describe('the submit gate', () => {
     await renderScreen(fakePort());
 
     const disabledLabel = within(submit()).getByText(privacySecurityCopy.email.submit);
-    const style = StyleSheet.flatten(
-      disabledLabel.props.style as StyleProp<TextStyle>,
-    );
+    const style = StyleSheet.flatten(disabledLabel.props.style as StyleProp<TextStyle>);
     // #FFFFFF on the #C8CED8 disabled fill measures 1.9:1. Anything but white is the assertion.
     expect(String(style.color).toUpperCase()).not.toBe('#FFFFFF');
   });
@@ -367,9 +365,7 @@ describe('requesting the change', () => {
     await waitFor(() => expect(screen.getByTestId('change-email-pending')).toBeTruthy());
 
     // The session still reports the old address, so the screen still shows it.
-    expect(screen.getByTestId('change-email-current-value')).toHaveTextContent(
-      'ahmed@example.com',
-    );
+    expect(screen.getByTestId('change-email-current-value')).toHaveTextContent('ahmed@example.com');
   });
 
   it('adopts the new address only once the session itself reports it', async () => {

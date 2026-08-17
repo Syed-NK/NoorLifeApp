@@ -111,8 +111,7 @@ export function SetNewPasswordScreen({
    * `null` on either side is not a mismatch: the session may still be resolving, and that is handled as
    * "not ready" below rather than as a conflict.
    */
-  const mismatched =
-    recovery !== null && auth.user !== null && auth.user.id !== recovery.userId;
+  const mismatched = recovery !== null && auth.user !== null && auth.user.id !== recovery.userId;
 
   /**
    * A grant, a matching account, and no request already open.

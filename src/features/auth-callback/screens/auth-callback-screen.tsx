@@ -316,7 +316,10 @@ export function AuthCallbackScreen({
       />
 
       {/* A fixed-height slot, so every state occupies the same box and the page does not jump. */}
-      <View style={[styles.slot, { minHeight: dp(180), rowGap: dp(12) }]} testID="auth-callback-slot">
+      <View
+        style={[styles.slot, { minHeight: dp(180), rowGap: dp(12) }]}
+        testID="auth-callback-slot"
+      >
         {phase.name === 'processing' ? (
           <View style={{ rowGap: dp(12) }} testID="auth-callback-processing">
             <ActivityIndicator

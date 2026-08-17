@@ -123,7 +123,9 @@ function isRecord(value: unknown): value is PendingAuthFlow {
   return (
     typeof candidate.id === 'string' &&
     NL_RID_PATTERN.test(candidate.id) &&
-    (candidate.flow === 'signup' || candidate.flow === 'recovery' || candidate.flow === 'email-change') &&
+    (candidate.flow === 'signup' ||
+      candidate.flow === 'recovery' ||
+      candidate.flow === 'email-change') &&
     typeof candidate.createdAt === 'number' &&
     typeof candidate.expiresAt === 'number'
   );

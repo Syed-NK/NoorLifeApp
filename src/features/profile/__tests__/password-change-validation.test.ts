@@ -40,8 +40,16 @@ describe('content', () => {
       { password: STRONG, confirm: '   ' },
       'confirm-empty',
     ],
-    ['a differing confirmation is "mismatch"', { password: STRONG, confirm: 'NoorLife2027!' }, 'mismatch'],
-    ['a case-only difference is "mismatch"', { password: STRONG, confirm: 'noorlife2026!' }, 'mismatch'],
+    [
+      'a differing confirmation is "mismatch"',
+      { password: STRONG, confirm: 'NoorLife2027!' },
+      'mismatch',
+    ],
+    [
+      'a case-only difference is "mismatch"',
+      { password: STRONG, confirm: 'noorlife2026!' },
+      'mismatch',
+    ],
     ['a matching strong pair is "valid"', { password: STRONG, confirm: STRONG }, 'valid'],
   ] as const)('%s', (_label, input, expected: PasswordDraftState) => {
     expect(evaluate(input).state).toBe(expected);

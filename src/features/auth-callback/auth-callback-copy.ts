@@ -151,7 +151,8 @@ export const authCallbackCopy = {
       mismatch: 'Unavailable until both passwords match.',
       submitting: 'Your new password is being set.',
       'session-unavailable': 'Unavailable because your reset link is no longer active.',
-      'provider-unsupported': 'Unavailable because your password is managed by your sign-in provider.',
+      'provider-unsupported':
+        'Unavailable because your password is managed by your sign-in provider.',
     },
     errors: {
       weak: 'Use at least 8 characters, mixing letters, numbers or symbols.',

@@ -63,9 +63,7 @@ describe('a Google identity', () => {
         <ChangeEmailScreen port={socialIdentityPort()} />
       </AppProviders>,
     );
-    await waitFor(() =>
-      expect(screen.getByTestId('change-email-provider-managed')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByTestId('change-email-provider-managed')).toBeTruthy());
 
     expect(screen.queryByTestId('change-email-new')).toBeNull();
     expect(screen.queryByTestId('change-email-submit')).toBeNull();

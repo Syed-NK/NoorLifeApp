@@ -100,8 +100,14 @@ describe('failing closed', () => {
 
   it.each([
     ['a missing user id', { createdAt: 1, expiresAt: 1e15, version: RECOVERY_JOURNEY_VERSION }],
-    ['an empty user id', { userId: '', createdAt: 1, expiresAt: 1e15, version: RECOVERY_JOURNEY_VERSION }],
-    ['a non-numeric timestamp', { userId: USER, createdAt: 'x', expiresAt: 1e15, version: RECOVERY_JOURNEY_VERSION }],
+    [
+      'an empty user id',
+      { userId: '', createdAt: 1, expiresAt: 1e15, version: RECOVERY_JOURNEY_VERSION },
+    ],
+    [
+      'a non-numeric timestamp',
+      { userId: USER, createdAt: 'x', expiresAt: 1e15, version: RECOVERY_JOURNEY_VERSION },
+    ],
     ['an unknown version', { userId: USER, createdAt: 1, expiresAt: 1e15, version: 99 }],
     ['no version at all', { userId: USER, createdAt: 1, expiresAt: 1e15 }],
     ['an array', []],

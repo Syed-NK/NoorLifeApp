@@ -54,9 +54,7 @@ function fakePort(
       Promise.resolve({ status: 'pending' as const, requestedEmail: 'new@example.com' }),
     ),
     signOutThisDevice: jest.fn(() => Promise.resolve()),
-    signOutEverywhere: jest.fn(() =>
-      Promise.resolve({ status: 'signed-out-everywhere' as const }),
-    ),
+    signOutEverywhere: jest.fn(() => Promise.resolve({ status: 'signed-out-everywhere' as const })),
   };
   return { ...calls, ...overrides, calls } as AccountSecurityPort & {
     readonly calls: Record<string, jest.Mock>;
@@ -273,7 +271,14 @@ describe('privacy controls', () => {
     await renderScreen(fakePort());
 
     const text = screen.getByTestId('privacy-security-diagnostics-exclusion').props.children;
-    for (const subject of ['Faith', 'health', 'finance', 'family', 'AI conversations', 'password']) {
+    for (const subject of [
+      'Faith',
+      'health',
+      'finance',
+      'family',
+      'AI conversations',
+      'password',
+    ]) {
       expect(String(text)).toContain(subject);
     }
   });
@@ -364,7 +369,15 @@ describe('privacy controls', () => {
       // application's own code does, which it can keep.
       const exclusion = privacySecurityCopy.privacy.diagnosticsExclusion;
       expect(exclusion).toContain('never includes');
-      for (const subject of ['Faith', 'health', 'finance', 'family', 'AI conversations', 'password', 'sign-in tokens']) {
+      for (const subject of [
+        'Faith',
+        'health',
+        'finance',
+        'family',
+        'AI conversations',
+        'password',
+        'sign-in tokens',
+      ]) {
         expect(exclusion).toContain(subject);
       }
       expect(exclusion.toLowerCase()).not.toContain('may include');
@@ -429,9 +442,9 @@ describe('AI data and permissions', () => {
   it('states the cross-module hand-off rule', async () => {
     await renderScreen(fakePort());
 
-    expect(
-      String(screen.getByTestId('privacy-security-ai-cross-module').props.children),
-    ).toContain('hand you to Noor AI');
+    expect(String(screen.getByTestId('privacy-security-ai-cross-module').props.children)).toContain(
+      'hand you to Noor AI',
+    );
   });
 
   it('says nothing is stored, and offers no delete control for it', async () => {
@@ -449,9 +462,7 @@ describe('AI data and permissions', () => {
   it('qualifies the no-history claim to this version rather than stating a policy', async () => {
     await renderScreen(fakePort());
 
-    const claim = String(
-      screen.getByTestId('privacy-security-ai-no-history-claim').props.children,
-    );
+    const claim = String(screen.getByTestId('privacy-security-ai-no-history-claim').props.children);
     expect(claim).toContain('In the current version of NoorLife');
     expect(claim.toLowerCase()).not.toContain('never');
   });
@@ -551,7 +562,9 @@ describe('sessions', () => {
     await renderScreen(port);
 
     await fireEvent.press(screen.getByTestId('privacy-security-sign-out-device'));
-    expect(await screen.findByTestId('privacy-security-sign-out-device-confirm-panel')).toBeTruthy();
+    expect(
+      await screen.findByTestId('privacy-security-sign-out-device-confirm-panel'),
+    ).toBeTruthy();
 
     await fireEvent.press(await screen.findByTestId('privacy-security-sign-out-device-cancel'));
     expect(port.calls.signOutThisDevice).not.toHaveBeenCalled();
@@ -617,13 +630,13 @@ describe('sessions', () => {
     await fireEvent.press(await screen.findByTestId('privacy-security-sign-out-all-accept'));
 
     expect(await screen.findByTestId('privacy-security-sign-out-local-only-panel')).toBeTruthy();
-    expect(
-      screen.getByText(privacySecurityCopy.sessions.localOnlyBody),
-    ).toBeTruthy();
+    expect(screen.getByText(privacySecurityCopy.sessions.localOnlyBody)).toBeTruthy();
     // The honest claim, and only after the dialog is acknowledged does navigation happen.
     expect(mockRouter.replace).not.toHaveBeenCalled();
 
-    await fireEvent.press(await screen.findByTestId('privacy-security-sign-out-local-only-dismiss'));
+    await fireEvent.press(
+      await screen.findByTestId('privacy-security-sign-out-local-only-dismiss'),
+    );
     expect(mockRouter.replace).toHaveBeenCalledWith('/welcome');
   });
 
@@ -637,7 +650,9 @@ describe('sessions', () => {
     await fireEvent.press(screen.getByTestId('privacy-security-sign-out-device'));
     await fireEvent.press(await screen.findByTestId('privacy-security-sign-out-device-accept'));
 
-    await waitFor(() => expect(screen.getByTestId('privacy-security-sign-out-failed')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('privacy-security-sign-out-failed')).toBeTruthy(),
+    );
     expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 });

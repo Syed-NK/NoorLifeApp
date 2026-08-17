@@ -189,9 +189,7 @@ export async function writeRecoveryPending(
  * `none` means "no recovery is in progress" and is the one answer that lets startup proceed
  * normally, so it is never used as a fallback for "we could not tell".
  */
-export async function readRecoveryPending(
-  now: number = Date.now(),
-): Promise<RecoveryPendingRead> {
+export async function readRecoveryPending(now: number = Date.now()): Promise<RecoveryPendingRead> {
   const raw = await readRaw();
   if (raw === null) {
     return { status: 'none' };

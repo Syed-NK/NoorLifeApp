@@ -144,9 +144,7 @@ describe('cold start', () => {
      * followed.
      */
     await waitFor(() => expect(screen.getByTestId('router-redirect')).toBeTruthy());
-    expect(screen.getByTestId('router-redirect').props.accessibilityLabel).toBe(
-      '/auth/callback',
-    );
+    expect(screen.getByTestId('router-redirect').props.accessibilityLabel).toBe('/auth/callback');
   });
 
   it('does not push as well as redirect, so the callback is entered once', async () => {
@@ -177,9 +175,7 @@ describe('cold start', () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByTestId('router-redirect').props.accessibilityLabel).toBe(
-        '/auth/callback',
-      ),
+      expect(screen.getByTestId('router-redirect').props.accessibilityLabel).toBe('/auth/callback'),
     );
   });
 
@@ -239,9 +235,9 @@ describe('warm start', () => {
     });
 
     // Not navigating must not mean not capturing: the screen Expo Router mounts reads this.
-    await waitFor(() => expect(screen.getByTestId('pending-callback-key').props.children).toBe(
-      `code:${CODE}`,
-    ));
+    await waitFor(() =>
+      expect(screen.getByTestId('pending-callback-key').props.children).toBe(`code:${CODE}`),
+    );
   });
 
   it('collapses a duplicated delivery to one pending callback', async () => {

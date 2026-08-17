@@ -94,7 +94,12 @@ const FIELD_OF: Readonly<Record<PasswordDraftState, 'password' | 'confirm' | nul
   valid: null,
 };
 
-const FIELD_PROBLEMS: readonly PasswordDraftState[] = ['empty', 'confirm-empty', 'weak', 'mismatch'];
+const FIELD_PROBLEMS: readonly PasswordDraftState[] = [
+  'empty',
+  'confirm-empty',
+  'weak',
+  'mismatch',
+];
 
 /**
  * Trims for the emptiness test only.

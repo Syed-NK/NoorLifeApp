@@ -134,10 +134,7 @@ export type UnrelatedUrl = {
  * raise an authentication error, and would put an error state over whatever screen the user was on.
  */
 export type ParsedAuthCallback =
-  | TrustedAuthCallback
-  | FailedAuthCallback
-  | RejectedAuthCallback
-  | UnrelatedUrl;
+  TrustedAuthCallback | FailedAuthCallback | RejectedAuthCallback | UnrelatedUrl;
 
 /**
  * What processing a callback achieved.

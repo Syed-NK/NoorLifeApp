@@ -1,8 +1,4 @@
-import type {
-  AuthChangeEvent,
-  AuthError as SupabaseAuthError,
-  User,
-} from '@supabase/supabase-js';
+import type { AuthChangeEvent, AuthError as SupabaseAuthError, User } from '@supabase/supabase-js';
 
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 

@@ -31,22 +31,22 @@ export type AccountSecurityState = {
   readonly reload: () => Promise<void>;
 };
 
-export function useAccountSecurity(port: AccountSecurityPort = accountSecurityPort): AccountSecurityState {
+export function useAccountSecurity(
+  port: AccountSecurityPort = accountSecurityPort,
+): AccountSecurityState {
   const [summary, setSummary] = useState<AccountSecuritySummary | null>(null);
 
   const read = useCallback(async () => {
     // A rejection would leave the screen on its loading state forever, so it resolves to the
     // "nothing is known" summary the service already models rather than being swallowed silently.
-    const next = await port.readSummary().catch(
-      (): AccountSecuritySummary => ({
-        provider: 'unknown',
-        email: null,
-        emailVerification: 'unknown',
-        lastSignInAt: null,
-        canManagePassword: false,
-        pendingEmail: null,
-      }),
-    );
+    const next = await port.readSummary().catch((): AccountSecuritySummary => ({
+      provider: 'unknown',
+      email: null,
+      emailVerification: 'unknown',
+      lastSignInAt: null,
+      canManagePassword: false,
+      pendingEmail: null,
+    }));
     setSummary(next);
   }, [port]);
 

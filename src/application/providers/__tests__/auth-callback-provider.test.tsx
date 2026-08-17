@@ -114,7 +114,9 @@ describe('cold start', () => {
   });
 
   it('captures a rejected callback too, so the screen can refuse it visibly', async () => {
-    mockLinking.getInitialURL.mockResolvedValue(`exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`);
+    mockLinking.getInitialURL.mockResolvedValue(
+      `exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`,
+    );
 
     await renderProvider();
 

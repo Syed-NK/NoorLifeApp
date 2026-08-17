@@ -1,7 +1,10 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { DIAGNOSTIC_FIELDS, formatDiagnostics } from '@services/diagnostics/app-diagnostics.service';
+import {
+  DIAGNOSTIC_FIELDS,
+  formatDiagnostics,
+} from '@services/diagnostics/app-diagnostics.service';
 import { legalConfig } from '@shared/config/app-config';
 
 import {
@@ -88,15 +91,14 @@ describe('the declared capabilities', () => {
     ]);
   });
 
-  it.each([
-    ['product-analytics'],
-    ['crash-reporting'],
-    ['personalization'],
-  ])('reports %s as not collected, because it is not', (key) => {
-    const capability = PRIVACY_CAPABILITIES.find((entry) => entry.key === key);
-    expect(capability?.status).toBe('not-collected');
-    expect(capability?.scope).toBe('none');
-  });
+  it.each([['product-analytics'], ['crash-reporting'], ['personalization']])(
+    'reports %s as not collected, because it is not',
+    (key) => {
+      const capability = PRIVACY_CAPABILITIES.find((entry) => entry.key === key);
+      expect(capability?.status).toBe('not-collected');
+      expect(capability?.scope).toBe('none');
+    },
+  );
 
   it('keeps diagnostics opt-in at the moment of use', () => {
     const diagnostics = PRIVACY_CAPABILITIES.find((entry) => entry.key === 'diagnostics');

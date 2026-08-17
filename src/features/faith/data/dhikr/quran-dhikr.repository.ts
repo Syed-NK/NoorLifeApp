@@ -1,10 +1,11 @@
 import { hasData } from '../faith-result';
-import type { AyahText, AyahTranslation, QuranContentRepository } from '../quran-content.repository';
+import type {
+  AyahText,
+  AyahTranslation,
+  QuranContentRepository,
+} from '../quran-content.repository';
 import { surahNumber } from '../quran-content.repository';
-import {
-  verseKeysFor,
-  type CuratedDhikrReference,
-} from './quran-dhikr-catalogue';
+import { verseKeysFor, type CuratedDhikrReference } from './quran-dhikr-catalogue';
 
 /**
  * Resolving a curated reference into the scripture it names, through the approved boundary.

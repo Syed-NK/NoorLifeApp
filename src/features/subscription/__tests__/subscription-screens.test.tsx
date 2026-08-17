@@ -267,11 +267,18 @@ describe('the locked module sheet copy', () => {
 
   it('says a feature is available with its module, naming both', async () => {
     await renderSheet({ moduleId: 'planner', moduleName: 'Planner', featureTitle: 'Add Task' });
-    expect(screen.getByText('Add Task is available with Planner in NoorLife Premium.')).toBeTruthy();
+    expect(
+      screen.getByText('Add Task is available with Planner in NoorLife Premium.'),
+    ).toBeTruthy();
   });
 
   it.each([
-    ['Log Wellness', 'health', 'Health', 'Log Wellness is available with Health in NoorLife Premium.'],
+    [
+      'Log Wellness',
+      'health',
+      'Health',
+      'Log Wellness is available with Health in NoorLife Premium.',
+    ],
     [
       'Family Check-in',
       'family',
@@ -297,10 +304,13 @@ describe('the locked module sheet copy', () => {
       'Planner',
       'Today at a Glance is available with Planner in NoorLife Premium.',
     ],
-  ] as const)('renders the contextual line for %s', async (featureTitle, moduleId, moduleName, expected) => {
-    await renderSheet({ moduleId, moduleName, featureTitle });
-    expect(screen.getByText(expected)).toBeTruthy();
-  });
+  ] as const)(
+    'renders the contextual line for %s',
+    async (featureTitle, moduleId, moduleName, expected) => {
+      await renderSheet({ moduleId, moduleName, featureTitle });
+      expect(screen.getByText(expected)).toBeTruthy();
+    },
+  );
 
   it('falls back to the module when no feature is named', async () => {
     // The module-tile case, and the safe default for a caller that forgets: it can never produce a
@@ -328,7 +338,11 @@ describe('the locked module sheet copy', () => {
   });
 
   it('keeps the module pictogram and the modal semantics', async () => {
-    await renderSheet({ moduleId: 'family', moduleName: 'Family', featureTitle: 'Family Check-in' });
+    await renderSheet({
+      moduleId: 'family',
+      moduleName: 'Family',
+      featureTitle: 'Family Check-in',
+    });
 
     expect(screen.getByTestId('sheet-pictogram').props.source).toBeDefined();
     expect(screen.getByTestId('sheet-panel').props.accessibilityViewIsModal).toBe(true);

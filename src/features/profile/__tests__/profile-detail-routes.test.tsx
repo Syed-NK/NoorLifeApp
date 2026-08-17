@@ -88,9 +88,7 @@ describe('the declared routes', () => {
     await renderRoute(ChangePasswordRoute);
 
     expect(await screen.findByTestId('change-password')).toBeTruthy();
-    expect(screen.getByTestId('change-password-header-title')).toHaveTextContent(
-      'Change Password',
-    );
+    expect(screen.getByTestId('change-password-header-title')).toHaveTextContent('Change Password');
   });
 
   it('mounts Change Email at its nested route', async () => {
@@ -108,15 +106,12 @@ describe('the declared routes', () => {
     join('privacy-security', 'index.tsx'),
     join('privacy-security', 'change-password.tsx'),
     join('privacy-security', 'change-email.tsx'),
-  ])(
-    'leaves no placeholder behind at %s',
-    (file) => {
-      const source = readFileSync(join(APP_PROFILE, file), 'utf8');
-      // The placeholder is what a "declared but dead" route looks like in this codebase.
-      expect(source).not.toContain('SimplePlaceholderScreen');
-      expect(source).not.toContain('specReference');
-    },
-  );
+  ])('leaves no placeholder behind at %s', (file) => {
+    const source = readFileSync(join(APP_PROFILE, file), 'utf8');
+    // The placeholder is what a "declared but dead" route looks like in this codebase.
+    expect(source).not.toContain('SimplePlaceholderScreen');
+    expect(source).not.toContain('specReference');
+  });
 });
 
 describe('the Profile Home menu contract', () => {

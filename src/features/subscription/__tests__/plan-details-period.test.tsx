@@ -29,7 +29,9 @@ describe('the period route parameter', () => {
   it('selects monthly and shows the monthly price', async () => {
     await renderDetails('monthly');
 
-    await waitFor(() => expect(screen.getByTestId('plan-details-toggle-monthly-selected')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('plan-details-toggle-monthly-selected')).toBeTruthy(),
+    );
     expect(screen.getByText('AED 19.99')).toBeTruthy();
     // No trial language on monthly: the approved model puts the trial on yearly only.
     expect(screen.queryByTestId('plan-details-trial-eligible')).toBeNull();
@@ -38,14 +40,18 @@ describe('the period route parameter', () => {
   it('selects yearly and shows the yearly price with trial terms', async () => {
     await renderDetails('yearly');
 
-    await waitFor(() => expect(screen.getByTestId('plan-details-toggle-yearly-selected')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('plan-details-toggle-yearly-selected')).toBeTruthy(),
+    );
     expect(screen.getByText('AED 189.99')).toBeTruthy();
     expect(screen.getByTestId('plan-details-trial-eligible')).toBeTruthy();
   });
 
   it('follows the parameter when the screen is re-entered with a different period', async () => {
     const view = await renderDetails('yearly');
-    await waitFor(() => expect(screen.getByTestId('plan-details-toggle-yearly-selected')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('plan-details-toggle-yearly-selected')).toBeTruthy(),
+    );
 
     // Re-render the same mounted screen with the other parameter, which is what a deep link or
     // "Switch billing period" does. Before the fix the toggle stayed on yearly.

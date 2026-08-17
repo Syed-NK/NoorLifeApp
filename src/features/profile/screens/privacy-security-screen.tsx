@@ -409,7 +409,9 @@ function AIPermissionsSection() {
           key={`assistant-${module.moduleId}`}
           label={module.name}
           value={
-            module.assistantAvailable ? copy.assistantWords.available : copy.assistantWords.unavailable
+            module.assistantAvailable
+              ? copy.assistantWords.available
+              : copy.assistantWords.unavailable
           }
           accessibilityLabel={copy.accessAccessibility(
             module.name,

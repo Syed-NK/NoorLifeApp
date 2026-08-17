@@ -1,9 +1,4 @@
-import {
-  isDestination,
-  isResolved,
-  nextStartupState,
-  type StartupInput,
-} from '../startup-machine';
+import { isDestination, isResolved, nextStartupState, type StartupInput } from '../startup-machine';
 
 /**
  * Startup routing while a password recovery is unfinished.
@@ -89,7 +84,9 @@ describe('the recovery read is waited for rather than assumed', () => {
     // A signed-out user has no session for a marker to describe; waiting would slow every ordinary
     // launch for a value that cannot change the answer.
     expect(
-      isResolved(input({ isSignedIn: false, hasPendingRecovery: null, hasCompletedPlanSelection: null })),
+      isResolved(
+        input({ isSignedIn: false, hasPendingRecovery: null, hasCompletedPlanSelection: null }),
+      ),
     ).toBe(true);
   });
 
@@ -117,9 +114,9 @@ describe('everything else is unaffected', () => {
   });
 
   it('still sends a first-time user to onboarding', () => {
-    expect(
-      nextStartupState(input({ isSignedIn: false, hasCompletedOnboarding: false })),
-    ).toBe('onboarding');
+    expect(nextStartupState(input({ isSignedIn: false, hasCompletedOnboarding: false }))).toBe(
+      'onboarding',
+    );
   });
 
   it('cannot contain a signed-out user', () => {

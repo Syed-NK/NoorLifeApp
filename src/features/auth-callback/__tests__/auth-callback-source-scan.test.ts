@@ -84,10 +84,7 @@ describe('the callback URL is declared exactly once', () => {
   });
 
   it('is the value the phase documentation tells the operator to allow-list', () => {
-    const doc = readFileSync(
-      join(ROOT, 'docs', 'PHASE_6C_3C_AUTH_CALLBACK_CONTRACT.md'),
-      'utf8',
-    );
+    const doc = readFileSync(join(ROOT, 'docs', 'PHASE_6C_3C_AUTH_CALLBACK_CONTRACT.md'), 'utf8');
     for (const entry of REQUIRED_SUPABASE_REDIRECT_URLS) {
       expect(doc).toContain(entry);
     }
@@ -117,7 +114,8 @@ describe('callback secrets are never logged', () => {
   });
 
   it('no console call logs a whole URL or a parsed callback object', () => {
-    const forbidden = /\$\{[^}]*\b(url|href|callbackUrl|initialUrl|parsed|captured|callback)\b[^}]*\}/;
+    const forbidden =
+      /\$\{[^}]*\b(url|href|callbackUrl|initialUrl|parsed|captured|callback)\b[^}]*\}/;
 
     const offenders = ALL_SOURCE.filter((file) =>
       consoleCalls(readFileSync(file, 'utf8')).some((call) => forbidden.test(call)),
@@ -129,7 +127,11 @@ describe('callback secrets are never logged', () => {
   it('the parser and the config log nothing at all', () => {
     // The parser is the first thing an attacker-controllable string touches. No `console` in the file
     // means the URL it was handed physically cannot escape from there.
-    for (const file of ['auth-callback-url.ts', 'auth-callback.config.ts', 'auth-callback.contract.ts']) {
+    for (const file of [
+      'auth-callback-url.ts',
+      'auth-callback.config.ts',
+      'auth-callback.contract.ts',
+    ]) {
       const source = readFileSync(join(SRC_ROOT, 'services', 'auth', file), 'utf8');
       expect(consoleCalls(source)).toEqual([]);
     }
@@ -187,14 +189,16 @@ describe('the presentation layer never holds the Supabase client', () => {
     // The same rule `profile-isolation.test.ts` applies to Profile, applied to this feature: screens
     // consume a port and never the client, which is what keeps the client on the service side.
     const featureFiles = sourceFiles(join(SRC_ROOT, 'features', 'auth-callback'));
-    const offenders = featureFiles.filter((file) => {
-      const source = code(readFileSync(file, 'utf8'));
-      return (
-        source.includes("from '@/lib/supabase'") ||
-        source.includes('@supabase/supabase-js') ||
-        /\bsupabase\s*\./.test(source)
-      );
-    }).map(relative);
+    const offenders = featureFiles
+      .filter((file) => {
+        const source = code(readFileSync(file, 'utf8'));
+        return (
+          source.includes("from '@/lib/supabase'") ||
+          source.includes('@supabase/supabase-js') ||
+          /\bsupabase\s*\./.test(source)
+        );
+      })
+      .map(relative);
 
     expect(offenders).toEqual([]);
   });
@@ -261,9 +265,11 @@ describe('account deletion is still nowhere', () => {
     // Explicitly out of scope for 6C-3C, and a callback flow is exactly the kind of place a
     // "close my account" link would be quietly added.
     const featureFiles = sourceFiles(join(SRC_ROOT, 'features', 'auth-callback'));
-    const serviceFiles = ['auth-callback.service.ts', 'auth-callback-url.ts', 'auth-callback.config.ts'].map(
-      (name) => join(SRC_ROOT, 'services', 'auth', name),
-    );
+    const serviceFiles = [
+      'auth-callback.service.ts',
+      'auth-callback-url.ts',
+      'auth-callback.config.ts',
+    ].map((name) => join(SRC_ROOT, 'services', 'auth', name));
 
     for (const file of [...featureFiles, ...serviceFiles]) {
       const source = code(readFileSync(file, 'utf8'));

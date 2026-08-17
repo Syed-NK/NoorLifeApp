@@ -2,10 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 
 import { AppProviders } from '@application/providers/app-providers';
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
-import type {
-  AuthCallbackOutcome,
-  AuthCallbackPort,
-} from '@services/auth/auth-callback.contract';
+import type { AuthCallbackOutcome, AuthCallbackPort } from '@services/auth/auth-callback.contract';
 import { AUTH_CALLBACK_URL } from '@services/auth/auth-callback.config';
 
 import { mockLinking, mockRouter } from '../../../../jest.setup';
@@ -65,7 +62,9 @@ async function renderCallback(
   } = {},
 ) {
   if (options.url !== null) {
-    mockLinking.getInitialURL.mockResolvedValue(options.url ?? `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`);
+    mockLinking.getInitialURL.mockResolvedValue(
+      options.url ?? `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`,
+    );
   }
   const view = await render(
     <AppProviders>
@@ -170,9 +169,7 @@ describe('a password recovery', () => {
      * was reported inert on a release device. There is nothing to decide at this point, so there is
      * nothing to press.
      */
-    await waitFor(() =>
-      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
-    );
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'));
     expect(screen.queryByTestId('auth-callback-recovery-continue')).toBeNull();
   });
 
@@ -189,9 +186,7 @@ describe('a password recovery', () => {
   it('replaces rather than pushes, so the callback leaves no Back history', async () => {
     await renderCallback({ port: fakePort(RECOVERY) });
 
-    await waitFor(() =>
-      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
-    );
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'));
     // `push` would leave the consumed callback underneath, and Back would re-enter it.
     expect(mockRouter.push).not.toHaveBeenCalledWith('/auth/set-new-password');
   });
@@ -199,9 +194,7 @@ describe('a password recovery', () => {
   it('navigates exactly once', async () => {
     await renderCallback({ port: fakePort(RECOVERY) });
 
-    await waitFor(() =>
-      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
-    );
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'));
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -217,9 +210,7 @@ describe('a password recovery', () => {
   it('mints the grant before it navigates, so the password screen finds one', async () => {
     await renderCallback({ port: fakePort(RECOVERY) });
 
-    await waitFor(() =>
-      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
-    );
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'));
     // The grant and the navigation are set in one pass; the banner proves the grant path ran.
     expect(screen.getByTestId('auth-callback-recovery-banner')).toHaveTextContent(
       copy.recoveryTitle,
@@ -258,11 +249,11 @@ describe('a password recovery', () => {
       await Promise.resolve();
     });
 
-    await waitFor(() =>
-      expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'),
-    );
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'));
     expect(
-      mockRouter.replace.mock.calls.filter(([href]: [unknown]) => href === '/auth/set-new-password'),
+      mockRouter.replace.mock.calls.filter(
+        ([href]: [unknown]) => href === '/auth/set-new-password',
+      ),
     ).toHaveLength(1);
     expect(port.process).toHaveBeenCalledTimes(1);
   });
@@ -419,7 +410,10 @@ describe('failures', () => {
 describe('a callback the parser refused', () => {
   it('makes no service call at all', async () => {
     const port = fakePort(SIGNED_IN);
-    await renderCallback({ url: `exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`, port });
+    await renderCallback({
+      url: `exp+noorlifeapp://auth/callback?code=${CODE}&nl_rid=${RID}`,
+      port,
+    });
 
     await waitFor(() => expect(screen.getByTestId('auth-callback-error')).toBeTruthy());
     // Refused before anything was sent, so nothing was consumed at the server either.
@@ -559,7 +553,9 @@ describe('geometry', () => {
  */
 describe('the action labels', () => {
   it('render in full, with no ellipsis', async () => {
-    const port = { process: jest.fn().mockResolvedValue({ status: 'failed', code: 'link-expired' }) };
+    const port = {
+      process: jest.fn().mockResolvedValue({ status: 'failed', code: 'link-expired' }),
+    };
     await renderCallback({ url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`, port });
 
     const primary = await screen.findByTestId('auth-callback-request-link');
@@ -573,7 +569,9 @@ describe('the action labels', () => {
   });
 
   it('are configured to shrink to fit rather than truncate', async () => {
-    const port = { process: jest.fn().mockResolvedValue({ status: 'failed', code: 'link-expired' }) };
+    const port = {
+      process: jest.fn().mockResolvedValue({ status: 'failed', code: 'link-expired' }),
+    };
     await renderCallback({ url: `${AUTH_CALLBACK_URL}?code=${CODE}&nl_rid=${RID}`, port });
 
     const label = await screen.findByText('Request a New Reset Link');

@@ -34,7 +34,8 @@ jest.mock('@/lib/supabase', () => ({
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const service = require('../account-security.service') as typeof import('../account-security.service');
+const service =
+  require('../account-security.service') as typeof import('../account-security.service');
 
 /**
  * A session, with the access token a real one carries.
@@ -93,7 +94,9 @@ describe('the security summary', () => {
   });
 
   it('reports no address as unknown rather than as a verification failure', async () => {
-    mockAuth.getSession.mockResolvedValue(session({ id: 'u', app_metadata: { provider: 'apple' } }));
+    mockAuth.getSession.mockResolvedValue(
+      session({ id: 'u', app_metadata: { provider: 'apple' } }),
+    );
 
     const summary = await service.readAccountSecuritySummary();
     expect(summary.email).toBeNull();
@@ -107,7 +110,11 @@ describe('the security summary', () => {
     [undefined, 'unknown', false],
   ])('maps the provider %s to %s', async (raw, expected, canManage) => {
     mockAuth.getSession.mockResolvedValue(
-      session({ id: 'u', email: 'a@b.co', app_metadata: raw === undefined ? {} : { provider: raw } }),
+      session({
+        id: 'u',
+        email: 'a@b.co',
+        app_metadata: raw === undefined ? {} : { provider: raw },
+      }),
     );
 
     const summary = await service.readAccountSecuritySummary();
@@ -198,7 +205,11 @@ describe('the email change', () => {
       // the project's Site URL, which is what GoTrue substituted when no redirect was supplied. The
       // redirect carries an `nl_rid` per request, so it is matched by shape rather than by literal —
       // the exact value is asserted in the case below.
-      { emailRedirectTo: expect.stringMatching(/^noorlifeapp:\/\/auth\/callback\?nl_rid=[0-9a-f]{32}$/) },
+      {
+        emailRedirectTo: expect.stringMatching(
+          /^noorlifeapp:\/\/auth\/callback\?nl_rid=[0-9a-f]{32}$/,
+        ),
+      },
     );
     expect(outcome).toEqual({ status: 'pending', requestedEmail: 'new@example.com' });
   });
@@ -224,9 +235,7 @@ describe('the email change', () => {
 
   it('normalizes only case and surrounding space', () => {
     // Stripping dots or a +tag would silently change which mailbox the user asked for.
-    expect(service.normalizeEmail(' Ahmed.Al+noor@Example.COM ')).toBe(
-      'ahmed.al+noor@example.com',
-    );
+    expect(service.normalizeEmail(' Ahmed.Al+noor@Example.COM ')).toBe('ahmed.al+noor@example.com');
   });
 });
 
@@ -358,10 +367,8 @@ describe('error mapping', () => {
       code: 'weak-password',
     });
     // The thrown error carries the code as its message, not the server's sentence.
-    await service
-      .updatePassword({ newPassword: 'x' })
-      .catch((thrown: AccountSecurityError) => {
-        expect(thrown.message).not.toContain('abcdef');
-      });
+    await service.updatePassword({ newPassword: 'x' }).catch((thrown: AccountSecurityError) => {
+      expect(thrown.message).not.toContain('abcdef');
+    });
   });
 });

@@ -48,7 +48,11 @@ export function useRecoveryContainment(): RecoveryContainmentState {
   const settled = useRef(false);
 
   const sessionUserId =
-    auth.status === 'unknown' ? undefined : auth.status === 'signed-in' ? (auth.user?.id ?? null) : null;
+    auth.status === 'unknown'
+      ? undefined
+      : auth.status === 'signed-in'
+        ? (auth.user?.id ?? null)
+        : null;
 
   useEffect(() => {
     if (settled.current) {

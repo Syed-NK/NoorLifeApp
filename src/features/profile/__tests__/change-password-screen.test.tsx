@@ -42,12 +42,14 @@ type Fake = AccountSecurityPort & {
   readonly codes: jest.Mock;
 };
 
-function fakePort(options: {
-  readonly summary?: Partial<AccountSecuritySummary>;
-  readonly updateFails?: AccountSecurityError;
-  /** Fails the first call only, so the reauthentication retry can succeed. */
-  readonly updateFailsOnce?: AccountSecurityError;
-} = {}): Fake {
+function fakePort(
+  options: {
+    readonly summary?: Partial<AccountSecuritySummary>;
+    readonly updateFails?: AccountSecurityError;
+    /** Fails the first call only, so the reauthentication retry can succeed. */
+    readonly updateFailsOnce?: AccountSecurityError;
+  } = {},
+): Fake {
   let attempts = 0;
   const updates = jest.fn(async () => {
     attempts += 1;
