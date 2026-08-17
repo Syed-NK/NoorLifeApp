@@ -37,14 +37,20 @@ translation defect) is implemented and verified. Nothing else had been built whe
 > unapproved snapshot resource each answer `400 invalid_request`. No secret, credential, URL, token or
 > content was printed by any run.
 >
-> Two things this does **not** establish, and neither may be written up as if it did:
+> What the bootstrap returned, and what it means:
 >
 > - **The bootstrap returned only the translation `RESOURCE_CREATE` mutation.** No recitation mutation
->   has been observed on the sync feed. NoorLife's outbound filter carries `recitations:3;translations:85`
->   and its normaliser keeps both documented mutations when both arrive — both proven by test — so the
->   absence is vendor-side and is an **open question for Quran Foundation**.
-> - **The §8.2 extended-retention exemption stays unmet.** A complete snapshot is not a working change
->   feed, and retention beyond one week depends on the second.
+>   has been observed on the sync feed, and none may be described as observed. NoorLife's outbound
+>   filter carries `recitations:3;translations:85` and its normaliser keeps both documented mutations
+>   when both arrive — both proven by test.
+> - **Corrected 2026-08-17.** A second bullet here previously read *"The §8.2 extended-retention
+>   exemption stays unmet."* That inference is wrong. Quran Foundation has confirmed in writing that
+>   the resource 3 snapshot establishes the baseline, that historical recitations were **intentionally
+>   not backfilled as mutations**, and that **the absence of an observed mutation is expected and is
+>   not evidence that the retention permission is unmet**. Recorded at
+>   [`QURAN_FOUNDATION_AUDIO_PERMISSION.md`](QURAN_FOUNDATION_AUDIO_PERMISSION.md) §9.6.
+> - **Separate and still unresolved:** complete **Arabic Qur'an reader text** retention is its own
+>   permission, neither granted nor confirmed. The reader still requires a connection.
 >
 > Read bounds, as shipped: **1 MiB** for every ordinary Content API operation and for `/resources/sync`;
 > **8 MiB** for approved snapshots only. The full evidence table is

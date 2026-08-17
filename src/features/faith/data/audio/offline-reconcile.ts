@@ -35,12 +35,16 @@ import {
  * them is a content hash, and this module does not pretend otherwise: a re-recording published at the
  * same length and size would not be detected here.
  *
- * That limit is not a gap being papered over. It is the consequence of assumption **A1** recorded in
- * `docs/QURAN_FOUNDATION_AUDIO_PERMISSION.md` §8.4: the change feed has **never** emitted a
- * recitation mutation on any device to date, so reconciliation happens by re-fetching the snapshot
- * and comparing it. Nothing here may be described as a proven mutation mechanism, and
- * `faith-recitation-check.ts` keeps `mutationEverObserved` false until one is actually read off the
- * wire.
+ * That limit is not a gap being papered over. Quran Foundation has confirmed the model in writing —
+ * `docs/QURAN_FOUNDATION_AUDIO_PERMISSION.md` §9.6: the resource 3 snapshot establishes the baseline,
+ * historical recitations were **intentionally not backfilled as mutations**, and future mutations
+ * must be applied when they arrive. So a snapshot comparison is the correct baseline mechanism, and a
+ * full comparison after a clean no-mutation response is explicitly optional.
+ *
+ * No recitation mutation has been observed on the feed, and nothing here may be described as a proven
+ * mutation mechanism. `faith-recitation-check.ts` keeps `mutationEverObserved` false until one is
+ * actually read off the wire — it is a **factual diagnostic only**. Its being false is the expected
+ * state and carries no compliance meaning; it is not evidence that retention permission is unmet.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 

@@ -98,8 +98,16 @@ takes — the endpoint that actually serves the ayah audio being downloaded.
 
 Whether `recitations:3` in a canonical filter selects that same resource is **not assumed**. The
 first bootstrap resolves it by checking that the returned `resource_group` is `recitations`, the
-`resource_id` is 3, and the rows carry ayah identity. Until that has run against the live API, the
-extended-retention exemption stays unmet and no claim is made either way.
+`resource_id` is 3, and the rows carry ayah identity. That bootstrap has since run against the live
+API and settled the question for the snapshot route — recorded in
+[`QURAN_FOUNDATION_AUDIO_PERMISSION.md`](QURAN_FOUNDATION_AUDIO_PERMISSION.md) §9.4.
+
+> **Corrected 2026-08-17.** This paragraph previously ended *"the extended-retention exemption stays
+> unmet"*. Quran Foundation has since confirmed in writing that the resource 3 snapshot establishes
+> the baseline, that historical recitations were intentionally not backfilled as mutations, and that
+> **the lack of an observed mutation is expected and is not evidence that the retention permission is
+> unmet**. See §9.6 of the permission record. No recitation mutation has been observed, and none may
+> be described as observed; only the inference was wrong.
 
 ---
 

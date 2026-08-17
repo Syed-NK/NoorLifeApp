@@ -26,16 +26,18 @@ import { faithStorageKeys, isRecord, readJson, removeKey, writeChecked } from '.
  * deletion: passing the window means a check is owed, never that anything may be removed. An offline
  * device accrues an owed check and keeps its audio.
  *
- * ── The `how` field, and the assumption it records ──────────────────────────
- * The change feed has **never emitted a recitation mutation**. The approved snapshot is
- * live-verified, so reconciliation happens by re-fetching and comparing it — assumption **A1**,
- * provisional and pending Quran Foundation's written confirmation, recorded in
- * `docs/QURAN_FOUNDATION_AUDIO_PERMISSION.md` §8.4.
+ * ── The `how` field, and the model it records ───────────────────────────────
+ * The change feed has **not emitted a recitation mutation** on any device to date. Quran Foundation
+ * has confirmed in writing why, and that this is the intended design — the resource 3 snapshot
+ * establishes the baseline and historical recitations were **intentionally not backfilled as
+ * mutations**. Recorded in `docs/QURAN_FOUNDATION_AUDIO_PERMISSION.md` §9.6. Reconciliation therefore
+ * starts from the snapshot, future mutations are applied when they arrive, and a full snapshot
+ * comparison after a clean no-mutation response is optional.
  *
  * `how` exists so the record says which of the two actually happened. A future run that receives a
  * real mutation writes `mutation`; every run so far writes `snapshot`. Nothing may write `mutation`
  * without one having been read off the wire, and nothing may report a `snapshot` reconciliation as
- * evidence that the feed supports recitations.
+ * evidence that the feed has emitted a recitation mutation.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -57,9 +59,15 @@ export type RecitationCheck = {
   /**
    * Whether a recitation mutation has **ever** been observed on the feed, on this device.
    *
-   * Sticky once true, and false on every device to date. It is the honest answer to "does Content
-   * Sync support recitations for us?", and it is stored rather than derived so that a single
-   * observation is not lost the next time a snapshot reconciliation overwrites `method`.
+   * **A factual diagnostic only.** Sticky once true, and false on every device to date. It is stored
+   * rather than derived so that a single observation is not lost the next time a snapshot
+   * reconciliation overwrites `method`.
+   *
+   * `false` is the **expected** value and carries no compliance meaning: Quran Foundation has
+   * confirmed that historical recitations were intentionally not backfilled as mutations, so the
+   * absence of one is by design and is **not** evidence that retention permission is unmet
+   * (`docs/QURAN_FOUNDATION_AUDIO_PERMISSION.md` §9.6). Nothing may infer a compliance state from
+   * this field, and nothing may set it true without a mutation read off the wire.
    */
   readonly mutationEverObserved: boolean;
 };
