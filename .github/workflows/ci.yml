@@ -1,0 +1,150 @@
+name: CI
+
+# Minimal gate that runs before feature branches merge.
+#
+# Deliberately does NOT run `npm run validate`. That script is
+# `format:check && lint && typecheck && test`, and `format:check` currently fails
+# repo-wide, so the chain short-circuits at the first stage and the three stages
+# that matter never run. The stages are invoked individually here instead.
+#
+# `format:check` is intentionally absent from this workflow. It is added in a
+# follow-up commit, once the dedicated mechanical formatting commit has landed.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - feature/entry-auth-supabase
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: App (lint, types, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Expo lint
+        run: npx expo lint
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Jest (complete suite)
+        run: npx jest --ci
+
+      - name: Whitespace check
+        # Trailing whitespace, leading tab/space damage and conflict markers in
+        # the diff this PR actually introduces.
+        run: |
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            git fetch --no-tags --depth=0 origin "$GITHUB_BASE_REF"
+            git diff --check "origin/$GITHUB_BASE_REF...HEAD"
+          else
+            git diff --check "${{ github.event.before }}..HEAD" || git diff --check HEAD~1..HEAD
+          fi
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No environment files are tracked
+        run: |
+          tracked="$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$' || true)"
+          if [ -n "$tracked" ]; then
+            echo "::error::Environment files are tracked in git:"
+            echo "$tracked"
+            exit 1
+          fi
+
+      - name: High-signal secret patterns
+        # Self-contained on purpose: no third-party action, nothing to pin, and
+        # nothing that needs a licence key. It is a floor, not a substitute for a
+        # full scanner -- see the note in the PR body about adding gitleaks.
+        run: |
+          set -o pipefail
+          # NOTE: a bare `service_role` is deliberately NOT a pattern. It is a
+          # legitimate Postgres role name and appears as prose in 33 tracked
+          # files. Only an assignment of a service-role *key* is a finding.
+          patterns='-----BEGIN (RSA|EC|OPENSSH|PGP|DSA) PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{50,}|sk-[A-Za-z0-9]{32,}|SERVICE_ROLE_KEY[[:space:]]*[=:][[:space:]]*["'"'"']?[A-Za-z0-9._-]{20,}|eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]{20,}'
+          hits="$(git ls-files -z \
+            | xargs -0 grep -nIE "$patterns" \
+                --exclude-dir=node_modules \
+                --exclude='*.lock' \
+                --exclude='package-lock.json' \
+                --exclude='ci.yml' \
+              || true)"
+          if [ -n "$hits" ]; then
+            echo "::error::Possible secret material found:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "No high-signal secret patterns found."
+
+  edge:
+    name: Supabase Edge Functions (Deno)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes under supabase/functions
+        id: changed
+        run: |
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            git fetch --no-tags --depth=0 origin "$GITHUB_BASE_REF"
+            base="origin/$GITHUB_BASE_REF"
+          else
+            base="HEAD~1"
+          fi
+          if git diff --quiet "$base...HEAD" -- supabase/functions; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No changes under supabase/functions; skipping Deno verification."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Deno
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          curl -fsSL https://deno.land/install.sh | DENO_INSTALL="$HOME/.deno" sh -s -- --yes
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+
+      - name: Deno format check
+        if: steps.changed.outputs.run == 'true'
+        working-directory: supabase/functions
+        run: deno fmt --check
+
+      - name: Deno lint
+        if: steps.changed.outputs.run == 'true'
+        working-directory: supabase/functions
+        run: deno lint
+
+      - name: Deno tests
+        if: steps.changed.outputs.run == 'true'
+        working-directory: supabase/functions
+        run: deno task test
