@@ -107,10 +107,21 @@ async function renderProfile(adapter: PurchaseAdapter) {
  * test, so a test that forgets to reset one cannot leak a signed-out session into the next.
  */
 let getSession: jest.SpyInstance<Promise<AuthUser | null>, []>;
+/**
+ * The launch boundary the provider actually reads.
+ *
+ * `getSession` alone is no longer enough to describe a launch: it answers "who is signed in", and the
+ * provider needs to know *why* nobody is — a server that said so, or a device that could not ask.
+ * Spying on `resolveSession` is how each case below states which one it means.
+ */
+let resolveSession: jest.SpyInstance<Promise<{ kind: string; user?: AuthUser }>, []>;
 let getProfile: jest.SpyInstance<Promise<ProfileRow | null>, [string]>;
 
 beforeEach(() => {
   getSession = jest.spyOn(authService, 'getSession').mockResolvedValue(SIGNED_IN);
+  resolveSession = jest
+    .spyOn(authService, 'resolveSession')
+    .mockResolvedValue({ kind: 'authenticated', user: SIGNED_IN }) as never;
   getProfile = jest.spyOn(authService, 'getProfile').mockResolvedValue(PROFILE_ROW);
 });
 
@@ -229,6 +240,11 @@ describe('when the profile row cannot be read', () => {
 describe('when nobody is signed in', () => {
   it('routes to Authentication and renders no profile data', async () => {
     getSession.mockResolvedValue(null);
+    /*
+      **No session**, not an outage. Supabase looked and found nothing, which is the one branch that
+      legitimately routes to Authentication — and which must delete any offline receipt.
+    */
+    resolveSession.mockResolvedValue({ kind: 'no-session' });
 
     await renderProfile(new MockPurchaseAdapter({ initialEntitlement: freeEntitlement() }));
 

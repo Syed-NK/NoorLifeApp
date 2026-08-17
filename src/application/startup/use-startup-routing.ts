@@ -126,6 +126,20 @@ export function useStartupRouting(): StartupRouting {
       // a cascading render for a value that is already known.
       return;
     }
+    if (auth.authority === 'offline') {
+      /*
+        ── No journey read under offline authority ──────────────────────────
+        `readAccountJourney` is a Supabase read. Offline it cannot answer, and the rejection handler
+        below writes `planSelected = false` — which the machine reads as "has not chosen a plan" and
+        routes to the subscription chooser. Measured on device: an airplane-mode launch landed on
+        "Choose how NoorLife supports you" instead of Home.
+
+        That is the same mistake as the original sign-out bug, one layer up: *could not ask* becoming
+        *the answer is no*. So the read is not attempted, and the input below is substituted
+        explicitly rather than left to a failed promise.
+      */
+      return;
+    }
 
     let cancelled = false;
     readAccountJourney(auth.user.id).then(
@@ -147,14 +161,33 @@ export function useStartupRouting(): StartupRouting {
     return () => {
       cancelled = true;
     };
-  }, [auth.status, auth.user]);
+    /*
+      `auth.authority` is a dependency because the early return above reads it: a launch that
+      resolved offline and later reaches a server transitions `offline → online`, and that is
+      exactly when the journey read becomes both possible and necessary.
+    */
+  }, [auth.status, auth.authority, auth.user]);
 
   const state = nextStartupState({
     elapsedMs,
     fontsReady: fonts.ready,
     isSignedIn: auth.status === 'unknown' ? null : auth.status === 'signed-in',
     hasCompletedOnboarding: onboardingCompleted,
-    hasCompletedPlanSelection: auth.status === 'signed-in' ? planSelected : false,
+    /**
+     * Offline authority is not blocked on a plan choice that cannot be read.
+     *
+     * ── Why `true` here is a statement about routing, not about entitlement ──
+     * A receipt is only ever written after a **validated online session**, so a device holding one
+     * belongs to somebody who has already signed in and been through this gate. Offline, the
+     * subscription chooser is a screen they cannot complete — every purchase and restore path needs
+     * a network — so sending them there replaces their downloaded Qur'an with a dead end.
+     *
+     * It grants nothing: entitlement is `EntitlementProvider`'s to decide and the offline receipt
+     * carries no entitlement claim at all (locked decision 11, tier is always free). The next online
+     * launch reads the real journey state and enforces the chooser if it is genuinely outstanding.
+     */
+    hasCompletedPlanSelection:
+      auth.status === 'signed-in' ? auth.authority === 'offline' || planSelected : false,
     /**
      * No input can currently set this.
      *

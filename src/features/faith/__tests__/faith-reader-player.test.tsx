@@ -3,7 +3,7 @@ import { configure, fireEvent, waitFor } from '@testing-library/react-native';
 
 import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 import { seedTranslationPreference } from '@/test-support/faith-preferences-fixtures';
-import { playFromAyah, READER_RECITATIONS, renderReader } from '@/test-support/faith-reader';
+import { playFromAyah, READER_DOWNLOADED, renderReader } from '@/test-support/faith-reader';
 
 import { mockPlaylist, setRouteParams } from '../../../../jest.setup';
 
@@ -33,7 +33,7 @@ import { RECITATION_RATES } from '../hooks/use-recitation-player';
 configure({ asyncUtilTimeout: 3000 });
 jest.setTimeout(20000);
 
-warmUpFirstMount(() => renderReader({ recitations: READER_RECITATIONS }).then(({ view }) => view));
+warmUpFirstMount(() => renderReader({ downloaded: READER_DOWNLOADED }).then(({ view }) => view));
 
 beforeEach(async () => {
   await AsyncStorage.clear();
@@ -97,7 +97,7 @@ describe('the scripture is half the size it was', () => {
   });
 
   it('renders every ayah at that size, right-aligned and uncapped', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
 
     // Every ayah, not only the first: the reduction is a property of the reader, and a size applied
     // to one verse and not the next is exactly the failure a single-node assertion would miss.
@@ -114,7 +114,7 @@ describe('the scripture is half the size it was', () => {
   });
 
   it('honours OS text scaling but caps how far it grows', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     const arabic = await view.findByTestId('faith-reader-arabic-1-1');
 
     // Not switched off — `allowFontScaling` is left at its default of true — but bounded, so a
@@ -127,14 +127,14 @@ describe('the scripture is half the size it was', () => {
 
 describe('the player is mounted with the page, not with the playback', () => {
   it('is on screen as soon as the surah has loaded, before anything is pressed', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-ayah-1-1');
 
     expect(await view.findByTestId('faith-reader-player')).toBeTruthy();
   });
 
   it('names the surah, the opening ayah and the reciter while idle', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
 
     expect(String((await view.findByTestId('faith-reader-player-title')).props.children)).toBe(
       'Al-Fatihah • Aya 1',
@@ -145,7 +145,7 @@ describe('the player is mounted with the page, not with the playback', () => {
   });
 
   it('starts at 0:00 with an unknown length and an inactive seek bar', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
 
     expect(String((await view.findByTestId('faith-reader-player-elapsed')).props.children)).toBe(
       '0:00',
@@ -163,7 +163,7 @@ describe('the player is mounted with the page, not with the playback', () => {
   });
 
   it('carries every mandatory control, all of them at once', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-player');
 
     for (const control of [
@@ -187,7 +187,7 @@ describe('the player is mounted with the page, not with the playback', () => {
   });
 
   it('has no collapsed form, no expand control and no second presentation', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-player');
 
     // The three shapes the transport used to have. All of them are gone: there is one player and
@@ -198,7 +198,7 @@ describe('the player is mounted with the page, not with the playback', () => {
   });
 
   it('mounts exactly one player, whatever the reader is doing', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-player');
 
     expect(view.getAllByTestId('faith-reader-player')).toHaveLength(1);
@@ -212,7 +212,7 @@ describe('the player is mounted with the page, not with the playback', () => {
   });
 
   it('stays on screen through preparing, playing, buffering, failure and completion', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await playFromAyah(view, 1);
     await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
 
@@ -227,12 +227,18 @@ describe('the player is mounted with the page, not with the playback', () => {
     }
   });
 
-  it('draws a player even where this reciter published no audio for the surah', async () => {
+  it('draws a player even where nothing is downloaded, and names the reason honestly', async () => {
     /**
-     * The fixture repository answers `empty` for recitations, because shipping a placeholder
-     * recitation of the Qur'an is not something NoorLife does at any fidelity. The player is still
-     * mounted — the brief is unconditional about that — and it says what is true: there is nothing
-     * to play, so the transport is disabled rather than drawn as though a tap would work.
+     * ── What this state means now, and why the wording changed ────────────────
+     * It used to read "audio is unavailable for this reciter", which was the honest sentence when the
+     * question was whether the *publisher* had a recording. Playback is local-only now, so the
+     * question is whether the *device* has one — and those are different facts with different
+     * remedies. Quran Foundation publishes a Sudais recitation of every verse; what is absent here is
+     * a download, and saying "unavailable" about it would blame the publisher for a file the user has
+     * simply not fetched.
+     *
+     * The player is still mounted — the brief is unconditional about that — and the transport is
+     * disabled rather than drawn as though a tap would work.
      */
     const { view } = await renderReader();
     await view.findByTestId('faith-reader-header-label');
@@ -242,14 +248,18 @@ describe('the player is mounted with the page, not with the playback', () => {
       (await view.findByTestId('faith-reader-player-toggle')).props.accessibilityState,
     ).toMatchObject({ disabled: true });
     expect(String((await view.findByTestId('faith-reader-player-reciter')).props.children)).toMatch(
-      /audio is unavailable for this reciter/i,
+      /not downloaded/i,
     );
+    /* And the way out is the Offline audio screen, not a retry that could not work. */
+    expect(
+      String((await view.findByTestId('faith-reader-player-offline')).props.accessibilityLabel),
+    ).toMatch(/manage offline audio/i);
   });
 });
 
 describe('there is no per-ayah playback control', () => {
   it('draws no play button on any ayah', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-ayah-1-1');
 
     expect(view.queryByTestId('faith-reader-play-1-1')).toBeNull();
@@ -259,7 +269,7 @@ describe('there is no per-ayah playback control', () => {
   });
 
   it('opens a verse’s actions without starting it or moving the player', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-player');
 
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
@@ -279,7 +289,7 @@ describe('there is no per-ayah playback control', () => {
 
 describe('the player is docked above bottom navigation', () => {
   it('renders in the scaffold’s docked slot, a sibling of the scroll region and the nav bar', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
 
     const docked = await view.findByTestId('faith-reader-docked');
     expect(within(docked, 'faith-reader-player')).toBe(true);
@@ -300,7 +310,7 @@ describe('the player is docked above bottom navigation', () => {
      * its last item. `reader-dock-layout.test.tsx` carries the frame arithmetic against the
      * navigation bar.
      */
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-ayah-1-5');
 
     const scroll = view.getByTestId('faith-reader-scroll');
@@ -321,7 +331,7 @@ describe('the reciting verse is marked', () => {
   }
 
   it('tints the Arabic block of the verse being recited, and only that verse', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await reciteAyah(view, 1);
 
     expect(await view.findByTestId('faith-reader-ayah-active-1-1')).toBeTruthy();
@@ -331,7 +341,7 @@ describe('the reciting verse is marked', () => {
   });
 
   it('announces the state in words, so it is never carried by colour alone', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await reciteAyah(view, 1);
 
     await view.findByTestId('faith-reader-ayah-active-1-1');
@@ -349,7 +359,7 @@ describe('the reciting verse is marked', () => {
      * never on the tint. Asserted structurally — the translation node is not a descendant of the
      * tinted block.
      */
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await reciteAyah(view, 1);
     const tinted = await view.findByTestId('faith-reader-ayah-active-1-1');
 
@@ -357,7 +367,7 @@ describe('the reciting verse is marked', () => {
   });
 
   it('does not restyle the scripture it marks', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     const idle = resolvedFontSize(await view.findByTestId('faith-reader-arabic-1-1'));
 
     await reciteAyah(view, 1);
@@ -373,7 +383,7 @@ describe('the reciting verse is marked', () => {
   });
 
   it('agrees with the player about which verse is current', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await reciteAyah(view, 1);
 
     // The tinted block, the player's title and the audible source all read the same field, so
@@ -403,7 +413,7 @@ describe('the translation is never truncated', () => {
     const longText = `${'A sentence of translated meaning that keeps going. '.repeat(20)}End.`;
     const mocks = createMockFaithRepositories();
     const { view } = await renderReader({
-      recitations: READER_RECITATIONS,
+      downloaded: READER_DOWNLOADED,
       repositories: {
         quran: {
           ...mocks.quran,
@@ -444,7 +454,7 @@ describe('playback speed', () => {
   });
 
   it('is offered on an idle player and honoured when playback starts', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
 
     fireEvent.press(await view.findByTestId('faith-reader-player-speed'));
 
@@ -465,7 +475,7 @@ describe('playback speed', () => {
 
 describe('the progress row', () => {
   it('shows elapsed, duration and a live seek bar once the platform reports them', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await playFromAyah(view, 1);
     await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
 
@@ -486,7 +496,7 @@ describe('the progress row', () => {
 
 describe('the player reports what is happening', () => {
   it('shows a buffering indicator while the platform is fetching', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await playFromAyah(view, 1);
     await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
 
@@ -512,7 +522,7 @@ describe('the player reports what is happening', () => {
    * — `quran-recitation-playlist.test.tsx`.
    */
   it('does not offer a retry for a queue that is merely idle', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await playFromAyah(view, 1);
     await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
 

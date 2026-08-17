@@ -29,6 +29,8 @@
 export type RecitationErrorCode =
   | 'no-recitations'
   | 'no-local-audio'
+  /** The verse is not on this device. Playback stops rather than streaming or skipping. */
+  | 'not-downloaded'
   | 'reciter-mismatch'
   | 'build-failed'
   | 'prepare-failed'
@@ -40,8 +42,15 @@ export type RecitationErrorCode =
 export type RecitationTrace = {
   /** Monotonic milliseconds since the app started, for measuring intervals. */
   readonly at: number;
-  /** The playback session this belongs to. Results from an older one are discarded. */
-  readonly generation: number;
+  /**
+   * The playback session this belongs to, where one is meaningful.
+   *
+   * Optional since playback became local-only. The field existed to fence asynchronous continuations
+   * — a preparation for Al-Baqarah resolving after the reader had moved to Al-Fatihah — and there is
+   * no longer any asynchronous work on this path for a stale result to arrive from. It is kept for
+   * the entries that still carry one rather than removed, so an older trace stays readable.
+   */
+  readonly generation?: number;
   readonly phase: string;
   /** What happened: an intent, a command issued, an event received, or a refusal. */
   readonly kind: 'intent' | 'command' | 'event' | 'phase' | 'refused';
@@ -109,7 +118,9 @@ export function compactRecitationTrace(limit = 14): string {
       if (entry.playing !== undefined) parts.push(entry.playing ? 'P' : 'p');
       if (entry.loaded !== undefined) parts.push(entry.loaded ? 'L' : 'l');
       if (entry.code !== undefined) parts.push(`!${entry.code}`);
-      return `${entry.generation}/${parts.join('.')}`;
+      return entry.generation === undefined
+        ? parts.join('.')
+        : `${entry.generation}/${parts.join('.')}`;
     })
     .join(' ');
 }

@@ -105,6 +105,29 @@ export type ConnectivityPort = {
   /** The state now. Never throws; an unreadable platform answers `OFFLINE_STATE`. */
   readonly current: () => Promise<ConnectivityState>;
   /**
+   * The state now, or `null` when the platform did not actually answer.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── Why this exists beside `current` ───────────────────────────────────────
+   * `current` folds "the platform reported no link" and "the platform could not be read" into the
+   * same `OFFLINE_STATE`. For every caller that has one — a download deciding whether to wait, a sync
+   * deciding whether to run — that fold is correct: both answers mean *do not proceed yet*, and
+   * erring toward waiting is free.
+   *
+   * It is exactly wrong for a caller whose two branches are not both cheap. The authentication launch
+   * uses connectivity to decide whether to **skip** contacting Supabase; reading an unanswered
+   * platform as "definitely offline" makes it skip the refresh on a device that is perfectly online,
+   * which strands the user on a receipt they did not need — and in a Jest environment, where
+   * `getNetworkStateAsync` resolves `undefined`, it silently signed out every test that rendered the
+   * real provider.
+   *
+   * That is the same defect the session resolution was built to remove, one layer down: an absence of
+   * information wearing the costume of a verdict. So the honest reading is available to callers that
+   * need it, and `current` keeps its convenient fold for the ones that do not.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  readonly currentOrUnknown: () => Promise<ConnectivityState | null>;
+  /**
    * Watches for changes. Returns the unsubscribe.
    *
    * The listener is **not** invoked with the current state on subscribe. Callers that need a value

@@ -1,3 +1,4 @@
+import { faithAddress } from '@/test-support/faith-storage-address';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { render, fireEvent, screen } from '@testing-library/react-native';
 import React, { type ReactElement } from 'react';
@@ -122,7 +123,7 @@ describe('the reader opens what the route names', () => {
   it('renders the surah in the path, not the one in storage', async () => {
     // A stored position for a *different* surah, which is precisely what used to win.
     await AsyncStorage.setItem(
-      'noorlife.faith.quran.position',
+      faithAddress('readingPosition'),
       JSON.stringify({
         surah: 18,
         surahName: 'Al-Kahf',
@@ -216,7 +217,7 @@ describe('bookmarks open their verse', () => {
 
   it('navigates to the right surah and verse', async () => {
     await AsyncStorage.setItem(
-      'noorlife.faith.bookmarks',
+      faithAddress('bookmarks'),
       JSON.stringify([
         {
           kind: 'ayah',
@@ -236,7 +237,7 @@ describe('bookmarks open their verse', () => {
 
   it('leaves a non-ayah bookmark non-navigable rather than pointing it nowhere', async () => {
     await AsyncStorage.setItem(
-      'noorlife.faith.bookmarks',
+      faithAddress('bookmarks'),
       JSON.stringify([
         {
           kind: 'hadith',
@@ -286,7 +287,7 @@ describe('reading progress is measured, not asserted', () => {
     await view.findByTestId('faith-reader-success');
 
     const stored = JSON.parse(
-      (await AsyncStorage.getItem('noorlife.faith.quran.position')) as string,
+      (await AsyncStorage.getItem(faithAddress('readingPosition'))) as string,
     ) as Record<string, unknown>;
 
     expect(stored.surah).toBe(1);
@@ -313,7 +314,7 @@ describe('continue reading starts empty', () => {
 
   it('shows the position and its fraction once something has been read', async () => {
     await AsyncStorage.setItem(
-      'noorlife.faith.quran.position',
+      faithAddress('readingPosition'),
       JSON.stringify({
         surah: 18,
         surahName: 'Al-Kahf',
@@ -334,7 +335,7 @@ describe('continue reading starts empty', () => {
   it('discards a position written before the surah name was stored', async () => {
     // The shape an older build wrote. Rendering it would produce "undefined • verse 32".
     await AsyncStorage.setItem(
-      'noorlife.faith.quran.position',
+      faithAddress('readingPosition'),
       JSON.stringify({ surah: 18, ayah: 32, progress: 0.55, updatedAt: new Date().toISOString() }),
     );
 

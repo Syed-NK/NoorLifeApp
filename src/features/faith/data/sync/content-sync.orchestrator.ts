@@ -32,6 +32,7 @@ import {
 } from '../../storage/faith-sync-generation';
 import { RECITATION_CHECK_INTERVAL_MS } from '../../storage/faith-recitation-check';
 import { publishRevision, updateSyncStatus } from './content-sync.revision';
+import { isPublishableAttribution, resolveTranslationAttribution } from './translation-attribution';
 import type { SyncSessionGuard } from './content-sync.session';
 
 /**
@@ -39,7 +40,7 @@ import type { SyncSessionGuard } from './content-sync.session';
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * ── What was missing, and why the parts alone were not enough ───────────────
- * `faith-sync-checkpoint.ts`, `faith-sync-rows.ts` and `faith-audio-manifest.ts` were all built,
+ * `faith-sync-checkpoint.ts`, `faith-sync-rows.ts` and `faith-offline-recitation.ts` were all built,
  * tested, and called by nothing. Each is correct in isolation and none of them can be correct alone:
  * the guarantee that matters — *the token advances only after every page and every required snapshot
  * has been applied* — is a property of the **order** they are used in, and an order has to live
@@ -96,16 +97,30 @@ import type { SyncSessionGuard } from './content-sync.session';
  * `over_2_to_4_mib` and `over_4_to_8_mib`, and multi-megabyte JSON in AsyncStorage is a production
  * failure no in-memory test double would reveal. See `faith-sync-generation.ts`.
  *
- * ── Provisional assumption A1, named where it is implemented ───────────────
- * The feed has **never emitted a recitation mutation**. Not once, across every verified run — see
- * `docs/QURAN_FOUNDATION_AUDIO_PERMISSION.md` §8.4. The recitation snapshot is live-verified, so when
- * the seven-connected-day check falls due and no recitation mutation has arrived, this module
- * re-fetches the approved `recitations:3` snapshot and reconciles it against the manifest.
+ * ── The recitation model, confirmed in writing by Quran Foundation ─────────
+ * No recitation mutation has ever arrived on the feed, and **that is correct rather than
+ * suspicious**. Quran Foundation confirmed that existing recitations were *intentionally not
+ * backfilled* into Content Sync change history, so a bootstrap for resource 3 legitimately contains
+ * no initial `RESOURCE_CREATE`. The confirmed procedure is recorded in
+ * `docs/QURAN_FOUNDATION_AUDIO_PERMISSION.md` §8.4:
  *
- * That is **assumption A1, provisional and pending Quran Foundation's written confirmation.** It is
- * recorded as `reconciliation: 'snapshot'` on the result, never as a mutation, and
- * `SyncOutcome.recitationMutationObserved` is `false` on every path that did not actually receive
- * one. Nothing in this file may set it true without a mutation having been read off the wire.
+ *   1. establish the initial local baseline from the **resource 3 snapshot**;
+ *   2. store the final bootstrap `next_sync_token`;
+ *   3. run Content Sync at least every seven **connected** days with the same resource filter;
+ *   4. apply future recitation mutations from the feed.
+ *
+ * ── What that changes here, and what it deliberately does not ──────────────
+ * A no-mutation response is now a **complete answer**: it means no recitation change has been
+ * recorded, and the existing baseline and audio stand. It no longer implies a re-fetch, so the
+ * seven-day check does not spend a 6,236-row snapshot on every clean run.
+ *
+ * Snapshot reconciliation is **kept**, reclassified from a licence necessity to an **integrity
+ * safeguard**, and is reached only when integrity validation fails, the baseline is missing or
+ * corrupt, resource identity changes, or a documented bounded reconciliation falls due.
+ *
+ * `SyncOutcome.recitationMutationObserved` still reports the literal truth — `false` unless a
+ * mutation was read off the wire — because "the vendor says none is expected" and "one arrived" are
+ * different facts and this field reports the second. Nothing here may set it true without one.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -118,6 +133,40 @@ export const TRANSLATION_RESOURCE_ID = 85;
 
 /** The complete ayah count of the Qur'an. A snapshot claiming completeness must produce exactly this. */
 export const TOTAL_AYAH_COUNT = 6236;
+
+/**
+ * How long the recitation baseline may stand before it is re-read as an **integrity** check.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Not a compliance interval, and the distinction is the whole point ──────
+ * The compliance obligation is to read the **change feed** at least every seven connected days, and
+ * that is `SYNC_INTERVAL_MS`. Quran Foundation confirmed a feed with no recitation mutation means no
+ * recitation change has been recorded, so nothing about currency requires re-reading 6,236 rows.
+ *
+ * This is the separate, documented, bounded safeguard: local files can rot in ways no feed will ever
+ * report — a truncated write, a filesystem fault, a manifest that drifts from what is on disk. Thirty
+ * days is long enough that the ordinary weekly check costs one small feed read, and short enough that
+ * a silent divergence is found in weeks rather than never.
+ *
+ * Raising it weakens detection; lowering it toward seven days re-creates the redundant traffic this
+ * constant exists to remove. A test pins that it is comfortably longer than the sync interval.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const RECITATION_INTEGRITY_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** The language resource 85 is published in. A catalogue row in any other language is refused. */
+export const TRANSLATION_LANGUAGE = 'english';
+
+/**
+ * How long a validated translator credit stands before the catalogue is re-read.
+ *
+ * The bounded metadata reconciliation. Thirty days for the same reason the recitation safeguard uses
+ * it: long enough that an ordinary weekly run spends no request on it, short enough that a catalogue
+ * correction — a corrected translator spelling, a re-attributed edition — is picked up in weeks
+ * rather than never. It is not a licence interval and nothing expires when it elapses; the only
+ * consequence is one small catalogue read on the next run.
+ */
+export const TRANSLATION_METADATA_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * How long a connected device may go without reading the change feed.
@@ -401,13 +450,116 @@ export function createContentSyncOrchestrator(
       });
     }
     /*
-      Attribution is preserved across the replacement rather than dropped. The snapshot carries rows,
-      not a translator credit, and a screen that cannot name the translator must not render the
-      translation — so replacing the rows while discarding the credit would take a lawful offline
-      translation and make it unshowable.
+      ── Attribution is resolved, not inherited ───────────────────────────────
+      This line used to read `previous?.translations.attribution ?? null`, which only ever *carried
+      forward* a value nothing had ever fetched. On bootstrap there is no previous generation, so it
+      started null and every later generation inherited the null — which is exactly the state the
+      live device is in: 6,236 valid rows and no translator credit.
+
+      The credit comes from the publisher's own catalogue, resolved by exact resource id. A snapshot
+      carries rows and no translator, so this is the only place it can come from.
     */
-    staged.translations = { attribution: previous?.translations.attribution ?? null, rows };
+    /*
+      ── Deliberately redundant with the carry-forward repair, and unprovable ──
+      A mutation proof that deletes this guard leaves every test green, and that is the honest
+      result rather than a missing test: the repair below sits downstream of every path through this
+      one, runs before any durable write, and makes exactly one catalogue read either way. There is
+      no observable difference to assert on without adding a production diagnostic.
+
+      It is kept anyway. Refusing at the boundary that *constructs* the staged value is where the
+      invariant belongs, and relying on a guard thirty lines further down means any future edit that
+      reorders or short-circuits that path silently removes the protection. Retained as documented
+      defence in depth — not dead code, and not to be tidied away.
+    */
+    const attribution = await resolveAttribution(previous);
+    if (attribution.kind !== 'resolved') {
+      return attribution;
+    }
+    staged.translations = { attribution: attribution.attribution, rows };
     return { kind: 'ok' };
+  };
+
+  /**
+   * The translator credit for resource 85, from the publisher catalogue.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── When the catalogue is fetched, and when it deliberately is not ─────────
+   * `list_translation_resources` is a small, already-approved read, but it is still a request, and
+   * spending one on every clean incremental run would be the same redundancy the recitation
+   * confirmation just removed. So it is fetched only when the answer could actually change or is
+   * not yet trustworthy:
+   *
+   *   • **bootstrap** — no previous generation, so nothing to carry forward;
+   *   • **missing or invalid attribution** — including the null the live device holds, which is what
+   *     makes a repair possible on a run with no translation mutation at all;
+   *   • **resource identity changed** — a credit for one resource may never be bound to another's
+   *     text, because that is misattribution rather than absence;
+   *   • **bounded metadata reconciliation due** — `TRANSLATION_METADATA_INTERVAL_MS`, so a catalogue
+   *     correction is picked up in weeks rather than never.
+   *
+   * Otherwise the existing, already-validated credit is carried forward unchanged.
+   *
+   * ── Why a failure here refuses the whole generation ────────────────────────
+   * A translation shown without its translator is a translation presented as if it were the text
+   * itself, and the licence requires the credit to remain visible wherever the translation appears.
+   * So there is no "publish the rows and fix the credit later" path: absent, conflicting, incomplete,
+   * wrong-language and mismatched all fail the run and leave the previous generation active.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  const resolveAttribution = async (
+    previous: ActiveGeneration | null,
+  ): Promise<
+    { readonly kind: 'resolved'; readonly attribution: TranslationAttribution } | Stage
+  > => {
+    const held = previous?.translations.attribution ?? null;
+    const heldIsUsable =
+      isPublishableAttribution(held, TRANSLATION_RESOURCE_ID) &&
+      previous !== null &&
+      previous.translations.resourceId === TRANSLATION_RESOURCE_ID;
+    const metadataDue =
+      previous === null ||
+      (() => {
+        const since = deps.now() - previous.manifest.createdAt;
+        return since < 0 || since >= TRANSLATION_METADATA_INTERVAL_MS;
+      })();
+
+    if (heldIsUsable && !metadataDue) {
+      return { kind: 'resolved', attribution: held };
+    }
+
+    const catalogue = await request({ operation: 'list_translation_resources' });
+    if (catalogue.kind === 'cancelled') {
+      return catalogue;
+    }
+    if (catalogue.kind !== 'ok') {
+      /*
+        A catalogue that could not be read is not a catalogue that said nothing. If a usable credit
+        is already held, the run continues on it rather than discarding a lawful translation over a
+        transient read; with nothing held, there is no credit and the run cannot publish.
+      */
+      return heldIsUsable
+        ? { kind: 'resolved', attribution: held }
+        : { kind: 'failed', failure: catalogue.failure };
+    }
+    if (catalogue.data.operation !== 'list_translation_resources') {
+      return { kind: 'failed', failure: 'invalid-response' };
+    }
+
+    const resolved = resolveTranslationAttribution(
+      catalogue.data.editions,
+      TRANSLATION_RESOURCE_ID,
+      TRANSLATION_LANGUAGE,
+    );
+    if (resolved.kind !== 'resolved') {
+      /*
+        Every refusal is `invalid-response`: the distinction between absent, conflicting, incomplete
+        and wrong-language is a question for the vendor, and encoding it into a user-visible failure
+        code would put catalogue diagnostics on a screen. The resolver's own tests keep the four
+        apart where that distinction is actually useful.
+      */
+      return { kind: 'failed', failure: 'invalid-response' };
+    }
+    return { kind: 'resolved', attribution: resolved.attribution };
   };
 
   const stageRecitationSnapshot = async (
@@ -437,9 +589,11 @@ export function createContentSyncOrchestrator(
     }
     staged.recitations = { rows };
     /*
-      Recorded as *how it was reached*, and the distinction is a licence one rather than an
-      engineering one. `snapshot` is assumption A1 — provisional, pending Quran Foundation's written
-      confirmation — and it must never be reported as an observed mutation.
+      Recorded as *how it was reached*, and the distinction still matters: `snapshot` means the rows
+      came from re-reading the approved resource-3 snapshot, not from a mutation on the feed, and it
+      must never be reported as one. Since Quran Foundation confirmed historical recitations were
+      intentionally not backfilled, a snapshot read is now the **baseline** mechanism on bootstrap
+      and an **integrity safeguard** afterwards — not a standing licence workaround.
     */
     staged.recitationReconciliation = how;
     return { kind: 'ok' };
@@ -512,11 +666,39 @@ export function createContentSyncOrchestrator(
     const feedDue = elapsedFeed === null || elapsedFeed < 0 || elapsedFeed >= SYNC_INTERVAL_MS;
     const audioDue =
       elapsedAudio === null || elapsedAudio < 0 || elapsedAudio >= RECITATION_CHECK_INTERVAL_MS;
-    if (!force && !feedDue && !audioDue && previous !== null) {
+    /**
+     * A published generation whose translator credit is unusable is **due** for a run.
+     *
+     * ═════════════════════════════════════════════════════════════════════
+     * ── Why this is a due-ness condition and not a background chore ───────
+     * The repair already works on any run that happens; without this it only *happens* when the
+     * seven-day feed window elapses. The live device proved why that is not good enough: its
+     * generation was a day old, so no run was due, and a generation holding 6,236 translation rows
+     * that no screen may lawfully render would have sat that way for six more days.
+     *
+     * A generation that cannot be displayed is not a healthy current state, so the honest reading
+     * of "is a sync due?" includes it. It is bounded by the same backoff and single-flight guards as
+     * any other run, and it self-extinguishes: once the credit resolves, this condition is false
+     * forever after.
+     *
+     * Deliberately keyed on rows being present. An empty translation set has nothing to attribute,
+     * and treating that as due would make a bootstrap that legitimately received no translation
+     * mutation retry on every launch.
+     * ═════════════════════════════════════════════════════════════════════
+     */
+    const attributionRepairDue =
+      previous !== null &&
+      previous.translations.rows.length > 0 &&
+      !isPublishableAttribution(previous.translations.attribution, TRANSLATION_RESOURCE_ID);
+
+    if (!force && !feedDue && !audioDue && !attributionRepairDue && previous !== null) {
       report({
-        status: previous.manifest.recitation.mutationEverObserved
-          ? 'current'
-          : 'provisional-snapshot-reconciliation',
+        /*
+          `current` regardless of whether a mutation was ever seen. Quran Foundation confirmed that a
+          feed with no recitation mutation means no recitation change has been recorded — so an
+          untouched baseline is up to date, not provisionally so.
+        */
+        status: 'current',
         lastPublishedAt: previous.manifest.createdAt,
         lastRecitationCheckAt: previous.manifest.recitation.lastCheckedAt,
         recitationMutationObserved: previous.manifest.recitation.mutationEverObserved,
@@ -527,6 +709,40 @@ export function createContentSyncOrchestrator(
 
     /* No published generation means no token, which is exactly what a bootstrap is. */
     const bootstrapped = previous === null;
+
+    /**
+     * Whether the resource-3 snapshot must be read on this run.
+     *
+     * ═══════════════════════════════════════════════════════════════════════
+     * ── Four reasons, and "seven days have passed" is deliberately not one ──
+     * Quran Foundation confirmed that a feed returning no recitation mutation means no recitation
+     * change has been recorded, so the seven-day cadence is satisfied by reading the *feed*. The
+     * snapshot is reserved for the cases where local state cannot be trusted to be a baseline:
+     *
+     *   • **bootstrap** — there is no baseline yet, and the snapshot is how one is established;
+     *   • **missing or corrupt baseline** — a generation with no recitation rows cannot be
+     *     incrementally corrected, because there is nothing to apply a mutation to;
+     *   • **resource identity changed** — rows published under a different reciter are not this
+     *     reciter's, and reconciling them row-by-row would silently mix two resources;
+     *   • **a bounded integrity reconciliation falls due** — the safeguard, on its own long clock,
+     *     so a silent divergence cannot persist forever unnoticed.
+     *
+     * `force` is included because it is the operator's explicit instruction, not a routine trigger.
+     * ═══════════════════════════════════════════════════════════════════════
+     */
+    const recitationBaselineMissing =
+      previous === null ||
+      previous.recitations.rows.length === 0 ||
+      previous.recitations.resourceId !== SUDAIS_RESOURCE_ID;
+    const integrityReconciliationDue =
+      previous !== null &&
+      (() => {
+        const since = at - previous.manifest.recitation.lastCheckedAt;
+        /* A clock that moved backwards is treated as due, failing toward a check. */
+        return since < 0 || since >= RECITATION_INTEGRITY_INTERVAL_MS;
+      })();
+    const recitationBaselineRequired =
+      force || recitationBaselineMissing || integrityReconciliationDue;
     report({ status: 'checking', isRunning: true });
     const staged: Staged = {
       translations: null,
@@ -646,13 +862,19 @@ export function createContentSyncOrchestrator(
       if (stage.kind === 'failed') {
         return await fail(stage.failure);
       }
-    } else if (audioDue || force) {
+    } else if (recitationBaselineRequired) {
       /*
-        ── Assumption A1, and the only place it is acted on ─────────────────
-        No recitation mutation arrived — as none ever has — and the seven-connected-day audio check is
-        due. The approved snapshot is re-fetched and reconciled against what is held locally. This is
-        provisional and pending Quran Foundation's written confirmation; it is recorded as `snapshot`
-        so no reader can mistake it for a mutation that was observed.
+        ── The snapshot is a baseline and an integrity safeguard, not a routine ──
+        This used to read `audioDue || force`, so every seven-connected-day check with no mutation
+        re-fetched all 6,236 recitation rows. Quran Foundation has since confirmed that existing
+        recitations were **intentionally not backfilled** into change history and that a feed
+        returning no recitation mutation means no recitation change has been recorded. A clean
+        no-mutation response is therefore a complete answer, and re-fetching on it is redundant
+        traffic against a vendor whose rate limits every NoorLife user shares.
+
+        So the snapshot is taken only when it is the baseline or when local integrity is in doubt —
+        see `recitationBaselineRequired`. The seven-day obligation is unchanged and is discharged by
+        reading the **feed**, which happens above on exactly that cadence.
       */
       const stage = await stageRecitationSnapshot(staged, at, 'snapshot');
       if (stage.kind === 'cancelled') {
@@ -684,7 +906,10 @@ export function createContentSyncOrchestrator(
       referenced across directories. A generation is self-contained by construction — a reader that
       holds its id can never assemble one resource from it and another from somewhere else.
     **/
-    const translations =
+    let translations: {
+      attribution: TranslationAttribution | null;
+      rows: readonly TranslationRow[];
+    } =
       staged.translations ??
       (previous === null
         ? /*
@@ -695,6 +920,34 @@ export function createContentSyncOrchestrator(
            */
           { attribution: null, rows: [] }
         : { attribution: previous.translations.attribution, rows: previous.translations.rows });
+
+    /**
+     * The metadata repair, for a run that fetched no translation snapshot.
+     *
+     * ── Why it cannot live inside the snapshot staging ────────────────────
+     * `stageTranslationSnapshot` only runs when a translation mutation asked for one. The device
+     * this repair exists for holds 6,236 perfectly valid rows and a null credit, and it will not
+     * see another translation mutation until the vendor publishes a correction — so a repair
+     * reachable only through that path would never run.
+     *
+     * Carrying the rows forward and resolving only the credit is the point: this is metadata
+     * repair, not a reason to discard or re-fetch lawful text. If the credit cannot be resolved
+     * the run fails and the previous generation stays active, exactly as any other pre-pointer
+     * failure.
+     */
+    if (
+      translations.rows.length > 0 &&
+      !isPublishableAttribution(translations.attribution, TRANSLATION_RESOURCE_ID)
+    ) {
+      const repaired = await resolveAttribution(previous);
+      if (repaired.kind === 'cancelled') {
+        return ended(false);
+      }
+      if (repaired.kind !== 'resolved') {
+        return await fail(repaired.kind === 'failed' ? repaired.failure : 'invalid-response');
+      }
+      translations = { attribution: repaired.attribution, rows: translations.rows };
+    }
     const recitations = staged.recitations ?? previous?.recitations ?? { rows: [] };
 
     const method =
@@ -790,8 +1043,12 @@ export function createContentSyncOrchestrator(
       publishedAt: draft.createdAt,
       lastRecitationCheckAt: draft.recitation.lastCheckedAt,
       recitationMutationObserved: draft.recitation.mutationEverObserved,
-      /* A1 until Quran Foundation confirms: audio currency rests on a snapshot, not a mutation. */
-      provisional: !draft.recitation.mutationEverObserved,
+      /*
+        Never provisional on account of a missing recitation mutation. Quran Foundation confirmed
+        historical recitations were intentionally not backfilled, so an absent mutation is a normal,
+        complete answer rather than an unverified assumption.
+      */
+      provisional: false,
     });
 
     return {

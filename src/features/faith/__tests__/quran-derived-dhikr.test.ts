@@ -39,6 +39,7 @@ import {
   recordDhikrSelection,
   toggleDhikrFavourite,
 } from '../storage/faith-dhikr-state';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * The Quran-derived Dhikr feature: what may ship, what may not, and what may be kept.
@@ -498,6 +499,6 @@ describe('user state survives content expiry', () => {
     expect(state.favouriteEntryIds).toEqual([]);
     expect(state.recentEntryIds).toEqual([]);
     /* …and nothing here reaches the Tasbih store, where the user's counts live. */
-    expect(await AsyncStorage.getItem('noorlife.faith.tasbih.session')).toBeNull();
+    expect(await AsyncStorage.getItem(faithAddress('tasbihSession'))).toBeNull();
   });
 });

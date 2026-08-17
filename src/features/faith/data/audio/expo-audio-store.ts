@@ -260,6 +260,20 @@ export function createExpoAudioStore(kind: AudioStoreKind = 'prepared'): AudioSt
       let valid = false;
       try {
         valid = isPlausibleAudio(readHeader(partial), partial.size);
+        /*
+          ── The publisher's size, where the publisher gave one ──────────────────
+          Checked here rather than after the rename, so a transfer that produced the right kind of
+          bytes in the wrong quantity never occupies the name a player reads. A truncated response
+          that happens to begin with a valid MPEG frame header passes the signature check and would
+          otherwise be promoted as a recitation that stops part-way through the verse.
+
+          Only an exact match is accepted. A tolerance would have to be a number invented here, and
+          the honest alternative to inventing one is to compare against nothing when the publisher
+          supplied nothing — which is what `undefined` and `null` already mean.
+        */
+        if (valid && request.expectedBytes != null && partial.size !== request.expectedBytes) {
+          valid = false;
+        }
       } catch {
         valid = false;
       }
@@ -312,6 +326,51 @@ export function createExpoAudioStore(kind: AudioStoreKind = 'prepared'): AudioSt
       try {
         const free = Paths.availableDiskSpace;
         return Number.isFinite(free) && free >= 0 ? free : null;
+      } catch {
+        return null;
+      }
+    },
+
+    validate(name: string): boolean {
+      try {
+        const file = new File(audioDirectoryFor(kind), name);
+        if (!file.exists) {
+          return false;
+        }
+        return isPlausibleAudio(readHeader(file), file.size);
+      } catch {
+        /* Unreadable is not "probably fine". A file that cannot be checked may not be played. */
+        return false;
+      }
+    },
+
+    /**
+     * Moves a file in from another private directory, validating before it is promoted.
+     *
+     * The same order every write in this module follows — land, check, then rename onto the name a
+     * player reads. The difference is only that the bytes arrived earlier and by another route, which
+     * is a reason to check them more carefully rather than less: a cache file may have been truncated
+     * by the OS at any point since it was written.
+     */
+    adopt(request): StoredAudioFile | null {
+      try {
+        const source = new File(request.from);
+        if (!source.exists) {
+          return null;
+        }
+        if (!isPlausibleAudio(readHeader(source), source.size)) {
+          /*
+            Left where it is rather than deleted. This method's job is adoption; deciding the fate of
+            a file it declined belongs to the caller, which knows whether the source directory is
+            about to be swept anyway.
+          */
+          return null;
+        }
+        const directory = ensureDirectory(kind);
+        const target = new File(directory, request.name);
+        discard(target);
+        source.moveSync(target);
+        return describe(new File(directory, request.name), request.name);
       } catch {
         return null;
       }

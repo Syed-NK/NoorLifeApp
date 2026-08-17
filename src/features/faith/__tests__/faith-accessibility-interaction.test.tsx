@@ -9,8 +9,7 @@ import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 import { mockFileSystem, setRouteParams } from '../../../../jest.setup';
 
 import type { FaithRepositories } from '../data';
-import { audioFileName } from '../data/audio/audio-store.port';
-import { recordSurahDownload } from '../storage/faith-audio-downloads';
+import { offlineFileName, PERMITTED_RESOURCE_ID } from '../storage/faith-offline-recitation';
 import { toggleBookmark } from '../storage/faith-bookmarks';
 import { createMockFaithRepositories } from '../data/mock';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
@@ -82,17 +81,14 @@ async function seedInteractiveContent(): Promise<void> {
     },
     '2026-08-15T00:00:00.000Z',
   );
-  await recordSurahDownload({
-    reciterId: '3',
-    surah: 1,
-    files: 7,
-    ayahCount: 7,
-    bytes: 7 * 4096,
-    storedAt: Date.now(),
-  });
+  /*
+    Files in the **permanent** private directory, which is where downloaded recitation lives now.
+    Seeding the evictable cache would seed a directory nothing reads any more: playback is sourced
+    from the offline manifest's store, and the cache exists only for the one-time migration to empty.
+  */
   for (let ayah = 1; ayah <= 7; ayah += 1) {
     mockFileSystem.seed(
-      `file:///cache/faith-recitations/${audioFileName('3', 1, ayah)}`,
+      `file:///documents/faith-recitations-downloaded/${offlineFileName(PERMITTED_RESOURCE_ID, 1, ayah)}`,
       mockFileSystem.audioBytes(4096),
     );
   }

@@ -5,7 +5,6 @@ import {
   resetActiveLocationRevisionForTest,
 } from '../data/location/active-location';
 import { isUserSelectedLocation } from '../data/prayer-times.repository';
-import { faithStorageKeys } from '../storage/faith-storage';
 import {
   commitActivePrayerLocation,
   migrateLegacyRecord,
@@ -14,6 +13,7 @@ import {
   readStoredLocation,
   resetPrayerLocationSnapshotForTest,
 } from '../storage/faith-location';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * The versioned active-location record, its one-time migration, and the single write boundary.
@@ -44,11 +44,11 @@ const STAMP = '2026-08-13T12:00:00.000Z';
 
 /** Writes straight to the key, bypassing the boundary — the only way to plant a historical record. */
 async function plantRaw(value: unknown): Promise<void> {
-  await AsyncStorage.setItem(faithStorageKeys.location, JSON.stringify(value));
+  await AsyncStorage.setItem(faithAddress('location'), JSON.stringify(value));
 }
 
 async function rawStored(): Promise<Record<string, unknown> | null> {
-  const raw = await AsyncStorage.getItem(faithStorageKeys.location);
+  const raw = await AsyncStorage.getItem(faithAddress('location'));
   return raw === null ? null : (JSON.parse(raw) as Record<string, unknown>);
 }
 
@@ -430,7 +430,7 @@ describe('migration through storage', () => {
     */
     const stored = (await rawStored()) as Record<string, unknown>;
     await AsyncStorage.setItem(
-      faithStorageKeys.location,
+      faithAddress('location'),
       JSON.stringify({ ...stored, label: 'Untouched' }),
     );
     const second = await readStoredLocation();

@@ -146,10 +146,30 @@ describe('failure and timeout', () => {
     );
   });
 
-  it('has a 4 second ceiling', () => {
-    expect(STARTUP_TIMEOUT_MS).toBe(4000);
-    // Just under it, still waiting.
-    expect(nextStartupState(input({ elapsedMs: 3999, isSignedIn: null }))).toBe('branded_splash');
+  it('waits out a cold offline launch before falling through', () => {
+    /*
+      ── This asserted 4000 and that is what broke offline access ─────────────
+      Measured on the emulator against a release build in airplane mode, the session resolves at
+      roughly 4.3 s from splash mount — Hermes cold start, a connectivity probe bounded at 2 s, then
+      a Keystore read. The old ceiling fired a few hundred milliseconds earlier, routed to
+      `authentication` assuming signed-out, and froze there; the correct answer arrived immediately
+      afterwards with nowhere to go.
+
+      So the ceiling is now a "this is stuck" bound rather than a "this is slow" one. The assertion
+      is a floor rather than an equality: raising it further is a judgement call, lowering it back
+      under the measurement is the regression.
+    */
+    expect(STARTUP_TIMEOUT_MS).toBeGreaterThanOrEqual(8000);
+    // A cold offline launch is still waiting where the old ceiling would have given up.
+    expect(nextStartupState(input({ elapsedMs: 4500, isSignedIn: null }))).toBe('branded_splash');
+    // Just under the ceiling, still waiting.
+    expect(nextStartupState(input({ elapsedMs: STARTUP_TIMEOUT_MS - 1, isSignedIn: null }))).toBe(
+      'branded_splash',
+    );
+    // At the ceiling, it falls through rather than hanging.
+    expect(nextStartupState(input({ elapsedMs: STARTUP_TIMEOUT_MS, isSignedIn: null }))).toBe(
+      'authentication',
+    );
   });
 });
 

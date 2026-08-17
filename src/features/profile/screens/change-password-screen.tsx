@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { authRoutes } from '@application/navigation/routes';
-import { useAuth } from '@application/providers/auth-provider';
+import { isOnlineAuthenticated, useAuth } from '@application/providers/auth-provider';
 import { AuthStatusBanner } from '@features/entry-auth/components/auth-status-banner';
 import { AuthTextField } from '@features/entry-auth/components/auth-text-field';
 import { EntryAuthText } from '@features/entry-auth/components/entry-auth-text';
@@ -90,7 +90,8 @@ export function ChangePasswordScreen({
 } = {}) {
   const router = useRouter();
   const { dp } = useEntryAuthMetrics();
-  const { status } = useAuth();
+  const auth = useAuth();
+  const { status } = auth;
   const security = useAccountSecurity(port);
   const copy = privacySecurityCopy.password;
 
@@ -157,7 +158,14 @@ export function ChangePasswordScreen({
    * there is no account this form can act on. The control stays disabled rather than offering a
    * credential change against a session nobody has confirmed.
    */
-  const sessionReady = status === 'signed-in' && summary !== null;
+  /*
+    ── Online authority, not merely "signed in" ──────────────────────────────
+    This screen changes a credential through Supabase. Under offline authority there is no token, so
+    submitting could only fail at the transport — after the user had typed a password into a form that
+    looked ready. Gating the readiness flag disables the control *before* that, which is what locked
+    decision 7 asks for.
+  */
+  const sessionReady = isOnlineAuthenticated(auth) && summary !== null;
 
   const evaluation = evaluatePasswordDraft({
     password,
@@ -177,9 +185,7 @@ export function ChangePasswordScreen({
    * neither is fixed by typing, and an inline error there would be advice that cannot help.
    */
   const fieldMessage: { password?: string; confirm?: string } =
-    evaluation.isFieldProblem &&
-    evaluation.field !== null &&
-    touched[evaluation.field]
+    evaluation.isFieldProblem && evaluation.field !== null && touched[evaluation.field]
       ? { [evaluation.field]: FIELD_ERROR_COPY[evaluation.state] ?? '' }
       : {};
 
@@ -214,7 +220,7 @@ export function ChangePasswordScreen({
     const check = evaluatePasswordDraft({
       password,
       confirm,
-      sessionReady: status === 'signed-in' && summary !== null,
+      sessionReady: isOnlineAuthenticated(auth) && summary !== null,
       canManagePassword: summary?.canManagePassword ?? false,
       submitting: false,
     });
@@ -270,7 +276,7 @@ export function ChangePasswordScreen({
       inFlight.current = false;
       setBusy(false);
     }
-  }, [code, confirm, copy, password, port, reauthRequired, status, summary]);
+  }, [auth, code, confirm, copy, password, port, reauthRequired, summary]);
 
   const sendCode = useCallback(async () => {
     if (inFlight.current) {
@@ -357,9 +363,7 @@ export function ChangePasswordScreen({
                 // The password-manager hint that lets iOS and Android offer to save the new value.
                 autoComplete="new-password"
                 textContentType="newPassword"
-                {...(fieldMessage.password === undefined
-                  ? {}
-                  : { error: fieldMessage.password })}
+                {...(fieldMessage.password === undefined ? {} : { error: fieldMessage.password })}
                 testID="change-password-new"
               />
               <PasswordStrengthMeter password={password} testID="change-password-strength" />

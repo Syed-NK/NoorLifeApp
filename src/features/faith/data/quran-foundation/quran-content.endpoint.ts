@@ -22,6 +22,7 @@ import {
   type WireTranslation,
   type WireVerse,
 } from './quran-foundation.contract';
+import { isRemoteAccessAuthorised } from '@services/network/remote-access';
 
 /**
  * The `quran-content` edge-function adapter.
@@ -783,6 +784,26 @@ function classifyThrown(error: unknown): QuranEndpointFailure {
 export function createQuranContentEndpoint(): QuranContentEndpoint {
   return {
     async request(body: QuranContentRequest): Promise<QuranEndpointOutcome<QuranContentPayload>> {
+      /*
+        ── The single choke point for every Qur'an Edge read ────────────────
+        Catalogue, verses, translations, recitations and Content Sync all arrive here, so gating
+        this one function is what makes "no Qur'an Edge request is issued offline" a property of
+        the code rather than a claim about every caller having remembered to check.
+
+        ── Why this returns `offline` instead of throwing ───────────────────
+        It threw first, and that broke the reader on device: airplane mode produced
+        "Couldn't load your Faith data — the connection dropped on our side" instead of the locally
+        published generation. The repository is written against `QuranEndpointOutcome`, and
+        `'offline'` is already a member of `QuranEndpointFailure` that every caller knows how to
+        degrade from. A thrown `OfflineOperationError` is a *different* channel those callers do not
+        handle, so a correct refusal surfaced as a hard error.
+
+        Same lesson as Noor AI: refuse in the vocabulary the caller already speaks. The gate's real
+        guarantee is unchanged and is what the test asserts — the Supabase client is never touched.
+      */
+      if (!isRemoteAccessAuthorised()) {
+        return failed('offline');
+      }
       if (!isSupabaseConfigured || supabase === null) {
         return failed('not-configured');
       }

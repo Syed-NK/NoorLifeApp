@@ -31,6 +31,7 @@ import {
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { TasbihScreen } from '../screens/tasbih-screen';
 import { defaultFaithPreferences, migratePreferences } from '../storage/faith-preferences';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * **The locked Tasbih design, and the promises underneath it.**
@@ -408,7 +409,7 @@ describe('bead material', () => {
     fireEvent.press(view.getByTestId('faith-tasbih-material-sandalwood'));
     await settle(700);
 
-    const stored = await AsyncStorage.getItem('noorlife.faith.preferences');
+    const stored = await AsyncStorage.getItem(faithAddress('preferences'));
     expect(stored).not.toBeNull();
     expect(JSON.parse(String(stored)).tasbihMaterialId).toBe('sandalwood');
   });

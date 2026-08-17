@@ -131,9 +131,27 @@ export function createExpoConnectivity(): ConnectivityPort {
   };
 
   return {
+    currentOrUnknown: async () => {
+      try {
+        const state = await getNetworkStateAsync();
+        /*
+          `undefined` is what this resolves to where the native module is absent — a Jest run, or a
+          platform that has not implemented it. It is not a reading, and reporting it as one is the
+          fold this method exists to avoid.
+        */
+        return state === undefined || state === null ? null : readState(state);
+      } catch {
+        return null;
+      }
+    },
+
     current: async () => {
       try {
-        return readState(await getNetworkStateAsync());
+        const state = await getNetworkStateAsync();
+        if (state === undefined || state === null) {
+          return OFFLINE_STATE;
+        }
+        return readState(state);
       } catch {
         /*
           An unreadable platform answers offline rather than throwing. Every caller's failure mode

@@ -309,6 +309,15 @@ const mockCurrent = jest.fn(async () => ({
 }));
 let connectivityListener: ((state: unknown) => void) | null = null;
 let mockAuthStatus: 'unknown' | 'signed-in' | 'signed-out' = 'signed-out';
+/**
+ * Which authority a signed-in state carries.
+ *
+ * Added with the offline-authentication phase. Content Sync is an authenticated transaction, so it
+ * runs under `online` only — an offline authority holds no token and could produce nothing but a
+ * refused request. Defaulting to `online` keeps every existing case meaning what it meant; the
+ * offline case is asserted explicitly below.
+ */
+let mockAuthAuthority: 'online' | 'offline' = 'online';
 let mockAuthUserId: string | null = null;
 /**
  * The session guard handed to each orchestrator, in construction order.
@@ -349,8 +358,11 @@ jest.mock('@application/providers/auth-provider', () => ({
   */
   useAuth: () => ({
     status: mockAuthStatus,
+    authority: mockAuthStatus === 'signed-in' ? mockAuthAuthority : null,
     user: mockAuthUserId === null ? null : { id: mockAuthUserId },
   }),
+  isOnlineAuthenticated: (state: { status: string; authority: string | null }) =>
+    state.status === 'signed-in' && state.authority === 'online',
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -406,6 +418,7 @@ afterEach(() => {
 /** Signs a user in. The id is what the coordinator keys ownership on. */
 function signIn(userId = 'user-a'): void {
   mockAuthStatus = 'signed-in';
+  mockAuthAuthority = 'online';
   mockAuthUserId = userId;
 }
 

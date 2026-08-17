@@ -9,6 +9,7 @@ import {
   readJson,
   writeJson,
 } from './faith-storage';
+import { subscribeToFaithScope } from './faith-user-scope';
 
 /**
  * The active prayer location: one versioned record, and the one place that writes it.
@@ -755,6 +756,23 @@ function readAccuracy(value: unknown): number | null {
  * screen mid-session.
  */
 let lastValidSnapshot: SavedPrayerLocationV3 | null = null;
+
+/**
+ * Forget the snapshot the instant the account changes.
+ *
+ * ── Why this is subscribed here rather than called by the provider ─────────
+ * A stale snapshot after an account switch is not merely out of date — it is **the previous user's
+ * home city**, held in memory and served by `readActivePrayerLocation` on the `unreadable` branch,
+ * where the whole point is to keep showing what the process already knew. That recovery rule is
+ * right within one account and is an exposure across two.
+ *
+ * Registering the reset in the module that owns the cell means the guarantee cannot be lost by
+ * somebody adding a second provider or reordering a layout. There is exactly one subscriber per
+ * process and it is created at import, beside the state it protects.
+ */
+subscribeToFaithScope(() => {
+  lastValidSnapshot = null;
+});
 
 /**
  * The active location, migrating a pre-V3 record exactly once.

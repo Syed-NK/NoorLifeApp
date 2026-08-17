@@ -83,6 +83,22 @@ export const faithRoutes = {
   translations: '/faith/translations',
   reciters: '/faith/reciters',
   /**
+   * Downloading, keeping and removing offline recitation.
+   *
+   * ── Why this is its own destination and not a section of Reciters ───────────
+   * Because the two answer different questions. Reciters is a *catalogue*: which recitation do I want
+   * to hear. This is *storage*: several hundred megabytes on somebody's phone, a Wi-Fi-only
+   * preference, a pause and resume, a per-surah removal and a confirmation before the whole thing
+   * goes. Folding it into a scrolling list of reciters would put the control that spends half a
+   * gigabyte inside a row somebody is scrolling past to find a voice.
+   *
+   * It is deliberately **not** reachable from the docked player. The player is a playback controller,
+   * and every control here is about storage rather than listening — see `QuranAudioPlayer`. The one
+   * link from the player is the honest dead end: a verse that is not downloaded cannot be played, and
+   * this is where that is fixed.
+   */
+  offlineAudio: '/faith/offline-audio',
+  /**
    * Where Faith's attribution lives.
    *
    * Reached from More rather than pinned above the scripture. The badge this replaced read

@@ -43,6 +43,16 @@ export type AudioDownloadRequest = {
    * meaning "not yet known".
    */
   readonly onProgress?: (fraction: number | null) => void;
+  /**
+   * The size the publisher stated, where it stated one.
+   *
+   * Checked **before** promotion, alongside the signature. Validating it after the rename would leave
+   * a wrong-sized file sitting under the name a player looks for, and the removal that followed would
+   * be a second window rather than a fix. Absent or `null` means the publisher said nothing, in which
+   * case the size floor and the signature are the whole of the check — no size is invented to compare
+   * against.
+   */
+  readonly expectedBytes?: number | null;
 };
 
 export type AudioStore = {
@@ -64,6 +74,32 @@ export type AudioStore = {
   sweepIncomplete(): void;
   /** Free space in bytes, or `null` where the platform does not report it. */
   availableBytes(): number | null;
+  /**
+   * Re-applies the audio signature check to a file already on disk.
+   *
+   * ── Why existence is not evidence, and why this is a separate call ──────────
+   * `read` answers whether a file is present and above the size floor. That is the right question for
+   * a player about to open a file this process validated moments ago, and the wrong one for a file
+   * written by an older build, adopted from a cache, or promoted by a process that died before it
+   * could record the result. Those files have never been checked by this build, and adopting them on
+   * the strength of their existence is the practice the whole manifest exists to retire.
+   *
+   * Returns `false` for an absent, short, unreadable or non-audio file — every case in which the
+   * honest answer is "this may not be played".
+   */
+  validate(name: string): boolean;
+  /**
+   * Takes ownership of a file that already exists elsewhere on this device's private storage.
+   *
+   * `from` is a local `file://` URI produced by another store's `read`, never a vendor URL — this
+   * method performs no network work of any kind. The move is a rename where the platform allows one,
+   * so a file adopted from the evictable cache into permanent storage is not copied and does not
+   * briefly occupy twice its size on a device that may be short of room.
+   *
+   * Validated before it is promoted, on the same terms as a download: a file that fails the signature
+   * check is not adopted, and `null` is returned rather than a half-trusted handle.
+   */
+  adopt(request: { readonly from: string; readonly name: string }): StoredAudioFile | null;
 };
 
 /**

@@ -137,23 +137,6 @@ function surahNameOf(resource: {
   return result !== undefined && hasData(result) ? result.data.surah.name : 'Recitation';
 }
 
-/**
- * Whether the recitation strand of the page failed, and how.
- *
- * ── Why the failure has to travel at all ────────────────────────────────────
- * The loader turns a failed `listRecitations` into an empty array so the verses still render — a
- * reciter's outage is not a reason to withhold scripture. But an empty array is also what a reciter
- * who published nothing looks like, and the panel drew the second for both. An error that becomes
- * `[]` with nothing carried alongside it is an error the user is never told about.
- */
-function recitationFailureOf(resource: {
-  readonly status: string;
-  readonly result?: FaithResult<ReaderPage>;
-}): 'offline' | 'failed' | null {
-  const result = resource.result;
-  return result !== undefined && hasData(result) ? result.data.recitationFailure : null;
-}
-
 function ayahCountOf(resource: {
   readonly status: string;
   readonly result?: FaithResult<ReaderPage>;
@@ -661,16 +644,14 @@ export function ReaderScreen() {
     [quran, surah, translationId, readerKey],
   );
 
-  /**
-   * Every recitation currently on screen.
-   *
-   * The transport's next/previous walk this list, so a page loaded after the first has to be in it —
-   * otherwise "next verse" would stop at verse 20 of a 286-verse surah with no explanation.
-   */
-  const recitations = useMemo(
-    () => (ayat.status === 'settled' && hasData(ayat.result) ? ayat.result.data.recitations : []),
-    [ayat],
-  );
+  /*
+    ── The recitation list is deliberately no longer read here ────────────────
+    It used to drive the transport: next and previous walked it, and a page loaded after the first had
+    to be merged into it or "next verse" would stop at verse 20 of a 286-verse surah. That coupling is
+    gone. Playback is sourced from the offline manifest, so which verses can be played is a question
+    about the *device* rather than about which page of the publisher's list has arrived — and the
+    answer no longer changes as the reader scrolls.
+  */
 
   /**
    * The transport, owned here rather than inside the body.
@@ -679,7 +660,7 @@ export function ReaderScreen() {
    * `FaithResourceView`. A transport created inside the body would be a different instance from the
    * one the docked player was drawing, so the player would show audio nobody was listening to.
    */
-  const transport = useRecitationPlayer(recitations);
+  const transport = useRecitationPlayer(surah ?? 0);
 
   /**
    * Deletes this surah's downloaded audio, stopping playback first.
@@ -851,9 +832,16 @@ export function ReaderScreen() {
    * moment the reader opens, and honouring that as a movement would scroll a freshly-opened surah
    * past its own title.
    */
-  const focusedAyah = transport.focus?.ayah ?? null;
+  const focusedAyah = transport.focusAyah;
+  const autoScroll = preferences.quranAutoScroll;
   useEffect(() => {
-    if (focusedAyah === null) {
+    /*
+      The preference is checked here rather than at the transport, because it is a *reading* choice:
+      the player still advances, the highlight still follows, and only the column stays where the
+      reader put it. Gating the transport instead would stop the recitation, which is not what
+      "do not scroll for me" asks for.
+    */
+    if (!autoScroll || focusedAyah === null) {
       followedAyah.current = null;
       return;
     }
@@ -873,12 +861,21 @@ export function ReaderScreen() {
     }
     followedAyah.current = focusedAyah;
     scrollRef.current?.scrollTo({ y: Math.max(offset - 12, 0), animated: true });
-  }, [focusedAyah]);
+  }, [autoScroll, focusedAyah]);
 
-  const recitationFor = useCallback(
-    (ayah: number): AyahRecitation | null =>
-      recitations.find((entry) => entry.ayah === ayah) ?? null,
-    [recitations],
+  /**
+   * Whether this verse can be played from the device.
+   *
+   * ── Why this asks the offline manifest and not the recitation list ─────────
+   * The recitation list is what the *publisher* offers; it says nothing about what is on the phone.
+   * Playback is local-only, so the question a Play control has to answer is 'are the bytes here?',
+   * and the transport is the only thing that knows. Asking the list instead is how a Play button
+   * came to be offered for a verse that produced silence.
+   */
+  const playableAyat = transport.playableAyat;
+  const canPlayAyah = useCallback(
+    (ayah: number): boolean => playableAyat.includes(ayah),
+    [playableAyat],
   );
 
   /**
@@ -902,13 +899,9 @@ export function ReaderScreen() {
     if (openedAyah === null || deepLinkedAyah.current === openedAyah) {
       return;
     }
-    const recitation = recitations.find((entry) => entry.ayah === openedAyah);
-    if (recitation === undefined) {
-      return;
-    }
     deepLinkedAyah.current = openedAyah;
-    focusOn(recitation);
-  }, [openedAyah, recitations, focusOn]);
+    focusOn(openedAyah);
+  }, [openedAyah, focusOn]);
 
   /**
    * The furthest verse the reading log has recorded in this surah, or 0.
@@ -1024,16 +1017,21 @@ export function ReaderScreen() {
        * a screen that has nothing to scroll.
        */
       docked={
-        hasPage(ayat) ? (
+        /*
+          Hidden, not disabled. A permanent band above the navigation is a fifth of the screen spent on
+          a control somebody has said they will not use, and unlike a sheet there is nothing to
+          dismiss. Nothing is deleted: downloaded audio is the user's, and a display preference that
+          removed files would be a settings toggle doing something settings toggles must never do.
+        */
+        hasPage(ayat) && preferences.quranAudioEnabled ? (
           <ReaderPlayer
             transport={transport}
             surahName={surahNameOf(ayat)}
             ayah={openingAyahOf(ayat, openedAyah)}
             reciterName={reciterName}
             totalAyat={ayahCountOf(ayat)}
-            recitationsSettled={ayat.status === 'settled'}
-            recitationFailure={recitationFailureOf(ayat)}
             onOpenReciters={() => router.push(faithRoutes.reciters)}
+            onManageOfflineAudio={() => router.push(faithRoutes.offlineAudio)}
           />
         ) : undefined
       }
@@ -1112,7 +1110,7 @@ export function ReaderScreen() {
           surahName={page.surah.name}
           surah={selected.text.surah}
           ayah={selected.text.ayah}
-          canPlay={recitationFor(selected.text.ayah) !== null}
+          canPlay={canPlayAyah(selected.text.ayah)}
           bookmarked={bookmarks.ids.has(`${selected.text.surah}:${selected.text.ayah}`)}
           read={furthestRead >= selected.text.ayah}
           reciterId={reciterId}
@@ -1123,12 +1121,7 @@ export function ReaderScreen() {
            * `transport` the docked panel draws, so the label, the active green and the audio are
            * three views of one selection rather than three things that have to be kept in step.
            */
-          onPlay={() => {
-            const recitation = recitationFor(selected.text.ayah);
-            if (recitation !== null) {
-              transport.play(recitation);
-            }
-          }}
+          onPlay={() => transport.play(selected.text.ayah)}
           onRead={() => markRead(page, selected.text.ayah)}
           onToggleBookmark={toggleSelectedBookmark}
           onAskNoorAI={() => router.push(faithAiHref(selected.text.surah, selected.text.ayah))}
@@ -1194,13 +1187,13 @@ export function verseState({
   /** The verse the reader has confirmed it opened at — never the raw route parameter. */
   readonly openedAyah: number | null;
 }): AyahBlockState {
-  if (transport.playing && transport.current?.ayah === ayah) {
+  if (transport.playing && transport.currentAyah === ayah) {
     return 'active';
   }
   if (selectedAyah === ayah) {
     return 'selected';
   }
-  if (transport.focus?.ayah === ayah || openedAyah === ayah) {
+  if (transport.focusAyah === ayah || openedAyah === ayah) {
     return 'focused';
   }
   return 'idle';

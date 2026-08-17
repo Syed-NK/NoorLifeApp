@@ -31,11 +31,12 @@ import type { SyncFailure } from '../../storage/faith-sync-checkpoint';
 /**
  * What a Faith consumer may be told about synchronisation.
  *
- * `provisional-snapshot-reconciliation` is the one member that is a licence statement rather than an
- * engineering one: the change feed has never emitted a recitation mutation, so audio currency rests
- * on re-fetching the approved snapshot and comparing it — **assumption A1, provisional and pending
- * Quran Foundation's written confirmation**. A screen showing this must not describe the recitation
- * as confirmed by the feed, because it was not.
+ * `integrity-reconciliation` is the one member that is not about currency. Quran Foundation confirmed
+ * that a feed returning no recitation mutation means no recitation change has been recorded, so an
+ * untouched baseline is **current**, not provisionally so — the member that used to say otherwise
+ * (`provisional-snapshot-reconciliation`) was a licence hedge and is gone. What remains is the
+ * integrity safeguard: the state while the resource-3 baseline is being re-read because local files
+ * could not be trusted, which is a statement about this device rather than about the vendor.
  */
 export type SyncStatus =
   /** No generation has ever been published on this device. */
@@ -54,8 +55,8 @@ export type SyncStatus =
   | 'failed-retryable'
   /** The session is absent or was refused. Nothing is attempted. */
   | 'authentication-required'
-  /** Current, but the audio half rests on assumption A1 rather than an observed mutation. */
-  | 'provisional-snapshot-reconciliation';
+  /** Re-reading the approved resource-3 baseline because local integrity is in doubt. */
+  | 'integrity-reconciliation';
 
 /**
  * A bounded description of where synchronisation stands.
@@ -200,7 +201,7 @@ export function publishRevision(details: {
   emit({
     ...current,
     revision,
-    status: details.provisional ? 'provisional-snapshot-reconciliation' : 'current',
+    status: details.provisional ? 'integrity-reconciliation' : 'current',
     lastPublishedAt: details.publishedAt,
     lastRecitationCheckAt: details.lastRecitationCheckAt,
     recitationMutationObserved: details.recitationMutationObserved,

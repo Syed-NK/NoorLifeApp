@@ -8,6 +8,7 @@ import { createMockFaithRepositories } from '../data/mock';
 import { MIN_TASBIH_TARGET } from '../data/tasbih.repository';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { TasbihScreen } from '../screens/tasbih-screen';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * The tasbih counter.
@@ -37,7 +38,7 @@ warmUpFirstMount(() => renderTasbih());
  */
 async function seedSession(overrides: Record<string, unknown> = {}): Promise<void> {
   await AsyncStorage.setItem(
-    'noorlife.faith.tasbih.session',
+    faithAddress('tasbihSession'),
     JSON.stringify({
       presetId: 'subhanallah',
       count: 0,

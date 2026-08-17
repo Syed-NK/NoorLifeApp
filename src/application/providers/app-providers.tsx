@@ -1,6 +1,7 @@
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ContentSyncCoordinator } from '@features/faith/di/content-sync-coordinator';
+import { FaithScopeProvider } from '@features/faith/di/faith-scope-provider';
 import { QuranCatalogueWarmup } from '@features/faith/di/quran-warmup';
 import { EntitlementProvider } from '@features/subscription/services/entitlement-context';
 
@@ -51,8 +52,22 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
             <FontProvider>
               <AuthCallbackProvider>
                 <AuthProvider>
-                  <EntitlementProvider>
-                    {/*
+                  {/*
+                    Renders nothing, and must sit here rather than under the Faith routes.
+
+                    It resolves *whose* Faith data the storage boundary addresses, and Faith storage
+                    is read well outside the Faith tab: Main Home draws the next prayer time from the
+                    saved location, and both of the components below read it before any route mounts.
+                    A provider scoped to `app/faith/` would leave every one of those reads
+                    unpartitioned — which is the exposure, moved rather than closed.
+
+                    Directly inside Auth because it consumes the session, and above everything that
+                    reads Faith storage because it sets the owner during render. See
+                    `faith-scope-provider.tsx`.
+                  */}
+                  <FaithScopeProvider>
+                    <EntitlementProvider>
+                      {/*
                       Renders nothing. It loads the Qur'an's 114-surah catalogue once a session
                       exists, so the Qur'an tab reads it synchronously instead of awaiting storage
                       on the frame it is opened — see `quran-catalogue-warmup.ts` for why a
@@ -61,8 +76,8 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
                       Inside Auth because the approved adapter needs an authenticated invocation,
                       and warming before sign-in would spend a call that can only be refused.
                     */}
-                    <QuranCatalogueWarmup />
-                    {/*
+                      <QuranCatalogueWarmup />
+                      {/*
                       Renders nothing. The **one** production owner of Content Sync: it runs the
                       seven-connected-day check when a session becomes ready, when the app returns to
                       the foreground, and when connectivity becomes confirmed.
@@ -75,9 +90,10 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
 
                       It synchronises metadata only. No audio download is ever started from here.
                     */}
-                    <ContentSyncCoordinator />
-                    {children}
-                  </EntitlementProvider>
+                      <ContentSyncCoordinator />
+                      {children}
+                    </EntitlementProvider>
+                  </FaithScopeProvider>
                 </AuthProvider>
               </AuthCallbackProvider>
             </FontProvider>

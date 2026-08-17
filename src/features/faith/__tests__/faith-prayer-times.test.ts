@@ -15,6 +15,7 @@ import {
 } from '../data/prayer/adhan-prayer-times.repository';
 import { timeZoneForCoordinate, toZonedOffsetIso } from '../data/prayer/location-time-zone';
 import { readStoredLocation, resetPrayerLocationSnapshotForTest } from '../storage/faith-location';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * Prayer times are calculated, and no coordinate is ever invented.
@@ -297,7 +298,7 @@ describe('resolving a location', () => {
     );
 
     await AsyncStorage.setItem(
-      'noorlife.faith.location',
+      faithAddress('location'),
       JSON.stringify({
         coordinate: MANCHESTER,
         label: 'Manchester, United Kingdom',

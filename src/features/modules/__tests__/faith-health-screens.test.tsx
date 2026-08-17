@@ -15,6 +15,7 @@ import { moduleAIPolicies } from '../module-ai-policy';
 import { getModulePictogram } from '@features/home/module-pictograms';
 import { noorLifeAssets } from '@shared/assets/noorlife-assets';
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * Faith and Health against their approved individual-core-screen references.
@@ -271,7 +272,7 @@ describe('Faith home sections that depend on real activity', () => {
 
   it('shows it, with today’s real count, once there is a log', async () => {
     await AsyncStorage.setItem(
-      'noorlife.faith.quran.reading-log',
+      faithAddress('readingLog'),
       JSON.stringify({
         days: { [todayIsoDate()]: 6 },
         furthest: { '18': 6 },
@@ -287,7 +288,7 @@ describe('Faith home sections that depend on real activity', () => {
 
   it('says the goal was met rather than implying more is owed', async () => {
     await AsyncStorage.setItem(
-      'noorlife.faith.quran.reading-log',
+      faithAddress('readingLog'),
       JSON.stringify({
         days: { [todayIsoDate()]: 12 },
         furthest: { '18': 12 },

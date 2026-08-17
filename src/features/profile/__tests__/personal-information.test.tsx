@@ -4,7 +4,6 @@ import { BackHandler } from 'react-native';
 import { AuthProvider } from '@application/providers/auth-provider';
 import { AuthError } from '@services/auth/auth-service.contract';
 import * as authService from '@services/auth/auth.service';
-import type { AuthUser } from '@services/auth/auth.service';
 import * as profileService from '@services/profile/profile.service';
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
@@ -119,11 +118,17 @@ describe('the data it shows', () => {
   });
 
   it('holds the field’s geometry while the name is still loading', async () => {
-    // A session that never arrives is the only way to hold the screen in its pre-resolution state
-    // long enough to assert on it.
-    jest
-      .spyOn(authService, 'getSession')
-      .mockReturnValue(new Promise<AuthUser | null>(() => undefined));
+    /*
+      A session that never arrives is the only way to hold the screen in its pre-resolution state long
+      enough to assert on it.
+
+      Both entry points have to be held. The launch reads `resolveSession` — not `getSession`, which
+      is now a convenience wrapper the provider does not call — and Supabase's own event stream can
+      deliver a session independently, which would settle the screen this case exists to catch
+      mid-resolution.
+    */
+    jest.spyOn(authService, 'resolveSession').mockReturnValue(new Promise<never>(() => undefined));
+    jest.spyOn(authService, 'subscribeToAuthChanges').mockReturnValue(() => undefined);
 
     await render(
       <AuthProvider>

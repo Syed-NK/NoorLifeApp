@@ -13,7 +13,7 @@ import {
 import { OBLIGATORY_PRAYERS } from '../data/prayer-times.repository';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { PrayerRemindersScreen } from '../screens/prayer-reminders-screen';
-import { faithStorageKeys } from '../storage/faith-storage';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * The prayer reminders screen: reachable switches, one shared preference, and copy that is true.
@@ -39,7 +39,7 @@ warmUpFirstMount(() => renderReminders(createFakeNotificationPort({ permission: 
 async function seedPreferences(patch: Record<string, unknown>): Promise<void> {
   await seedPrayerLocation();
   await AsyncStorage.setItem(
-    faithStorageKeys.preferences,
+    faithAddress('preferences'),
     JSON.stringify({
       prayerNotificationsEnabled: false,
       prayerNotifications: OBLIGATORY_PRAYERS.map((prayer) => ({

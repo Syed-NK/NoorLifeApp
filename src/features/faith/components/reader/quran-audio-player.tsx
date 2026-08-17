@@ -9,8 +9,6 @@ import { useModuleTheme } from '@features/modules/module-context';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
-import type { PreparationFailure } from '../../data/audio';
-
 /**
  * What the player is doing, as one closed set.
  *
@@ -18,24 +16,33 @@ import type { PreparationFailure } from '../../data/audio';
  * The player it replaces derived its appearance from `playing`, `buffering`, `preparing` and
  * `failed` at each of a dozen call sites, and the combinations nobody thought about — failed *and*
  * buffering, preparing *and* playing — each drew something slightly different. A single resolved
- * state is decided once, by the adapter that owns the transport, and every branch below is
- * exhaustive over it.
+ * state is decided once, by the transport, and every branch below is exhaustive over it.
  *
- * `unavailable` is the honest state for a surah this reciter has no recording of. It is not
- * `failed`: nothing failed, and no amount of retrying will produce audio that was never published.
+ * ── Two of these are new, and they replace one that was a lie ──────────────
+ * `preparing` is gone. It described NoorLife fetching a verse's audio at the moment somebody pressed
+ * Play, which is the behaviour this pass removed: playback is now sourced only from files already on
+ * the device. A state named after a network wait that can no longer occur would be a control claiming
+ * work that is not happening.
+ *
+ * In its place are `not-downloaded` — there is no audio here and the remedy is a download, not a
+ * retry — and `missing-ayah`, which is playback having stopped at a verse the device does not hold.
+ * The second is the important one: it is what makes stopping at a gap distinguishable from a surah
+ * that finished, so the panel can say which happened instead of falling silent either way.
  */
 export type QuranPlaybackState =
   | 'idle'
-  /** The recitation list has not settled. Distinct from `unavailable`: nothing is known yet. */
+  /** The offline manifest has not been read yet. Distinct from `not-downloaded`: nothing is known. */
   | 'loading'
-  | 'preparing'
+  /** No audio for this surah on this device. The action is a download. */
+  | 'not-downloaded'
+  | 'starting'
   | 'buffering'
   | 'playing'
   | 'paused'
   | 'completed'
-  | 'offline'
-  | 'failed'
-  | 'unavailable';
+  /** Stopped at a verse that is not downloaded. Never skipped, never streamed. */
+  | 'missing-ayah'
+  | 'failed';
 
 export type QuranAudioPlayerProps = {
   readonly surahName: string;
@@ -48,16 +55,16 @@ export type QuranAudioPlayerProps = {
   /** Seconds played, or `null` where the platform has not said. */
   readonly positionSeconds: number | null;
   readonly durationSeconds: number | null;
-  /** Fraction of the current verse's file that has arrived, or `null` when unmeasured. */
-  readonly prepareProgress: number | null;
   readonly rate: number;
   readonly rates: readonly number[];
   /** False only where the platform has refused a rate change. */
   readonly rateSupported: boolean;
   readonly hasPrevious: boolean;
   readonly hasNext: boolean;
-  /** Why the current verse could not be prepared, for the retry line's wording. */
-  readonly failure: PreparationFailure | null;
+  /** How many of this surah's verses are on the device. Drawn only where it is not all of them. */
+  readonly downloadedAyat: number;
+  /** The verse playback stopped at, or the verse that cannot start. `null` when neither applies. */
+  readonly missingAyah: number | null;
   readonly onTogglePlay: () => void;
   readonly onPrevious: () => void;
   readonly onNext: () => void;
@@ -65,6 +72,15 @@ export type QuranAudioPlayerProps = {
   readonly onChangeRate: (rate: number) => void;
   readonly onRetry: () => void;
   readonly onOpenReciters: () => void;
+  /**
+   * Opens the Offline audio screen.
+   *
+   * ── Why this is the action and a retry is not ───────────────────────────────
+   * A verse that is not on the device cannot be produced by pressing Play again, and a control that
+   * looked like it might would be the streaming fallback reintroduced as a user expectation. The one
+   * honest thing this panel can offer is the screen where the download is made.
+   */
+  readonly onManageOfflineAudio: () => void;
 };
 
 /**
@@ -103,13 +119,13 @@ export function QuranAudioPlayer({
   state,
   positionSeconds,
   durationSeconds,
-  prepareProgress,
   rate,
   rates,
   rateSupported,
   hasPrevious,
   hasNext,
-  failure,
+  downloadedAyat,
+  missingAyah,
   onTogglePlay,
   onPrevious,
   onNext,
@@ -117,10 +133,11 @@ export function QuranAudioPlayer({
   onChangeRate,
   onRetry,
   onOpenReciters,
+  onManageOfflineAudio,
 }: QuranAudioPlayerProps) {
   const { dp } = useModuleMetrics();
 
-  const playable = state !== 'unavailable';
+  const playable = state !== 'not-downloaded' && state !== 'loading';
   /*
     ── Why the step controls need their own reason ─────────────────────────
     `hasNext` is false for two different situations, and the label named only one of them: at the
@@ -129,8 +146,35 @@ export function QuranAudioPlayer({
     statement about a position in a queue that did not exist. The queue's existence is the state,
     not the flags, so it is read from there.
   */
-  const queued = state !== 'unavailable' && state !== 'loading' && state !== 'idle';
-  const stepReason = queued ? null : ', unavailable until playback starts';
+  const queued = playable && state !== 'idle';
+  /*
+    ── The third case, found on a device after the first two were fixed ──────
+    A partially downloaded surah reaches the end of what is on the phone without reaching the end of
+    the surah. Ya-Sin with 5 of 83 verses stopped correctly at verse 5 — the panel said so, naming
+    verse 6 — while this control announced "Next ayah, unavailable on the last ayah" from verse 5 of
+    83. The stop was honest and the label contradicted it.
+
+    So the reason is derived rather than assumed. The end of the surah is `ayah`; the end of what is
+    downloaded is `missingAyah`, which the screen already supplies for exactly this state. Checking
+    the surah's end first keeps the two from competing on the genuine final verse.
+  */
+  const nextReason = !queued
+    ? ', unavailable until playback starts'
+    : ayah >= totalAyat
+      ? ', unavailable on the last ayah'
+      : missingAyah !== null
+        ? `, unavailable — verse ${missingAyah} is not downloaded`
+        : ', unavailable — the next verse is not downloaded';
+  /*
+    The same asymmetry backwards. `hasPrevious` is false at the start of the *queue*, which is only
+    the first ayah when playback began there — starting from verse 40 would otherwise have this
+    announce "the first ayah" while pointed at verse 40.
+  */
+  const previousReason = !queued
+    ? ', unavailable until playback starts'
+    : ayah <= 1
+      ? ', unavailable on the first ayah'
+      : ', unavailable — no earlier verse in this playback';
   const identity = `${surahName} • Aya ${ayah}`;
 
   return (
@@ -160,12 +204,17 @@ export function QuranAudioPlayer({
         accessibility label so `uiautomator dump` can read it. It draws nothing.
       */}
 
-      {state === 'failed' || state === 'offline' ? (
-        <RetryRow failure={failure} ayah={ayah} onRetry={onRetry} />
-      ) : null}
+      {state === 'failed' ? <RetryRow ayah={ayah} onRetry={onRetry} /> : null}
 
-      {state === 'preparing' && prepareProgress !== null ? (
-        <PrepareRow ayah={ayah} fraction={prepareProgress} />
+      {state === 'not-downloaded' || state === 'missing-ayah' ? (
+        <OfflineRow
+          state={state}
+          ayah={missingAyah ?? ayah}
+          surahName={surahName}
+          downloadedAyat={downloadedAyat}
+          totalAyat={totalAyat}
+          onPress={onManageOfflineAudio}
+        />
       ) : null}
 
       {/*
@@ -228,11 +277,11 @@ export function QuranAudioPlayer({
           Two channels for one state, because a caption alone is easy to miss on a busy panel — and
           it covers both waits: NoorLife fetching the file, and the platform reading it.
         */}
-        {state === 'preparing' || state === 'buffering' ? (
+        {state === 'starting' || state === 'buffering' ? (
           <ActivityIndicator
             color={moduleNeutrals.textSecondary}
             accessibilityLabel={
-              state === 'preparing' ? 'Preparing recitation' : 'Buffering recitation'
+              state === 'starting' ? 'Starting recitation' : 'Buffering recitation'
             }
             testID="faith-reader-player-buffering"
           />
@@ -257,14 +306,14 @@ export function QuranAudioPlayer({
           />
           <StepButton
             glyph="skip-previous"
-            label={`Previous ayah${hasPrevious ? '' : (stepReason ?? ', unavailable on the first ayah')}`}
+            label={`Previous ayah${hasPrevious ? '' : previousReason}`}
             disabled={!hasPrevious || !playable}
             onPress={onPrevious}
             testID="faith-reader-player-previous"
           />
           <StepButton
             glyph="skip-next"
-            label={`Next ayah${hasNext ? '' : (stepReason ?? ', unavailable on the last ayah')}`}
+            label={`Next ayah${hasNext ? '' : nextReason}`}
             disabled={!hasNext || !playable}
             onPress={onNext}
             testID="faith-reader-player-next"
@@ -300,19 +349,22 @@ export const PLAYER_STEP_SIZE = 28;
 export const PLAYER_MAX_FONT_SCALE = 1.5;
 
 /** What the transport is doing, in the words the screen reader uses. */
-function describeState(state: QuranPlaybackState): string {
+export function describeState(state: QuranPlaybackState): string {
   switch (state) {
     case 'idle':
       /*
-        Not "Ready to play". Readiness is a claim about a validated local queue, and at this point
-        there is none — the files are fetched when Play is pressed. The old copy was drawn from the
-        route and the catalogue, so it appeared over surahs with no audio on the device at all.
+        "Ready to play" is now a claim this state can actually make: the queue is built from files
+        already validated on the device, so reaching `idle` means the audio is there. It could not be
+        said under the previous architecture, where the files were fetched when Play was pressed and
+        this caption appeared over surahs with no audio on the device at all.
       */
-      return 'Tap play to begin';
+      return 'Ready to play';
     case 'loading':
-      return 'Loading recitation';
-    case 'preparing':
-      return 'Preparing';
+      return 'Checking downloaded audio';
+    case 'not-downloaded':
+      return 'Not downloaded';
+    case 'starting':
+      return 'Starting';
     case 'buffering':
       return 'Buffering';
     case 'playing':
@@ -321,12 +373,10 @@ function describeState(state: QuranPlaybackState): string {
       return 'Paused';
     case 'completed':
       return 'Finished';
-    case 'offline':
-      return 'Not available offline';
+    case 'missing-ayah':
+      return 'Stopped — next verse not downloaded';
     case 'failed':
       return 'Could not play';
-    case 'unavailable':
-      return 'Audio is unavailable for this reciter';
   }
 }
 
@@ -344,12 +394,12 @@ function stateSuffix(state: QuranPlaybackState): string {
     case 'idle':
       return '';
     case 'loading':
-    case 'preparing':
+    case 'not-downloaded':
+    case 'starting':
     case 'buffering':
     case 'completed':
-    case 'offline':
+    case 'missing-ayah':
     case 'failed':
-    case 'unavailable':
       return ` • ${describeState(state)}`;
   }
 }
@@ -373,11 +423,12 @@ function PlayButton({
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
   /*
-    Disabled for the two states where there is nothing a press could start: no recording exists, or
-    the recitation list has not settled and pressing would have to guess which of those it is.
-    Every other state — including `failed` — keeps the control live, because retrying is the point.
+    Disabled for the two states where there is nothing a press could start: nothing is downloaded, or
+    the manifest has not been read and pressing would have to guess which of those it is. Every other
+    state — including `failed` and `missing-ayah` — keeps the control live, because in the first
+    retrying is the point and in the second the verses before the gap are still playable.
   */
-  const disabled = state === 'unavailable' || state === 'loading';
+  const disabled = state === 'not-downloaded' || state === 'loading';
   const size = dp(PLAYER_PLAY_SIZE);
 
   return (
@@ -385,10 +436,20 @@ function PlayButton({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityState={{ disabled, busy: state === 'preparing' || state === 'buffering' }}
+      accessibilityState={{ disabled, busy: state === 'starting' || state === 'buffering' }}
       accessibilityLabel={
         disabled
-          ? `No recitation available for ${identity}`
+          ? /*
+               ── Why this does not say "no recitation available" ──────────────────
+               It used to, and on a device that sentence appeared over Al-Fatihah — a surah Quran
+               Foundation publishes in full. The audio was simply not downloaded. Blaming the
+               publisher for a file the user has not fetched is the same misattribution the size
+               wording was corrected for, and it is worse here because it is the only thing a screen
+               reader is told about a control that will not respond.
+            */
+            state === 'loading'
+            ? `Checking downloaded audio for ${identity}`
+            : `${identity} is not downloaded. Open offline audio to download it`
           : state === 'playing'
             ? `Pause recitation of ${identity}`
             : `Play recitation of ${identity}`
@@ -631,27 +692,87 @@ function SeekRow({
 export const UNKNOWN_DURATION = '--:--';
 
 /**
- * The failure line, naming the kind of failure.
+ * The line offered when a verse is not on the device.
  *
- * Each of the four preparation failures is a different thing for the user to do, and collapsing
- * them into one message would give three quarters of the affected users advice that cannot work.
+ * ── Why this is not a retry, and why that distinction is load-bearing ───────
+ * A retry is the right offer when something failed and might succeed. Nothing failed here: the audio
+ * was never downloaded, and pressing Play again would produce exactly the same nothing. Offering a
+ * retry would train a user to expect that pressing enough times eventually streams the verse — which
+ * is the streaming fallback this architecture removed, reintroduced as an expectation rather than as
+ * code.
+ *
+ * So the action is the Offline audio screen, the wording says what is actually true, and the two
+ * cases are worded apart: nothing downloaded at all is a different sentence from playback having
+ * stopped part-way because the next verse is missing.
  */
-function RetryRow({
-  failure,
+function OfflineRow({
+  state,
   ayah,
-  onRetry,
+  surahName,
+  downloadedAyat,
+  totalAyat,
+  onPress,
 }: {
-  readonly failure: PreparationFailure | null;
+  readonly state: 'not-downloaded' | 'missing-ayah';
   readonly ayah: number;
-  readonly onRetry: () => void;
+  readonly surahName: string;
+  readonly downloadedAyat: number;
+  readonly totalAyat: number;
+  readonly onPress: () => void;
 }) {
+  const { dp } = useModuleMetrics();
+
+  const message =
+    state === 'not-downloaded'
+      ? `${surahName} is not downloaded, so there is no audio to play on this device.`
+      : `Playback stopped at verse ${ayah}, which is not downloaded. ${downloadedAyat} of ${totalAyat} verses are on this device.`;
+
+  return (
+    <PressableScale
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${message} Manage offline audio`}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        columnGap: dp(8),
+        minHeight: dp(moduleLayout.minTouchTarget),
+      }}
+      testID="faith-reader-player-offline"
+    >
+      <AppIcon name="download" size={dp(16)} color={moduleNeutrals.textSecondary} />
+      <ModuleText
+        token="caption"
+        color={moduleNeutrals.textSecondary}
+        numberOfLines={3}
+        maxFontSizeMultiplier={PLAYER_MAX_FONT_SCALE}
+        style={{ flex: 1 }}
+      >
+        {`${message} Tap to manage offline audio.`}
+      </ModuleText>
+    </PressableScale>
+  );
+}
+
+/**
+ * The failure line, for the one failure that survives local-only playback.
+ *
+ * ── Why there is only one message now ───────────────────────────────────────
+ * There used to be four, one per preparation failure — offline, low storage, interrupted, corrupt —
+ * because every one of them was a way a *fetch* could go wrong at the moment of pressing Play. There
+ * is no fetch on this path any more. What remains is the platform refusing to play a file that is
+ * present and validated: a codec the device lacks, audio focus denied, a queue that never became
+ * ready. All of those have the same remedy, and inventing four sentences for one situation would be
+ * describing failures that cannot happen.
+ */
+function RetryRow({ ayah, onRetry }: { readonly ayah: number; readonly onRetry: () => void }) {
   const { dp } = useModuleMetrics();
 
   return (
     <PressableScale
       onPress={onRetry}
       accessibilityRole="button"
-      accessibilityLabel={`${failureMessage(failure)} Try verse ${ayah} again`}
+      accessibilityLabel={`${PLAYBACK_FAILURE_MESSAGE} Try verse ${ayah} again`}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -668,69 +789,20 @@ function RetryRow({
         maxFontSizeMultiplier={PLAYER_MAX_FONT_SCALE}
         style={{ flex: 1 }}
       >
-        {`${failureMessage(failure)} Tap to try again.`}
+        {`${PLAYBACK_FAILURE_MESSAGE} Tap to try again.`}
       </ModuleText>
     </PressableScale>
   );
 }
 
 /**
- * The four preparation failures, each with the thing the user can actually do about it.
+ * What is said when the platform refuses a file that is present and validated.
  *
- * The default covers the case where the platform refused playback of a file that *was* prepared —
- * a codec the device lacks, audio focus denied. Nothing about it is a preparation failure, so it
- * gets the honest generic sentence rather than being described as one of the four.
+ * Deliberately does not guess at a cause. The candidates — a codec the device lacks, audio focus
+ * held by another app, a native queue that never became ready — are indistinguishable from here, and
+ * naming one of them would be right about a third of the time and misleading the rest.
  */
-export function failureMessage(failure: PreparationFailure | null): string {
-  switch (failure) {
-    case 'offline':
-      return 'This verse is not on your device and you appear to be offline.';
-    case 'low-storage':
-      return 'There is not enough free space to prepare this verse.';
-    case 'interrupted':
-      return 'The download of this verse did not finish.';
-    case 'corrupt':
-      return 'The audio for this verse did not arrive intact.';
-    case null:
-      return 'This verse could not be played.';
-  }
-}
-
-/**
- * How much of *this verse's file* has arrived.
- *
- * Distinct from the seek bar, which is a position within audio that has already loaded. Drawn only
- * when the server sent a length to measure against — the spinner already says "working", and a
- * fabricated fraction would claim a measurement nobody made.
- */
-function PrepareRow({ ayah, fraction }: { readonly ayah: number; readonly fraction: number }) {
-  const { dp } = useModuleMetrics();
-  const bounded = Math.min(Math.max(fraction, 0), 1);
-
-  return (
-    <View style={{ rowGap: dp(4) }} testID="faith-reader-player-prepare-progress">
-      <View
-        style={{
-          height: dp(4),
-          borderRadius: dp(2),
-          backgroundColor: readerDockColors.track,
-          overflow: 'hidden',
-        }}
-      >
-        <View
-          style={{
-            width: `${bounded * 100}%`,
-            height: '100%',
-            backgroundColor: readerDockColors.accent,
-          }}
-        />
-      </View>
-      <ModuleText token="caption" numberOfLines={1} maxFontSizeMultiplier={PLAYER_MAX_FONT_SCALE}>
-        {`Preparing verse ${ayah} — ${Math.round(bounded * 100)}%`}
-      </ModuleText>
-    </View>
-  );
-}
+export const PLAYBACK_FAILURE_MESSAGE = 'This verse could not be played.';
 
 /** `0:07`, `1:42`. Minutes and seconds, which is the whole range a single ayah occupies. */
 export function formatSeconds(value: number): string {
@@ -740,22 +812,21 @@ export function formatSeconds(value: number): string {
 }
 
 export function formatBytes(bytes: number): string {
+  /**
+   * ── Why zero is its own case ────────────────────────────────────────────────
+   * The `Math.max(1, …)` below used to apply to every value, and on a device with nothing downloaded
+   * the Offline audio screen therefore read **"1 KB downloaded"**. That is a fabricated measurement
+   * of exactly the kind this feature is built to refuse — a non-zero figure standing in for nothing
+   * at all — and it was invisible in Jest because no unit test asked what zero looks like.
+   *
+   * The floor itself is kept for genuinely small non-zero values: a 400-byte file is not "0 KB", and
+   * rounding it to zero would be the same lie in the other direction.
+   */
+  if (bytes <= 0) {
+    return '0 bytes';
+  }
   if (bytes >= 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
-/**
- * A calendar date, in the device's own locale.
- *
- * Not a relative "in 6 days": an expiry the user is planning around — a flight, a commute with no
- * signal — is a date, and "in 6 days" forces them to do the arithmetic that this string exists to
- * save them.
- */
-export function formatDate(epochMs: number): string {
-  return new Date(epochMs).toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-  });
 }

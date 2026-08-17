@@ -20,6 +20,7 @@ import {
   type NoorAIRequestBody,
   type NoorAIResult,
 } from './noor-ai.contract';
+import { isRemoteAccessAuthorised } from '@services/network/remote-access';
 
 /**
  * The Noor AI mobile adapter.
@@ -580,6 +581,21 @@ async function ask(
   context: AIRequestContext,
   options?: NoorAIAskOptions,
 ): Promise<NoorAIResult> {
+  /*
+    ── Refused before the transport, and reported in this module's own vocabulary ──
+    `network-unavailable` already exists in `NoorAIFailureState` and means exactly this, so the
+    refusal comes back as a result rather than as a thrown `OfflineOperationError`. Throwing out of
+    a function whose whole contract is "returns a result, never rejects" would make every caller
+    handle two error channels for one condition — and the screens are written against the union.
+
+    It sits before the configuration check because the two are different refusals and the
+    user-visible difference matters: "this build has no backend" is permanent, and "you are offline"
+    is not. Noor AI has no local mode — every answer comes from the edge function — so there is
+    nothing to degrade to and refusing immediately is the whole of the honest behaviour.
+  */
+  if (!isRemoteAccessAuthorised()) {
+    return failed('network-unavailable');
+  }
   if (!isSupabaseConfigured || supabase === null) {
     return failed('not-configured');
   }

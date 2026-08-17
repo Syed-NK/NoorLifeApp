@@ -2,6 +2,7 @@ import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { AuthError } from '@services/auth/auth-service.contract';
 import { toAuthErrorCode } from '@services/auth/auth.service';
 import type { AuthProviderId } from '@shared/models/user';
+import { assertRemoteAccess } from '@services/network/remote-access';
 
 /**
  * The profile-record service: everything that *writes* to `public.profiles`, plus the one session
@@ -81,6 +82,12 @@ export type ProfileNameUpdate = {
  * invisible to this session whatever filter is passed.
  */
 export async function updateFullName(userId: string, fullName: string): Promise<ProfileNameUpdate> {
+  /*
+    First statement, before the client is even requested. A profile write is the clearest case for
+    refusing early: offline it can only fail, and the user would have watched a spinner and then
+    been told something vague while their edit sat unsaved on screen.
+  */
+  assertRemoteAccess('Updating your profile');
   const client = requireClient();
   const trimmed = fullName.trim();
   if (trimmed.length === 0) {

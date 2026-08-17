@@ -55,7 +55,7 @@ describe('large datasets are file-backed', () => {
       ['storage', 'faith-sync-checkpoint.ts'],
       ['storage', 'faith-recitation-check.ts'],
       ['data', 'sync', 'content-sync.orchestrator.ts'],
-      ['data', 'audio', 'manifest-migration.ts'],
+      ['data', 'audio', 'offline-migration.ts'],
     ] as const;
 
     const writers = files.filter((segments) =>
@@ -104,7 +104,7 @@ describe('private storage only', () => {
     const modules = [
       code('storage', 'faith-sync-generation.ts'),
       code('data', 'sync', 'content-sync.orchestrator.ts'),
-      code('data', 'audio', 'manifest-migration.ts'),
+      code('data', 'audio', 'offline-migration.ts'),
     ].join('\n');
 
     for (const forbidden of [
@@ -138,7 +138,7 @@ describe('nothing sensitive is logged', () => {
       ['storage', 'faith-sync-generation.ts'],
       ['data', 'sync', 'content-sync.orchestrator.ts'],
       ['storage', 'faith-recitation-check.ts'],
-      ['data', 'audio', 'manifest-migration.ts'],
+      ['data', 'audio', 'offline-migration.ts'],
       ['data', 'connectivity', 'expo-connectivity.port.ts'],
       ['data', 'connectivity', 'connectivity.port.ts'],
     ] as const) {
@@ -159,7 +159,7 @@ describe('nothing sensitive is logged', () => {
       ['data', 'connectivity', 'expo-connectivity.port.ts'],
       ['data', 'connectivity', 'connectivity.port.ts'],
       ['data', 'sync', 'content-sync.orchestrator.ts'],
-      ['data', 'audio', 'manifest-migration.ts'],
+      ['data', 'audio', 'offline-migration.ts'],
     ] as const;
     const importers = candidates.filter((segments) =>
       /from 'expo-network'/.test(code(...segments)),

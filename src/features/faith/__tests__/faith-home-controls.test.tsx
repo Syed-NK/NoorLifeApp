@@ -8,6 +8,7 @@ import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 import { mockRouter } from '../../../../jest.setup';
 
 import { faithRoutes } from '../faith-routes';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 // Two costs this removes: the simulated latency the mock data sources sleep through on every
 // mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
@@ -79,7 +80,7 @@ describe('Faith Home controls', () => {
    */
   it('resumes at the stored surah and verse once something has been read', async () => {
     await AsyncStorage.setItem(
-      'noorlife.faith.quran.position',
+      faithAddress('readingPosition'),
       JSON.stringify({
         surah: 18,
         surahName: 'Al-Kahf',

@@ -4,6 +4,7 @@ import type {
   FaithPreferences,
   TranslationChoice,
 } from '@features/faith/storage/faith-preferences';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * Seeds a chosen translation, for suites that are testing something other than how one is chosen.
@@ -42,7 +43,7 @@ export async function seedTranslationPreference(
   overrides: Partial<FaithPreferences> = {},
 ): Promise<void> {
   await AsyncStorage.setItem(
-    'noorlife.faith.preferences',
+    faithAddress('preferences'),
     JSON.stringify({
       translation: SEEDED_TRANSLATION,
       translationChosenByUser: true,

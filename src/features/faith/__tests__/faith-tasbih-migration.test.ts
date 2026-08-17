@@ -11,7 +11,7 @@ import {
   TASBIH_SCHEMA_VERSION,
 } from '../data/tasbih/local-tasbih.repository';
 import { MAX_TASBIH_TARGET, MIN_TASBIH_TARGET } from '../data/tasbih.repository';
-import { faithStorageKeys } from '../storage/faith-storage';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * **The counter after the built-in dhikr were removed, and the upgrade that gets a user there.**
@@ -149,7 +149,7 @@ describe('migrating a build that shipped built-in dhikr', () => {
 
   it('carries the count through a real upgrade, end to end', async () => {
     await AsyncStorage.setItem(
-      faithStorageKeys.tasbihSession,
+      faithAddress('tasbihSession'),
       JSON.stringify(legacyRecord('astaghfirullah', 87, 100, 4)),
     );
 
@@ -163,18 +163,18 @@ describe('migrating a build that shipped built-in dhikr', () => {
     expect(session.data.counterId).toBe(DEFAULT_COUNTER.id);
 
     // And the rewrite landed, stamped, so the next launch takes the `current` branch.
-    const stored = JSON.parse((await AsyncStorage.getItem(faithStorageKeys.tasbihSession)) ?? '{}');
+    const stored = JSON.parse((await AsyncStorage.getItem(faithAddress('tasbihSession'))) ?? '{}');
     expect(stored.version).toBe(TASBIH_SCHEMA_VERSION);
     expect(stored.presetId).toBeUndefined();
   });
 
   it('leaves an unreadable record alone rather than overwriting it', async () => {
-    await AsyncStorage.setItem(faithStorageKeys.tasbihSession, JSON.stringify({ junk: true }));
+    await AsyncStorage.setItem(faithAddress('tasbihSession'), JSON.stringify({ junk: true }));
     const repository = createLocalTasbihRepository();
 
     expect((await repository.getSession()).kind).toBe('empty');
     // Storage is untouched: nothing was destroyed to make a screen render.
-    const raw = await AsyncStorage.getItem(faithStorageKeys.tasbihSession);
+    const raw = await AsyncStorage.getItem(faithAddress('tasbihSession'));
     expect(JSON.parse(raw ?? '{}').junk).toBe(true);
   });
 });
@@ -304,10 +304,19 @@ describe('user labels stay the user’s', () => {
     const repository = createLocalTasbihRepository();
     await repository.createLabel('Counter A');
 
-    const raw = (await AsyncStorage.getItem(faithStorageKeys.tasbihLabels)) ?? '';
+    const raw = (await AsyncStorage.getItem(faithAddress('tasbihLabels'))) ?? '';
     expect(raw).toContain('Counter A');
-    // The key is namespaced to this device's Faith storage, not a user- or account-scoped one.
-    expect(faithStorageKeys.tasbihLabels).not.toMatch(/user|account|uid/i);
+    /*
+      ── This assertion used to say the opposite, and it was wrong ─────────────
+      It read `.not.toMatch(/user|account|uid/i)` — "the key is namespaced to this device's Faith
+      storage, not a user- or account-scoped one" — and it passed because that was true. It was
+      also the release blocker: a device-scoped label key is one the next account to sign in reads.
+
+      A counter somebody named is theirs. The address now carries the owner, and the label text
+      still appears nowhere but the value.
+    */
+    expect(faithAddress('tasbihLabels')).toMatch(/^noorlife\.faith\.user\.v1\./);
+    expect(faithAddress('tasbihLabels')).not.toContain('Counter A');
   });
 });
 

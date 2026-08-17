@@ -78,8 +78,29 @@ describe('the exported surface', () => {
     expect(baseline).not.toBeNull();
   });
 
-  it('is identical to the branch point', () => {
-    expect(exportedNames(current)).toEqual(exportedNames(baseline as string));
+  /**
+   * Names added since the branch point, each with the reason it was reviewed.
+   *
+   * ── Why a list and not a relaxed comparison ─────────────────────────────────
+   * The lock exists so that a new capability cannot enter the authentication service unnoticed.
+   * Loosening the assertion to "the surface may grow" would retire the guarantee entirely. An
+   * explicit array keeps it: adding a name means editing this file, which means writing down why.
+   *
+   * `resolveSession` is the offline-authentication phase's subject, not a side effect of it.
+   * `getSession` returned `AuthUser | null` and mapped both "there is no session" and "the device
+   * could not reach the server" onto `null` — the collapse that showed a sign-in screen to a user in
+   * airplane mode holding thousands of downloaded recitation files. `getSession` itself is unchanged
+   * in meaning and still exported, so no caller had to move.
+   */
+  const APPROVED_ADDITIONS: readonly string[] = ['resolveSession'];
+
+  it('is the branch point plus only the approved additions', () => {
+    const before = exportedNames(baseline as string);
+    const after = exportedNames(current);
+
+    expect(after.filter((name) => !before.includes(name))).toEqual([...APPROVED_ADDITIONS].sort());
+    /* Nothing may be removed: a capability the application depends on cannot quietly disappear. */
+    expect(before.filter((name) => !after.includes(name))).toEqual([]);
   });
 
   it('still exports every function the application depends on', () => {
@@ -121,7 +142,7 @@ describe('the diff against the branch point', () => {
       .filter((line) => line.length > 0);
   }
 
-  it('touches only the redirect helper, its import and the comment explaining both', () => {
+  it('touches only the redirect helper and the session-resolution boundary', () => {
     const changed = changedLines();
     expect(changed.length).toBeGreaterThan(0);
 
@@ -139,8 +160,12 @@ describe('the diff against the branch point', () => {
       line === '*/' ||
       line === '}' ||
       /^import \* as AuthSession from 'expo-auth-session';$/.test(line) ||
-      /^import \{ AUTH_CALLBACK_URL, authCallbackRedirectUrl \} from '\.\/auth-callback\.config';$/.test(line) ||
-      /^import \{ rememberPendingFlow, type PendingFlowName \} from '\.\/pending-auth-flow';$/.test(line) ||
+      /^import \{ AUTH_CALLBACK_URL, authCallbackRedirectUrl \} from '\.\/auth-callback\.config';$/.test(
+        line,
+      ) ||
+      /^import \{ rememberPendingFlow, type PendingFlowName \} from '\.\/pending-auth-flow';$/.test(
+        line,
+      ) ||
       /^let cachedRedirect/.test(line) ||
       /^function redirectTo\(\): string \{$/.test(line) ||
       /^async function redirectTo\(flow: PendingFlowName\): Promise<string> \{$/.test(line) ||
@@ -154,14 +179,64 @@ describe('the diff against the branch point', () => {
       /^emailRedirectTo: await redirectTo\('signup'\),$/.test(line) ||
       /^redirectTo: await redirectTo\('recovery'\),$/.test(line) ||
       /^options: \{ redirectTo: AUTH_CALLBACK_URL, skipBrowserRedirect: true \},$/.test(line) ||
-      /^const result = await WebBrowser\.openAuthSessionAsync\(data\.url, AUTH_CALLBACK_URL\);$/.test(line) ||
+      /^const result = await WebBrowser\.openAuthSessionAsync\(data\.url, AUTH_CALLBACK_URL\);$/.test(
+        line,
+      ) ||
       /^return AUTH_CALLBACK_URL;$/.test(line) ||
       // The removed side of the same diff: what those five call sites said before.
       /^emailRedirectTo: redirectTo\(\),$/.test(line) ||
       /^redirectTo: redirectTo\(\),$/.test(line) ||
       /^options: \{ redirectTo: redirectTo\(\), skipBrowserRedirect: true \},$/.test(line) ||
-      /^const result = await WebBrowser\.openAuthSessionAsync\(data\.url, redirectTo\(\)\);$/.test(line) ||
-      /^return redirectTo\(\);$/.test(line);
+      /^const result = await WebBrowser\.openAuthSessionAsync\(data\.url, redirectTo\(\)\);$/.test(
+        line,
+      ) ||
+      /^return redirectTo\(\);$/.test(line) ||
+      /*
+        ── The second reopening: the session-resolution boundary ─────────────────
+        Every pattern below belongs to `resolveSession`, to `getSession` delegating to it, or to
+        `subscribeToAuthChanges` keeping Supabase's event name. None of them adds a network call, a
+        credential or a log — the classification itself lives in `session-resolution.ts`, which is a
+        separate, separately-tested file precisely so this one stays reviewable.
+      */
+      /^import \{ classifyAuthFailure, type SessionResolution \} from '\.\/session-resolution';$/.test(
+        line,
+      ) ||
+      /^export async function resolveSession\(\): Promise<SessionResolution> \{$/.test(line) ||
+      /^return \{ kind: '(unavailable|no-session)' \};$/.test(line) ||
+      /^let data: \{ session: SupabaseSession \| null \};$/.test(line) ||
+      /^let error: unknown;$/.test(line) ||
+      /^try \{$/.test(line) ||
+      /^\(\{ data, error \} = await supabase\.auth\.getSession\(\)\);$/.test(line) ||
+      /^\} catch \(thrown\) \{$/.test(line) ||
+      /^return classifyAuthFailure\((thrown|error)\);$/.test(line) ||
+      /^if \(error !== null && error !== undefined\) \{$/.test(line) ||
+      /^const user = toUser\(data\.session\);$/.test(line) ||
+      /^return user === null \? \{ kind: 'no-session' \} : \{ kind: 'authenticated', user \};$/.test(
+        line,
+      ) ||
+      /^export async function getSession\(\): Promise<AuthUser \| null> \{$/.test(line) ||
+      /^const resolution = await resolveSession\(\);$/.test(line) ||
+      /^return resolution\.kind === 'authenticated' \? resolution\.user : null;$/.test(line) ||
+      /^export function subscribeToAuthChanges\($/.test(line) ||
+      /^listener: \(change: \{ readonly event: string; readonly user: AuthUser \| null \}\) => void,$/.test(
+        line,
+      ) ||
+      /^\): \(\) => void \{$/.test(line) ||
+      /^\}: \{ data: \{ subscription: Subscription \} \} = supabase\.auth\.onAuthStateChange\(\(_?event, session\) => \{$/.test(
+        line,
+      ) ||
+      /^listener\(\{ event: String\(event\), user: toUser\(session\) \}\);$/.test(line) ||
+      /* The removed side of the same diff — what the two functions said before. */
+      /^const \{ data, error \} = await supabase\.auth\.getSession\(\);$/.test(line) ||
+      /^if \(error !== null\) \{$/.test(line) ||
+      /^return null;$/.test(line) ||
+      /^return toUser\(data\.session\);$/.test(line) ||
+      /^export function subscribeToAuthChanges\(listener: \(user: AuthUser \| null\) => void\): \(\) => void \{$/.test(
+        line,
+      ) ||
+      /^listener\(toUser\(session\)\);$/.test(line) ||
+      /^\}\);$/.test(line) ||
+      /^\{$/.test(line);
 
     expect(changed.filter((line) => !permitted(line))).toEqual([]);
   });

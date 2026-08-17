@@ -344,6 +344,60 @@ export async function reconcilePrayerAlerts(
 }
 
 /** Cancels everything pending and forgets it. */
+/**
+ * Cancels every prayer alert the platform is still holding, without consulting the stored record.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Why the stored identifiers cannot be used here ─────────────────────────
+ * `cancelAll` below cancels by identifier, read from `notificationSchedule` — which is now
+ * partitioned by account. That works whenever the owner is unchanged and is useless in the one case
+ * this function exists for: an account **change**. The moment the owner moves, the record holding
+ * user A's identifiers is at an address user B cannot read, so the alarms A scheduled become
+ * unreferencable and would keep firing.
+ *
+ * That is an exposure rather than an inconvenience. A prayer alert is computed from a specific
+ * city, so alarms left behind tell user B roughly where user A was — and they arrive at times
+ * nobody on this phone asked for.
+ *
+ * So this asks the platform what is pending and cancels it, which is the only question that has an
+ * answer once the record is out of reach.
+ *
+ * ── Why the filter is a prefix and emphatically not `prayerAlertChannel().id` ──
+ * The channel id encodes the **chosen alert sound** — `prayer-alerts-v1-default` or
+ * `prayer-alerts-v2-<file>`. It is therefore a function of a *preference*, and preferences are
+ * per-account. Matching the current channel would compare user B's newly-defaulted channel against
+ * alarms user A scheduled on theirs, skip every one of them, and leave exactly the alarms this
+ * function exists to remove — a filter that looks careful and does the opposite.
+ *
+ * The prefix is shared by every version and every sound, so it survives that. Alerts reporting no
+ * channel at all are cancelled too: this app schedules nothing else, and an unattributable alarm
+ * left over from the previous account is the failure being prevented.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+const PRAYER_ALERT_CHANNEL_PREFIX = 'prayer-alerts-';
+
+export async function cancelEveryPendingPrayerAlert(
+  notifications: NotificationPort,
+): Promise<number> {
+  let cancelled = 0;
+  try {
+    const pending = await notifications.listScheduled();
+    for (const alert of pending) {
+      if (alert.channelId !== null && !alert.channelId.startsWith(PRAYER_ALERT_CHANNEL_PREFIX)) {
+        continue;
+      }
+      await notifications.cancel(alert.identifier);
+      cancelled += 1;
+    }
+  } catch {
+    /*
+      Best effort, deliberately. This runs on a sign-out, and a platform that will not answer must
+      not be able to block one — the local session has already ended by the time this is reached.
+    */
+  }
+  return cancelled;
+}
+
 async function cancelAll(
   notifications: NotificationPort,
   stored: StoredPrayerSchedule,

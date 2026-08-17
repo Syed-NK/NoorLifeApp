@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
-import { useAuth } from '@application/providers/auth-provider';
+import { isOnlineAuthenticated, useAuth } from '@application/providers/auth-provider';
 
 import { createExpoConnectivity } from '../data/connectivity/expo-connectivity.port';
 import { canSync, type ConnectivityState } from '../data/connectivity/connectivity.port';
@@ -191,7 +191,8 @@ export function resetContentSyncCoordinator(): void {
 }
 
 export function ContentSyncCoordinator() {
-  const { status, user } = useAuth();
+  const auth = useAuth();
+  const { status, user } = auth;
   /**
    * The authenticated user id, or `null`.
    *
@@ -199,7 +200,19 @@ export function ContentSyncCoordinator() {
    * refresh, and an effect keyed on the object would tear down and re-establish the whole lifecycle
    * each time one arrived.
    */
-  const ownerKey = status === 'signed-in' ? (user?.id ?? null) : null;
+  /*
+    ── Online authority, not merely "signed in" ──────────────────────────────
+    Content Sync is an authenticated transaction against Supabase and Quran Foundation. An offline
+    authority carries no token, so a run started under one could only be refused at the transport —
+    after the coordinator had already claimed an owner and told every Faith screen a sync was under
+    way. Reading `isOnlineAuthenticated` gates it *before* the transport, which is what locked
+    decision 7 requires.
+
+    The transition matters as much as the state: when authority drops from online to offline this
+    key becomes `null`, and the branch below invalidates the in-flight session owner through the
+    cancellation work already built for sign-out.
+  */
+  const ownerKey = isOnlineAuthenticated(auth) ? (user?.id ?? null) : null;
   /** The last reachability seen, so a *transition* into reachable is distinguishable from a repeat. */
   const wasReachable = useRef(false);
 
@@ -220,7 +233,17 @@ export function ContentSyncCoordinator() {
         line describing somebody else's run.
       */
       clearSessionSyncStatus(
-        status === 'signed-out' ? 'authentication-required' : 'never-synchronized',
+        /*
+          Three states now reach here, and they are not the same thing. A signed-out device needs
+          authentication; an offline-authenticated one needs a connection and already holds whatever
+          it last synchronised; an unresolved one knows nothing yet. Reporting the first for all three
+          would tell a user on a plane to sign in — the defect this whole phase exists to remove.
+        */
+        status === 'signed-out'
+          ? 'authentication-required'
+          : auth.authority === 'offline'
+            ? 'offline'
+            : 'never-synchronized',
       );
       return;
     }
@@ -279,7 +302,7 @@ export function ContentSyncCoordinator() {
       appState.remove();
       releaseConnectivity();
     };
-  }, [status, ownerKey]);
+  }, [auth.authority, ownerKey, status]);
 
   return null;
 }

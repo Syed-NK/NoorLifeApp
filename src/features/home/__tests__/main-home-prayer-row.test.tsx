@@ -12,6 +12,7 @@ import { readFaithPreferences } from '@features/faith/storage/faith-preferences'
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { MainHomeScreen } from '../screens/main-home-screen';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * Main Home and Faith state the same next prayer, because they share one calculation.
@@ -66,7 +67,7 @@ function deniedPort(): LocationPort {
 
 async function seedStoredLocation() {
   await AsyncStorage.setItem(
-    'noorlife.faith.location',
+    faithAddress('location'),
     JSON.stringify({
       coordinate: MOUNTAIN_VIEW,
       label: 'Mountain View, United States',

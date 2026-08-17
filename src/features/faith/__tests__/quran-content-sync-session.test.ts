@@ -246,8 +246,17 @@ function orchestratorFor(
   });
 }
 
-/**
- * A bootstrap that asks for both snapshots: page, translations, recitations.
+/** The publisher catalogue, from which the resource-85 translator credit is resolved. */
+function translationCatalogue(): QuranContentPayload {
+  return {
+    operation: 'list_translation_resources',
+    editions: [
+      { id: '85', language: 'english', name: 'M.A.S. Abdel Haleem', translator: 'Abdul Haleem' },
+    ],
+  };
+}
+
+/** * A bootstrap that asks for both snapshots: page, translations, recitations.
  *
  * Three requests rather than the minimum two, so "the last answer arrived" is distinguishable from
  * "the first one did" and a case can end the session at either.
@@ -255,6 +264,8 @@ function orchestratorFor(
 const BOOTSTRAP_ANSWERS: readonly QuranContentPayload[] = [
   page({ mutations: [resourceCreate('translations')] }),
   fullSnapshot('translations'),
+  /* The translator credit is resolved between the two snapshots — see the orchestrator. */
+  translationCatalogue(),
   fullSnapshot('recitations'),
 ];
 
@@ -532,7 +543,7 @@ describe('a session that ends inside the publication', () => {
       const model = readSyncStatus();
       expect(model.revision).toBe(0);
       expect(model.lastPublishedAt).toBeNull();
-      expect(['current', 'provisional-snapshot-reconciliation']).not.toContain(model.status);
+      expect(['current', 'integrity-reconciliation']).not.toContain(model.status);
     } finally {
       spy.mockRestore();
     }
@@ -623,6 +634,7 @@ describe('what a sign-out leaves behind', () => {
       immediateEndpoint([
         page({ mutations: [resourceCreate('translations')] }),
         fullSnapshot('translations'),
+        translationCatalogue(),
         fullSnapshot('recitations'),
       ]),
     );
@@ -668,6 +680,7 @@ describe('what the session path does not log', () => {
             immediateEndpoint([
               page({ mutations: [resourceCreate('translations')] }),
               fullSnapshot('translations'),
+              translationCatalogue(),
               fullSnapshot('recitations'),
             ]),
           ).run()

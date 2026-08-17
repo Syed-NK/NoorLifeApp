@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { assertRemoteAccess } from '@services/network/remote-access';
 
 /**
  * The post-signup journey: has this account chosen its initial plan?
@@ -121,6 +122,7 @@ export async function completeAccountJourney(
   userId: string,
   planCode: InitialPlanCode,
 ): Promise<CompleteJourneyResult> {
+  assertRemoteAccess('Finishing account setup');
   if (planCode !== 'free') {
     return {
       ok: false,

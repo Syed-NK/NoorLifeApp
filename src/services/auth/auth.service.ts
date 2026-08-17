@@ -8,6 +8,7 @@ import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { AUTH_CALLBACK_URL, authCallbackRedirectUrl } from './auth-callback.config';
 import { rememberPendingFlow, type PendingFlowName } from './pending-auth-flow';
 import { AuthError, type AuthErrorCode } from './auth-service.contract';
+import { classifyAuthFailure, type SessionResolution } from './session-resolution';
 
 /**
  * The Supabase-backed authentication service.
@@ -477,26 +478,77 @@ export async function signInWithApple(): Promise<void> {
 
 // ── session ─────────────────────────────────────────────────────────────────
 
-export async function getSession(): Promise<AuthUser | null> {
+/**
+ * Asks Supabase about the current session and reports **what it learned**.
+ *
+ * ── Why this replaced a `AuthUser | null` return ───────────────────────────
+ * Because `null` was answering two different questions with one word. "There is no session" and "I
+ * could not ask" are opposite facts — one is a verdict the app must honour, the other is an outage
+ * the app must survive — and collapsing them is what showed a sign-in screen to a user in airplane
+ * mode who had three thousand downloaded recitation files on the device.
+ *
+ * See `session-resolution.ts` for the union and for how the two failures are told apart.
+ */
+export async function resolveSession(): Promise<SessionResolution> {
   if (!isSupabaseConfigured || supabase === null) {
-    return null;
+    return { kind: 'unavailable' };
   }
-  const { data, error } = await supabase.auth.getSession();
-  if (error !== null) {
-    return null;
+  let data: { session: SupabaseSession | null };
+  let error: unknown;
+  try {
+    ({ data, error } = await supabase.auth.getSession());
+  } catch (thrown) {
+    /*
+     * A rejection rather than a resolved error: a DNS failure, a dropped socket, an abort. The
+     * provider used to wrap this call in `.catch(() => null)`, which is the same collapse by another
+     * route — a thrown transport failure became "signed out".
+     */
+    return classifyAuthFailure(thrown);
   }
-  return toUser(data.session);
+  if (error !== null && error !== undefined) {
+    return classifyAuthFailure(error);
+  }
+  const user = toUser(data.session);
+  /*
+   * No error and no session is Supabase having looked and found nothing — a verdict, and the one
+   * branch that legitimately means the user is signed out.
+   */
+  return user === null ? { kind: 'no-session' } : { kind: 'authenticated', user };
 }
 
-/** Subscribes to sign-in, sign-out and token-refresh. Returns an unsubscribe function. */
-export function subscribeToAuthChanges(listener: (user: AuthUser | null) => void): () => void {
+/**
+ * The previous shape, kept for the call sites that genuinely only want "who is signed in".
+ *
+ * Retained rather than removed because most callers — sign-in, sign-up, provider return — run
+ * immediately after a successful online exchange, where there is no offline case to distinguish and
+ * a nullable user is exactly the right answer. The launch path is the one that needed more, and it
+ * uses `resolveSession`.
+ */
+export async function getSession(): Promise<AuthUser | null> {
+  const resolution = await resolveSession();
+  return resolution.kind === 'authenticated' ? resolution.user : null;
+}
+
+/**
+ * Subscribes to sign-in, sign-out and token-refresh, **keeping the event**.
+ *
+ * ── The second half of the same defect ─────────────────────────────────────
+ * This used to forward `toUser(session)` and discard the event name, so a `TOKEN_REFRESHED` that had
+ * failed offline arrived as `null` and was indistinguishable from a deliberate `SIGNED_OUT`. The
+ * event is the only thing that separates them, and it was the one thing being thrown away.
+ *
+ * The listener now receives both, and decides. `isTerminalAuthEvent` is the rule.
+ */
+export function subscribeToAuthChanges(
+  listener: (change: { readonly event: string; readonly user: AuthUser | null }) => void,
+): () => void {
   if (!isSupabaseConfigured || supabase === null) {
     return () => undefined;
   }
   const {
     data: { subscription },
-  }: { data: { subscription: Subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-    listener(toUser(session));
+  }: { data: { subscription: Subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    listener({ event: String(event), user: toUser(session) });
   });
   return () => {
     subscription.unsubscribe();

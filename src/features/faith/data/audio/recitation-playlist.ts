@@ -1,8 +1,7 @@
-import type { AyahRecitation } from '../quran-content.repository';
-
 /**
  * The ordered set of local tracks one surah's playback is built from.
  *
+ * ═══════════════════════════════════════════════════════════════════════════
  * ── Why the playlist is a validated model rather than an array of URIs ──────
  * Because the thing being ordered is the Qur'an. The architecture this replaces asked the transport
  * "what is at index N of the recitation list?" and trusted the answer; the reader's deep-link defect
@@ -10,42 +9,51 @@ import type { AyahRecitation } from '../quran-content.repository';
  * audio instead of text — a verse recited under another verse's number, with nothing on screen
  * disagreeing.
  *
- * So a track carries its own identity, `<reciter>:<surah>:<ayah>`, the build refuses anything it
+ * So a track carries its own identity, `<resource>:<surah>:<ayah>`, the build refuses anything it
  * cannot vouch for, and nothing downstream derives a reference from a position. The native player is
  * handed a list it cannot misinterpret because every element already says what it is.
+ *
+ * ── This module no longer knows what a network recitation is ───────────────
+ * It used to take `AyahRecitation`, which carries a vendor URL. Taking ayah *numbers* instead is what
+ * makes "no URL-based playlist track" a property of the type system rather than of a code review:
+ * there is no field on any type here that could hold a remote address, so a future edit cannot pass
+ * one through by accident. The only strings that enter are `file://` URIs, and they arrive through
+ * `localUriFor`, which is the offline manifest's own accessor and answers `null` for anything not
+ * verified.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 
 /**
- * The stable name of one track: `3:93:5` — reciter resource, surah, ayah.
+ * The stable name of one track: `3:2:255` — resource, surah, ayah.
  *
- * The reciter is part of it because the same ayah recited by two reciters is two different files,
+ * The resource is part of it because the same ayah recited by two reciters is two different files,
  * and a queue that identified tracks by `surah:ayah` alone would silently accept a mixed one.
  */
-export function playlistTrackName(reciterId: string, surah: number, ayah: number): string {
-  return `${reciterId}:${surah}:${ayah}`;
+export function playlistTrackName(resourceId: number, surah: number, ayah: number): string {
+  return `${resourceId}:${surah}:${ayah}`;
 }
 
 export function parsePlaylistTrackName(
   name: string,
-): { readonly reciterId: string; readonly surah: number; readonly ayah: number } | null {
-  const match = /^([^:]+):(\d+):(\d+)$/.exec(name);
+): { readonly resourceId: number; readonly surah: number; readonly ayah: number } | null {
+  const match = /^(\d+):(\d+):(\d+)$/.exec(name);
   if (match === null) {
     return null;
   }
-  const [, reciterId, surah, ayah] = match;
-  if (reciterId === undefined || surah === undefined || ayah === undefined) {
+  const [, resourceId, surah, ayah] = match;
+  if (resourceId === undefined || surah === undefined || ayah === undefined) {
     return null;
   }
-  return { reciterId, surah: Number(surah), ayah: Number(ayah) };
+  return { resourceId: Number(resourceId), surah: Number(surah), ayah: Number(ayah) };
 }
 
 /** One entry in the native queue, with everything needed to map it back to a verse. */
 export type PlaylistTrack = {
-  /** `<reciter>:<surah>:<ayah>`. Unique within a playlist. */
+  /** `<resource>:<surah>:<ayah>`. Unique within a playlist. */
   readonly name: string;
-  /** A validated `file://` URI. Never a remote URL — see `buildPlaylistTracks`. */
+  /** A validated `file://` URI. Never a remote URL — see the note at the top of this file. */
   readonly uri: string;
-  readonly reciterId: string;
+  readonly resourceId: number;
   readonly surah: number;
   readonly ayah: number;
 };
@@ -53,18 +61,18 @@ export type PlaylistTrack = {
 /**
  * Why a playlist could not be built from what was offered.
  *
- * Each is a *programming* fault rather than a user-facing one — the screen shows "preparing" or
- * "unavailable" — so they exist to make a wrong queue impossible rather than to be rendered.
+ * `no-local-audio` is the one a screen actually renders, and it means something specific now that
+ * playback is local-only: the requested verse is not on the device. That is not a failure to be
+ * retried — it is a download the user has not made, and the honest response is to say so and offer
+ * the Offline audio screen, never to fall back to streaming.
  */
 export type PlaylistBuildFailure =
-  /** Nothing local was available for the requested span. */
+  /** The requested verse is not verified-local. */
   | 'no-local-audio'
-  /** Two recitations claimed the same ayah. */
+  /** The same ayah was offered twice. */
   | 'duplicate-ayah'
-  /** The span skipped an ayah, so playback would jump a verse. */
-  | 'non-contiguous'
-  /** A recitation belonged to another surah or reciter. */
-  | 'mixed-scope';
+  /** The built span skipped an ayah. Structurally impossible; kept as the module's invariant. */
+  | 'non-contiguous';
 
 export type PlaylistBuild =
   | {
@@ -72,97 +80,109 @@ export type PlaylistBuild =
       readonly tracks: readonly PlaylistTrack[];
       /** Where playback should begin. Always a valid index into `tracks`. */
       readonly startIndex: number;
+      /**
+       * The first ayah after the run that is *not* local, or `null` when the run reaches the end.
+       *
+       * The whole reason the reader can stop honestly at a gap rather than skipping it. A queue that
+       * ended without saying why would be indistinguishable from a surah that finished.
+       */
+      readonly nextMissingAyah: number | null;
     }
   | { readonly kind: 'failed'; readonly failure: PlaylistBuildFailure };
 
-export type PlaylistBuildInput = {
-  readonly reciterId: string;
+export type LocalPlaylistInput = {
+  readonly resourceId: number;
   readonly surah: number;
-  /** The recitations for this surah, in any order. Filtered and sorted here. */
-  readonly recitations: readonly AyahRecitation[];
+  /** Every ayah of this surah that is verified-local. Any order; sorted and deduplicated here. */
+  readonly availableAyat: readonly number[];
   /**
-   * The validated local URI for an ayah, or `null` when it is not on disk.
+   * The validated local URI for an ayah, or `null`.
    *
-   * Synchronous by contract — see `RecitationPreparation.localUriFor`. A playlist may only contain
-   * files that already exist, so this is the gate that keeps a remote URL out of the native queue.
+   * Synchronous by contract. A playlist may only contain files that already exist, so this is the
+   * gate that keeps anything unverified out of the native queue — and it consults the filesystem, so
+   * a file the OS reclaimed since the manifest was written answers `null` here rather than becoming a
+   * track that fails to open.
    */
-  readonly localUriFor: (recitation: AyahRecitation) => string | null;
-  /** The ayah playback should start at. Clamped into the built span. */
+  readonly localUriFor: (ayah: number) => string | null;
+  /** The ayah playback should begin at. */
   readonly startAyah: number;
+  /** How many ayat the surah has, so the run can tell "end of surah" from "gap". */
+  readonly totalAyat: number;
   /**
-   * How many contiguous tracks to take, starting at the first prepared ayah at or before
-   * `startAyah`. Bounds the native queue for a long surah.
+   * An upper bound on queue length.
+   *
+   * Present as a safety valve rather than as policy: the run is normally the whole contiguous span,
+   * because rebuilding the native playlist mid-surah is the source replacement this architecture
+   * exists to remove. Al-Baqarah at 286 items is well inside what a prepared ExoPlayer queue holds.
    */
-  readonly maxTracks: number;
+  readonly maxTracks?: number;
 };
+
+/** Generous enough that no surah reaches it, low enough to bound a corrupted input. */
+export const MAX_PLAYLIST_TRACKS = 300;
 
 /**
  * Builds the contiguous run of locally-available tracks that contains `startAyah`.
  *
  * ── Contiguity is a requirement, not a preference ───────────────────────────
- * A queue assembled from whatever happened to be on disk would play 3, 4, then 9 — a silent
- * omission of five verses, which is the single worst thing this feature could do. So the build takes
- * the **unbroken run** the start ayah falls inside and stops at the first gap, and the caller
- * prepares more before extending. A short queue is honest; a queue with a hole is not.
+ * A queue assembled from whatever happened to be on disk would play 3, 4, then 9 — a silent omission
+ * of five verses, which is the single worst thing this feature could do. So the build takes the
+ * **unbroken run** the start ayah falls inside, stops at the first gap, and reports where that gap is
+ * so the caller can stop there and say so.
+ *
+ * The run is anchored on what the user asked to hear and extends backwards as well as forwards, so a
+ * deep link to 2:255 begins at 255 while `previous` still reaches 254 when 254 is on the device.
  */
-export function buildPlaylistTracks(input: PlaylistBuildInput): PlaylistBuild {
-  const { reciterId, surah, recitations, localUriFor, startAyah, maxTracks } = input;
+export function buildLocalPlaylist(input: LocalPlaylistInput): PlaylistBuild {
+  const { resourceId, surah, localUriFor, startAyah, totalAyat } = input;
+  const maxTracks = input.maxTracks ?? MAX_PLAYLIST_TRACKS;
 
-  /* Anything from another surah or reciter is a caller error, not something to quietly drop. */
-  if (recitations.some((entry) => entry.surah !== surah || entry.reciterId !== reciterId)) {
-    return { kind: 'failed', failure: 'mixed-scope' };
-  }
-
-  const byAyah = new Map<number, AyahRecitation>();
-  for (const entry of recitations) {
-    if (byAyah.has(entry.ayah)) {
+  const seen = new Set<number>();
+  for (const ayah of input.availableAyat) {
+    if (seen.has(ayah)) {
       return { kind: 'failed', failure: 'duplicate-ayah' };
     }
-    byAyah.set(entry.ayah, entry);
-  }
-
-  const ordered = [...byAyah.values()].sort((left, right) => left.ayah - right.ayah);
-  if (ordered.length === 0) {
-    return { kind: 'failed', failure: 'no-local-audio' };
+    seen.add(ayah);
   }
 
   /*
-    Walk back from the start ayah while the previous verse is also local, then forward. The run is
-    anchored on what the user asked to hear rather than on the surah's first verse, so a deep link
-    to 2:255 does not require 254 files it will never play.
+    Local means both: the manifest lists it *and* the filesystem still holds it. Asking both is what
+    keeps a reclaimed file from becoming a track that opens to nothing.
   */
-  const isLocal = (ayah: number): boolean => {
-    const entry = byAyah.get(ayah);
-    return entry !== undefined && localUriFor(entry) !== null;
+  const uriCache = new Map<number, string | null>();
+  const uriOf = (ayah: number): string | null => {
+    if (!seen.has(ayah)) {
+      return null;
+    }
+    const cached = uriCache.get(ayah);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const resolved = localUriFor(ayah);
+    uriCache.set(ayah, resolved);
+    return resolved;
   };
 
-  const anchor = isLocal(startAyah)
-    ? startAyah
-    : /* The requested verse is not prepared. Nothing to build — the caller prepares and retries. */
-      null;
-  if (anchor === null) {
+  if (uriOf(startAyah) === null) {
     return { kind: 'failed', failure: 'no-local-audio' };
   }
 
-  let first = anchor;
-  while (isLocal(first - 1)) {
+  let first = startAyah;
+  while (first > 1 && uriOf(first - 1) !== null) {
     first -= 1;
   }
 
   const tracks: PlaylistTrack[] = [];
-  for (let ayah = first; tracks.length < maxTracks && isLocal(ayah); ayah += 1) {
-    const entry = byAyah.get(ayah);
-    if (entry === undefined) {
-      break;
-    }
-    const uri = localUriFor(entry);
+  let ayah = first;
+  for (; tracks.length < maxTracks; ayah += 1) {
+    const uri = uriOf(ayah);
     if (uri === null) {
       break;
     }
     tracks.push({
-      name: playlistTrackName(reciterId, surah, ayah),
+      name: playlistTrackName(resourceId, surah, ayah),
       uri,
-      reciterId,
+      resourceId,
       surah,
       ayah,
     });
@@ -183,32 +203,43 @@ export function buildPlaylistTracks(input: PlaylistBuildInput): PlaylistBuild {
     }
   }
 
+  const last = tracks[tracks.length - 1]?.ayah ?? 0;
   const startIndex = tracks.findIndex((track) => track.ayah === startAyah);
-  return { kind: 'ok', tracks, startIndex: startIndex < 0 ? 0 : startIndex };
+
+  return {
+    kind: 'ok',
+    tracks,
+    startIndex: startIndex < 0 ? 0 : startIndex,
+    /*
+      Only a verse the surah actually has counts as missing. Running off the end of the last ayah is
+      the surah finishing, and reporting that as a gap would put "verse 287 is not downloaded" under
+      Al-Baqarah.
+    */
+    nextMissingAyah: last < totalAyat ? last + 1 : null,
+  };
 }
 
 /**
  * The ayah a native track index refers to, or `null`.
  *
- * The one place an index becomes a verse. Every caller goes through it rather than indexing the
- * array directly, so "which ayah is playing?" is answered by a lookup that can fail loudly instead
- * of by arithmetic that cannot.
+ * The one place an index becomes a verse. Every caller goes through it rather than indexing the array
+ * directly, so "which ayah is playing?" is answered by a lookup that can fail loudly instead of by
+ * arithmetic that cannot.
  */
 export function trackAt(tracks: readonly PlaylistTrack[], index: number): PlaylistTrack | null {
   return tracks[index] ?? null;
 }
 
-/** The index a given ayah occupies, or `-1`. Used to point the queue at a chosen verse. */
 /**
  * Whether a queue can move forward from `index`.
  *
  * ── Why this is a function and not `index < tracks.length - 1` at the call site ──
- * That arithmetic is wrong in exactly one case, and it is the case that shipped: an **empty**
- * queue makes `tracks.length - 1` equal `-1`, so `0 >= -1` reports that index zero is the last
- * track of a queue that has no tracks. The player then drew "unavailable on the last ayah" while
- * sitting on verse one, and the terminal-state effect concluded that a surah nobody had started had
- * finished. An empty queue has no first track and no last one, and the only way to keep saying that
- * everywhere is to ask here rather than to subtract at each call site.
+ * That arithmetic is wrong in exactly one case, and it is the case that shipped: an **empty** queue
+ * makes `tracks.length - 1` equal `-1`, so `0 >= -1` reports that index zero is the last track of a
+ * queue that has no tracks. The player then drew "unavailable on the last ayah" while sitting on
+ * verse one, and the terminal-state effect concluded that a surah nobody had started had finished. An
+ * empty queue has no first track and no last one, and the only way to keep saying that everywhere is
+ * to ask here rather than to subtract at each call site.
  */
 export function hasNextTrack(tracks: readonly PlaylistTrack[], index: number): boolean {
   if (tracks.length === 0) {
@@ -241,9 +272,9 @@ export function indexOfAyah(tracks: readonly PlaylistTrack[], ayah: number): num
 /**
  * Whether two track lists describe the same queue.
  *
- * Compared by name, in order — the identity, not the URI. A prepared file re-promoted under the same
- * name is the same track, and rebuilding the native playlist for it would interrupt playback to
- * change nothing.
+ * Compared by name, in order — the identity, not the URI. A file re-promoted under the same name is
+ * the same track, and rebuilding the native playlist for it would interrupt playback to change
+ * nothing.
  */
 export function sameTracks(
   left: readonly PlaylistTrack[],

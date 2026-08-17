@@ -13,7 +13,7 @@ import {
  * ── What a playlist entry is, and what it deliberately is not ───────────────
  * An entry is a **reference** — a surah, an ayah and the reciter it was added under — and never
  * content. There is no URL, no host and no audio here, so a playlist cannot become a second store
- * of licensed recitation living outside the one-week ceiling `faith-audio-downloads.ts` enforces.
+ * of licensed recitation living outside the offline manifest `faith-offline-recitation.ts` owns.
  * Playing an entry resolves it back through `QuranContentRepository.listRecitations`, which is the
  * same boundary the reader itself plays through.
  *

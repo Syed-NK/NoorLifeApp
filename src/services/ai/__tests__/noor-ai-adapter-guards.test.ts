@@ -195,6 +195,15 @@ describe('the adapter accepts no privileged input from its caller', () => {
         expect([
           '@/lib/supabase',
           '@application/providers/localization-provider',
+          /*
+            The offline gate. Admitted deliberately, and it is the narrowest possible dependency:
+            one boolean read, no state of its own, no session, no storage. Noor AI has no local mode
+            — every answer comes from the edge function — so an offline launch must refuse before
+            the invocation rather than spend a quota reservation on a request that cannot complete.
+            Returning `network-unavailable`, which this adapter's own union already contains, keeps
+            the refusal inside the contract instead of introducing a second error channel.
+          */
+          '@services/network/remote-access',
           '@shared/permissions/ai-scope',
           './ai-orchestrator.contract',
           './noor-ai.contract',

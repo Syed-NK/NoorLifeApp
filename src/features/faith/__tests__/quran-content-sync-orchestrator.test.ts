@@ -12,6 +12,7 @@ import {
   SUDAIS_RESOURCE_ID,
   TOTAL_AYAH_COUNT,
   SYNC_INTERVAL_MS,
+  TRANSLATION_METADATA_INTERVAL_MS,
   TRANSLATION_RESOURCE_ID,
 } from '@features/faith/data/sync/content-sync.orchestrator';
 import {
@@ -140,9 +141,33 @@ type Scripted = QuranContentPayload | QuranEndpointFailure;
  * incremental run sent the stored one, that pagination followed the cursor, and — most often — that
  * some request was **never** made.
  */
+/**
+ * The publisher catalogue, as  answers it.
+ *
+ * Modelled rather than stubbed away: the credit for resource 85 is resolved from this on the runs
+ * that need it, and a test that skipped it would be testing a publication path that cannot name its
+ * translator — which is the defect being fixed.
+ */
+function translationCatalogue(): QuranContentPayload {
+  return {
+    operation: 'list_translation_resources',
+    editions: [
+      {
+        id: '20',
+        language: 'english',
+        name: 'Sahih International',
+        translator: 'Sahih International',
+      },
+      { id: '85', language: 'english', name: 'M.A.S. Abdel Haleem', translator: 'Abdul Haleem' },
+    ],
+  };
+}
+
 function scriptedEndpoint(spec: {
   readonly pages: readonly Scripted[];
   readonly snapshots?: Partial<Record<'recitations' | 'translations', Scripted>>;
+  /** Overrides the catalogue answer, for the attribution failure matrix. */
+  readonly catalogue?: Scripted;
 }): QuranContentEndpoint & { readonly requests: QuranContentRequest[] } {
   const requests: QuranContentRequest[] = [];
   let pageIndex = 0;
@@ -159,6 +184,8 @@ function scriptedEndpoint(spec: {
         answer = spec.pages[Math.min(pageIndex++, spec.pages.length - 1)] ?? 'invalid-response';
       } else if (body.operation === 'get_content_snapshot') {
         answer = spec.snapshots?.[body.resource_group] ?? fullSnapshot(body.resource_group);
+      } else if (body.operation === 'list_translation_resources') {
+        answer = spec.catalogue ?? translationCatalogue();
       }
       if (typeof answer === 'string') {
         return await Promise.resolve({ kind: 'failed' as const, failure: answer });
@@ -169,6 +196,12 @@ function scriptedEndpoint(spec: {
 }
 
 /** How many change-feed pages were requested. Snapshot calls are not pages. */
+function catalogueRequests(endpoint: {
+  readonly requests: QuranContentRequest[];
+}): QuranContentRequest[] {
+  return endpoint.requests.filter((r) => r.operation === 'list_translation_resources');
+}
+
 function pageRequests(endpoint: {
   readonly requests: QuranContentRequest[];
 }): QuranContentRequest[] {
@@ -211,6 +244,10 @@ async function seedGeneration(
     readonly createdAt?: number;
     readonly lastCheckedAt?: number;
     readonly translationText?: string;
+    /** Seeds the null the live device actually holds, so the repair path can be exercised. */
+    readonly attribution?: null;
+    /** Zero rows models a bootstrap that received no translation mutation. */
+    readonly translationRows?: number;
   } = {},
 ): Promise<void> {
   const at = over.createdAt ?? NOW;
@@ -224,22 +261,28 @@ async function seedGeneration(
     },
     translations: {
       resourceId: TRANSLATION_RESOURCE_ID,
-      attribution: {
-        resourceId: TRANSLATION_RESOURCE_ID,
-        name: 'The Clear Quran',
-        translator: 'Dr. Mustafa Khattab',
-      },
-      rows: [
-        {
-          verseKey: '1:1',
-          surah: 1,
-          ayah: 1,
-          text: over.translationText ?? 'previous generation',
-          resourceId: TRANSLATION_RESOURCE_ID,
-          sequence: 1,
-          refreshedAt: at,
-        },
-      ],
+      attribution:
+        over.attribution === null
+          ? null
+          : {
+              resourceId: TRANSLATION_RESOURCE_ID,
+              name: 'The Clear Quran',
+              translator: 'Dr. Mustafa Khattab',
+            },
+      rows:
+        over.translationRows === 0
+          ? []
+          : [
+              {
+                verseKey: '1:1',
+                surah: 1,
+                ayah: 1,
+                text: over.translationText ?? 'previous generation',
+                resourceId: TRANSLATION_RESOURCE_ID,
+                sequence: 1,
+                refreshedAt: at,
+              },
+            ],
     },
     recitations: {
       resourceId: SUDAIS_RESOURCE_ID,
@@ -542,7 +585,14 @@ describe('recitation reconciliation', () => {
   });
 
   it('never unsets the record that a mutation was once observed', async () => {
-    /* A later snapshot reconciliation must not erase that the feed was once seen to emit one. */
+    /*
+      A later clean run must not erase that the feed was once seen to emit a mutation.
+
+      The method assertion changed with Quran Foundation's confirmation: a no-mutation response is a
+      complete answer, so the second run no longer re-reads the snapshot and the recorded method
+      stays `mutation`. What this case is actually about — that `mutationEverObserved` is sticky —
+      is unchanged and is the assertion below.
+    */
     const withMutation = scriptedEndpoint({
       pages: [page({ mutations: [resourceCreate('recitations', 1)], nextSyncToken: 'tok_m' })],
     });
@@ -554,7 +604,7 @@ describe('recitation reconciliation', () => {
     await orchestratorWith(snapshotOnly, { now: () => later }).orchestrator.run();
 
     const check = (await activeGeneration()).manifest.recitation;
-    expect(check.method).toBe('snapshot');
+    expect(check.method).toBe('mutation');
     expect(check.mutationEverObserved).toBe(true);
   });
 
@@ -634,13 +684,26 @@ describe('the separate clocks', () => {
     expect(generation.recitations.rows).toHaveLength(1);
   });
 
-  it('treats an audio check falling due as reason enough to run', async () => {
+  it('treats an audio check falling due as reason enough to run, without re-reading the snapshot', async () => {
+    /*
+      ── This asserted 'snapshot' and that rule is superseded ─────────────────
+      Quran Foundation confirmed existing recitations were intentionally not backfilled and that a
+      feed returning no recitation mutation means no recitation change has been recorded. So the
+      audio clock falling due is still reason enough to **run** — the seven-connected-day obligation
+      is discharged by reading the feed — but a clean answer no longer costs 6,236 rows.
+
+      See `quran-recitation-sync-model.test.ts` for the four integrity conditions that do still take
+      a snapshot.
+    */
     await seedGeneration({ createdAt: NOW, lastCheckedAt: NOW - SYNC_INTERVAL_MS - 1 });
     const endpoint = scriptedEndpoint({ pages: [page({ nextSyncToken: 'tok_4' })] });
     const { orchestrator } = orchestratorWith(endpoint);
 
     const outcome = await orchestrator.run();
-    expect(outcome.kind === 'synced' && outcome.recitationReconciliation).toBe('snapshot');
+    expect(outcome.kind).toBe('synced');
+    expect(outcome.kind === 'synced' && outcome.recitationReconciliation).toBe('none');
+    /* The run happened: one feed page, and no snapshot request behind it. */
+    expect(endpoint.requests).toHaveLength(1);
   });
 });
 
@@ -801,5 +864,275 @@ describe('what the transaction does not carry', () => {
         expect(Object.keys(request).sort()).toEqual(['operation', 'resource_group']);
       }
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Translator attribution — the credit that must accompany every translation
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('translator attribution', () => {
+  /*
+    The live device holds 6,236 valid translation rows and `attribution: null`, because the value was
+    only ever carried forward from a previous generation and never sourced. These cases cover the
+    repair and the refusals; the resolver's own semantics are in `translation-attribution.test.ts`.
+  */
+
+  it('repairs a null attribution without a translation mutation, keeping the valid rows', async () => {
+    /*
+      The exact device state. A metadata repair must not require a translation mutation and must not
+      be a reason to discard rows that are perfectly good.
+    */
+    await seedGeneration({ attribution: null, createdAt: NOW - SYNC_INTERVAL_MS - 1 });
+    const endpoint = scriptedEndpoint({ pages: [page({ nextSyncToken: 'tok_repair' })] });
+
+    const outcome = await orchestratorWith(endpoint).orchestrator.run();
+
+    expect(outcome.kind).toBe('synced');
+    expect(catalogueRequests(endpoint)).toHaveLength(1);
+    const generation = await activeGeneration();
+    expect(generation.translations.attribution).toEqual({
+      resourceId: TRANSLATION_RESOURCE_ID,
+      name: 'M.A.S. Abdel Haleem',
+      translator: 'Abdul Haleem',
+    });
+    /* The rows survived the repair rather than being re-fetched or dropped. */
+    expect(generation.translations.rows).toHaveLength(1);
+  });
+
+  it('spends no catalogue request when a valid attribution is already held', async () => {
+    /*
+      The bounded policy. A small read is still a read, and spending one on every clean incremental
+      run is the redundancy the recitation confirmation just removed elsewhere.
+    */
+    await seedGeneration({ createdAt: NOW - SYNC_INTERVAL_MS - 1 });
+    const endpoint = scriptedEndpoint({ pages: [page({ nextSyncToken: 'tok_clean' })] });
+
+    await orchestratorWith(endpoint).orchestrator.run();
+
+    expect(catalogueRequests(endpoint)).toHaveLength(0);
+  });
+
+  it('re-reads the catalogue once the bounded metadata interval has elapsed', async () => {
+    await seedGeneration({ createdAt: NOW - TRANSLATION_METADATA_INTERVAL_MS - 1 });
+    const endpoint = scriptedEndpoint({
+      pages: [page({ mutations: [resourceCreate('translations', 1)], nextSyncToken: 'tok_meta' })],
+    });
+
+    await orchestratorWith(endpoint).orchestrator.run();
+
+    expect(catalogueRequests(endpoint)).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      'a catalogue that does not name the resource',
+      { operation: 'list_translation_resources', editions: [] },
+    ],
+    [
+      'conflicting duplicate rows',
+      {
+        operation: 'list_translation_resources',
+        editions: [
+          { id: '85', language: 'english', name: 'A', translator: 'One' },
+          { id: '85', language: 'english', name: 'A', translator: 'Two' },
+        ],
+      },
+    ],
+    [
+      'an incomplete row',
+      {
+        operation: 'list_translation_resources',
+        editions: [{ id: '85', language: 'english', name: 'A', translator: '' }],
+      },
+    ],
+    [
+      'a row in the wrong language',
+      {
+        operation: 'list_translation_resources',
+        editions: [{ id: '85', language: 'urdu', name: 'A', translator: 'One' }],
+      },
+    ],
+  ])(
+    'refuses to publish on %s, leaving the previous generation active',
+    async (_label, catalogue) => {
+      /*
+      A translation shown without its translator is a translation presented as if it were the text
+      itself. There is no publish-now-credit-later path, so every one of these fails the run — and
+      the pre-pointer guarantee means the device keeps what it already had.
+    */
+      await seedGeneration({ attribution: null, createdAt: NOW - SYNC_INTERVAL_MS - 1 });
+      const before = await activeGeneration();
+      const endpoint = scriptedEndpoint({
+        pages: [page({ nextSyncToken: 'tok_bad' })],
+        catalogue: catalogue as unknown as QuranContentPayload,
+      });
+
+      const outcome = await orchestratorWith(endpoint).orchestrator.run();
+
+      expect(outcome.kind).toBe('failed');
+      const after = await activeGeneration();
+      expect(after.manifest.generationId).toBe(before.manifest.generationId);
+      expect(after.manifest.feed.syncToken).toBe(before.manifest.feed.syncToken);
+    },
+  );
+
+  it('keeps the previous generation when the catalogue request itself fails and nothing is held', async () => {
+    await seedGeneration({ attribution: null, createdAt: NOW - SYNC_INTERVAL_MS - 1 });
+    const before = await activeGeneration();
+    const endpoint = scriptedEndpoint({
+      pages: [page({ nextSyncToken: 'tok_x' })],
+      catalogue: 'unavailable',
+    });
+
+    expect((await orchestratorWith(endpoint).orchestrator.run()).kind).toBe('failed');
+    expect((await activeGeneration()).manifest.generationId).toBe(before.manifest.generationId);
+  });
+
+  it('continues on a held credit when the catalogue read fails transiently', async () => {
+    /*
+      "Could not read the catalogue" is not "the catalogue said nothing". Discarding a lawful
+      translation over a transient read would take working offline content away for no gain.
+    */
+    await seedGeneration({ createdAt: NOW - TRANSLATION_METADATA_INTERVAL_MS - 1 });
+    const endpoint = scriptedEndpoint({
+      pages: [page({ mutations: [resourceCreate('translations', 1)], nextSyncToken: 'tok_y' })],
+      catalogue: 'unavailable',
+    });
+
+    const outcome = await orchestratorWith(endpoint).orchestrator.run();
+
+    expect(outcome.kind).toBe('synced');
+    expect((await activeGeneration()).translations.attribution?.translator).toBe(
+      'Dr. Mustafa Khattab',
+    );
+  });
+});
+
+describe('the two attribution guards, at their own boundaries', () => {
+  /*
+    ── Why these assert request counts rather than the rejection ─────────────
+    Both guards refuse the same run, so asserting "the run failed" cannot tell them apart — a
+    downstream guard produces the identical outcome. What *is* distinguishable is the work that
+    happens after a terminal resolution failure: with either guard removed, the credit is resolved a
+    second time, so the vendor catalogue is read twice for one run.
+
+    That is a real behavioural property and not a restatement of the outcome: a terminal answer must
+    end the run, not be re-asked. It is also observable without production diagnostics, which is what
+    makes these proofs meaningful rather than score-chasing.
+  */
+
+  const BAD_CATALOGUE = {
+    operation: 'list_translation_resources',
+    editions: [
+      { id: '85', language: 'english', name: 'A', translator: 'One' },
+      { id: '85', language: 'english', name: 'A', translator: 'Two' },
+    ],
+  } as unknown as QuranContentPayload;
+
+  it('asks the catalogue once when resolution fails during snapshot staging', async () => {
+    /*
+      The staging guard. A translation mutation demands a snapshot, the catalogue contradicts itself,
+      and the run must stop there — not stage a null credit and have a later guard re-resolve it.
+    */
+    /* Null credit, so the catalogue is genuinely consulted rather than the held one reused. */
+    await seedGeneration({ attribution: null, createdAt: NOW - SYNC_INTERVAL_MS - 1 });
+    const endpoint = scriptedEndpoint({
+      pages: [page({ mutations: [resourceCreate('translations', 1)], nextSyncToken: 'tok_z' })],
+      catalogue: BAD_CATALOGUE,
+    });
+
+    const outcome = await orchestratorWith(endpoint).orchestrator.run();
+
+    expect(outcome.kind).toBe('failed');
+    expect(catalogueRequests(endpoint)).toHaveLength(1);
+  });
+
+  it('asks the catalogue once when resolution fails during a metadata repair', async () => {
+    /* The resolution-failure guard, reached through the carry-forward repair path. */
+    await seedGeneration({ attribution: null, createdAt: NOW - SYNC_INTERVAL_MS - 1 });
+    const endpoint = scriptedEndpoint({
+      pages: [page({ nextSyncToken: 'tok_z2' })],
+      catalogue: BAD_CATALOGUE,
+    });
+
+    const outcome = await orchestratorWith(endpoint).orchestrator.run();
+
+    expect(outcome.kind).toBe('failed');
+    expect(catalogueRequests(endpoint)).toHaveLength(1);
+  });
+
+  it('stages no generation file when attribution cannot be resolved', async () => {
+    /*
+      The other half: a refused credit must stop before anything durable is written. Asserted on the
+      filesystem double rather than on the pointer, because a `.part` left behind is a side effect the
+      pointer assertion would not see.
+    */
+    await seedGeneration({ attribution: null, createdAt: NOW - SYNC_INTERVAL_MS - 1 });
+    const before = mockFileSystem.uris().filter((uri) => uri.includes('quran-sync'));
+    const endpoint = scriptedEndpoint({
+      pages: [page({ nextSyncToken: 'tok_z3' })],
+      catalogue: BAD_CATALOGUE,
+    });
+
+    await orchestratorWith(endpoint).orchestrator.run();
+
+    const after = mockFileSystem.uris().filter((uri) => uri.includes('quran-sync'));
+    expect(after).toEqual(before);
+    expect(after.filter((uri) => uri.endsWith('.part'))).toEqual([]);
+  });
+
+  it('returns a public-safe failure classification, never catalogue detail', async () => {
+    await seedGeneration({ attribution: null, createdAt: NOW - SYNC_INTERVAL_MS - 1 });
+    const endpoint = scriptedEndpoint({
+      pages: [page({ nextSyncToken: 'tok_z4' })],
+      catalogue: BAD_CATALOGUE,
+    });
+
+    const outcome = await orchestratorWith(endpoint).orchestrator.run();
+
+    /* One closed code. Which kind of catalogue fault it was is a vendor question, not a screen's. */
+    expect(outcome.kind === 'failed' && outcome.failure).toBe('invalid-response');
+    expect(JSON.stringify(outcome)).not.toContain('Abdul');
+    expect(JSON.stringify(outcome)).not.toContain('translator');
+  });
+});
+
+describe('an unusable translator credit makes a run due', () => {
+  it('runs and repairs even when neither the feed nor the audio clock is due', async () => {
+    /*
+      ── Found on the device, not at a whiteboard ──────────────────────────────
+      The repair works on any run that happens. Without this condition it only *happens* when the
+      seven-day feed window elapses — and the live device's generation was a day old, so a
+      publication holding 6,236 rows that no screen may lawfully render would have stayed that way
+      for six more days.
+    */
+    await seedGeneration({ attribution: null, createdAt: NOW });
+    const endpoint = scriptedEndpoint({ pages: [page({ nextSyncToken: 'tok_due' })] });
+
+    const outcome = await orchestratorWith(endpoint).orchestrator.run();
+
+    expect(outcome.kind).toBe('synced');
+    expect((await activeGeneration()).translations.attribution?.translator).toBe('Abdul Haleem');
+  });
+
+  it('stays not-due once the credit is valid, so it cannot loop', async () => {
+    /* Self-extinguishing: a healthy generation must not re-run on every launch. */
+    await seedGeneration({ createdAt: NOW });
+    const endpoint = scriptedEndpoint({ pages: [page()] });
+
+    expect((await orchestratorWith(endpoint).orchestrator.run()).kind).toBe('not-due');
+    expect(endpoint.requests).toHaveLength(0);
+  });
+
+  it('does not treat an empty translation set as needing repair', async () => {
+    /*
+      A bootstrap that legitimately received no translation mutation has nothing to attribute, and
+      treating that as due would retry on every launch forever.
+    */
+    await seedGeneration({ attribution: null, createdAt: NOW, translationRows: 0 });
+    const endpoint = scriptedEndpoint({ pages: [page()] });
+
+    expect((await orchestratorWith(endpoint).orchestrator.run()).kind).toBe('not-due');
   });
 });

@@ -1,3 +1,4 @@
+import { assertRemoteAccess } from '@services/network/remote-access';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { authCallbackRedirectUrl } from '@services/auth/auth-callback.config';
 import { rememberPendingFlow } from '@services/auth/pending-auth-flow';
@@ -42,10 +43,7 @@ import {
 
 function requireClient() {
   if (!isSupabaseConfigured || supabase === null) {
-    throw new AccountSecurityError(
-      'not-configured',
-      'Supabase is not configured for this build.',
-    );
+    throw new AccountSecurityError('not-configured', 'Supabase is not configured for this build.');
   }
   return supabase;
 }
@@ -245,6 +243,7 @@ export async function readAccountSecuritySummary(): Promise<AccountSecuritySumma
  * is passed straight back into `updatePassword` by the screen that collected it.
  */
 export async function sendReauthenticationCode(): Promise<void> {
+  assertRemoteAccess('Confirming your identity');
   const client = requireClient();
   const { error } = await client.auth.reauthenticate();
   if (error !== null) {
@@ -275,6 +274,7 @@ export async function updatePassword(input: {
   /** The emailed reauthentication nonce, when one was requested. */
   readonly nonce?: string;
 }): Promise<void> {
+  assertRemoteAccess('Changing your password');
   const client = requireClient();
   const { error } = await client.auth.updateUser({
     password: input.newPassword,
@@ -304,6 +304,7 @@ export async function updatePassword(input: {
  * same reason, and a test asserts neither path exists.
  */
 export async function requestEmailChange(newEmail: string): Promise<EmailChangeOutcome> {
+  assertRemoteAccess('Changing your email address');
   const client = requireClient();
   const normalized = normalizeEmail(newEmail);
 
@@ -357,6 +358,13 @@ export function normalizeEmail(value: string): string {
  * Passing `local` explicitly is the whole difference. The locked service is untouched.
  */
 export async function signOutThisDevice(): Promise<void> {
+  /*
+    ── Deliberately not gated ────────────────────────────────────────────────
+    A local sign-out has a local half that must happen whether or not a server can be reached:
+    `clearAccessToken()` below, and the offline receipt the provider deletes before calling here.
+    Refusing this offline would leave a user unable to sign out of their own phone on a plane —
+    ending local access is exactly what they are asking for, and it needs no network.
+  */
   const client = requireClient();
   const { error } = await client.auth.signOut({ scope: 'local' });
   if (error !== null) {
@@ -397,6 +405,12 @@ export async function signOutThisDevice(): Promise<void> {
  * preference, the Faith module's stored progress or any account data.
  */
 export async function signOutEverywhere(): Promise<GlobalSignOutOutcome> {
+  /*
+    Signing out of *other* devices is a server operation and nothing else — unlike a local sign-out
+    there is no useful local half to perform. Refusing early says so plainly rather than reporting a
+    revocation that never reached Supabase.
+  */
+  assertRemoteAccess('Signing out everywhere');
   const client = requireClient();
 
   const { data, error: sessionError } = await client.auth.getSession();

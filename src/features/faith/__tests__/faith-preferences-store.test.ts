@@ -6,7 +6,7 @@ import {
   subscribeToFaithPreferences,
   updateFaithPreferences,
 } from '../state/faith-preferences-store';
-import { faithStorageKeys } from '../storage/faith-storage';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * The Faith preference store, on its own — no screens, no repositories, no rendering.
@@ -99,7 +99,7 @@ describe('faith preferences are one shared snapshot', () => {
     await hydrateFaithPreferences();
     await updateFaithPreferences({ prayerNotificationsEnabled: true });
 
-    const raw = await AsyncStorage.getItem(faithStorageKeys.preferences);
+    const raw = await AsyncStorage.getItem(faithAddress('preferences'));
     expect(JSON.parse(raw ?? '{}')).toMatchObject({ prayerNotificationsEnabled: true });
   });
 

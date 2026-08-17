@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { authRoutes } from '@application/navigation/routes';
-import { useAuth } from '@application/providers/auth-provider';
+import { isOnlineAuthenticated, useAuth } from '@application/providers/auth-provider';
 import { AuthStatusBanner } from '@features/entry-auth/components/auth-status-banner';
 import { AuthTextField } from '@features/entry-auth/components/auth-text-field';
 import { EntryAuthText } from '@features/entry-auth/components/entry-auth-text';
@@ -70,7 +70,8 @@ export function ChangeEmailScreen({
 } = {}) {
   const router = useRouter();
   const { dp } = useEntryAuthMetrics();
-  const { status } = useAuth();
+  const auth = useAuth();
+  const { status } = auth;
   const security = useAccountSecurity(port);
   const copy = privacySecurityCopy.email;
 
@@ -124,7 +125,14 @@ export function ChangeEmailScreen({
    * answer — and a change requested against an unknown current address is the one that ends with a
    * user locked out. The control stays disabled rather than guessing.
    */
-  const sessionReady = status === 'signed-in' && summary !== null && currentEmail !== null;
+  /*
+    ── Online authority, not merely "signed in" ──────────────────────────────
+    This screen changes a credential through Supabase. Under offline authority there is no token, so
+    submitting could only fail at the transport — after the user had typed a password into a form that
+    looked ready. Gating the readiness flag disables the control *before* that, which is what locked
+    decision 7 asks for.
+  */
+  const sessionReady = isOnlineAuthenticated(auth) && summary !== null && currentEmail !== null;
 
   const evaluation = evaluateEmailDraft(draft, currentEmail);
   /** Content alone. `busy` is deliberately excluded so the button keeps its fill while it spins. */
@@ -143,7 +151,12 @@ export function ChangeEmailScreen({
     // a queued press and a programmatic call all arrive at this line, and the service must not be
     // reachable from any of them while the answer is anything but `valid`.
     const check = evaluateEmailDraft(draft, currentEmail);
-    if (status !== 'signed-in' || summary === null || currentEmail === null || !check.canSubmit) {
+    if (
+      !isOnlineAuthenticated(auth) ||
+      summary === null ||
+      currentEmail === null ||
+      !check.canSubmit
+    ) {
       return;
     }
 
@@ -164,7 +177,7 @@ export function ChangeEmailScreen({
       inFlight.current = false;
       setBusy(false);
     }
-  }, [currentEmail, draft, port, reload, status, summary]);
+  }, [auth, currentEmail, draft, port, reload, summary]);
 
   if (status === 'signed-out') {
     return <View style={styles.blank} testID="change-email-signed-out" />;

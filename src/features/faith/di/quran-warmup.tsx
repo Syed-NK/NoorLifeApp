@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import { useAuth } from '@application/providers/auth-provider';
+import { isOnlineAuthenticated, useAuth } from '@application/providers/auth-provider';
 
 import { warmSurahCatalogue } from '../data/quran-catalogue-warmup';
 import { useFaithRepositories } from './faith-repository-context';
@@ -35,16 +35,21 @@ import { useFaithRepositories } from './faith-repository-context';
  */
 export function QuranCatalogueWarmup() {
   const { quran } = useFaithRepositories();
-  const { status } = useAuth();
+  const auth = useAuth();
 
   useEffect(() => {
-    if (status !== 'signed-in') {
+    /*
+      Online only. The warmup is a network read of the surah catalogue; under offline authority it
+      could only fail, and the catalogue it would have fetched is already on the device from the last
+      online launch — `faith-quran-catalogue.ts` persists it for exactly this reason.
+    */
+    if (!isOnlineAuthenticated(auth)) {
       return;
     }
     // Deduplicated inside: startup, the Qur'an screen and the reader's picker all call this, and
     // between them they produce exactly one storage read and at most one request.
     void warmSurahCatalogue(quran);
-  }, [quran, status]);
+  }, [quran, auth]);
 
   return null;
 }

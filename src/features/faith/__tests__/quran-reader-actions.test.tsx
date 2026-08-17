@@ -11,7 +11,7 @@ import React from 'react';
 import { Share } from 'react-native';
 
 import { seedTranslationPreference } from '@/test-support/faith-preferences-fixtures';
-import { READER_RECITATIONS, renderReader } from '@/test-support/faith-reader';
+import { READER_DOWNLOADED, renderReader } from '@/test-support/faith-reader';
 import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 
 import { mockPlaylist, mockRouter, setRouteParams } from '../../../../jest.setup';
@@ -35,6 +35,7 @@ import { readNotes } from '../storage/faith-notes';
 import { readPlaylists } from '../storage/faith-playlists';
 import { readOn, readReadingLog } from '../storage/faith-reading-log';
 import { FaithAiScreen } from '../screens/faith-ai-screen';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * The reader's verse interaction, as the correction brief specifies it.
@@ -56,7 +57,7 @@ import { FaithAiScreen } from '../screens/faith-ai-screen';
 configure({ asyncUtilTimeout: 3000 });
 jest.setTimeout(20000);
 
-warmUpFirstMount(() => renderReader({ recitations: READER_RECITATIONS }).then(({ view }) => view));
+warmUpFirstMount(() => renderReader({ downloaded: READER_DOWNLOADED }).then(({ view }) => view));
 
 beforeEach(async () => {
   await AsyncStorage.clear();
@@ -117,7 +118,7 @@ describe('the active ayah is a darker ground and nothing else', () => {
   });
 
   it('draws the fill with no border, marker, rail or stripe of any kind', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await playAndReport(view, 1);
 
     const block = await view.findByTestId('faith-reader-ayah-active-1-1');
@@ -141,7 +142,7 @@ describe('the active ayah is a darker ground and nothing else', () => {
   });
 
   it('never tints the translation', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await playAndReport(view, 1);
 
     // Structural, not visual: the translation node is not a descendant of the tinted block, so it
@@ -191,7 +192,7 @@ async function playAndReport(view: typeof screen, ayah: number): Promise<void> {
 
 describe('the ayah number reads as a citation', () => {
   it('names the verse as “Aya surah:ayah”, never as a bare pair of numbers', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
 
     expect(await view.findByText('Aya 1:1')).toBeTruthy();
     expect(view.getByText('Aya 1:2')).toBeTruthy();
@@ -211,7 +212,7 @@ describe('the ayah number reads as a citation', () => {
   });
 
   it('lets the pill size to its own text rather than clipping it', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     const label = await view.findByText('Aya 1:1');
 
     // A fixed width is what truncated the longer references. No line cap either — a compact pill
@@ -221,7 +222,7 @@ describe('the ayah number reads as a citation', () => {
   });
 
   it('announces the verse, and its bookmark and reading state, in words', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     const pill = await view.findByTestId('faith-reader-ayah-number-1-1');
 
     expect(String(pill.props.accessibilityLabel)).toContain('Aya 1 verse 1');
@@ -232,7 +233,7 @@ describe('the ayah number reads as a citation', () => {
 
 describe('there are no permanent action icons beside an ayah', () => {
   it('draws no inline bookmark control', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-ayah-1-1');
 
     expect(view.queryByTestId('faith-reader-bookmark-1-1')).toBeNull();
@@ -243,7 +244,7 @@ describe('there are no permanent action icons beside an ayah', () => {
   });
 
   it('draws no inline three-dot overflow', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-ayah-1-1');
 
     expect(view.queryByTestId('faith-reader-overflow-1-1')).toBeNull();
@@ -252,7 +253,7 @@ describe('there are no permanent action icons beside an ayah', () => {
   });
 
   it('drops the per-verse “save my place” link the sheet’s Read replaced', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-ayah-1-1');
 
     // One implementation of each action, which is the whole point of the sheet.
@@ -267,7 +268,7 @@ describe('there are no permanent action icons beside an ayah', () => {
 
 describe('any part of an ayah opens its actions', () => {
   it('opens from the number pill', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-number-1-1'));
 
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
@@ -276,7 +277,7 @@ describe('any part of an ayah opens its actions', () => {
   });
 
   it('opens the same sheet from the Arabic', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-arabic-1-1'));
 
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
@@ -284,7 +285,7 @@ describe('any part of an ayah opens its actions', () => {
   });
 
   it('opens the same sheet from the translation', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-translation-1-1'));
 
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
@@ -292,7 +293,7 @@ describe('any part of an ayah opens its actions', () => {
   });
 
   it('names the selected aya and its surah in the sheet’s own title', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
 
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
@@ -301,7 +302,7 @@ describe('any part of an ayah opens its actions', () => {
   });
 
   it('marks the selected aya behind the overlay, without claiming it is being recited', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
 
     const marked = await view.findByTestId('faith-reader-ayah-selected-1-2');
@@ -313,7 +314,7 @@ describe('any part of an ayah opens its actions', () => {
 
 describe('the sheet offers exactly the seven approved actions', () => {
   it('shows them in the specified order, and nothing else', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
@@ -325,7 +326,7 @@ describe('the sheet offers exactly the seven approved actions', () => {
   });
 
   it('carries Learn and Memorize nowhere, because neither has an implementation', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
@@ -334,7 +335,7 @@ describe('the sheet offers exactly the seven approved actions', () => {
   });
 
   it('gives every row a label, a hit target and a visible pressed state', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
@@ -348,7 +349,7 @@ describe('the sheet offers exactly the seven approved actions', () => {
   });
 
   it('shows a pressed state, and returns to rest when the finger lifts', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
@@ -365,7 +366,7 @@ describe('the sheet offers exactly the seven approved actions', () => {
   });
 
   it('scrolls, so a large font scale cannot hide the last actions', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
 
     expect(await view.findByTestId('faith-reader-sheet-scroll')).toBeTruthy();
@@ -378,7 +379,7 @@ describe('the sheet offers exactly the seven approved actions', () => {
 
 describe('the sheet closes the four ways it must', () => {
   it('closes on a tap outside it', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
@@ -387,7 +388,7 @@ describe('the sheet closes the four ways it must', () => {
   });
 
   it('closes on Android Back', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     const modal = await view.findByTestId('faith-reader-ayah-actions-modal');
 
@@ -398,7 +399,7 @@ describe('the sheet closes the four ways it must', () => {
   });
 
   it('closes on its own close button', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
@@ -413,7 +414,7 @@ describe('the sheet closes the four ways it must', () => {
       none of. So: the header really does carry a drag responder, and the rule that responder
       applies on release really does dismiss on both a long drag and a short flick.
     */
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
 
@@ -437,7 +438,7 @@ describe('the sheet closes the four ways it must', () => {
       .mockReturnValue({ register: jest.fn(), focus });
 
     try {
-      const { view } = await renderReader({ recitations: READER_RECITATIONS });
+      const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
       fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
       await view.findByTestId('faith-reader-ayah-actions');
 
@@ -474,7 +475,7 @@ function findPanHandlers(node: {
 
 describe('Play', () => {
   it('points the one global player at the selected aya and starts it', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     fireEvent.press(await view.findByTestId('faith-reader-action-play'));
 
@@ -490,7 +491,7 @@ describe('Play', () => {
   });
 
   it('creates no second player, whatever the sheet is doing', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-player');
     expect(view.getAllByTestId('faith-reader-player')).toHaveLength(1);
 
@@ -504,7 +505,7 @@ describe('Play', () => {
   });
 
   it('does not autoplay merely because the sheet opened', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
@@ -516,7 +517,7 @@ describe('Play', () => {
 
 describe('Read', () => {
   it('records the aya once, however many times it is pressed', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     fireEvent.press(await view.findByTestId('faith-reader-action-read'));
     await view.findByTestId('faith-reader-success');
@@ -536,7 +537,7 @@ describe('Read', () => {
   });
 
   it('records nothing from opening the sheet', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     await view.findByTestId('faith-reader-ayah-actions');
     await new Promise((resolve) => setTimeout(resolve, 60));
@@ -548,13 +549,13 @@ describe('Read', () => {
 
 describe('Bookmark', () => {
   it('toggles, persists, and renames itself to Remove bookmark', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     fireEvent.press(await view.findByTestId('faith-reader-action-bookmark'));
 
     await waitFor(() => expect(view.getByText('Remove bookmark')).toBeTruthy());
     const stored = JSON.parse(
-      (await AsyncStorage.getItem('noorlife.faith.bookmarks')) as string,
+      (await AsyncStorage.getItem(faithAddress('bookmarks'))) as string,
     ) as { kind: string; id: string; label: string }[];
     expect(stored).toHaveLength(1);
     expect(stored[0]).toMatchObject({ kind: 'ayah', id: '1:2' });
@@ -564,14 +565,14 @@ describe('Bookmark', () => {
     fireEvent.press(view.getByTestId('faith-reader-action-bookmark'));
     await waitFor(() => expect(view.getByText('Bookmark')).toBeTruthy());
     expect(
-      JSON.parse((await AsyncStorage.getItem('noorlife.faith.bookmarks')) as string),
+      JSON.parse((await AsyncStorage.getItem(faithAddress('bookmarks'))) as string),
     ).toHaveLength(0);
   });
 });
 
 describe('Add note', () => {
   it('creates, edits and deletes against the verse rather than a list position', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     fireEvent.press(await view.findByTestId('faith-reader-action-note'));
 
@@ -597,7 +598,7 @@ describe('Add note', () => {
   });
 
   it('keeps one verse’s note off another verse', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     fireEvent.press(await view.findByTestId('faith-reader-action-note'));
     await typeInto(view, 'faith-reader-note-input', 'On the first verse.');
@@ -616,7 +617,7 @@ describe('Add note', () => {
 
 describe('Add to playlist', () => {
   it('creates a playlist, stores the verse and the reciter, and refuses a duplicate', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     fireEvent.press(await view.findByTestId('faith-reader-action-playlist'));
 
@@ -645,7 +646,7 @@ describe('Add to playlist', () => {
 
 describe('Ask Noor AI', () => {
   it('opens Noor AI with the verse as a route reference, never as a copy of the text', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     fireEvent.press(await view.findByTestId('faith-reader-action-ask-noor-ai'));
 
@@ -782,7 +783,7 @@ describe('Share', () => {
       .mockResolvedValue({ action: Share.sharedAction, activityType: null });
 
     try {
-      const { view } = await renderReader({ recitations: READER_RECITATIONS });
+      const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
       fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
       fireEvent.press(await view.findByTestId('faith-reader-action-share'));
 

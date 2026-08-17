@@ -150,6 +150,29 @@ export type FaithPreferences = {
    */
   readonly hapticsEnabled: boolean;
   /**
+   * Whether the reader shows its recitation player at all.
+   *
+   * ── Why this is a preference and not merely a control the user can ignore ──
+   * The docked player occupies a permanent band above the bottom navigation on every reading screen.
+   * For somebody who reads and never listens, that is a fifth of a phone screen spent on a control
+   * they will not use — and unlike a sheet, there is nothing to dismiss. Defaults to on, because
+   * recitation is a first-class part of the module and a reader who has never listened cannot know
+   * the option exists if the player is not there to suggest it.
+   *
+   * Switching it off hides the player. It does **not** delete anything: downloaded audio is the
+   * user's, and a display preference that removed files would be a settings toggle doing something
+   * settings toggles must never do.
+   */
+  readonly quranAudioEnabled: boolean;
+  /**
+   * Whether the reading column follows the verse being recited.
+   *
+   * Defaults to on, which is what the reader already did unconditionally. Made a preference because
+   * the behaviour is genuinely contested: it is the point of listening while reading for most people,
+   * and it actively fights anybody who scrolls ahead to read on while the audio catches up.
+   */
+  readonly quranAutoScroll: boolean;
+  /**
    * Which bead material the Tasbih strand is drawn in, as a **stable id**.
    *
    * ── Why this is safe to persist before the artwork exists ─────────────────
@@ -315,6 +338,13 @@ export const defaultFaithPreferences: FaithPreferences = {
    */
   showQuranTransliteration: false,
   hapticsEnabled: true,
+  /*
+    Both default to on, which is what the reader already did unconditionally. Introducing a
+    preference by changing the behaviour it describes would make the setting's first effect a
+    surprise for every existing user.
+  */
+  quranAudioEnabled: true,
+  quranAutoScroll: true,
   tasbihMaterialId: DEFAULT_TASBIH_MATERIAL_ID,
   locationLabel: null,
 };

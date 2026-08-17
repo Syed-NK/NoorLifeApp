@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { faithDomainKeyOf, getActiveFaithScope, scopedFaithAddress } from './faith-user-scope';
+
 /**
  * On-device persistence for the Faith module.
  *
@@ -56,16 +58,6 @@ export const faithStorageKeys = {
    */
   quranCatalogue: `${NAMESPACE}.quran.catalogue`,
   /**
-   * Which surahs the user deliberately downloaded, for which reciter.
-   *
-   * An index of *decisions*, not content: no audio, no URL and no host is written here — only a
-   * reciter id, a surah number, a file count, a byte total and a timestamp. The audio itself lives
-   * on the filesystem under the same one-week ceiling, and this key exists so a deliberate download
-   * is never evicted by the automatic prefetch and can be described and removed by the user. See
-   * `faith-audio-downloads.ts`.
-   */
-  audioDownloads: `${NAMESPACE}.quran.audio-downloads`,
-  /**
    * The user's own notes on individual ayat, keyed by `surah:ayah`.
    *
    * The user's words, never scripture: a note record carries no Arabic and no translation, only the
@@ -76,9 +68,9 @@ export const faithStorageKeys = {
   /**
    * Listening playlists — named lists of verse references, with the reciter each was added under.
    *
-   * References only. No audio, no URL and no host: the files themselves live under
-   * `faith-audio-downloads.ts` and its one-week ceiling, and a playlist entry is resolved back to a
-   * recitation through the repository at the moment it is played.
+   * References only. No audio, no URL and no host: the files themselves are indexed by
+   * `faith-offline-recitation.ts`, and a playlist entry is resolved back to a local file through the
+   * offline manifest at the moment it is played.
    */
   quranPlaylists: `${NAMESPACE}.quran.playlists`,
   /**
@@ -98,6 +90,14 @@ export const faithStorageKeys = {
    * Holds catalogue ids and nothing else — no scripture, no translation, no title.
    */
   dhikrUserState: `${NAMESPACE}.dhikr.user-state`,
+  /**
+   * What this account decided about the unowned Faith data found on this device.
+   *
+   * `imported`, `removed`, or absent for "not yet asked / decide later". Scoped like everything
+   * else, because the decision belongs to the account that made it: user A choosing "decide later"
+   * must not answer the question on user B's behalf. See `faith-legacy-quarantine.ts`.
+   */
+  legacyDecision: `${NAMESPACE}.legacy-decision`,
   /**
    * How far NoorLife has read the Quran Foundation change feed, per canonical resource filter.
    *
@@ -124,19 +124,6 @@ export const faithStorageKeys = {
    * Surah and ayah are the identity.
    */
   quranSyncedRecitations: `${NAMESPACE}.quran.synced-recitations`,
-  /**
-   * One row per downloaded ayah: identity, size, state, and when it last agreed with the vendor.
-   *
-   * ── Why this exists beside the surah-level download index ────────────────
-   * `audioDownloads` records *decisions* — which surahs a user asked for. This records *files*,
-   * and it exists because presence used to be decided by building a filename and asking whether
-   * it existed. A name is a guess about identity, not a record of one: it cannot say which vendor
-   * row the bytes came from, whether they were validated, or when they last matched the
-   * publisher. Content Sync makes all three answerable, and none of them fits in a name.
-   *
-   * Holds no URL and no host. See `faith-audio-manifest.ts`.
-   */
-  quranAudioManifest: `${NAMESPACE}.quran.audio-manifest`,
   /**
    * When the Sudais recitation resource was last reconciled, and how it was reached.
    *
@@ -169,9 +156,114 @@ export const faithStorageKeys = {
    * expose translations from one run beside recitations from another. See `faith-sync-generation.ts`.
    */
   quranGenerationPointer: `${NAMESPACE}.quran.generation-pointer`,
+  /*
+    ── There is deliberately no key for downloaded recitation audio ──────────
+    There used to be two: `audioDownloads`, a surah-level index of decisions, and
+    `quranAudioManifest`, a row per downloaded ayah. Both are gone, and neither was replaced by a
+    third AsyncStorage key.
+
+    The reason is the same measurement recorded above. A complete offline recitation is 6,236 rows;
+    the document is a few hundred kilobytes and is rewritten as files land. That does not belong in
+    one SQLite database with a shared cursor window, and sharding it across keys would move the
+    failure rather than remove it. So the offline manifest is an ordinary private file, written
+    atomically — see `faith-offline-recitation.ts` and `expo-manifest-file.ts`.
+
+    The audio itself has never been in AsyncStorage and never could be.
+  */
 } as const;
 
 export type FaithStorageKey = (typeof faithStorageKeys)[keyof typeof faithStorageKeys];
+
+/** The name of a key in the registry above, rather than its address. */
+export type FaithStorageKeyName = keyof typeof faithStorageKeys;
+
+/**
+ * The keys holding something a **user authored or chose**, as opposed to publisher content.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── This list is the ownership decision, and it is the whole of it ─────────
+ * Everything named here is partitioned by account; everything absent is shared by the device. The
+ * split is not "sensitive vs not" — it is *whose it is*. A downloaded recitation is Abdur-Rahman
+ * as-Sudais's and Quran Foundation's, installed on this phone; a bookmark pointing at ayah 2:255 is
+ * the user's, and belongs to whoever made it.
+ *
+ * ── Two entries worth defending ────────────────────────────────────────────
+ * **`location`** is scoped even though a phone is only ever in one place at a time. The stored
+ * record is a coordinate and a place name, and showing user B that this device's owner prays in a
+ * named city discloses user A's whereabouts. It is the most revealing value Faith stores, so it is
+ * the last one that should be shared by default. The cost is that a new account has no location
+ * until it resolves one, which every screen already handles — there has never been a default city.
+ *
+ * **`notificationSchedule`** is scoped because the alerts it tracks were scheduled from one user's
+ * chosen city, method and prayer selection. Leaving it device-wide would let user B's phone keep
+ * firing prayer alerts computed for user A's location, which is both an exposure and simply wrong.
+ *
+ * ── And two that deliberately stay device-wide ─────────────────────────────
+ * `dhikrContentCache` and `quranCatalogue` are publisher content under a retention rule, not user
+ * choices. Partitioning them would make two accounts on one phone download the same verses twice
+ * and hold them under two separate expiry clocks — more vendor traffic and a weaker compliance
+ * story, for no privacy gain, because the content is identical for everyone.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const USER_SCOPED_KEY_NAMES = [
+  'tasbihSession',
+  'tasbihHistory',
+  'tasbihLabels',
+  'worshipDays',
+  'readingPosition',
+  'readingLog',
+  'location',
+  'bookmarks',
+  'notificationSchedule',
+  'preferences',
+  'quranNotes',
+  'quranPlaylists',
+  'dhikrUserState',
+  'legacyDecision',
+] as const satisfies readonly FaithStorageKeyName[];
+
+export type UserScopedKeyName = (typeof USER_SCOPED_KEY_NAMES)[number];
+
+/** The device-wide remainder, derived rather than restated so the two can never drift apart. */
+export const DEVICE_SCOPED_KEY_NAMES = (
+  Object.keys(faithStorageKeys) as FaithStorageKeyName[]
+).filter(
+  (name) => !(USER_SCOPED_KEY_NAMES as readonly string[]).includes(name),
+) satisfies readonly FaithStorageKeyName[];
+
+/** The addresses that must never be reachable without an owner. */
+export const USER_SCOPED_KEYS: ReadonlySet<string> = new Set(
+  USER_SCOPED_KEY_NAMES.map((name) => faithStorageKeys[name]),
+);
+
+export function isUserScopedFaithKey(key: string): boolean {
+  return USER_SCOPED_KEYS.has(key);
+}
+
+/**
+ * Where a key actually lives right now, or `null` if it lives nowhere.
+ *
+ * ── The three outcomes, and why the third is not an error ──────────────────
+ *   • A device key resolves to itself — publisher content is not partitioned.
+ *   • A user key with an owner resolves under that owner's namespace.
+ *   • A user key with **no owner resolves to `null`**, and every operation below turns that into
+ *     the caller's own fallback, a dropped write, or a no-op delete.
+ *
+ * The third case is a normal state, not a fault: nobody is signed in, so there is no correct
+ * namespace to read or write. Returning the unscoped key instead would restore the exposure in one
+ * line, and throwing would crash Faith screens that are legitimately reachable while signed out.
+ * Rendering defaults is the honest answer to "whose bookmarks?" when the answer is "nobody's".
+ */
+export function resolveFaithAddress(key: FaithStorageKey): string | null {
+  if (!USER_SCOPED_KEYS.has(key)) {
+    return key;
+  }
+  const scope = getActiveFaithScope();
+  if (scope === null) {
+    return null;
+  }
+  return scopedFaithAddress(scope, faithDomainKeyOf(key));
+}
 
 /**
  * Reads and parses a JSON value.
@@ -186,8 +278,13 @@ export async function readJson<T>(
   fallback: T,
   validate: (value: unknown) => value is T,
 ): Promise<T> {
+  const address = resolveFaithAddress(key);
+  if (address === null) {
+    /* No owner, so no value of this user's can exist. The default is the only honest answer. */
+    return fallback;
+  }
   try {
-    const raw = await AsyncStorage.getItem(key);
+    const raw = await AsyncStorage.getItem(address);
     if (raw === null) {
       return fallback;
     }
@@ -200,8 +297,17 @@ export async function readJson<T>(
 
 /** Best-effort write. Used where a lost preference is an acceptable outcome. */
 export async function writeJson(key: FaithStorageKey, value: unknown): Promise<void> {
+  const address = resolveFaithAddress(key);
+  if (address === null) {
+    /*
+      Dropped rather than written somewhere shared. A signed-out write has no owner to attribute it
+      to, and the two alternatives are both worse: the unscoped key is the exposure, and an
+      "anonymous" namespace is data the next account either inherits or never sees.
+    */
+    return;
+  }
   try {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
+    await AsyncStorage.setItem(address, JSON.stringify(value));
   } catch {
     // Non-fatal by design — see the note above.
   }
@@ -214,8 +320,16 @@ export async function writeJson(key: FaithStorageKey, value: unknown): Promise<v
  * number that does not survive a restart.
  */
 export async function writeChecked(key: FaithStorageKey, value: unknown): Promise<boolean> {
+  const address = resolveFaithAddress(key);
+  if (address === null) {
+    /*
+      `false`, which is the truth: the value was not stored. This is the caller that *asked* to be
+      told — the tasbih counter — and telling it "saved" would show a number that vanishes.
+    */
+    return false;
+  }
   try {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
+    await AsyncStorage.setItem(address, JSON.stringify(value));
     return true;
   } catch {
     return false;
@@ -223,17 +337,36 @@ export async function writeChecked(key: FaithStorageKey, value: unknown): Promis
 }
 
 export async function removeKey(key: FaithStorageKey): Promise<void> {
+  const address = resolveFaithAddress(key);
+  if (address === null) {
+    return;
+  }
   try {
-    await AsyncStorage.removeItem(key);
+    await AsyncStorage.removeItem(address);
   } catch {
     // Nothing to recover; the value is being discarded either way.
   }
 }
 
-/** Clears everything this module owns. Used by tests and by a future "reset Faith data". */
+/**
+ * Clears everything this module owns **for the current owner**, plus the device-wide keys.
+ *
+ * ── What "everything" can and cannot mean now ──────────────────────────────
+ * It cannot mean every account's data, because the addresses of other accounts are not derivable
+ * from here without enumerating the store — and a reset that reached across accounts would be the
+ * exposure with a different verb. So this clears the device keys and whichever owner is active;
+ * with no owner it clears the device keys alone.
+ *
+ * Used by tests and by "reset Faith data". Deliberately **not** called on sign-out: user A's data
+ * survives so that A signing back in finds it, which is the entire point of partitioning rather
+ * than deleting.
+ */
 export async function clearFaithStorage(): Promise<void> {
+  const addresses = Object.values(faithStorageKeys)
+    .map((key) => resolveFaithAddress(key))
+    .filter((address): address is string => address !== null);
   try {
-    await AsyncStorage.multiRemove(Object.values(faithStorageKeys));
+    await AsyncStorage.multiRemove(addresses);
   } catch {
     // Best effort.
   }

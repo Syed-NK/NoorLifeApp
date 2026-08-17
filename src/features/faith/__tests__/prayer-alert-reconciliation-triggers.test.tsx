@@ -12,7 +12,7 @@ import {
 } from '../data/notifications/fake-notification.port';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { PreferencesScreen } from '../screens/preferences-screen';
-import { faithStorageKeys } from '../storage/faith-storage';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * Changing how prayer times are calculated must rebuild the alerts that were derived from them.
@@ -41,7 +41,7 @@ warmUpFirstMount(() => renderPreferences(createFakeNotificationPort({ permission
 async function seedEnabledAlerts(): Promise<void> {
   await seedPrayerLocation();
   await AsyncStorage.setItem(
-    faithStorageKeys.preferences,
+    faithAddress('preferences'),
     JSON.stringify({
       prayerNotificationsEnabled: true,
       prayerNotifications: [{ prayer: 'fajr', enabled: true, minutesBefore: 0 }],

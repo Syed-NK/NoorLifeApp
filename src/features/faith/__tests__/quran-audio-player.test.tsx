@@ -62,13 +62,13 @@ function props(overrides?: Partial<QuranAudioPlayerProps>): QuranAudioPlayerProp
     state: 'idle',
     positionSeconds: null,
     durationSeconds: null,
-    prepareProgress: null,
+    downloadedAyat: 286,
+    missingAyah: null,
     rate: 1,
     rates: [0.75, 1, 1.25, 1.5],
     rateSupported: true,
     hasPrevious: false,
     hasNext: true,
-    failure: null,
     onTogglePlay: noop,
     onPrevious: noop,
     onNext: noop,
@@ -76,6 +76,7 @@ function props(overrides?: Partial<QuranAudioPlayerProps>): QuranAudioPlayerProp
     onChangeRate: noop,
     onRetry: noop,
     onOpenReciters: noop,
+    onManageOfflineAudio: noop,
     ...overrides,
   };
 }
@@ -110,14 +111,15 @@ const MANDATORY = [
 
 const EVERY_STATE: readonly QuranPlaybackState[] = [
   'idle',
-  'preparing',
+  'loading',
+  'not-downloaded',
+  'starting',
   'buffering',
   'playing',
   'paused',
   'completed',
-  'offline',
+  'missing-ayah',
   'failed',
-  'unavailable',
 ];
 
 /**
@@ -279,39 +281,54 @@ describe('at 320 dp, the narrowest supported handset', () => {
 });
 
 describe('what each state says', () => {
-  it('offers a retry when a verse failed, naming the failure', async () => {
-    const view = await renderPlayer({ state: 'failed', failure: 'corrupt', ayah: 7 });
+  it('offers a retry when playback failed', async () => {
+    const view = await renderPlayer({ state: 'failed', ayah: 7 });
 
     expect(String(view.getByTestId('faith-reader-player-retry').props.accessibilityLabel)).toMatch(
-      /did not arrive intact.*try verse 7 again/i,
+      /could not be played.*try verse 7 again/i,
     );
   });
 
-  it('says offline rather than "could not play" when that is the reason', async () => {
-    const view = await renderPlayer({ state: 'offline', failure: 'offline' });
+  it('offers offline management, not a retry, when nothing is downloaded', async () => {
+    /*
+      The distinction this pins is the whole reason `not-downloaded` exists as its own state. A retry
+      cannot produce a file that was never fetched, and offering one would train a user to expect that
+      pressing enough times eventually streams the verse — which is the streaming fallback this
+      architecture removed, reintroduced as an expectation.
+    */
+    const view = await renderPlayer({ state: 'not-downloaded', downloadedAyat: 0 });
 
-    expect(String(view.getByTestId('faith-reader-player-reciter').props.children)).toMatch(
-      /not available offline/i,
-    );
-    expect(String(view.getByTestId('faith-reader-player-retry').props.accessibilityLabel)).toMatch(
-      /offline/i,
-    );
+    expect(view.queryByTestId('faith-reader-player-retry')).toBeNull();
+    expect(
+      String(view.getByTestId('faith-reader-player-offline').props.accessibilityLabel),
+    ).toMatch(/not downloaded.*manage offline audio/i);
   });
 
-  it('claims no preparation fraction where the server sent no length', async () => {
-    // The spinner already says "working". A bar drawn from nothing would claim a measurement
-    // nobody made.
-    const view = await renderPlayer({ state: 'preparing', prepareProgress: null });
+  it('names the verse it stopped at, and how much of the surah is present', async () => {
+    const view = await renderPlayer({
+      state: 'missing-ayah',
+      missingAyah: 141,
+      downloadedAyat: 140,
+      totalAyat: 286,
+    });
+
+    expect(
+      String(view.getByTestId('faith-reader-player-offline').props.accessibilityLabel),
+    ).toMatch(/stopped at verse 141.*140 of 286/i);
+  });
+
+  it('has no preparation progress bar at all, because nothing is fetched at play time', async () => {
+    /*
+      A regression guard, not a rendering assertion. The bar measured a *download* happening while the
+      user waited to hear a verse; playback is local-only now, so a bar here would be reporting work
+      that is not being done. Its testID must not come back.
+    */
+    const view = await renderPlayer({ state: 'starting' });
     expect(view.queryByTestId('faith-reader-player-prepare-progress')).toBeNull();
   });
 
-  it('shows the preparation fraction when there is one', async () => {
-    const view = await renderPlayer({ state: 'preparing', prepareProgress: 0.5 });
-    expect(view.getByTestId('faith-reader-player-prepare-progress')).toBeTruthy();
-  });
-
-  it('disables the transport where the reciter published nothing, rather than pretending', async () => {
-    const view = await renderPlayer({ state: 'unavailable', hasNext: true });
+  it('disables the transport where nothing is downloaded, rather than pretending', async () => {
+    const view = await renderPlayer({ state: 'not-downloaded', hasNext: true });
 
     expect(view.getByTestId('faith-reader-player-toggle').props.accessibilityState).toMatchObject({
       disabled: true,
@@ -361,6 +378,85 @@ describe('what each state says', () => {
   });
 
   /**
+   * ── The end of the download is not the end of the surah ─────────────────
+   * Observed on a device: Ya-Sin with 5 of 83 verses stopped at verse 5 and the panel said so,
+   * naming verse 6 — while this control announced "unavailable on the last ayah" from verse 5 of 83.
+   * Two statements about the same fact, one of them false.
+   */
+  it('names the verse that is missing rather than claiming the surah ended', async () => {
+    const view = await renderPlayer({
+      state: 'missing-ayah',
+      ayah: 5,
+      totalAyat: 83,
+      downloadedAyat: 5,
+      missingAyah: 6,
+      hasPrevious: true,
+      hasNext: false,
+    });
+
+    const next = view.getByTestId('faith-reader-player-next');
+    expect(next.props.accessibilityState).toMatchObject({ disabled: true });
+    const label = String(next.props.accessibilityLabel);
+    expect(label).toMatch(/verse 6 is not downloaded/i);
+    expect(label).not.toMatch(/last ayah/i);
+  });
+
+  it('falls back to the download boundary when no verse number is supplied', async () => {
+    /*
+      A queue exists, the surah has not ended, and no next verse can be played. Whatever produced
+      that, "the last ayah" is not it — so the honest general statement is the download boundary.
+    */
+    const view = await renderPlayer({
+      state: 'paused',
+      ayah: 5,
+      totalAyat: 83,
+      downloadedAyat: 5,
+      missingAyah: null,
+      hasPrevious: true,
+      hasNext: false,
+    });
+
+    const label = String(view.getByTestId('faith-reader-player-next').props.accessibilityLabel);
+    expect(label).toMatch(/next verse is not downloaded/i);
+    expect(label).not.toMatch(/last ayah/i);
+  });
+
+  it('does not call verse 40 the first ayah when playback began there', async () => {
+    /*
+      `hasPrevious` is false at the start of the **queue**, and a queue started from verse 40 begins
+      at verse 40. The old label read the queue boundary as the surah boundary in both directions.
+    */
+    const view = await renderPlayer({
+      state: 'paused',
+      ayah: 40,
+      totalAyat: 83,
+      hasPrevious: false,
+      hasNext: true,
+    });
+
+    const label = String(view.getByTestId('faith-reader-player-previous').props.accessibilityLabel);
+    expect(label).toMatch(/no earlier verse in this playback/i);
+    expect(label).not.toMatch(/first ayah/i);
+  });
+
+  it('still says playback has not started when there is no queue at all', async () => {
+    /* The case fixed in the previous round, pinned so this change cannot regress it. */
+    const view = await renderPlayer({
+      state: 'idle',
+      ayah: 1,
+      totalAyat: 11,
+      hasPrevious: false,
+      hasNext: false,
+    });
+
+    for (const id of ['faith-reader-player-previous', 'faith-reader-player-next'] as const) {
+      expect(String(view.getByTestId(id).props.accessibilityLabel)).toMatch(
+        /unavailable until playback starts/i,
+      );
+    }
+  });
+
+  /**
    * ── The inverse of the case this replaces ───────────────────────────────
    * This used to assert that the panel *stated* the download rather than hiding it behind a glyph.
    * That was the right rule for a player that managed downloads, and this player no longer does:
@@ -377,11 +473,48 @@ describe('what each state says', () => {
     moment this was written as a loop.
   */
   it.each(EVERY_STATE)('carries no download control in the %s state', async (state) => {
-    const view = await renderPlayer({ state });
+    const view = await renderPlayer({ state, downloadedAyat: 0, missingAyah: 3 });
 
     expect(view.queryByTestId('faith-reader-player-download')).toBeNull();
-    /* Nor a decorative remnant: no download wording anywhere on the panel. */
-    expect(view.queryByText(/download/i)).toBeNull();
+
+    /*
+      ── Why this is no longer an absence of the *word* ──────────────────────
+      It used to be, and that was right for a player whose only reason to mention downloading was a
+      control that performed one. This player has to be able to say "this verse is not downloaded" —
+      that sentence is the honest alternative to silently streaming the gap, and banning the word
+      would force the panel to describe a missing verse in language that avoids naming what is wrong
+      with it.
+
+      So the rule is stated as what it actually protects: no control on this panel *performs* a
+      download, a cancellation or a removal. Every interactive element is checked, and the only one
+      permitted to mention downloading at all is the row that navigates to the Offline audio screen.
+    */
+    const actions = [
+      ...view.queryAllByRole('button'),
+      ...view.queryAllByRole('switch'),
+      ...view.queryAllByRole('adjustable'),
+    ];
+    for (const action of actions) {
+      const label = String(action.props.accessibilityLabel ?? '');
+      const testID = String(action.props.testID ?? '');
+      if (testID === 'faith-reader-player-offline') {
+        /* The one honest dead end: it navigates, and says so. */
+        expect(label).toMatch(/manage offline audio/i);
+        continue;
+      }
+      if (testID === 'faith-reader-player-toggle' && action.props.accessibilityState?.disabled) {
+        /*
+          The play control, disabled and explaining itself. It performs no download — it cannot even
+          be pressed — and forbidding it the word would force it back to "no recitation available",
+          which is the misattribution this wording was corrected to remove.
+        */
+        expect(label).not.toMatch(/tap to download/i);
+        continue;
+      }
+      expect(label).not.toMatch(/\bdownload(ing|s)?\b(?!ed)/i);
+      expect(label).not.toMatch(/\bremove\b/i);
+      expect(label).not.toMatch(/\bcancel\b/i);
+    }
   });
 });
 

@@ -13,6 +13,7 @@ import {
   readFaithPreferences,
   writeFaithPreferences,
 } from '../storage/faith-preferences';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * The local features that must genuinely persist.
@@ -277,7 +278,7 @@ describe('preferences', () => {
   it('merges a stored blob over the defaults so a newly added field is never undefined', async () => {
     // Simulates a value written by an older build that predates a field.
     await AsyncStorage.setItem(
-      'noorlife.faith.preferences',
+      faithAddress('preferences'),
       JSON.stringify({
         translationId: 'mock.en.plain',
         reciterId: 'mock.ar.reciter',
@@ -294,7 +295,7 @@ describe('preferences', () => {
   });
 
   it('falls back to the defaults on a corrupt blob rather than throwing', async () => {
-    await AsyncStorage.setItem('noorlife.faith.preferences', '{not json');
+    await AsyncStorage.setItem(faithAddress('preferences'), '{not json');
     const prefs = await readFaithPreferences();
     expect(prefs).toEqual(defaultFaithPreferences);
   });

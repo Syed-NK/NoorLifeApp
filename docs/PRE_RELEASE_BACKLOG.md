@@ -423,3 +423,106 @@ Several items will break the working app if done out of order:
    *(2.1a confirmed live 2026-08-03, so this ordering constraint is satisfied.)*
 3. **4.1 schema review** before any module table exists.
 4. **3.1 / 3.2 published** before the store listings are submitted.
+
+---
+
+## Post-release storage hardening — timed cleanup of uncorroborated recitation files
+
+**Status: not implemented. Deliberately deferred; nothing in the code claims otherwise.**
+
+`adoptPromotedOrphans` recovers final audio files the manifest lost track of when a force-stop lands
+between a batch of promotions and the manifest's atomic write — the measured case was 3,490 files
+against 3,483 rows. A file is adopted only when it can be corroborated independently of its name:
+reciter exactly 3, identity present in the active validated generation, the generation's own row
+agreeing, and the same content validation a fresh download passes.
+
+Files that **cannot** be corroborated are reported and retained. They are not deleted.
+
+### Why indefinite retention is currently safer than deleting
+
+A file can fail corroboration for reasons that have nothing to do with the file. The commonest is
+timing: audio downloaded under a generation that has since been replaced, or downloaded while no
+generation was published at all, is perfectly good audio that this device simply cannot vouch for
+*yet*. Deleting on that basis throws away bytes the user already paid for in time and data, and the
+next download fetches them again.
+
+The cost of keeping them is bounded in practice and visible: they are ordinary files in private
+storage, counted by neither the manifest nor any total the app displays. The cost of deleting them
+wrongly is a silent re-download the user did not ask for. Given only one of those is recoverable,
+retention is the conservative direction.
+
+### Why the files are not a correctness or safety problem
+
+**Playback is sourced from the manifest, never from a directory listing.** A file with no manifest row
+is unreachable by the player, the download accounting and the storage totals alike — so an
+uncorroborated file cannot be heard as scripture, cannot inflate a progress figure, and cannot make a
+"downloaded" claim. `isSafeToRemoveOrphan` additionally gates any future deletion on the manifest by
+name, so manifest-owned audio can never be removed as an orphan even if it were misclassified.
+
+The unbounded case that would matter is a repeated crash loop leaving many uncorroborated files. That
+is real but needs a genuinely broken device to reach, and it costs disk rather than correctness.
+
+### What a future implementation needs
+
+1. **First-seen state per orphan.** There is nowhere to record it today: the manifest holds rows for
+   files it owns, and by definition these have none. This is new persistent schema and is the reason
+   the work was deferred rather than squeezed in.
+2. **A documented grace period**, long enough that a pending generation publication cannot expire a
+   valid file.
+3. **Re-checks at expiry** against both the manifest and the *current* active generation — a file that
+   became corroborated in the meantime must be adopted, not deleted.
+4. **Serialised and idempotent** execution through the existing manifest mutation boundary, with the
+   same rule that a manifest-owned file is never a candidate.
+
+Until that exists, the honest description of current behaviour is: corroborated files are adopted,
+uncorroborated files are retained and inert, and no cleanup runs.
+
+---
+
+## Regaining a connection: the reader waits for a tap
+
+**Status:** open, minor. Found on a device during the offline-access release pass.
+
+Launching without a network resolves to `authority: 'offline'`, which is correct. When the connection
+returns, the authority now upgrades on its own — a connectivity transition and app foreground are both
+triggers on the auth provider, and `setRemoteAccessAuthorised` follows. What does **not** happen is a
+refresh of screens that already resolved while the gate was shut.
+
+So the Qur'an reader keeps showing its offline body until the reader's own "Try again" is pressed, or
+until the screen is navigated away from and back. Measured on the emulator: airplane mode off, route
+proven by `ping`, reader still offline; one tap on "Try again" and the verses render.
+
+### Why this was left
+
+Before the authority triggers existed, the same sequence was unrecoverable for the life of the
+process — "Try again" did nothing, and neither did backgrounding the app. That was the release
+blocker, and it is fixed and covered by tests. What remains is a stale-screen refresh, which the
+product already offers an affordance for and which the user can always reach.
+
+### What a fix looks like
+
+A resource that failed with `offline` should re-run when remote access becomes authorised. That means
+`remote-access.ts` publishing its transitions and `FaithResourceView`'s offline branch subscribing —
+a small change, but one that touches every screen's data lifecycle, so it wants its own pass rather
+than the tail end of this one.
+
+---
+
+## The seek bar stays adjustable after a verse has finished
+
+**Status:** open, cosmetic/accessibility. Found on a device during the same pass.
+
+Once a verse reaches its end, the panel's state is `completed` and the position sits at the duration.
+Tapping the seek track in that state does nothing — three taps at 25%, 75% and 50% all left the
+position at `0:11 of 0:11`. The control still reports `accessibilityRole="adjustable"` with a live
+`min`/`max`/`now`, so a screen-reader user is told a value can be changed when it cannot.
+
+Seeking works correctly everywhere else: paused mid-verse, 80% moved the position to `0:09 of 0:11`
+and 30% to `0:03 of 0:11`, and the accessible value tracked both.
+
+### What a fix looks like
+
+Either restart the verse from the tapped offset — arguably what a listener means by tapping a finished
+track — or set `accessibilityState.disabled` and drop the numeric value while the state is `completed`,
+so the announcement matches what the control will do. The first is the better product answer; the
+second is the honest minimum.

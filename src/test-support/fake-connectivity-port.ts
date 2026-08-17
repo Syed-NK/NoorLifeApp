@@ -70,6 +70,15 @@ export function createFakeConnectivity(
   let reads = 0;
 
   return {
+    /*
+      A double genuinely knows its own state, so `currentOrUnknown` answers it rather than `null`.
+      A test that wants to model a platform which will not answer sets that explicitly.
+    */
+    currentOrUnknown: async () => {
+      reads += 1;
+      return await Promise.resolve(state);
+    },
+
     current: async () => {
       reads += 1;
       return await Promise.resolve(state);

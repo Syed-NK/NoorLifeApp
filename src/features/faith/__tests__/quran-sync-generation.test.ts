@@ -510,14 +510,14 @@ describe('the revision channel', () => {
     release();
   });
 
-  it('reports a snapshot reconciliation as provisional, never as confirmed', () => {
+  it('reports an integrity reconciliation distinctly, never as an observed mutation', () => {
     publishRevision({
       publishedAt: NOW,
       lastRecitationCheckAt: NOW,
       recitationMutationObserved: false,
       provisional: true,
     });
-    expect(readSyncStatus().status).toBe('provisional-snapshot-reconciliation');
+    expect(readSyncStatus().status).toBe('integrity-reconciliation');
     expect(readSyncStatus().recitationMutationObserved).toBe(false);
   });
 

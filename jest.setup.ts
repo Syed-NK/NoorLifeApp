@@ -62,6 +62,21 @@ import { resetSurahCatalogueWarmup } from '@features/faith/data/quran-catalogue-
  * fails in sequence. Cleared centrally, like the router and the catalogue.
  */
 import { resetFaithPreferencesStore } from '@features/faith/state/faith-preferences-store';
+/**
+ * The third process-wide cell, and the one whose default matters most.
+ *
+ * Faith storage is partitioned by account: a personal key resolves to an address under the
+ * signed-in user's namespace, and to **nothing at all** when nobody is signed in. That is correct
+ * behaviour and it would make almost every Faith suite assert against empty defaults, because a
+ * suite that calls `writeBookmark()` directly never mounts a provider to establish an owner.
+ *
+ * So the default here is the owner the rest of this file already simulates — `test-user-id` is the
+ * id the Supabase double's session carries, so a suite that *does* mount `AppProviders` resolves to
+ * the same namespace a suite that calls storage directly is using. The signed-out case is a real
+ * state with real tests; it is just not the one nearly every suite is about.
+ */
+import { setActiveFaithScope } from '@features/faith/storage/faith-user-scope';
+import { TEST_FAITH_USER_ID } from '@/test-support/faith-storage-address';
 
 const mockRouterInstance = {
   push: jest.fn(),
@@ -1372,6 +1387,11 @@ beforeEach(() => {
     from whatever that test seeds rather than replaying the previous one's snapshot.
   */
   resetFaithPreferencesStore();
+  /*
+    Restored unconditionally, so an account-switching test cannot leave the next suite addressing
+    user B's namespace. Idempotent when unchanged, so the ordinary case publishes nothing.
+  */
+  setActiveFaithScope(TEST_FAITH_USER_ID);
   // The profile row is writable, so it is restored between tests.
   Object.assign(mockProfileRow, MOCK_PROFILE_DEFAULTS);
 

@@ -27,6 +27,7 @@ import {
 } from '../data/prayer/location-time-zone';
 import { formatPrayerClock } from '../data/prayer/prayer-clock';
 import type { CityChoice, Coordinate, PrayerLocation } from '../data/prayer-times.repository';
+import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
  * A prayer time is a fact about a **place**, and is displayed in that place's own clock.
@@ -567,7 +568,7 @@ describe('a user-selected location', () => {
 
   it('gives a stored manual location its own zone on reopen', async () => {
     await AsyncStorage.setItem(
-      'noorlife.faith.location',
+      faithAddress('location'),
       JSON.stringify({
         coordinate: MOUNTAIN_VIEW,
         label: 'Mountain View, United States',
@@ -614,7 +615,7 @@ describe('when the zone cannot be resolved', () => {
    */
   it('never reaches the zone lookup with a stored coordinate that is not on Earth', async () => {
     await AsyncStorage.setItem(
-      'noorlife.faith.location',
+      faithAddress('location'),
       JSON.stringify({
         coordinate: { latitude: 91, longitude: 500 },
         label: 'Impossible',

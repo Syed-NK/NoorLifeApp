@@ -50,12 +50,39 @@ export const RETURNING_LAUNCH_SPLASH_MS = 900;
 /**
  * Hard ceiling before the app stops waiting, in ms.
  *
- * 4000. Past this, storage or the session provider is not going to answer. Continuing to wait
- * would leave the user on a splash forever, so the machine falls through to a recoverable route
- * rather than hanging. It never invents a session — an unresolved session is treated as signed
- * out, which is the safe direction to be wrong in.
+ * Past this, storage or the session provider is not going to answer. Continuing to wait would leave
+ * the user on a splash forever, so the machine falls through to a recoverable route rather than
+ * hanging. It never invents a session — an unresolved session is treated as signed out, which is
+ * the safe direction to be wrong in.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Why this was raised from 4000, and what 4000 actually broke ────────────
+ * 4000 was chosen against a warm development launch and was **narrower than a real cold start**.
+ * Measured on the emulator against a release build in airplane mode, the session resolves to
+ * `authority: 'offline'` at roughly **4.3 s** from splash mount — Hermes cold start, then a
+ * connectivity probe bounded at 2 s, then a Keystore read. So the ceiling fired a few hundred
+ * milliseconds *before* the correct answer arrived, routed to `authentication` on the explicit
+ * assumption of signed-out, and `destination` froze there.
+ *
+ * The user-visible result was the exact failure the offline work exists to remove: Authentication
+ * Options on a device holding a valid receipt and 3,158 downloaded recitation files. Nothing in the
+ * auth layer was wrong: the instrumented build showed connectivity classified, the receipt read,
+ * validated and adopted, and the authority settled on offline — it simply arrived after nobody was
+ * listening.
+ *
+ * ── Why raising it is the fix rather than un-freezing the destination ──────
+ * Correcting the destination afterwards was tried first and does not work: `Redirect` has already
+ * navigated and the gate has unmounted, so a later value has nowhere to go. Freezing is also
+ * *right* — a user must not be yanked between screens by a late input.
+ *
+ * So the ceiling has to be a genuine "this is stuck" bound rather than a "this is slow" one. 10000
+ * is comfortably beyond the measured worst case with room for a colder device, and the cost when
+ * something really is stuck is a longer splash — strictly better than ejecting a signed-in user to
+ * a sign-in screen they cannot complete offline. The session input itself cannot hang: every path
+ * in `resolveLaunch` settles, and its connectivity probe carries its own 2 s bound.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
-export const STARTUP_TIMEOUT_MS = 4000;
+export const STARTUP_TIMEOUT_MS = 10_000;
 
 export type StartupInput = {
   /** Milliseconds since the branded splash mounted. */

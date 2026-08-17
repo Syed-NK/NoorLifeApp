@@ -3,7 +3,7 @@ import { configure, fireEvent } from '@testing-library/react-native';
 
 import { seedTranslationPreference } from '@/test-support/faith-preferences-fixtures';
 import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
-import { READER_RECITATIONS, renderReader } from '@/test-support/faith-reader';
+import { READER_DOWNLOADED, renderReader } from '@/test-support/faith-reader';
 
 import { mockRouter, setRouteParams } from '../../../../jest.setup';
 
@@ -64,7 +64,7 @@ const SAFE_AREA_BOTTOM = 48;
 const INSETS = { top: 24, bottom: SAFE_AREA_BOTTOM } as const;
 
 warmUpFirstMount(() =>
-  renderReader({ recitations: READER_RECITATIONS, insets: INSETS }).then(({ view }) => view),
+  renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS }).then(({ view }) => view),
 );
 
 beforeEach(async () => {
@@ -110,7 +110,7 @@ async function frames(width: number): Promise<{
   readonly aiTop: number;
 }> {
   mockWindow.width = width;
-  const { view } = await renderReader({ recitations: READER_RECITATIONS, insets: INSETS });
+  const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
 
   const dock = flatStyle(await view.findByTestId('faith-reader-docked'));
   const nav = flatStyle(view.getByTestId('faith-reader-nav'));
@@ -201,7 +201,7 @@ describe('the safe-area inset is applied exactly once', () => {
   });
 
   it('does not add the inset to the scroll padding as well', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS, insets: INSETS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
     // The dock exists only once the page has loaded, and the padding is a function of the dock.
     await view.findByTestId('faith-reader-player');
     const dp = dpAt(EMULATOR_WIDTH);
@@ -226,7 +226,7 @@ describe('the safe-area inset is applied exactly once', () => {
 
 describe('the player is fixed and the content scrolls under nothing', () => {
   it('renders outside the scroll region, so scrolling cannot move it', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS, insets: INSETS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
 
     const scroll = view.getByTestId('faith-reader-scroll');
     expect(contains(scroll, 'faith-reader-player')).toBe(false);
@@ -236,7 +236,7 @@ describe('the player is fixed and the content scrolls under nothing', () => {
   });
 
   it('keeps the player in place across a scroll event', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS, insets: INSETS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
     const before = flatStyle(await view.findByTestId('faith-reader-docked')).marginBottom;
 
     fireEvent.scroll(view.getByTestId('faith-reader-scroll'), {
@@ -259,7 +259,7 @@ describe('the player is fixed and the content scrolls under nothing', () => {
      * Asserted as the two facts that make it true — the last verse is in the scroll region, the
      * player is not — plus the breathing room under it.
      */
-    const { view } = await renderReader({ recitations: READER_RECITATIONS, insets: INSETS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
     await view.findByTestId('faith-reader-ayah-1-5');
     const scroll = view.getByTestId('faith-reader-scroll');
 
@@ -274,7 +274,7 @@ describe('the player is fixed and the content scrolls under nothing', () => {
 
 describe('the navigation is still a navigation', () => {
   it('remains tappable with the player docked above it', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS, insets: INSETS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
     await view.findByTestId('faith-reader-player');
 
     fireEvent.press(view.getByTestId('faith-reader-nav-worship'));
@@ -283,7 +283,7 @@ describe('the navigation is still a navigation', () => {
   });
 
   it('keeps the centre AI control reachable', async () => {
-    const { view } = await renderReader({ recitations: READER_RECITATIONS, insets: INSETS });
+    const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
     await view.findByTestId('faith-reader-player');
 
     fireEvent.press(view.getByTestId('faith-reader-nav-ai'));
