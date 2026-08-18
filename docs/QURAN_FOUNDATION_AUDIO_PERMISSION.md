@@ -159,7 +159,7 @@ Until every one of those holds, the ceiling stays.
 | | Condition | Status |
 |---|---|---|
 | 1 | Content Sync confirmed | **Met.** Documented, published, implemented server-side and live-verified — §9.4. |
-| 2 | Connected check every seven connected days | **Not met — still not wired.** `RECITATION_CHECK_INTERVAL_MS` and `checkDue` exist in `faith-recitation-check.ts` and are correct, but **`checkDue` has no caller outside its own module**, so no code path runs the check on a schedule. This is the one remaining open condition. See §8.5. |
+| 2 | Connected check every seven connected days | **Not met — not wired at all.** `faith-recitation-check.ts` defines `RECITATION_CHECK_INTERVAL_MS`, `recitationCheckDue`, `recordRecitationCheck` and `daysSinceCheck`, and they are correct. **None of the four has a single caller anywhere in `src`** — so the device neither asks whether a check is due nor records one when a reconciliation succeeds. `lastCheckedAt` therefore stays `null` for the life of the install. This is the one remaining open condition. See §8.5. |
 | 3 | Corrections applied promptly | **Resolved as a licence question — 2026-08-17.** Quran Foundation has confirmed the snapshot baseline, the intentional absence of a historical backfill, and that future mutations must be applied. No recitation mutation has been observed, and that absence is **expected** and is **not** evidence of non-compliance. See §8.4 and §9.6. |
 | 4 | Available offline past the window | **Met — 2026-08-17.** The destructive seven-day expiry is **removed**: `faith-audio-downloads.ts` and its `MAX_CACHE_AGE_MS` clock are deleted, `OfflineFileState` has no expiry state, and a file whose resource has not been reconciled inside seven days stays `available` while the owed check is carried on the whole-download state. An offline device keeps its permitted audio, as C9 requires. |
 
@@ -189,7 +189,7 @@ content type. The exemption, when it arrives, is keyed on the resource id.
 > | What NoorLife ships today | **No destructive expiry on resource ID 3.** Permitted audio stays `available`; an unreconciled resource carries an **owed check**, not a deletion |
 > | What C7 requires of a connected device | Check for corrections, updates or removals **at least every seven connected days** |
 > | What C9 requires of an offline device | Keep permitted audio **available** past that window, and synchronise at the next opportunity |
-> | What is still missing | **The scheduler.** `checkDue` is correct and unreferenced; no code path runs the connected check periodically (§8.2 condition 2) |
+> | What is still missing | **The scheduler, and the recording.** `recitationCheckDue` and `recordRecitationCheck` are both correct and both entirely uncalled; nothing runs the connected check periodically and nothing writes `lastCheckedAt` (§8.2 condition 2) |
 > | Interpretation questions | **None open.** The single question (A1) was resolved in writing by Quran Foundation on 2026-08-17 — §8.4 and §9.6 |
 >
 > The user-visible consequence is unchanged and is stated in §8.1: a user who downloads a surah and
@@ -238,7 +238,7 @@ For **recitations:3** Quran Foundation has confirmed the intended design:
 | The resource 3 **snapshot establishes the initial baseline** | The bootstrap snapshot is the correct starting state, not a fallback for a missing mutation |
 | Historical recitations were **intentionally not backfilled as mutations** | The absence of a recitation mutation at bootstrap is the designed behaviour, not a defect and not a not-yet-enabled resource |
 | The **final `next_sync_token` must be stored** | Already the case: written by one function, only for a completed run — see §9.6 |
-| Content Sync must be checked **at least every seven connected days** | C7 unchanged; the device's `checkDue` clock implements exactly this |
+| Content Sync must be checked **at least every seven connected days** | C7 unchanged. The device's `recitationCheckDue` clock expresses exactly this — but see §8.2 condition 2: nothing calls it yet |
 | **Future mutations must be applied** | The normaliser and reconciler already keep and apply both documented mutation types |
 | Downloaded audio **may remain while the device is offline** | C9 unchanged and now unambiguous |
 | Full snapshot comparison after a clean no-mutation response is **optional** | The redundant snapshot re-fetch is an optimisation choice, not a compliance obligation |
@@ -265,12 +265,13 @@ Three statements that must not be collapsed into each other:
 
 The wrong-clock defect this row used to describe — measuring *download age* rather than *time since
 the last successful connected check* — is fixed. The two timestamps are kept apart by
-`faith-recitation-check.ts` (`lastCheckedAt`, and `checkDue` as an elapsed-time question that is
+`faith-recitation-check.ts` (`lastCheckedAt`, and `recitationCheckDue` as an elapsed-time question that is
 emphatically not about deletion) and `faith-offline-recitation.ts` (`downloadedAt`, `lastSyncedAt`).
 
-**What is still missing is the scheduler, not the model.** `checkDue` has no caller outside its own
-module, so nothing runs the connected check periodically. That is §8.2 condition 2, and it is the
-single open condition.
+**What is still missing is the wiring, not the model.** `recitationCheckDue`, `recordRecitationCheck`
+and `daysSinceCheck` have **no caller anywhere in `src`**. Nothing asks whether a check is due, and
+nothing records one when a reconciliation succeeds, so `lastCheckedAt` never leaves `null`. That is
+§8.2 condition 2, and it is the single open condition.
 
 ---
 
@@ -410,7 +411,7 @@ may enter version control.
 | 1 | The **resource 3 snapshot establishes the initial baseline** | Implemented — the bootstrap snapshot is the baseline, verified in §9.4 |
 | 2 | Historical recitations were **intentionally not backfilled as mutations** | Explains the §9.4 observation; no defect exists to chase |
 | 3 | The **final `next_sync_token` must be stored** | Implemented — written by exactly one function, only for a completed run, never advanced alongside a recorded failure |
-| 4 | Content Sync must be checked **at least every seven connected days** | Implemented — `checkDue` in `faith-recitation-check.ts`, a check obligation and never a deletion rule |
+| 4 | Content Sync must be checked **at least every seven connected days** | **Modelled, not yet wired.** `recitationCheckDue` in `faith-recitation-check.ts` states the obligation correctly and is never a deletion rule — but nothing calls it. See §8.2 condition 2 |
 | 5 | **Future mutations must be applied** | Implemented — the normaliser keeps both documented mutation types and the reconciler applies them in sequence order |
 | 6 | Downloaded audio **may remain available while the device is offline** | Implemented — `stale-check-due` stays playable; an offline device accrues an owed check and keeps its audio |
 | 7 | **Lack of an observed mutation is expected**, and is **not** evidence that retention permission is unmet | Corrected throughout this repository on 2026-08-17 |

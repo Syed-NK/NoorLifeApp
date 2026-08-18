@@ -21,7 +21,8 @@ import { faithStorageKeys, isRecord, readJson, removeKey, writeChecked } from '.
  * daily nothing about whether a check ever succeeded.
  *
  * ── What this clock is for ──────────────────────────────────────────────────
- * C7 obliges a **connected** device to check at least every seven connected days. `checkDue` below is
+ * C7 obliges a **connected** device to check at least every seven connected days. `recitationCheckDue`
+ * below is
  * a question about elapsed time, deliberately not about connectivity and emphatically not about
  * deletion: passing the window means a check is owed, never that anything may be removed. An offline
  * device accrues an owed check and keeps its audio.
