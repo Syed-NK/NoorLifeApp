@@ -113,17 +113,20 @@ export function createDueBoundaryScheduler(deps: DueBoundaryDeps): DueBoundarySc
     if (!active()) {
       return;
     }
-    handle = setTimer(() => {
-      handle = null;
-      /*
+    handle = setTimer(
+      () => {
+        handle = null;
+        /*
         The armed callback re-checks rather than trusting that it was cancelled in time. A callback
         already queued when `cancel` ran will still fire, and this is what makes that harmless.
       */
-      if (!active()) {
-        return;
-      }
-      void reEvaluate();
-    }, Math.max(delay, 0));
+        if (!active()) {
+          return;
+        }
+        void reEvaluate();
+      },
+      Math.max(delay, 0),
+    );
   };
 
   const reEvaluate = async (): Promise<void> => {
