@@ -98,9 +98,8 @@ check in §2.3 is already implemented for the feed by the mechanism in the audio
 
 ## 5. Where the original evidence is retained
 
-**⚠ TO BE CONFIRMED.** The original written permission is held outside this repository. The pointer
-must name a **private** location — never a public repository, shared drive link, issue tracker or
-anything reachable without authorisation.
+**Owner-controlled email archive; correspondence is not committed to the public repository.**
 
-This field is deliberately left unconfirmed rather than guessed, on the same standard as the
-equivalent fields in the other two permission records.
+Deliberately not a filesystem path or a message identifier: either would be a guess, and a pointer
+that is wrong is worse than one that is general. The location is private and reachable only with the
+owner's authorisation, which is the property this field exists to record.
