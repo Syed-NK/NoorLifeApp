@@ -2,7 +2,6 @@ import { Directory, File, Paths } from 'expo-file-system';
 
 import { faithStorageKeys, isRecord, readJson, removeKey, writeChecked } from './faith-storage';
 import type { RecitationRow, TranslationAttribution, TranslationRow } from './faith-sync-rows';
-import type { RecitationCheckMethod } from './faith-recitation-check';
 
 /**
  * Synchronised Qur'an content, published as immutable file-backed generations.
@@ -123,6 +122,20 @@ export type GenerationManifest = {
     readonly mutationEverObserved: boolean;
   };
 };
+
+/**
+ * How the recitation resource was last reconciled.
+ *
+ * Declared here because the manifest is the only thing that stores it. It used to live in
+ * `faith-recitation-check.ts` alongside a second, separately persisted clock; that module was
+ * retired once the generation became the single authority, and keeping a type there would have kept
+ * the file alive for no reason other than the type.
+ *
+ * `mutation` is the documented path and has not yet occurred on any device. `snapshot` means the
+ * rows came from re-reading the approved resource-3 snapshot. `none` means neither was needed —
+ * a clean no-mutation run, which is the expected weekly result.
+ */
+export type RecitationCheckMethod = 'none' | 'mutation' | 'snapshot';
 
 /** A generation, opened and fully validated. Every field came from one directory. */
 export type ActiveGeneration = {

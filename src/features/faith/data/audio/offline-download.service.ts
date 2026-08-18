@@ -60,8 +60,10 @@ import {
  *
  *   • **C1 private storage** — every byte goes through `AudioStore` constructed over
  *     `Paths.document`. No `MediaStore`, no shared storage, no share sheet, no export.
- *   • **C7 check every seven connected days** — `reconcile` is the check, `faith-recitation-check.ts`
- *     is the clock, and passing the window sets `update-required`/`sync-due` for display. It never
+ *   • **C7 check every seven connected days** — `reconcile` is the check and the **active
+ *     generation's `manifest.createdAt`** is the clock, advanced by `content-sync.orchestrator.ts`
+ *     on every successful publication. Passing the window sets `update-required`/`sync-due` for
+ *     display. It never
  *     deletes: an offline device accrues an owed check and keeps its audio.
  *   • **C4 recitation integrity** — an ayah is never skipped, never substituted, and never promoted
  *     without a signature check and, where the publisher stated one, an exact byte match.

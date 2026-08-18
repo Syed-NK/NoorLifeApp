@@ -11,6 +11,7 @@ import {
   createContentSyncOrchestrator,
   SUDAIS_RESOURCE_ID,
   TOTAL_AYAH_COUNT,
+  RECITATION_INTEGRITY_INTERVAL_MS,
   SYNC_INTERVAL_MS,
   TRANSLATION_METADATA_INTERVAL_MS,
   TRANSLATION_RESOURCE_ID,
@@ -684,26 +685,69 @@ describe('the separate clocks', () => {
     expect(generation.recitations.rows).toHaveLength(1);
   });
 
-  it('treats an audio check falling due as reason enough to run, without re-reading the snapshot', async () => {
+  it('does not treat the recitation integrity clock as a second seven-day feed clock', async () => {
     /*
-      ── This asserted 'snapshot' and that rule is superseded ─────────────────
-      Quran Foundation confirmed existing recitations were intentionally not backfilled and that a
-      feed returning no recitation mutation means no recitation change has been recorded. So the
-      audio clock falling due is still reason enough to **run** — the seven-connected-day obligation
-      is discharged by reading the feed — but a clean answer no longer costs 6,236 rows.
+      ── This asserted a seven-day audio clock, and that was a latch ──────────
+      It used to seed `lastCheckedAt` seven days back and assert a run happened. That was true, and
+      the trouble was what came next: a feed-only run carries `lastCheckedAt` forward unchanged, so
+      the condition stayed true for ever. From day seven until the thirty-day integrity
+      reconciliation, `audioDue` was permanently set, the not-due branch was unreachable, and every
+      startup, foreground and reconnection published a fresh generation — damped only by the
+      thirty-second minimum attempt gap.
 
-      See `quran-recitation-sync-model.test.ts` for the four integrity conditions that do still take
-      a snapshot.
+      The seven-connected-day obligation is discharged by the feed clock, `manifest.createdAt`,
+      which advances on every successful publication including a clean no-mutation one. The
+      recitation clock is the bounded integrity safeguard and is asked on the integrity interval.
     */
     await seedGeneration({ createdAt: NOW, lastCheckedAt: NOW - SYNC_INTERVAL_MS - 1 });
     const endpoint = scriptedEndpoint({ pages: [page({ nextSyncToken: 'tok_4' })] });
     const { orchestrator } = orchestratorWith(endpoint);
 
     const outcome = await orchestrator.run();
+    expect(outcome.kind).toBe('not-due');
+    expect(endpoint.requests).toHaveLength(0);
+  });
+
+  it('still runs when the recitation integrity interval falls due, and takes a snapshot then', async () => {
+    await seedGeneration({
+      createdAt: NOW,
+      lastCheckedAt: NOW - RECITATION_INTEGRITY_INTERVAL_MS - 1,
+    });
+    const endpoint = scriptedEndpoint({ pages: [page({ nextSyncToken: 'tok_4' })] });
+    const { orchestrator } = orchestratorWith(endpoint);
+
+    const outcome = await orchestrator.run();
     expect(outcome.kind).toBe('synced');
-    expect(outcome.kind === 'synced' && outcome.recitationReconciliation).toBe('none');
-    /* The run happened: one feed page, and no snapshot request behind it. */
-    expect(endpoint.requests).toHaveLength(1);
+    /* The integrity safeguard is exactly what a snapshot is for. */
+    expect(outcome.kind === 'synced' && outcome.recitationReconciliation).toBe('snapshot');
+  });
+
+  it('does not latch: a feed-only run leaves the next trigger not-due', async () => {
+    /*
+      The regression the correction above exists to prevent, stated as a sequence rather than as a
+      single call. Run one is due on the feed clock; run two, a moment later, must not be.
+    */
+    await seedGeneration({
+      createdAt: NOW - SYNC_INTERVAL_MS - 1,
+      lastCheckedAt: NOW - SYNC_INTERVAL_MS - 1,
+    });
+    const endpoint = scriptedEndpoint({
+      pages: [page({ nextSyncToken: 'tok_a' }), page({ nextSyncToken: 'tok_b' })],
+    });
+    const later = { value: NOW };
+    const { orchestrator } = orchestratorWith(endpoint, { now: () => later.value });
+
+    expect((await orchestrator.run()).kind).toBe('synced');
+    const afterFirst = endpoint.requests.length;
+
+    /*
+      Far enough ahead to clear the minimum attempt gap, nowhere near either due interval. Without
+      the correction this returned 'synced' and published a second generation.
+    */
+    later.value = NOW + MIN_ATTEMPT_INTERVAL_MS * 2;
+    const second = await orchestrator.run();
+    expect(second.kind).toBe('not-due');
+    expect(endpoint.requests).toHaveLength(afterFirst);
   });
 });
 
