@@ -159,7 +159,7 @@ Until every one of those holds, the ceiling stays.
 | | Condition | Status |
 |---|---|---|
 | 1 | Content Sync confirmed | **Met.** Documented, published, implemented server-side and live-verified — §9.4. |
-| 2 | Connected check every seven connected days | **Not met — not wired at all.** `faith-recitation-check.ts` defines `RECITATION_CHECK_INTERVAL_MS`, `recitationCheckDue`, `recordRecitationCheck` and `daysSinceCheck`, and they are correct. **None of the four has a single caller anywhere in `src`** — so the device neither asks whether a check is due nor records one when a reconciliation succeeds. `lastCheckedAt` therefore stays `null` for the life of the install. This is the one remaining open condition. See §8.5. |
+| 2 | Connected check every seven connected days | **Met — 2026-08-18.** Implemented through `ContentSyncCoordinator`, and verified by automated test. The chain is `app-providers.tsx` → `<ContentSyncCoordinator />` → `runContentSync` → `orchestrator.run`, gated on `manifest.createdAt` against `SYNC_INTERVAL_MS`. Triggers: authenticated startup, foreground, confirmed connectivity restoration, the manual action, and the owner-scoped due-boundary scheduler. See §8.6. |
 | 3 | Corrections applied promptly | **Resolved as a licence question — 2026-08-17.** Quran Foundation has confirmed the snapshot baseline, the intentional absence of a historical backfill, and that future mutations must be applied. No recitation mutation has been observed, and that absence is **expected** and is **not** evidence of non-compliance. See §8.4 and §9.6. |
 | 4 | Available offline past the window | **Met — 2026-08-17.** The destructive seven-day expiry is **removed**: `faith-audio-downloads.ts` and its `MAX_CACHE_AGE_MS` clock are deleted, `OfflineFileState` has no expiry state, and a file whose resource has not been reconciled inside seven days stays `available` while the owed check is carried on the whole-download state. An offline device keeps its permitted audio, as C9 requires. |
 
@@ -272,6 +272,71 @@ emphatically not about deletion) and `faith-offline-recitation.ts` (`downloadedA
 and `daysSinceCheck` have **no caller anywhere in `src`**. Nothing asks whether a check is due, and
 nothing records one when a reconciliation succeeds, so `lastCheckedAt` never leaves `null`. That is
 §8.2 condition 2, and it is the single open condition.
+
+---
+
+### 8.6 How the connected check actually runs — recorded 2026-08-18
+
+> **Correction.** This document previously recorded condition 2 as *"not met — not wired at all"*, and
+> named `faith-recitation-check.ts` as the clock. Both statements were wrong. The production caller
+> existed the whole time; the functions that had no caller belonged to a **superseded second source of
+> truth**, which `quran-sync-storage-scan.test.ts` already forbade the orchestrator from using. That
+> module has since been deleted. The generation manifest is, and was, the authority.
+
+**The production chain**
+
+```
+app-providers.tsx  →  <ContentSyncCoordinator />  →  runContentSync()  →  orchestrator.run()
+```
+
+**The triggers**
+
+| Trigger | When |
+|---|---|
+| Authenticated startup | a session becomes ready, or a launch restores one |
+| Foreground | `AppState` returns to `active` |
+| Confirmed connectivity restoration | reachability transitions into confirmed — not merely connected |
+| Manual action | the user asks, through `useContentSync` |
+| Due-boundary scheduler | a device that stays signed in, connected and foregrounded across the boundary and so produces none of the above |
+
+**Two clocks, deliberately separate**
+
+| Clock | Field | Interval | Advances when |
+|---|---|---|---|
+| Feed / connected check | `manifest.createdAt` | 7 days | any successful publication, **including a clean no-mutation run** |
+| Recitation integrity | `manifest.recitation.lastCheckedAt` | 30 days | only when a resource-3 snapshot is staged |
+
+Collapsing these was a real defect, fixed on 2026-08-18. The recitation clock had been compared against
+a seven-day window; because it only advances on a snapshot, it stayed permanently in the past between
+day 7 and day 30, and every startup, foreground and reconnection published a fresh generation.
+
+**What each outcome means**
+
+- **No mutation is expected success.** Quran Foundation confirmed historical recitations were
+  intentionally not backfilled (§9.6). A clean feed answer discharges the seven-day obligation, records
+  the check by publishing a new generation, and costs no snapshot.
+- **No weekly full recitation snapshot.** The snapshot is reserved for bootstrap, a missing or corrupt
+  baseline, a changed resource identity, the 30-day integrity interval, or an explicit `force`.
+- **Offline retention.** An offline device makes no request, keeps its permitted audio, stays due, and
+  is checked when connectivity is confirmed again.
+- **Failure and backoff.** A failed run publishes nothing, advances neither clock, and the existing
+  backoff decides the next attempt; the scheduler honours the delay the run reports rather than
+  deciding its own.
+- **Logout and session replacement.** The session owner is invalidated, the scheduler is disposed, and
+  a transaction still in flight cannot publish. Device-wide published content survives, because it is
+  application content rather than the departed user's data.
+- **`mutationEverObserved` remains factual.** Still `false` on every device. Nothing sets it without a
+  mutation read off the wire, and its being `false` carries no compliance meaning.
+
+**Evidence.** The due-boundary scheduler is proven directly by 15 deterministic cases with an injected
+clock and timer queue — arming, no accumulation, cancel and dispose semantics, a queued callback inert
+after disposal, a callback inert after owner invalidation, silence through a week of bounded wakeups,
+exactly one run at the boundary, the retry floor, and a throttled run's own delay. The clock separation
+is covered by orchestrator sequence tests including a no-latch regression.
+
+**Not yet complete, and therefore not claimed:** the fuller clock-sequence matrix, the bounded mutation
+proofs, and device verification. Condition 2 is marked met on the strength of the production chain and
+the automated evidence above; the remaining work is defence in depth and is tracked separately.
 
 ---
 
@@ -423,9 +488,11 @@ standard as §1, which carries the same open field for the original grant.
 **What this does not extend.** Nothing here grants new scope. The permission remains **resource ID 3
 only** (§5), and every distribution and export restriction in §6 is untouched.
 
-**Still unresolved and explicitly out of scope:** complete **Arabic Qur'an reader text** retention is
-a **separate permission that has not been granted or confirmed**. Nothing in §9.6 bears on it. Arabic
-reader text is not retained, and the reader still requires a connection.
+**Separate permission, since granted:** complete **Arabic Qur'an reader text** retention was
+unresolved when §9.6 was written and was granted on 2026-08-18. It is recorded in its own document,
+[`QURAN_FOUNDATION_ARABIC_TEXT_PERMISSION.md`](QURAN_FOUNDATION_ARABIC_TEXT_PERMISSION.md). Nothing in
+§9.6 bears on it and it broadens nothing here: **the audio grant remains resource 3 alone.** The
+offline Arabic reader is **not yet implemented** — the reader still requires a connection today.
 
 ---
 

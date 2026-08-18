@@ -49,8 +49,12 @@ translation defect) is implemented and verified. Nothing else had been built whe
 >   not backfilled as mutations**, and that **the absence of an observed mutation is expected and is
 >   not evidence that the retention permission is unmet**. Recorded at
 >   [`QURAN_FOUNDATION_AUDIO_PERMISSION.md`](QURAN_FOUNDATION_AUDIO_PERMISSION.md) §9.6.
-> - **Separate and still unresolved:** complete **Arabic Qur'an reader text** retention is its own
->   permission, neither granted nor confirmed. The reader still requires a connection.
+> - **Separate, and granted on 2026-08-18:** complete **Arabic Qur'an reader text** retention is its
+>   own permission and Quran Foundation has now granted it, recorded in
+>   [`QURAN_FOUNDATION_ARABIC_TEXT_PERMISSION.md`](QURAN_FOUNDATION_ARABIC_TEXT_PERMISSION.md). It
+>   broadens nothing else — audio remains resource 3 alone. **The offline reader is not yet built**,
+>   so the reader still requires a connection today; the limitation is now an implementation gap
+>   rather than a licence constraint.
 >
 > Read bounds, as shipped: **1 MiB** for every ordinary Content API operation and for `/resources/sync`;
 > **8 MiB** for approved snapshots only. The full evidence table is
