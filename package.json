@@ -74,7 +74,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "validate": "npm run format:check && npm run lint && npm run typecheck && npm test"
+    "validate": "npm run format:check && npm run lint && npm run typecheck && npm test",
+    "verify:native": "node scripts/verify-native-backup.mjs"
   },
   "jest": {
     "preset": "jest-expo",

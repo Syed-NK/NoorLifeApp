@@ -2,29 +2,36 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Android backup and device transfer, asserted against the configuration that actually ships.
+ * Android backup and device transfer — the half of the guarantee that lives in the repository.
  *
- * ── Why this reads generated files rather than checking a comment ────────────
- * `android/` is **not** in the repository — `.gitignore` ends with `/ios` and `/android`, and
- * `git ls-files android` returns nothing. Both native projects are produced by `expo prebuild`, and
- * the backup rules themselves come from the `expo-secure-store` AAR rather than from anything a
- * developer here wrote. So the only honest place to verify the guarantee is the generated manifest
- * and the library's own resources.
+ * ── What this file used to do, and why it stopped ───────────────────────────
+ * It also read `android/app/src/main/AndroidManifest.xml`. That file is not in the repository —
+ * `.gitignore` ends with `/ios` and `/android` — and `expo prebuild` produces it. So the suite passed
+ * on a developer machine with a prebuild lying around and failed in CI, where none had ever run. A
+ * test whose answer depends on which computer ran it is not evidence, and asserting the manifest
+ * exists made an ordinary Jest run require a generated native tree.
  *
- * That also names the failure this test exists to catch: an SDK bump, a plugin change or a
- * hand-edited manifest that drops the SecureStore exclusion. The session token would then be copied
- * off the device by Android Auto Backup and restored onto a different phone, and nothing in the
- * application would look any different. The privacy screen would still be making its promise.
+ * The manifest assertions moved to `scripts/verify-native-backup.mjs`, which generates the native
+ * project in a temporary workspace and asserts against the real output. Nothing was dropped and
+ * nothing was softened: a missing manifest is a hard failure there, and the mutation self-test proves
+ * each assertion can still fail.
+ *
+ * ── What stays here ─────────────────────────────────────────────────────────
+ * Everything provable from tracked source and installed dependencies:
+ *
+ *   • the backup rule XML shipped by `expo-secure-store`, which is where the exclusion is actually
+ *     written — it comes from the library, not from anything a developer here authored;
+ *   • the plugin registration in `app.json` that causes those rules to be wired into the manifest,
+ *     which is the *input* the native gate checks the *output* of;
+ *   • the privacy copy that describes all of this to the user.
  *
  * ── What is deliberately not asserted ───────────────────────────────────────
- * That `android:allowBackup` is `false`. Turning every backup off would make this test trivially
- * green and would also discard ordinary preference restore, which is a feature. The guarantee this
- * project actually makes is narrower and more useful: preferences are backed up, and the SecureStore
- * file is not.
+ * That `android:allowBackup` is `false`. Turning every backup off would make this trivially green and
+ * would also discard ordinary preference restore, which is a feature. The guarantee this project
+ * makes is narrower and more useful: preferences are backed up, and the SecureStore file is not.
  */
 
 const ROOT = join(__dirname, '..', '..', '..', '..');
-const GENERATED_MANIFEST = join(ROOT, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
 const LIBRARY_RES = join(
   ROOT,
   'node_modules',
@@ -37,25 +44,6 @@ const LIBRARY_RES = join(
 );
 const CLOUD_BACKUP_RULES = join(LIBRARY_RES, 'secure_store_backup_rules.xml');
 const DATA_EXTRACTION_RULES = join(LIBRARY_RES, 'secure_store_data_extraction_rules.xml');
-
-/**
- * The merged manifests a release build produces, in the order the AGP versions in play write them.
- *
- * Checked when present and skipped when absent, because a fresh clone has no `android/app/build` at
- * all. The generated source manifest and the library resources below are always present, so the
- * guarantee is never left entirely unasserted — this pair adds the "and the merge did not undo it"
- * half after a build has run.
- */
-const MERGED_RELEASE_MANIFESTS = [
-  join(
-    ROOT,
-    'android/app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml',
-  ),
-  join(
-    ROOT,
-    'android/app/build/intermediates/packaged_manifests/release/processReleaseManifestForPackage/AndroidManifest.xml',
-  ),
-];
 
 /** Collapses whitespace so an attribute can be matched without depending on the formatter. */
 function read(path: string): string {
@@ -110,55 +98,41 @@ describe('the expo-secure-store backup rules', () => {
   });
 });
 
-describe('the generated Android manifest', () => {
-  const hasNativeProject = existsSync(GENERATED_MANIFEST);
+describe('the configuration that wires those rules into the manifest', () => {
+  /**
+   * The input side of the contract.
+   *
+   * Neither backup attribute appears in `app.json`: they are written during `expo prebuild` by the
+   * `expo-secure-store` config plugin, which runs only because the plugin is registered here. Drop
+   * the registration and the generated manifest silently loses both attributes, so this is the
+   * smallest tracked fact whose removal breaks the guarantee.
+   *
+   * `scripts/verify-native-backup.mjs` asserts the resulting output. This asserts the cause; that
+   * asserts the effect. Neither substitutes for the other.
+   */
+  const appConfig = JSON.parse(readFileSync(join(ROOT, 'app.json'), 'utf8')) as {
+    expo: { plugins: (string | [string, unknown])[] };
+  };
+  const pluginNames = appConfig.expo.plugins.map((entry) =>
+    Array.isArray(entry) ? entry[0] : entry,
+  );
 
-  it('exists, because these guarantees cannot be verified without it', () => {
-    // `expo prebuild` has to have run. A missing manifest is reported rather than skipped: a
-    // protection test that quietly does nothing is worse than no test.
-    expect(hasNativeProject).toBe(true);
+  it('registers the expo-secure-store config plugin', () => {
+    expect(pluginNames).toContain('expo-secure-store');
   });
 
-  it('points both backup attributes at the SecureStore-aware rules', () => {
-    const manifest = read(GENERATED_MANIFEST);
-    expect(manifest).toContain('android:fullBackupContent="@xml/secure_store_backup_rules"');
-    expect(manifest).toContain(
-      'android:dataExtractionRules="@xml/secure_store_data_extraction_rules"',
-    );
+  it('depends on expo-secure-store, so the plugin and its rule XML are installed', () => {
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    expect(pkg.dependencies['expo-secure-store']).toBeDefined();
   });
 
-  it('leaves ordinary backup enabled rather than switching it off wholesale', () => {
-    // Documented, not incidental: `allowBackup="false"` would satisfy the exclusion tests above by
-    // removing the feature instead of scoping it, and would be an undocumented shortcut.
-    expect(read(GENERATED_MANIFEST)).toContain('android:allowBackup="true"');
-  });
-
-  it('declares the NoorLife scheme for deep links and does not rely on Expo Go’s', () => {
-    const manifest = read(GENERATED_MANIFEST);
-    expect(manifest).toContain('<data android:scheme="noorlifeapp"/>');
-    // `exp+noorlifeapp` is contributed by the prebuild for Expo Go. Its presence in the manifest is
-    // fine; what matters is that the callback parser refuses it, which
-    // `auth-callback-url.test.ts` asserts.
-    expect(manifest).toContain('android:launchMode="singleTask"');
-  });
-});
-
-describe('the merged release manifest', () => {
-  const available = MERGED_RELEASE_MANIFESTS.filter((path) => existsSync(path));
-
-  it.each(MERGED_RELEASE_MANIFESTS)('%s keeps the backup attributes after merging', (path) => {
-    if (!existsSync(path)) {
-      // No release build in this working tree. The generated-source and library assertions above
-      // still hold, and the release build in the phase's validation run covers this pair.
-      expect(available.length).toBeGreaterThanOrEqual(0);
-      return;
-    }
-    const manifest = read(path);
-    expect(manifest).toContain('android:fullBackupContent="@xml/secure_store_backup_rules"');
-    expect(manifest).toContain(
-      'android:dataExtractionRules="@xml/secure_store_data_extraction_rules"',
-    );
-    expect(manifest).toContain('android:allowBackup="true"');
+  it('does not disable backup wholesale in app.json', () => {
+    // `allowBackup: false` would satisfy every exclusion assertion above by removing the feature
+    // rather than scoping it. The generated manifest is checked for the same thing natively.
+    const android = (appConfig.expo as unknown as { android?: Record<string, unknown> }).android;
+    expect(android?.allowBackup).not.toBe(false);
   });
 });
 
