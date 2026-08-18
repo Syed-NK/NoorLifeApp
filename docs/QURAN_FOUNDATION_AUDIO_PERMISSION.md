@@ -334,9 +334,57 @@ after disposal, a callback inert after owner invalidation, silence through a wee
 exactly one run at the boundary, the retry floor, and a throttled run's own delay. The clock separation
 is covered by orchestrator sequence tests including a no-latch regression.
 
-**Not yet complete, and therefore not claimed:** the fuller clock-sequence matrix, the bounded mutation
-proofs, and device verification. Condition 2 is marked met on the strength of the production chain and
-the automated evidence above; the remaining work is defence in depth and is tracked separately.
+**Mutation proofs — recorded 2026-08-18**
+
+| Mutation | Result |
+|---|---|
+| `audioDue` reverted to the seven-day interval | **caught** — 2 assertions failed |
+| Weekly recitation snapshot restored | **caught** — 4 assertions failed |
+| Stale/disposed scheduler callback allowed to execute | see the qualification below |
+
+Each mutation was applied to source, run against its guarding suite, then restored and verified
+byte-identical. No mutated source was committed.
+
+**The stale-callback qualification, stated precisely.** Removing the armed callback's liveness
+re-check does **not** fail the suite; nor does additionally removing `reEvaluate`'s entry guard. A
+third check sits after the `dueDelayMs` await. Only neutralising all seven liveness checks fails, and
+then three cases fail. So the protection **is** tested, and **no individual layer is independently
+load-bearing** — the guards are redundant three deep on the path a dispatched callback takes. It would
+overstate the evidence to call any single guard mutation-proven.
+
+**Device verification — recorded 2026-08-18**
+
+On a signed-in emulator running a release APK built from this branch, with the scheduler confirmed
+present in the APK's own bundled JavaScript before any proof was run.
+
+| Proof | Result |
+|---|---|
+| **A — not-due foreground** | **passed.** Background→foreground with the generation not due published nothing: generation count 1, pointer unchanged, `createdAt` unchanged, audio unchanged. Publication is the operation-level signal; the checkpoint's attempt clock is not, because it advances before the due gate. |
+| **B — timer-only boundary** | **passed.** With `createdAt` aged so the boundary fell about two minutes ahead and the integrity clock left untouched, one foreground armed the timer and published nothing. The app was then left continuously foregrounded with no further lifecycle, connectivity or manual trigger. **Exactly one transaction ran and exactly one generation published**, its identifier timestamped 797 ms after the boundary. |
+| **C — relaunch** | **passed.** Force-stop and relaunch left the new generation active, published no second generation, and issued no immediate duplicate. |
+
+Measurements across the whole run, before and after:
+
+| | Before | After |
+|---|---|---|
+| Generation `createdAt` | 1786977562813 | 1787051942179 — advanced once |
+| `recitation.lastCheckedAt` | 1786885223682 | **1786885223682 — unchanged**, so no recitation snapshot was fetched |
+| `mutationEverObserved` | false | **false** |
+| Resource IDs | 85, 3 | 85, 3 |
+| Rows per resource | 6,236 / 6,236 | 6,236 / 6,236 |
+| Audio files | 3,710 | **3,710** |
+| Audio bytes | 1,301,299,436 | **1,301,299,436** |
+| `.part` files | 0 | **0** |
+| Generation directories | 1 | 1 |
+
+The clean feed answer advanced `syncedUntilSequence` while leaving the recitation clock and
+`mutationEverObserved` untouched — which is exactly what an expected no-mutation success looks like.
+**No recitation mutation was observed, and none is claimed.** No downloader activity occurred. A scan
+of the evidence window for token, credential, address and URL patterns returned **zero matches**; the
+temporary private backup was removed and no artificially aged generation was left active.
+
+**Still outstanding:** the fuller clock-sequence matrix. Everything else in condition 2's evidence is
+now recorded above.
 
 ---
 
