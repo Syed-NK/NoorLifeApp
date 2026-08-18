@@ -24,15 +24,8 @@ import {
 
 const PROTECTED_PATHS: readonly string[] = [
   // Main Home — design-locked.
-  'src/features/home/screens/main-home-screen.tsx',
   'src/features/home/components/home-header.tsx',
   'src/features/home/components/home-hero.tsx',
-  'src/features/home/components/module-grid.tsx',
-  'src/features/home/components/today-timeline.tsx',
-  'src/features/home/components/home-summary-row.tsx',
-  'src/features/home/components/quick-actions-row.tsx',
-  'src/features/home/components/ai-insight-card.tsx',
-  'src/features/home/components/home-bottom-navigation.tsx',
   'src/features/home/components/robot-asset.tsx',
   'src/features/home/main-home-metrics.ts',
   'src/features/home/module-pictograms.ts',
@@ -42,8 +35,6 @@ const PROTECTED_PATHS: readonly string[] = [
   'src/features/entry-auth/entry-auth-copy.ts',
   'src/features/entry-auth/entry-auth-assets.ts',
   'src/features/entry-auth/screens/splash-screen.tsx',
-  // Authentication service — not a layout, but out of scope for design work.
-  'src/services/auth/auth.service.ts',
 ];
 
 /**
@@ -67,6 +58,152 @@ const REOPENED_ON_REQUEST: readonly string[] = [
   'src/features/entry-auth/screens/welcome-screen.tsx',
   'src/features/entry-auth/screens/login-screen.tsx',
   'src/features/entry-auth/screens/sign-up-screen.tsx',
+  /**
+   * Main Home's module grid — reopened for Phase 6B.
+   *
+   * Free users must see the six paid modules as locked, and there is no way to render a lock state
+   * on a tile without editing the file that draws the tile. The phase brief authorises exactly
+   * this: entitlement-aware states *within* the existing geometry.
+   *
+   * What did not change is the geometry itself. Every locked measurement still comes from
+   * `LOCKED.grid` — four columns, 7 dp gaps, 71 dp tiles, 13 dp radius, 48 dp pictograms — and
+   * `main-home-metrics.ts` is untouched and still locked above. The approved PNGs are still
+   * rendered by `getModulePictogram`, never swapped for a lock glyph. What was added is a scrim, a
+   * badge and a branch on entitlement.
+   *
+   * The Pixel 8 pass then found two faults in that work, corrected under this same entry rather than
+   * a new one:
+   *
+   *   • The scrim was the *last* child, so it washed over the label as well as the tile and took it
+   *     from ~15:1 to 2.68:1. It is now drawn first. Same tint, same alpha, same geometry.
+   *   • A locked tap pushed the subscription chooser directly, skipping the contextual explanation
+   *     every other locked Main Home surface raises. It now calls the shared `requestUpgrade`
+   *     controller, and the badge grew to a recognisable 12 dp glyph.
+   *
+   * A geometry test in the Main Home suite asserts the tile count and layout are unchanged, and
+   * `main-home-lock-contrast.test.ts` measures the locked label and padlock against the colour the
+   * tile actually composites to. Those are the guarantees this entry gives up and those tests take
+   * over.
+   */
+  'src/features/home/components/module-grid.tsx',
+  /**
+   * "Today at a Glance" and the two summary cards — reopened for Phase 6B.
+   *
+   * Reason recorded on request: **user-approved Free entitlement presentation and interaction.**
+   *
+   * Three of the four timeline rows and both summary figures are paid content. A free user
+   * currently sees School drop-off, Work focus time and Family dinner as ordinary rows that walk
+   * into Planner and Family, and is shown "4 of 5 complete" and "68% — You're on track", which are
+   * statements about a week they do not have. Neither can be corrected without editing the file
+   * that draws the row and the file that draws the card, so their byte-for-byte lock was lifted on
+   * request rather than the entries being quietly deleted.
+   *
+   * What did not change is the geometry. Every measurement still comes from `LOCKED.today` and
+   * `LOCKED.summary` — the 126 dp card, the 23 dp rows, the 7 dp dot, the 62 dp time column, the
+   * 90 dp summary cards, the 46 dp ring and its 6 dp stroke — and `main-home-metrics.ts` is
+   * untouched and still locked above. Section order, card positions, spacing and the type ramp are
+   * as they were; the locked states are drawn *inside* that geometry. The Main Home suite asserts
+   * those dimensions directly, which is the guarantee these two entries give up and that test
+   * takes over.
+   *
+   * Anything beyond entitlement state in these two files still needs the design owner's sign-off.
+   */
+  'src/features/home/components/today-timeline.tsx',
+  'src/features/home/components/home-summary-row.tsx',
+  /**
+   * The Main Home screen itself — reopened for Phase 6B on an approved architecture decision.
+   *
+   * Reason recorded on request: **user-approved Free entitlement presentation and interaction.**
+   *
+   * Five surfaces on this screen raise contextual upgrade explanations, or will: the timeline
+   * rows, the two summary cards, the Noor AI insight, the quick actions and the bottom
+   * navigation. Their nearest common ancestor is this file, so it is the narrowest level at which
+   * one controller can serve all five and one sheet can be drawn. The alternatives were both
+   * rejected on the record: `AppProviders` would hold Main Home's state for every route in the
+   * app, and anything lower would give each row and card a modal of its own.
+   *
+   * The permitted change is exactly that and nothing else — one `UpgradeSheetProvider` and one
+   * `UpgradeSheetHost` in the screen's shell function. Both are layout-neutral: the provider
+   * renders context alone, and the host renders nothing until something asks for it and a `Modal`
+   * after that, which takes no part in the flex layout of the column. `MainHomeContent`, which
+   * holds the entire visual composition, is untouched — no padding, no wrapper view, no visible
+   * element, no reordered section, and `main-home-metrics.ts` is untouched and still locked above.
+   *
+   * A section-order test in the Main Home suite asserts all seven sections still render in the
+   * locked sequence, which is the guarantee this entry gives up and that test takes over.
+   */
+  'src/features/home/screens/main-home-screen.tsx',
+  /**
+   * The Noor AI insight card, the quick-action row and the bottom navigation — reopened for
+   * Phase 6B.
+   *
+   * Reason recorded on request: **user-approved Free entitlement presentation and interaction.**
+   *
+   * These are the three remaining Main Home surfaces that offer a free user something the free plan
+   * does not include, and each is wrong in a different way:
+   *
+   *   • The insight card states "You have a free 30-minute window at 4 PM", which is a claim about a
+   *     Planner schedule the user does not have. Noor AI itself is *not* locked — it is on the free
+   *     plan — so the correction is a scope, not a padlock: the card says what Noor AI can actually
+   *     help with and announces the narrower scope it works in.
+   *   • All three quick actions belong to premium modules (Planner, Health, Family), and each one
+   *     currently walks straight into that module to start an edit.
+   *   • The Insights tab opens a Goals-powered screen the free plan does not include.
+   *
+   * None of that can be corrected without editing the file that draws the card, the file that draws
+   * the tiles and the file that draws the bar, so their byte-for-byte lock was lifted on request
+   * rather than the entries being quietly deleted.
+   *
+   * What did not change is the geometry. Every measurement still comes from `LOCKED.aiInsight`,
+   * `LOCKED.quickAction` and `LOCKED.bottomNav` — the 68 dp card and its 44 dp robot and chevron, the
+   * 42 dp tiles at 11 dp radius with their 7 dp gap, the 68 dp bar with five `flex: 1` slots, 24 dp
+   * icons and the 58 dp centre ring holding the 50 dp robot PNG — and `main-home-metrics.ts` is
+   * untouched and still locked above. The approved PNG assets are still rendered by `RobotAsset`,
+   * never swapped for a lock glyph, and the centre control carries no badge at all. Both padlocks
+   * added here are absolutely positioned, so neither takes part in the layout: the quick-action label
+   * keeps the width it has on a paid plan, and the bar keeps its height.
+   *
+   * A geometry suite in `main-home-premium-actions.test.tsx` measures all three surfaces in both the
+   * free and the paid state, against the same numbers. That is the guarantee this entry gives up and
+   * that test takes over.
+   *
+   * Anything beyond entitlement state in these three files still needs the design owner's sign-off.
+   */
+  'src/features/home/components/ai-insight-card.tsx',
+  'src/features/home/components/quick-actions-row.tsx',
+  'src/features/home/components/home-bottom-navigation.tsx',
+  /**
+   * The authentication service — reopened for Phase 6C-3C, for callback wiring only.
+   *
+   * Reason recorded on request: **the phase brief instructs that `signUp`, `resetPasswordForEmail` and
+   * the email-change flow supply the approved callback redirect from central configuration.**
+   *
+   * The lock could not be honoured and that instruction followed at the same time. This file owned the
+   * redirect for two of the three email actions:
+   *
+   *     cachedRedirect = AuthSession.makeRedirectUri({ scheme: 'noorlifeapp' });
+   *
+   * which resolves to the bare scheme root `noorlifeapp://` — a URL nothing in the application was
+   * listening on. There was no deep-link handler and no callback route, so a real confirmation or
+   * recovery link landed on the entry gate with its code discarded. Leaving the value alone and
+   * building the new callback around it would have meant either accepting the scheme root as a trusted
+   * callback path — widening the trust boundary to a URL that carries no destination — or duplicating
+   * `signUp` in a second service that could drift from this one. Both are worse than a recorded lift.
+   *
+   * The permitted change is exactly one function body. `redirectTo()` now returns
+   * `authCallbackRedirectUrl()` from `auth-callback.config.ts`, and the now-unused `expo-auth-session`
+   * import went with it. Laziness is preserved, so importing this service still needs no
+   * expo-constants manifest — the property the original memoization existed to protect.
+   *
+   * Nothing else moved: no exported function was added, removed or renamed, no error mapping changed,
+   * no logging was added, and the file still contains no credential handling it did not already have.
+   * `auth-service-surface.test.ts` asserts the exported API is identical to the branch point and that
+   * the redirect comes from the central configuration rather than a literal. That is the guarantee this
+   * entry gives up and that test takes over.
+   *
+   * Anything beyond callback wiring in this file still needs sign-off.
+   */
+  'src/services/auth/auth.service.ts',
 ];
 
 /**

@@ -1,11 +1,6 @@
-import { SimplePlaceholderScreen } from '@features/placeholder/simple-placeholder-screen';
+import { SubscriptionWelcomeScreen } from '@features/subscription/screens/subscription-welcome-screen';
 
+/** Screen 01 — Subscription Welcome (Phase 5 §5.01). */
 export default function Screen() {
-  return (
-    <SimplePlaceholderScreen
-      title="Subscription Overview"
-      description="Monthly and yearly plans with a Save 20% badge on yearly. Neutral background; gold reserved for premium badges."
-      specReference="Design spec §14"
-    />
-  );
+  return <SubscriptionWelcomeScreen />;
 }

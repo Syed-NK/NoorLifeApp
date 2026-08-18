@@ -70,7 +70,7 @@ describe('EntrySwipeBack', () => {
 
   it('wraps later steps in a gesture responder', async () => {
     await render(
-      <EntrySwipeBack activeIndex={entryStepIndex.credentials} testID="swipe">
+      <EntrySwipeBack activeIndex={entryStepIndex.onboardingThree} testID="swipe">
         <Text>form</Text>
       </EntrySwipeBack>,
     );

@@ -95,7 +95,9 @@ export function ResetLinkSentScreen() {
       />
 
       <SecondaryButton
-        label={resend.ready ? resetLinkSentCopy.resend : `${resetLinkSentCopy.resend} (${resend.label})`}
+        label={
+          resend.ready ? resetLinkSentCopy.resend : `${resetLinkSentCopy.resend} (${resend.label})`
+        }
         disabled={!resend.ready || submit.loading}
         onPress={() => {
           resend.restart();
@@ -104,18 +106,20 @@ export function ResetLinkSentScreen() {
         testID="reset-sent-resend"
       />
 
-      {/* Present so the reset flow can be walked end to end before a real emailed link exists. */}
-      <EntryAuthText
-        token="label"
-        align="center"
-        color={entryAuthColors.primary}
-        onPress={() => router.push(authRoutes.newPassword)}
-        accessibilityRole="link"
-        testID="reset-sent-continue"
-      >
-        I have the link — set a new password
-      </EntryAuthText>
+      {/*
+        The "I have the link — set a new password" shortcut was removed in Phase 6C-3C.
 
+        It existed so the reset flow could be walked end to end before a real emailed link did anything,
+        and it pushed New Password directly. That is no longer a walkthrough: New Password now requires a
+        recovery grant, which only a real recovery callback mints, so the shortcut would have been a
+        control that invited a press and then refused — the exact pattern this phase removed from Change
+        Email and Change Password.
+
+        Nothing was lost. The real path is the link in the email, which now lands on `/auth/callback` and
+        is handled; and the two states a walkthrough was for — an expired link and a link with no grant —
+        are both reachable from `/auth/callback` with a shaped ADB deep link, which is how the phase's
+        device evidence was captured.
+      */}
       <EntryAuthText
         token="label"
         align="center"

@@ -1,0 +1,95 @@
+{
+  "version": 4,
+  "status": "approved-for-integration",
+  "composition": "near-square photorealistic tasbih stage with full terminal, braided loop and tassel inside the canvas",
+  "integration": {
+    "resizeMode": "contain",
+    "stageAspectRatio": 1,
+    "pointerEvents": "none",
+    "croppingForbidden": true,
+    "fallbackMaterial": "walnut"
+  },
+  "materials": [
+    {
+      "id": "walnut",
+      "filename": "tasbih-stage-walnut.png",
+      "sha256": "1c42e922620a2214fe6bb346ba4df0c9a0e578542903bc1480a2dc7d29ececd3"
+    },
+    {
+      "id": "green-jade",
+      "filename": "tasbih-stage-green-jade.png",
+      "sha256": "5efb425151508f6bb7bd9ab32cb1bbba83dc7cabec7e61002ca9d616df47ffe7"
+    },
+    {
+      "id": "black-onyx",
+      "filename": "tasbih-stage-black-onyx.png",
+      "sha256": "7dccf0b8c3da4b1642800625d4b6bdb6c01dae12f06f7675d4a780a720fc9613"
+    },
+    {
+      "id": "white-jade",
+      "filename": "tasbih-stage-white-jade.png",
+      "sha256": "48efa950cd99672343b7415b766b712653fbfff6994cfd582062abf0b2911470"
+    },
+    {
+      "id": "sandalwood",
+      "filename": "tasbih-stage-sandalwood.png",
+      "sha256": "a9c55f727f9d40e77c6244437b992fc8561d07d4402926d232845f2f7316e35b"
+    },
+    {
+      "id": "figured-brown",
+      "filename": "tasbih-stage-figured-brown.png",
+      "sha256": "1d1bf1398bbc1a27bcbb49bbc07de8cbd968617464f68328ac19818ad68d641e"
+    }
+  ],
+  "thumbnails": {
+    "note": "256 x 256 selector thumbnails, re-cut from the approved V3 source board on a shared centre line and a shared crop size. The delivered set was clipped at the bottom on all six, sat ~24 px low and spread 22.5 px horizontally; these measure within 1 px of centre with a 3 px diameter spread. The stage plates are untouched.",
+    "regeneratedOn": "2026-08-15",
+    "files": {
+      "walnut": {
+        "file": "tasbih-material-walnut.png",
+        "sha256": "3c26f0bc95c278dfc5153006c67a92a8951756a053205ff6d5d66170c960939f"
+      },
+      "green-jade": {
+        "file": "tasbih-material-green-jade.png",
+        "sha256": "a6218b8929d85ace644c84226942d6684c0628ba594a618c6027e3cccd64974e"
+      },
+      "black-onyx": {
+        "file": "tasbih-material-black-onyx.png",
+        "sha256": "fc9525b063a5731ef549793843655f668918b78abec61073dbcae823a0b0ab72"
+      },
+      "white-jade": {
+        "file": "tasbih-material-white-jade.png",
+        "sha256": "e27c8d36d81bc18b7c659f399abf43963c4092865fd6a802122f52d0bc69931f"
+      },
+      "sandalwood": {
+        "file": "tasbih-material-sandalwood.png",
+        "sha256": "4548b66071a53e46d0d7c2f2f2d4f785a35eaa7dd2c1d03991cdcf42740dd751"
+      },
+      "figured-brown": {
+        "file": "tasbih-material-figured-brown.png",
+        "sha256": "f4afc1a25f8dc82e4ac1c092e497ce9f5e9250c72d8f1fc08e7e56253c8c17d9"
+      }
+    }
+  },
+  "provenance": {
+    "why": "docs/FAITH_TASBIH_STRAND_ASSET_CONTRACT.md § Licensing requires the commissioning record to sit beside the hashes. This block is that record. It is deliberately incomplete rather than plausible: the fields marked unknown could not be established from anything this repository holds.",
+    "howTheUnknownsWereEstablished": "The twelve PNGs carry no tEXt, iTXt, zTXt or tIME chunk — only IHDR/IDAT/IEND — so no tool or timestamp is embedded. No file under docs/ records the V4 delivery, and no commit message names a tool, an operator or a supplier. Absence of evidence was recorded as unknown rather than filled in by inference.",
+    "createdWith": "unknown — requires owner confirmation",
+    "createdBy": "unknown — requires owner confirmation",
+    "createdOn": "unknown — requires owner confirmation",
+    "medium": "unknown — requires owner confirmation",
+    "mediumNote": "The repository describes the pack both as a photorealistic illustration set and, in tasbih-screen.tsx, as \"a photograph, not a cutout\". The latter is about the missing alpha channel rather than the capture medium, so neither settles what this artwork actually is.",
+    "rightsHolder": "unknown — requires owner confirmation",
+    "sourceBoard": "The thumbnails were re-cut from the approved V3 source board. That board is not in this repository and its location is unknown — requires owner confirmation",
+    "established": {
+      "stagePlatePixels": "1254 x 1254",
+      "thumbnailPixels": "256 x 256",
+      "pngColourType": "2 (truecolour), 8 bit, no alpha channel on any of the twelve",
+      "thumbnailsRecutOn": "2026-08-15",
+      "allTwelveHashesVerified": "2026-08-15, against the sha256 values in this file",
+      "totalBytes": 11903194,
+      "carriesNoText": "Verified by rendering all six stage plates and all six thumbnails on an Android release build: no text, no Arabic, no logo, no watermark and no signature appears in any of them. The artwork therefore carries no religious content and states nothing a user could act on."
+    },
+    "releaseImpact": "None on screen. This is a record-keeping obligation rather than a rights question in dispute, but the owner must close it before release: NoorLife cannot presently evidence who made this artwork or under what terms."
+  }
+}

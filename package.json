@@ -6,19 +6,31 @@
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/ui": "~57.0.7",
     "@expo/vector-icons": "^15.0.2",
+    "@photostructure/tz-lookup": "^11.6.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.111.0",
+    "adhan": "^4.4.4",
     "expo": "~57.0.8",
     "expo-apple-authentication": "~57.0.1",
+    "expo-application": "~57.0.2",
+    "expo-asset": "~57.0.10",
+    "expo-audio": "~57.0.3",
     "expo-auth-session": "~57.0.5",
+    "expo-clipboard": "~57.0.1",
     "expo-constants": "~57.0.7",
+    "expo-crypto": "~57.0.1",
     "expo-dev-client": "~57.0.9",
     "expo-device": "~57.0.1",
+    "expo-file-system": "~57.0.2",
     "expo-font": "~57.0.1",
     "expo-glass-effect": "~57.0.1",
+    "expo-haptics": "~57.0.1",
     "expo-image": "~57.0.1",
     "expo-linear-gradient": "~57.0.1",
     "expo-linking": "~57.0.4",
+    "expo-location": "~57.0.9",
+    "expo-network": "~57.0.1",
+    "expo-notifications": "~57.0.10",
     "expo-router": "~57.0.8",
     "expo-secure-store": "~57.0.1",
     "expo-splash-screen": "~57.0.5",
@@ -62,13 +74,15 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "validate": "npm run format:check && npm run lint && npm run typecheck && npm test"
+    "validate": "npm run format:check && npm run lint && npm run typecheck && npm test",
+    "verify:native": "node scripts/verify-native-backup.mjs"
   },
   "jest": {
     "preset": "jest-expo",
     "setupFilesAfterEnv": [
       "<rootDir>/jest.setup.ts"
     ],
+    "maxWorkers": "60%",
     "transformIgnorePatterns": [
       "node_modules/(?!(?:.pnpm/)?((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg))"
     ],

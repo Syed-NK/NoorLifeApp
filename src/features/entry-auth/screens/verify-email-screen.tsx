@@ -57,13 +57,15 @@ export function VerifyEmailScreen() {
       return;
     }
     setInvalid(false);
-    void submit.run(() => verifyEmail(code)).then((ok) => {
-      if (ok) {
-        router.replace(authRoutes.accountReady);
-      } else {
-        setInvalid(true);
-      }
-    });
+    void submit
+      .run(() => verifyEmail(code))
+      .then((ok) => {
+        if (ok) {
+          router.replace(authRoutes.accountReady);
+        } else {
+          setInvalid(true);
+        }
+      });
   };
 
   return (
@@ -71,7 +73,11 @@ export function VerifyEmailScreen() {
       <AuthHeader
         onBack={() => router.back()}
         title={verifyEmailCopy.title}
-        subtitle={hasPendingVerification ? verifyEmailCopy.subtitleFor(email) : verifyEmailCopy.noPendingSubtitle}
+        subtitle={
+          hasPendingVerification
+            ? verifyEmailCopy.subtitleFor(email)
+            : verifyEmailCopy.noPendingSubtitle
+        }
         testID="verify-header"
       />
 

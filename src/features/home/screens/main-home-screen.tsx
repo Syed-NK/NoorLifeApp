@@ -8,6 +8,8 @@ import { useModuleTheme } from '@application/providers/design-system-provider';
 import { StateView } from '@ds/components';
 import { moduleThemes } from '@ds/modules/module-themes';
 import { neutralColors } from '@ds/tokens';
+import { UpgradeSheetHost } from '@features/subscription/components/upgrade-sheet-host';
+import { UpgradeSheetProvider } from '@features/subscription/services/upgrade-sheet-context';
 import type { QuickAction, TimelineEntry } from '@shared/models/dashboard';
 import type { ModuleTheme, NavItem } from '@shared/models/module-theme';
 
@@ -71,11 +73,30 @@ export type MainHomeScreenProps = {
  *
  * Aggregation rule (workflow §5): every tap leaves for the module that owns the record.
  * This screen holds no editing logic and no hero metrics.
+ *
+ * ── Phase 6B: one upgrade controller for the whole screen ───────────────────
+ * Five surfaces on this screen either raise a contextual upgrade explanation or will do:
+ * the timeline rows, the two summary cards, the Noor AI insight, the quick actions and the
+ * bottom navigation. This is their nearest common ancestor, so it is the narrowest level at
+ * which one controller can serve all of them and one sheet can be drawn — mounting it at
+ * `AppProviders` would hold Main Home's state for routes that never ask, and mounting it any
+ * lower would give each row and card a modal of its own.
+ *
+ * It is layout-neutral by construction. `UpgradeSheetProvider` renders context alone, and
+ * `UpgradeSheetHost` renders nothing at all until something asks for it, and a `Modal` after
+ * that — which does not take part in the flex layout of the column below. No padding, no
+ * wrapper view, no visible element joins the locked composition, and the section order,
+ * heights and gaps are exactly as they were.
  */
 export function MainHomeScreen(props: MainHomeScreenProps) {
   return (
     <MainHomeMetricsProvider>
-      <MainHomeContent {...props} />
+      <UpgradeSheetProvider>
+        <MainHomeContent {...props} />
+        {/* The single sheet outlet. `LockedModuleSheet` remains the only presentation, and the
+            controller's refusal to raise anything for Faith or Noor AI is unchanged. */}
+        <UpgradeSheetHost testID="main-home-upgrade-sheet" />
+      </UpgradeSheetProvider>
     </MainHomeMetricsProvider>
   );
 }

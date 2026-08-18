@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { entryAuthColors, entryAuthLayout } from '../entry-auth-tokens';
+import type { EntryAuthTypeToken } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
 import { EntryAuthText } from './entry-auth-text';
 
@@ -9,6 +10,14 @@ export type AuthHeaderProps = {
   readonly onBack?: () => void;
   readonly title: string;
   readonly subtitle?: string;
+  /**
+   * Type token for the heading. Defaults to `title`, so every existing screen is unchanged.
+   *
+   * Added in Phase 5B for the subscription screens, which carry longer headings than an auth form
+   * and looked oversized at 22 dp — "Choose how NoorLife supports you" wrapped to two lines and
+   * dominated the plan cards beneath it.
+   */
+  readonly titleToken?: Extract<EntryAuthTypeToken, 'title' | 'titleCompact'>;
   readonly testID?: string;
 };
 
@@ -23,7 +32,13 @@ export type AuthHeaderProps = {
  * itself is 10 dp, so the target is generous without the mark being oversized. It sits in a row of
  * its own so the heading below stays optically centred on the page rather than being pushed by it.
  */
-export function AuthHeader({ onBack, title, subtitle, testID }: AuthHeaderProps) {
+export function AuthHeader({
+  onBack,
+  title,
+  subtitle,
+  titleToken = 'title',
+  testID,
+}: AuthHeaderProps) {
   const { dp } = useEntryAuthMetrics();
   const target = dp(entryAuthLayout.minTouchTarget);
 
@@ -53,7 +68,7 @@ export function AuthHeader({ onBack, title, subtitle, testID }: AuthHeaderProps)
         )}
       </View>
 
-      <EntryAuthText token="title" align="center" accessibilityRole="header">
+      <EntryAuthText token={titleToken} align="center" accessibilityRole="header">
         {title}
       </EntryAuthText>
       {subtitle === undefined ? null : (

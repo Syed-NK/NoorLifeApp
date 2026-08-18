@@ -10,11 +10,12 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { ArabicText } from '../components/faith-list';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
-import { SourceBadge } from '../components/faith-states';
+import { UnverifiedSourceNotice } from '../components/faith-states';
+import type { ContentSource } from '../data/faith-result';
 import { useFaithRepositories } from '../di/faith-repository-context';
 import { faithNavKeys } from '../faith-routes';
 import { useBookmark } from '../hooks/use-bookmark';
-import { useFaithPreferences } from '../hooks/use-faith-preferences';
+import { useTranslationPreference } from '../hooks/use-translation-preference';
 import { useFaithResource } from '../hooks/use-faith-resource';
 
 /**
@@ -27,13 +28,21 @@ import { useFaithResource } from '../hooks/use-faith-resource';
 export function DailyAyahScreen() {
   const { dp } = useModuleMetrics();
   const { quran } = useFaithRepositories();
-  const { preferences } = useFaithPreferences();
+  const { translation } = useTranslationPreference();
 
   const ayah = useFaithResource(
-    `faith.daily-ayah.${preferences.translationId}`,
+    `faith.daily-ayah.${translation?.id ?? 'unresolved'}`,
     useCallback(
-      () => quran.getAyahOfTheDay(preferences.translationId),
-      [quran, preferences.translationId],
+      /*
+        No translation resolved yet means there is no edition to ask for. Reported as `loading`
+        rather than requested with a guessed id — guessing one is what put an edition that returns
+        nothing in front of every user.
+      */
+      async () =>
+        translation === null
+          ? ({ kind: 'error', code: 'unavailable' } as const)
+          : await quran.getAyahOfTheDay(translation.id),
+      [quran, translation],
     ),
   );
 
@@ -52,8 +61,14 @@ export function DailyAyahScreen() {
                 reference={`Surah ${value.text.surah}:${value.text.ayah}`}
                 arabic={value.text.arabic}
                 translation={value.translation.text}
+                /*
+                  The translation's own provenance, not the scripture's. They are separate
+                  `ContentSource` objects for exactly this reason: the verse comes from the vendor,
+                  and the rendering of its meaning comes from a named translator whose work this is.
+                */
+                translationSource={value.translation.source}
               />
-              <SourceBadge source={value.text.source} testID="faith-daily-ayah" />
+              <UnverifiedSourceNotice source={value.text.source} testID="faith-daily-ayah" />
             </View>
           )}
         </FaithResourceView>
@@ -66,10 +81,12 @@ function AyahDetail({
   reference,
   arabic,
   translation,
+  translationSource,
 }: {
   readonly reference: string;
   readonly arabic: string;
   readonly translation: string;
+  readonly translationSource: ContentSource;
 }) {
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
@@ -116,11 +133,26 @@ function AyahDetail({
 
         <View>
           <ModuleText token="caption" numberOfLines={1}>
-            Translation
+            {translationSource.edition ?? 'Translation'}
           </ModuleText>
           <ModuleText token="body" numberOfLines={6}>
             {translation}
           </ModuleText>
+          {/*
+            The translator, named beneath the words that are theirs. Absent rather than invented
+            when the source did not carry one — the approved adapter requires it, so this degrades
+            only under a fixture.
+          */}
+          {translationSource.attribution === undefined ? null : (
+            <ModuleText
+              token="caption"
+              numberOfLines={2}
+              style={{ marginTop: dp(4) }}
+              testID="faith-daily-ayah-translator"
+            >
+              {`Translated by ${translationSource.attribution}`}
+            </ModuleText>
+          )}
         </View>
       </View>
     </ModuleCard>

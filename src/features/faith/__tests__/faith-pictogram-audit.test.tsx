@@ -3,7 +3,8 @@ import React, { type ReactElement } from 'react';
 import { StyleSheet, type ImageStyle } from 'react-native';
 
 import { ModuleHomeScreen } from '@features/modules/screens/module-home-screen';
-import { moduleLayout } from '@features/modules/module-tokens';
+import { faithHeroGeometry, moduleLayout } from '@features/modules/module-tokens';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { mockRouter } from '../../../../jest.setup';
 
@@ -12,10 +13,16 @@ import { getFaithSubmenuEntry, type FaithSubmenuKey } from '../faith-submenu-ass
 import { CalendarScreen } from '../screens/calendar-screens';
 import { DuasScreen } from '../screens/duas-screen';
 import { HadithScreen } from '../screens/hadith-screen';
-import { MosquesScreen, QiblaScreen } from '../screens/location-screens';
+import { MosquesScreen } from '../screens/mosques-screen';
+import { QiblaScreen } from '../screens/qibla-screen';
 import { PrayerTimesScreen } from '../screens/prayer-times-screen';
 import { QuranScreen } from '../screens/quran-screen';
 import { TasbihScreen } from '../screens/tasbih-screen';
+
+// Two costs this removes: the simulated latency the mock data sources sleep through on every
+// mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
+// individual test is charged for it.
+installMockLatencyTimers(() => renderIn(<ModuleHomeScreen moduleId="faith" />));
 
 /**
  * Faith feature identities are approved PNGs; functional controls stay vectors.
@@ -73,43 +80,49 @@ describe('Faith Home identities', () => {
     expect(await view.findByTestId('faith-upcoming')).toBeTruthy();
   });
 
-  it('keeps Share a vector control rather than a pictogram', async () => {
+  /**
+   * The verse card is the control.
+   *
+   * It carried a separate share glyph whose only job was "open this in full" — which is what
+   * tapping the card already did. Two controls, one destination, and the smaller of the two was a
+   * 17 dp icon inside a card that was itself a 44 dp target.
+   */
+  it('opens the verse from the card rather than from a second glyph', async () => {
     const view = await renderIn(<ModuleHomeScreen moduleId="faith" />);
-    expect(await view.findByTestId('faith-ayah-share')).toBeTruthy();
+    const card = await view.findByTestId('faith-ayah');
+
+    expect(String(card.props.accessibilityLabel)).toMatch(/Opens in full/);
+    expect(view.queryByTestId('faith-ayah-share')).toBeNull();
     expect(view.queryByTestId('faith-ayah-share-image')).toBeNull();
   });
 });
 
-describe('the Continue Quran recitation control', () => {
-  it('announces Play, and Pause once playing', async () => {
+/**
+ * There is no recitation control on the Faith home.
+ *
+ * ── What this block used to assert, and why it is inverted ──────────────────
+ * It checked that a play button announced "Play Quran recitation", flipped to "Pause" when pressed,
+ * and met the 44 dp minimum as a perfect circle. All of that was true, and all of it was describing
+ * a control that played nothing: pressing it toggled a boolean, and its own accessibility hint said
+ * audio "arrives with the approved recitation source".
+ *
+ * A transport control that has never transported anything is not an accessibility success, it is a
+ * well-labelled dead end — and it sat on the most prominent card of the module's front page. It is
+ * removed until there is audio behind it, and this asserts it has not crept back.
+ */
+describe('the Continue reading card offers no audio it cannot play', () => {
+  it('renders no play control', async () => {
     const view = await renderIn(<ModuleHomeScreen moduleId="faith" />);
-    const control = await view.findByTestId('faith-continue-play');
-
-    expect(control.props.accessibilityRole).toBe('button');
-    expect(control.props.accessibilityLabel).toBe('Play Quran recitation');
-    expect(control.props.accessibilityState).toMatchObject({ selected: false });
-
-    fireEvent.press(control);
-
-    const after = await view.findByTestId('faith-continue-play');
-    expect(after.props.accessibilityLabel).toBe('Pause Quran recitation');
-    expect(after.props.accessibilityState).toMatchObject({ selected: true });
+    await view.findByTestId('faith-continue');
+    expect(view.queryByTestId('faith-continue-play')).toBeNull();
   });
 
-  it('never says record, and carries no microphone', async () => {
+  it('promises no playback in any label on the card', async () => {
     const view = await renderIn(<ModuleHomeScreen moduleId="faith" />);
-    const control = await view.findByTestId('faith-continue-play');
-    expect(String(control.props.accessibilityLabel)).not.toMatch(/record|microphone/i);
-  });
+    const card = await view.findByTestId('faith-continue');
+    const spoken = String(card.props.accessibilityLabel);
 
-  it('meets the 44 dp touch minimum and is a perfect circle', async () => {
-    const view = await renderIn(<ModuleHomeScreen moduleId="faith" />);
-    const control = await view.findByTestId('faith-continue-play');
-    const style = StyleSheet.flatten(control.parent?.props.style) as ImageStyle;
-
-    expect(style.width).toBeGreaterThanOrEqual(44);
-    expect(style.width).toBe(style.height);
-    expect(style.borderRadius).toBe((style.width as number) / 2);
+    expect(spoken).not.toMatch(/play|pause|listen|recitation|audio/i);
   });
 });
 
@@ -125,37 +138,45 @@ const CHILDREN: readonly (readonly [string, ReactElement, FaithSubmenuKey, strin
   ['Calendar', <CalendarScreen key="c" />, 'calendar', 'faith-calendar'],
 ];
 
-describe('every Faith child inherits its tile pictogram', () => {
-  it.each(CHILDREN)('%s shows the approved PNG', async (_name, element, key) => {
-    const view = await renderIn(element);
-    const image = await view.findByTestId(`faith-identity-${key}-image`);
-    expect(image.props.source).toBe(getFaithSubmenuEntry(key).source);
+/**
+ * ── The eight section *heroes* no longer carry pictograms, and that is intentional ─
+ * This block asserted that each child hero rendered its Faith Home tile PNG inside the shared 76 dp
+ * square. That was the right contract while the heroes composed themselves natively. They now draw a
+ * complete approved card — background, object, eyebrow and heading in one bitmap — so there is no
+ * pictogram in a hero to audit, and the three cases here were failing on a `-artwork` testID that no
+ * longer exists.
+ *
+ * They are replaced, not deleted. `faith-hero-baked.test.tsx` asserts the new contract in full: the
+ * mapped source, `cover` with no distortion, local-only assets, decorative marking, one accessible name,
+ * no duplicate native copy, and no pictogram or separated-object node left behind.
+ *
+ * **Everything else in this file stands.** The pictograms themselves are unchanged and still shipped —
+ * Faith Home's tile grid and the submenu rows draw them, and every case outside this block still audits
+ * them. What went away is the requirement that a *hero* reuse one.
+ *
+ * The case below keeps the tile → screen thread checkable from the other end: each child screen still
+ * has an approved pictogram associated with it, whether or not its hero happens to draw it.
+ */
+describe('every Faith child still has an approved tile pictogram behind it', () => {
+  it.each(CHILDREN)('%s resolves an approved PNG for its tile', async (_name, _element, key) => {
+    const entry = getFaithSubmenuEntry(key);
+    expect(entry.source).toBeDefined();
+    expect(entry.label.length).toBeGreaterThan(0);
   });
 
-  it.each(CHILDREN)('%s renders it contain, untinted, unwrapped', async (_n, element, key) => {
-    const view = await renderIn(element);
-    const image = await view.findByTestId(`faith-identity-${key}-image`);
-    const style = imageStyle(image);
-
-    expect(image.props.resizeMode).toBe('contain');
-    expect(image.props.tintColor).toBeUndefined();
-    expect(style.tintColor).toBeUndefined();
-    expect(style.backgroundColor).toBeUndefined();
-    expect(style.borderWidth).toBeUndefined();
-    expect(style.borderRadius).toBeUndefined();
-  });
-
-  it.each(CHILDREN)('%s uses the one shared identity box', async (_n, element, key) => {
-    const view = await renderIn(element);
-    const style = imageStyle(await view.findByTestId(`faith-identity-${key}-image`));
-
-    expect(style.width).toBe(moduleLayout.faithIdentityImage);
-    expect(style.height).toBe(moduleLayout.faithIdentityImage);
-  });
-
-  it('sizes the identity box inside the specified 48–64 dp band', () => {
-    expect(moduleLayout.faithIdentityImage).toBeGreaterThanOrEqual(48);
-    expect(moduleLayout.faithIdentityImage).toBeLessThanOrEqual(64);
+  /**
+   * The pictogram grew from 56 to 76 when the identity card became a full hero rectangle.
+   *
+   * The old 48–64 dp band described a mark sitting beside two lines of text in a content-height
+   * card. The box it sits in is now `faithHeroGeometry.height`, and a 56 dp mark inside a 144 dp
+   * card reads as an afterthought rather than as the screen's artwork. The band that matters now
+   * is the ratio to the card, which is what this asserts: large enough to be artwork, small enough
+   * to leave the reserved column clear.
+   */
+  it('sizes the hero pictogram as artwork within the hero, not as an icon', () => {
+    const ratio = moduleLayout.faithHeroPictogram / faithHeroGeometry.height;
+    expect(ratio).toBeGreaterThanOrEqual(0.4);
+    expect(ratio).toBeLessThanOrEqual(0.65);
   });
 });
 

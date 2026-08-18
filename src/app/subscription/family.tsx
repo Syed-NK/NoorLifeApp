@@ -1,11 +1,10 @@
-import { SimplePlaceholderScreen } from '@features/placeholder/simple-placeholder-screen';
+import { useLocalSearchParams } from 'expo-router';
 
+import { PlanDetailsScreen } from '@features/subscription/screens/plan-details-screen';
+import { parsePeriodParam } from '@features/subscription/subscription-routes';
+
+/** Screen 04 — Premium Family Details (Phase 5 §5.04). Six accounts: organizer plus five. */
 export default function Screen() {
-  return (
-    <SimplePlaceholderScreen
-      title="Premium Family of 4"
-      description="Four member profiles, parent controls, individual privacy and Family AI."
-      specReference="Design spec §16"
-    />
-  );
+  const { period } = useLocalSearchParams<{ period?: string }>();
+  return <PlanDetailsScreen plan="premium_family" initialPeriod={parsePeriodParam(period)} />;
 }

@@ -3,12 +3,22 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import 'react-native-url-polyfill/auto';
 
+import '@services/auth/web-crypto';
+
 /**
  * The Supabase client.
  *
  * Follows the official Expo/React Native quickstart: the URL polyfill is imported for its side effect
  * before the client is created, because `supabase-js` builds request URLs with the WHATWG `URL` API
  * and Hermes does not ship a complete one.
+ *
+ * ── WebCrypto, for the same reason and with higher stakes ────────────────────
+ * `@services/auth/web-crypto` is imported for its side effect immediately after, and before
+ * `createClient`. Hermes ships no `crypto.subtle`, and `supabase-js` responds to its absence by
+ * silently downgrading PKCE to `code_challenge_method=plain` — where the challenge *is* the verifier
+ * and PKCE protects nothing. Every email confirmation and recovery link in this project is a PKCE
+ * flow, so the globals have to be in place before the client that will use them exists. See that
+ * file for the audited SDK code and `describePkceChallengeMethod` for the self-report.
  *
  * ── Keys ────────────────────────────────────────────────────────────────────
  * Only the publishable (anon) key is read. It is designed to ship in clients and is safe there
@@ -137,6 +147,20 @@ function createSupabaseClient(): SupabaseClient | null {
        */
       detectSessionInUrl: Platform.OS === 'web',
       flowType: 'pkce',
+      /**
+       * Makes the SDK put its PKCE flow id on every email redirect.
+       *
+       * Not a default, and this project shipped once assuming it was — see `PKCE_FLOW_ID_NOTE` in
+       * `auth-callback.config.ts`. Without it `exchangeCodeForSession` falls back to the SDK's legacy
+       * fixed verifier key, which mirrors only the most recently started flow, so a signup
+       * confirmation and a password recovery held open together collide and the older one burns a
+       * single-use code against the wrong verifier.
+       *
+       * The cost is that every redirect now carries a query string, so Supabase's redirect allow-list
+       * must contain the wildcard entry in `REQUIRED_SUPABASE_REDIRECT_URLS` — a bare entry stops
+       * matching and the link falls back to the Site URL.
+       */
+      experimental: { appendPkceFlowIdToRedirects: true },
     },
   });
 }

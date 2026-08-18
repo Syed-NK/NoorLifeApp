@@ -1,11 +1,10 @@
-import { SimplePlaceholderScreen } from '@features/placeholder/simple-placeholder-screen';
+import { useLocalSearchParams } from 'expo-router';
 
+import { PlanDetailsScreen } from '@features/subscription/screens/plan-details-screen';
+import { parsePeriodParam } from '@features/subscription/subscription-routes';
+
+/** Screen 03 — Premium Single Details (Phase 5 §5.03). */
 export default function Screen() {
-  return (
-    <SimplePlaceholderScreen
-      title="Premium Single"
-      description="One user, full module access, advanced module AI. Renewal terms shown, never hidden."
-      specReference="Design spec §15"
-    />
-  );
+  const { period } = useLocalSearchParams<{ period?: string }>();
+  return <PlanDetailsScreen plan="premium_single" initialPeriod={parsePeriodParam(period)} />;
 }

@@ -123,6 +123,14 @@ export function MoreScreen() {
               testID="faith-more-bookmarks"
             />,
             <FaithRow
+              key="progress"
+              title="Reading progress"
+              subtitle="Your daily goal and how far you have read"
+              icon="target"
+              onPress={() => router.push(faithRoutes.progress)}
+              testID="faith-more-progress"
+            />,
+            <FaithRow
               key="worship"
               title="Worship record"
               subtitle="What you marked today"
@@ -130,10 +138,16 @@ export function MoreScreen() {
               onPress={() => router.push(faithRoutes.worship)}
               testID="faith-more-worship"
             />,
+            /*
+              The one place search is offered, and the subtitle says what it covers.
+              It used to sit on the Qur'an screen too, where a field that cannot search the Qur'an
+              is a promise the build cannot keep — NoorLife's approval covers Qur'an content, not
+              the search service.
+            */
             <FaithRow
               key="search"
-              title="Search"
-              subtitle="Across translations, narrations and duas"
+              title="Search narrations and duas"
+              subtitle="Qur’an search is not available"
               icon="search"
               onPress={() => router.push(faithRoutes.search)}
               testID="faith-more-search"
@@ -150,6 +164,14 @@ export function MoreScreen() {
               icon="settings"
               onPress={() => router.push(faithRoutes.preferences)}
               testID="faith-more-preferences"
+            />,
+            <FaithRow
+              key="content-info"
+              title="About this content"
+              subtitle="Sources, translation and recitation credits"
+              icon="shield"
+              onPress={() => router.push(faithRoutes.contentInfo)}
+              testID="faith-more-content-info"
             />,
             <FaithRow
               key="help"

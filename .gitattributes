@@ -1,0 +1,47 @@
+# Line-ending policy for files whose *bytes* are part of a published claim.
+#
+# ── Why this file exists ────────────────────────────────────────────────────
+# This repository is developed on Windows with `core.autocrlf=true`, so by default Git checks text
+# files out with CRLF. That is harmless for source, and it is not harmless for a generated data asset
+# whose SHA-256 is recorded as an audit fact.
+#
+# `assets/data/city-catalogue.json` is committed alongside a checksum in
+# `docs/THIRD_PARTY_LICENCES.md` and a reproducibility claim in `scripts/import-city-catalogue.mjs`:
+# re-running the importer over the recorded GeoNames inputs must reproduce the committed file byte
+# for byte. Under the default policy it would not. The asset holds 49 literal newlines, so a checkout
+# on a Windows machine would rewrite it to 2,297,052 bytes with an entirely different hash — while a
+# checkout on Linux produced the documented 2,297,003. The audit would then pass or fail depending on
+# who ran it, which is the opposite of what a checksum is for.
+#
+# `eol=lf` pins the working-tree form to the form the importer emits, on every platform. The file
+# stays diffable text; only its newline convention is fixed.
+assets/data/*.json text eol=lf
+
+# ── Source and configuration: LF in the repository *and* in the working tree ──
+#
+# Added 2026-08-18. The paragraph above says a CRLF checkout "is harmless for
+# source". That was true when it was written and is no longer true, because
+# `.prettierrc.json` pins `endOfLine: "lf"`. With `core.autocrlf=true` a Windows
+# checkout rewrites LF blobs to CRLF in the working tree, and `format:check` then
+# fails on 41 files whose committed bytes are already correct — a gate that cannot
+# pass on one platform and passes on another, for reasons unrelated to the code.
+#
+# The rules below change no stored blob. Every one of these files is already LF in
+# the repository; `eol=lf` only pins the form Git writes into the working tree, so
+# a checkout stops introducing the difference. Nothing is renormalised.
+#
+# Extensions are enumerated rather than using `* text=auto`, so no binary asset
+# (png, ttf, mp3, jpg, ico, webp) can be reclassified as text by accident, and
+# `.ps1` is deliberately absent: PowerShell scripts keep the platform default.
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.jsx   text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.sql   text eol=lf
+*.sh    text eol=lf

@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
-import type { ReactNode } from 'react';
-import { View } from 'react-native';
+import type { ReactNode, RefObject } from 'react';
+import { ScrollView, View } from 'react-native';
 
 import {
   ModuleEmptyState,
@@ -17,7 +17,12 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import type { FaithNavKey } from '../faith-routes';
 import type { UseFaithResource } from '../hooks/use-faith-resource';
-import { FaithNoResultsState, FaithStaleBanner } from './faith-states';
+import {
+  FaithNoResultsState,
+  FaithProviderLockedState,
+  FaithRefreshingNotice,
+  FaithStaleBanner,
+} from './faith-states';
 
 /**
  * The frame every Faith sub-screen is built in.
@@ -48,6 +53,40 @@ export type FaithScreenProps = {
   /** Overrides Back. Defaults to the shared "return to Main Home" behaviour. */
   readonly onBack?: () => void;
   readonly scrollable?: boolean;
+  /**
+   * With `scrollable={false}`, lets the body claim the viewport instead of being centred in it.
+   *
+   * Used by the two catalogue selectors, which own a `FlatList` and therefore need a bounded height
+   * to virtualize against. See `ModuleScaffold`'s own note for why a centred static body cannot
+   * provide one.
+   */
+  readonly fills?: boolean;
+  /**
+   * A panel pinned above the bottom navigation — the Qur'an reader's audio transport.
+   *
+   * Passed straight through to `ModuleScaffold`, which docks it and reserves scroll padding equal to
+   * its measured height so it can never cover the last verse. See that prop's note.
+   */
+  readonly docked?: ReactNode;
+  /**
+   * A handle on the scaffold's scroll region.
+   *
+   * The reader uses it to bring the verse being recited into view. Passed through rather than
+   * re-created here, because the scroll region belongs to `ModuleScaffold` — see that prop's note.
+   */
+  readonly scrollRef?: RefObject<ScrollView | null>;
+  /**
+   * Overrides the breathing room under the last card. Passed straight through — see that prop's note.
+   *
+   * Only Prayer Times supplies it, and only once it has measured itself as fitting its viewport.
+   */
+  readonly scrollBottomInset?: number;
+  /**
+   * Replaces the page background. Passed straight to `ModuleScaffold` — see that prop's note.
+   *
+   * Only the Qur'an reader supplies it, and only with `readerPageBackground`.
+   */
+  readonly background?: string;
   readonly children: ReactNode;
   readonly testID: string;
 };
@@ -58,6 +97,11 @@ export function FaithScreen({
   banner,
   onBack,
   scrollable = true,
+  fills = false,
+  docked,
+  scrollRef,
+  scrollBottomInset,
+  background,
   children,
   testID,
 }: FaithScreenProps) {
@@ -68,7 +112,12 @@ export function FaithScreen({
       title={title}
       onBack={onBack}
       scrollable={scrollable}
+      fills={fills}
       banner={banner}
+      docked={docked}
+      scrollRef={scrollRef}
+      scrollBottomInset={scrollBottomInset}
+      background={background}
       testID={testID}
     >
       {children}
@@ -85,6 +134,18 @@ export type FaithResourceViewProps<T> = {
   readonly onEmptyAction?: () => void;
   /** Skeleton row count while loading. */
   readonly loadingRows?: number;
+  /**
+   * What the permission state's Grant control does.
+   *
+   * ── Why this had to become a prop ───────────────────────────────────────────
+   * It defaulted to `resource.reload`, which re-ran a request that would fail for exactly the same
+   * reason it failed the first time. The user pressed "Grant", nothing prompted, and the same screen
+   * came back — a control that looks like it asks the OS for something and does not.
+   *
+   * A screen that can genuinely raise a prompt passes one here. The reload default is kept for the
+   * screens whose blocked permission is not one this app can request.
+   */
+  readonly onGrantPermission?: () => void;
   readonly testID: string;
 };
 
@@ -100,6 +161,7 @@ export function FaithResourceView<T>({
   empty,
   onEmptyAction,
   loadingRows = 3,
+  onGrantPermission,
   testID,
 }: FaithResourceViewProps<T>) {
   const router = useRouter();
@@ -114,16 +176,36 @@ export function FaithResourceView<T>({
 
   switch (result.kind) {
     case 'ok':
-      return <>{children(result.data)}</>;
+      /**
+       * Content, with a thin line above it while it is being refreshed.
+       *
+       * Not a skeleton and not a modal: the data below is real, current enough to read, and the user
+       * did not ask to stop reading it. The refresh indication is the whole visible difference
+       * between "refreshing" and "loading", and it is deliberately the smallest one that is still
+       * honest — a screen that refreshed with no indication at all would change its content under
+       * the reader with no explanation.
+       */
+      return resource.refreshing ? (
+        <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
+          <FaithRefreshingNotice testID={testID} />
+          {children(result.data)}
+        </View>
+      ) : (
+        <>{children(result.data)}</>
+      );
 
     case 'stale':
       return (
         <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
-          <FaithStaleBanner
-            cachedAt={result.cachedAt}
-            onRefresh={resource.reload}
-            testID={testID}
-          />
+          {resource.refreshing ? (
+            <FaithRefreshingNotice testID={testID} />
+          ) : (
+            <FaithStaleBanner
+              cachedAt={result.cachedAt}
+              onRefresh={resource.reload}
+              testID={testID}
+            />
+          )}
           {children(result.data)}
         </View>
       );
@@ -154,20 +236,76 @@ export function FaithResourceView<T>({
             rationale: result.rationale,
             required: false,
           }}
-          onGrant={resource.reload}
+          onGrant={onGrantPermission ?? resource.reload}
           onSkip={() => router.back()}
           testID={`${testID}-permission`}
         />
       );
 
+    /**
+     * ── One `error` kind, four different truths ───────────────────────────────
+     * Every code used to land on the module's default error copy: *"Couldn't load your Faith data.
+     * The connection dropped on our side."* — under a **Try again** button. For a timeout that is
+     * accurate. For the three codes below it is not, and the inaccuracy is the app asserting a cause
+     * it has not established.
+     *
+     * Seen on the emulator: a signed-out install opened the Qur'an list and was told the connection
+     * had dropped on NoorLife's side. Nothing had dropped. There was no session, so the adapter
+     * answered `unauthorized`, and the screen reported a server fault instead — inventing an outage
+     * and blaming it on the one party the user cannot check.
+     *
+     * `not-configured` is worse still, because `FaithErrorCode`'s own definition already says why:
+     * "a screen that said 'try again' would be advising a user to retry something that cannot
+     * succeed until somebody sets an environment variable". The rule was written down and the
+     * rendering did the opposite — the retry button was there, and it could never work.
+     *
+     * So the two terminal codes get the terminal state this module already has, with no action,
+     * matching the locked Hadith, Dua and Mosque screens; `unauthorized` names the real cause and
+     * keeps a retry, which genuinely succeeds once the user signs in. Everything else — a timeout, a
+     * rate limit, an outage, an unknown — keeps the retryable copy, which for those is true.
+     */
     case 'error':
-      return (
-        <ModuleErrorState
-          onRetry={resource.reload}
-          developerDetail={result.detail ?? result.code}
-          testID={`${testID}-error`}
-        />
-      );
+      switch (result.code) {
+        case 'not-configured':
+          return (
+            <FaithProviderLockedState
+              icon="lock"
+              title="Not connected to a source"
+              body="This build has no content provider configured, so there is nothing to load. This is not a fault on your device or your connection, and retrying cannot change it — it needs setting up on NoorLife's side."
+              testID={testID}
+            />
+          );
+
+        case 'unsupported':
+          return (
+            <FaithProviderLockedState
+              icon="info"
+              title="Not available from this source"
+              body="NoorLife's approved source does not offer this, so there is nothing to show. It is not missing because of an error, and it will appear only if the source is extended to cover it."
+              testID={testID}
+            />
+          );
+
+        case 'unauthorized':
+          return (
+            <ModuleErrorState
+              title="Sign in to load this"
+              body="This content is fetched with your account, and this device has no signed-in session. Sign in, then try again — nothing is wrong with your connection."
+              onRetry={resource.reload}
+              developerDetail={result.detail ?? result.code}
+              testID={`${testID}-error`}
+            />
+          );
+
+        default:
+          return (
+            <ModuleErrorState
+              onRetry={resource.reload}
+              developerDetail={result.detail ?? result.code}
+              testID={`${testID}-error`}
+            />
+          );
+      }
   }
 }
 

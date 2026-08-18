@@ -15,9 +15,32 @@
  * cases onto six other modules that have no use for them.
  */
 
-/** Why a request could not be served. Stable codes only — never a provider message. */
+/**
+ * Why a request could not be served. Stable codes only — never a provider message.
+ *
+ * ── The two members the Quran Foundation integration added, and why ─────────
+ * Both name a condition the existing set could only have described dishonestly.
+ *
+ * `not-configured` is "this build has no backend": no Supabase project URL, no publishable key, so
+ * the edge function cannot be reached at all. It is not `unavailable` — nothing is failing — and a
+ * screen that said "try again" would be advising a user to retry something that cannot succeed until
+ * somebody sets an environment variable.
+ *
+ * `unsupported` is "this repository method has no approved source behind it". It exists for exactly
+ * one case today: `searchTranslations`, which would need Quran Foundation's Search APIs, and NoorLife's
+ * approval covers Content only. The alternative was to weaken the repository interface by deleting the
+ * method, which would have hidden a missing capability instead of naming it — see
+ * `quran-foundation/README.md`.
+ */
 export type FaithErrorCode =
-  'unavailable' | 'timeout' | 'unauthorized' | 'not-found' | 'rate-limited' | 'unknown';
+  | 'unavailable'
+  | 'timeout'
+  | 'unauthorized'
+  | 'not-found'
+  | 'rate-limited'
+  | 'not-configured'
+  | 'unsupported'
+  | 'unknown';
 
 /** Which OS permission a screen is waiting on. */
 export type FaithPermission = 'location' | 'notifications';

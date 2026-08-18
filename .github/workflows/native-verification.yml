@@ -1,0 +1,76 @@
+name: Native verification
+
+# The Android backup contract lives in a generated manifest.
+#
+# `android/` is gitignored and `expo prebuild` produces it, so the facts cannot be checked by reading
+# the repository. `secure-store-backup.test.ts` used to read the manifest directly and assert it
+# existed: that passed on a developer machine with a stale prebuild lying around and failed in CI,
+# where none had ever run.
+#
+# This job generates the native project on demand, in a git worktree of its own, and verifies the
+# real output. A missing manifest is a hard failure -- never a skip.
+#
+# A separate workflow rather than another job in `ci.yml`, because that file lives on the default
+# branch and this fix is scoped to the feature branch. A new file merges without conflicting with it.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - feature/entry-auth-supabase
+
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android-backup:
+    name: Android backup contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Self-test — the assertions must be able to fail
+        # Runs first on purpose. If the mutation self-test cannot make each assertion fail, the
+        # verification below proves nothing, and a green tick would be misleading.
+        run: node scripts/verify-native-backup.mjs --self-test
+
+      - name: Generate the native project and verify it
+        run: node scripts/verify-native-backup.mjs
+
+      - name: The checkout must be unchanged
+        # The prebuild runs in a temporary worktree. If it ever writes into the checkout instead,
+        # this catches it rather than letting a stray android/ tree follow the runner around.
+        run: |
+          set -euo pipefail
+          if [ -d android ]; then
+            echo "::error::An android/ directory was left in the checkout."
+            exit 1
+          fi
+          dirty="$(git status --porcelain)"
+          if [ -n "$dirty" ]; then
+            echo "::error::The native verification modified the checkout:"
+            echo "$dirty"
+            exit 1
+          fi
+          leftover="$(git worktree list | tail -n +2)"
+          if [ -n "$leftover" ]; then
+            echo "::error::A git worktree was left behind:"
+            echo "$leftover"
+            exit 1
+          fi
+          echo "Checkout clean, no android/ tree, no leftover worktree."

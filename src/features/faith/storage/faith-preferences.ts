@@ -5,29 +5,186 @@ import type {
   PrayerNotificationPreference,
 } from '../data/prayer-times.repository';
 import type { ReciterId, TranslationId } from '../data/quran-content.repository';
-import { faithStorageKeys, hasString, isRecord, readJson, writeJson } from './faith-storage';
+import {
+  DEFAULT_TASBIH_MATERIAL_ID,
+  isTasbihMaterialId,
+  type TasbihMaterialId,
+} from '../data/tasbih/tasbih-materials';
+import { faithStorageKeys, hasString, isRecord, readJson, writeChecked } from './faith-storage';
 
 /**
  * The user's Faith preferences.
  *
- * ── Why the defaults are named constants and not inline literals ────────────
- * "Which translation does a new user get?" is a product decision with an attribution
- * attached, not an implementation detail. Naming it makes it reviewable, and makes the
- * one place to change it obvious when a licensed edition is chosen.
+ * ── Why the translation is no longer a hard-coded id ────────────────────────
+ * It used to be `DEFAULT_TRANSLATION_ID = '131'`, chosen because `131` is the one translation
+ * `resource_id` the vendor's specification names by example. That reasoning was sound and the result
+ * was still wrong: a documented example id is not a promise that the id is *enabled for this
+ * project*, and for NoorLife's credentials it is not. A live check returned `200` with **zero rows
+ * and no attribution** — an edition that exists in the catalogue but yields nothing.
  *
- * The default translation below is a placeholder identifier, not a licensed edition. It
- * resolves against the mock repository only. Selecting the real default is part of the
- * Quran Foundation approval work — see `data/quran-foundation/README.md`.
+ * Worse, the failure was silent in the one place it mattered. The preferences screen listed every
+ * language in one unfiltered run and highlighted whatever the stored id matched, so a user opening
+ * it saw a Bosnian edition selected and no explanation of how it got there.
+ *
+ * So the default is now **resolved from the live catalogue and validated before it is accepted**,
+ * never guessed. See `translation-default.ts`. Until that resolution has happened, the stored
+ * translation is `null`, which is the honest representation of "this app has not yet been told which
+ * translation it can actually use" — and every reader of it has to say so rather than silently
+ * requesting an edition that returns nothing.
  */
 
+/**
+ * The chosen translation, stored whole rather than as a bare id.
+ *
+ * ── Why the metadata travels with the id ────────────────────────────────────
+ * The settings row has to read "English • M.A.S. Abdel Haleem" the instant it renders, and the
+ * reader has to credit a translator before any catalogue request could return. Storing only the id
+ * meant every one of those surfaces did a catalogue lookup to render a string that cannot change,
+ * and showed a bare number whenever the lookup had not landed — which is exactly what
+ * `content-info-screen.tsx` still falls back to ("Edition 131 — details could not be loaded").
+ */
+export type TranslationChoice = {
+  readonly id: TranslationId;
+  /** The catalogue's own `language_name`, e.g. `english`. Lower-cased by the vendor. */
+  readonly language: string;
+  /** The edition's title, e.g. "The Clear Quran". */
+  readonly name: string;
+  /** Who translated it. Required — an edition NoorLife cannot attribute is never offered. */
+  readonly translator: string;
+};
+
 export type FaithPreferences = {
-  readonly translationId: TranslationId;
+  /**
+   * The chosen translation, or `null` when none has been resolved yet.
+   *
+   * `null` is a real state, not an absence of one: on a fresh install, and after a stored edition is
+   * found to be unavailable, NoorLife genuinely does not know which translation it may use until the
+   * catalogue answers. Screens render Arabic with an honest "choosing a translation" note rather
+   * than requesting an edition that will return nothing.
+   */
+  readonly translation: TranslationChoice | null;
+  /**
+   * True when the user picked this translation themselves.
+   *
+   * ── The one flag that makes migration safe ──────────────────────────────────
+   * The brief asks for two things that look contradictory: migrate an accidental Bosnian default to
+   * English, *and* preserve a deliberate non-English selection. Nothing about the stored id can tell
+   * those apart — both are "a valid non-English edition" — so the distinction has to be recorded at
+   * the moment of choosing. A value NoorLife picked is replaceable; a value the user picked is not.
+   */
+  readonly translationChosenByUser: boolean;
+  /**
+   * Whether `DEFAULT_TRANSLATION_CHOICE` has already been applied to this install.
+   *
+   * ── The one fact that makes a seeded default and a live resolver coexist ────
+   * Without it, `translation: null` is ambiguous in the one place ambiguity is fatal. It means
+   * "nothing has ever been chosen" on a fresh install, and it means "the stored edition turned out
+   * to be unavailable and was deliberately cleared" after `resetToDefault`. Seeding on the first
+   * reading is right; seeding on the second would hand the user straight back the edition that had
+   * just failed them, forever.
+   *
+   * So the seed is applied exactly once per install and this records that it happened. After that,
+   * `null` means what the recovery path needs it to mean, and the live resolver runs.
+   */
+  readonly translationDefaultSeeded: boolean;
   readonly reciterId: ReciterId;
+  /**
+   * True when the user picked this reciter themselves.
+   *
+   * ── The same flag as `translationChosenByUser`, for the same reason ─────────
+   * NoorLife's own default reciter used to be `1`, AbdulBaset AbdulSamad — the one recitation
+   * `resource_id` the vendor's specification names by example. The verified default is now `3`,
+   * Abdur-Rahman as-Sudais, confirmed against `list_recitation_resources` on NoorLife's credentials.
+   *
+   * Nothing about a stored `1` distinguishes "the app chose this" from "this user prefers
+   * AbdulBaset", and both are entirely reasonable readings. Only the moment of choosing can record
+   * the difference, so it is recorded there. A value NoorLife picked is correctable; a value the
+   * user picked is theirs.
+   */
+  readonly reciterChosenByUser: boolean;
   readonly calculationMethod: CalculationMethod;
   readonly asrMethod: AsrJuristicMethod;
+  /**
+   * The master switch for prayer alerts.
+   *
+   * ── Why a master switch as well as five per-prayer ones ─────────────────────
+   * Because "off" and "off for every prayer" are different intentions and only one of them survives
+   * a change of mind. A user who turns all five off and later turns Fajr back on has to be asked for
+   * notification permission again if the master was never on; a user who switches the master off is
+   * pausing a configuration they want back. Keeping them separate also lets the preference be
+   * preserved when the OS permission is denied, which the brief requires: the switch stays where the
+   * user left it and the screen says delivery is disabled.
+   */
+  readonly prayerNotificationsEnabled: boolean;
   readonly prayerNotifications: readonly PrayerNotificationPreference[];
-  /** Show transliteration beneath Arabic in the Duas screen. */
-  readonly showTransliteration: boolean;
+  /**
+   * Show a romanised reading aid beneath **Qur'an** Arabic.
+   *
+   * ── Why this is scoped in its name, and what it replaced ────────────────────
+   * It was `showTransliteration`, unscoped, documented as "show transliteration beneath Arabic in the
+   * Duas screen", defaulted to `true`, and **read by nothing**. Three separate problems in one
+   * field:
+   *
+   *   1. It named no scope, so the first surface to consume it would have silently decided what it
+   *      meant for every other. Qur'an transliteration and a future Dua transliteration are different
+   *      content, from different sources, under different permissions; one boolean for both is a
+   *      setting that cannot be turned on for one and off for the other, and the user would have no
+   *      way to discover why.
+   *   2. It described a Duas capability that does not exist. The Dua provider is unconfigured —
+   *      there is no dua content in this build, so there is nothing to transliterate — and a default
+   *      of `true` therefore switched on a feature that is not there.
+   *   3. Nothing read it, so neither problem could be caught by using the app.
+   *
+   * Scoped to the Qur'an, which is the content NoorLife actually has. **No Dua flag is created**: a
+   * preference for content that does not exist is not a preference, and it would be enabling a
+   * non-existent capability by another name. One is added when there is dua content to apply it to.
+   */
+  readonly showQuranTransliteration: boolean;
+  /**
+   * Haptic feedback on the tasbih counter.
+   *
+   * Defaults to on: a counter is the one surface in this module where haptics are unambiguously
+   * useful, because they let somebody count with their eyes closed. The switch lives on the Tasbih
+   * screen itself rather than in preferences, so it can be turned off in the moment it becomes
+   * unwelcome.
+   */
+  readonly hapticsEnabled: boolean;
+  /**
+   * Whether the reader shows its recitation player at all.
+   *
+   * ── Why this is a preference and not merely a control the user can ignore ──
+   * The docked player occupies a permanent band above the bottom navigation on every reading screen.
+   * For somebody who reads and never listens, that is a fifth of a phone screen spent on a control
+   * they will not use — and unlike a sheet, there is nothing to dismiss. Defaults to on, because
+   * recitation is a first-class part of the module and a reader who has never listened cannot know
+   * the option exists if the player is not there to suggest it.
+   *
+   * Switching it off hides the player. It does **not** delete anything: downloaded audio is the
+   * user's, and a display preference that removed files would be a settings toggle doing something
+   * settings toggles must never do.
+   */
+  readonly quranAudioEnabled: boolean;
+  /**
+   * Whether the reading column follows the verse being recited.
+   *
+   * Defaults to on, which is what the reader already did unconditionally. Made a preference because
+   * the behaviour is genuinely contested: it is the point of listening while reading for most people,
+   * and it actively fights anybody who scrolls ahead to read on while the audio catches up.
+   */
+  readonly quranAutoScroll: boolean;
+  /**
+   * Which bead material the Tasbih strand is drawn in, as a **stable id**.
+   *
+   * ── Why this is safe to persist before the artwork exists ─────────────────
+   * It stores a word, never a filename or an asset path, so it survives a re-export and leaks no
+   * build detail into user data. It is read back through `isTasbihMaterialId`, so a value written by
+   * a future build — or a corrupted one — falls back to the default rather than being handed to a
+   * lookup with no entry for it.
+   *
+   * A stored id is a *preference*, not a claim that the material can be drawn. Availability is
+   * `tasbih-materials.ts`'s business, and the screen consults it separately.
+   */
+  readonly tasbihMaterialId: TasbihMaterialId;
   /** Last chosen location label, so a manual city survives a restart. */
   readonly locationLabel: string | null;
 };
@@ -43,47 +200,383 @@ const DEFAULT_NOTIFICATIONS: readonly PrayerNotificationPreference[] = (
  * gets an app uninstalled, and the Faith permission rationale in the module registry
  * promises reminders happen "at the time you choose" — which presupposes choosing.
  */
+
+/**
+ * The default reciter — Quran Foundation recitation `3`, Abdur-Rahman as-Sudais.
+ *
+ * ── Why this one is a constant when the translation is not ──────────────────
+ * Because it was verified against the live catalogue rather than read out of a specification's
+ * example. `3` is the resource id the vendor's own `list_recitation_resources` returns for
+ * Abdur-Rahman as-Sudais on NoorLife's credentials, which is the check the translation default
+ * failed. A constant that has been confirmed against the thing it names is not a guess.
+ */
+export const DEFAULT_RECITER_ID: ReciterId = '3';
+
+/** The reciter's canonical name, for the settings row before the catalogue resolves. */
+export const DEFAULT_RECITER_NAME = 'Abdur-Rahman as-Sudais';
+
+/**
+ * The language a resolved default must be in, matched against the catalogue's `language_name`.
+ *
+ * Lower-cased and compared case-insensitively because the vendor sends `english`, not `English`.
+ */
+export const DEFAULT_TRANSLATION_LANGUAGE = 'english';
+
+/**
+ * The translator preferred for the default when the catalogue offers them.
+ *
+ * A *preference*, not a requirement: if no edition by this translator resolves and validates, the
+ * first valid English edition is used instead. Matching is on a normalised substring because the
+ * catalogue's `author_name` spelling is the vendor's and has varied ("M.A.S. Abdel Haleem",
+ * "Abdul Haleem"), and pinning an exact string would silently fall through to the fallback.
+ */
+export const PREFERRED_DEFAULT_TRANSLATORS: readonly string[] = ['abdel haleem', 'abdul haleem'];
+
+/**
+ * NoorLife's default translation — Quran Foundation resource `85`.
+ *
+ * ── Why this is a constant now, when it deliberately was not before ─────────
+ * The previous constant, `131`, was taken from the vendor's *specification* and never checked: on
+ * NoorLife's credentials it answers `200` with zero rows and no attribution. The correction was to
+ * stop guessing, and `translation-default.ts` was written to resolve a default from the live
+ * catalogue and prove it renders before accepting it. That resolver worked, and its answer is this
+ * edition — reached, on every install, by one `list_translation_resources` read followed by up to
+ * five sequential single-verse probe requests, each a full authenticated round trip, all of them on
+ * the path that gates the reader's first paint.
+ *
+ * So the resolver is kept and the *rediscovery* is not. `85` is not a guess in the way `131` was: it
+ * is the resolver's own validated output, recorded rather than recomputed. It has been through the
+ * exact three checks `validateTranslation` applies — a real page, a real row, and a real credit.
+ *
+ * ── What still re-resolves ──────────────────────────────────────────────────
+ * Everything that made the resolver worth having. `translationChosenByUser` stays `false` for this
+ * value, so it is replaceable; if the edition is ever withdrawn the reader reports
+ * `edition-unavailable`, `resetToDefault` clears it, and the live catalogue is consulted again. The
+ * saving is only that a working default is not re-derived from first principles every install.
+ *
+ * The `name`/`translator` split is the catalogue's own and looks redundant but is not: the vendor
+ * files this edition under the title "M.A.S. Abdel Haleem" with `author_name` "Abdul Haleem", and
+ * both spellings are already in `PREFERRED_DEFAULT_TRANSLATORS` for that reason.
+ */
+export const DEFAULT_TRANSLATION_CHOICE: TranslationChoice = {
+  id: '85',
+  language: 'english',
+  name: 'M.A.S. Abdel Haleem',
+  translator: 'Abdul Haleem',
+};
+
+/**
+ * Translation identifiers that must never survive a read.
+ *
+ * ── Why `131` is in this list ───────────────────────────────────────────────
+ * The rest are ids written by builds that predate approved Quran Foundation access —
+ * `mock.en.clear` and friends are not editions the live source has ever heard of, so sending one
+ * earns a `404` and the reader shows "not found" for a user who chose nothing wrong.
+ *
+ * `131` is different and is the reason this list is now consulted for more than fixtures. It is a
+ * real catalogue entry, so it does not `404`; it simply returns **no rows and no attribution** for
+ * this project, which the reader can only render as "this surah has no translation". A stored id
+ * that produces a silently empty reading experience is worse than one that fails loudly, and it is
+ * not a value any user deliberately chose — it was NoorLife's own default. Correcting it is honest.
+ *
+ * A user who has *deliberately* selected an edition is protected by `translationChosenByUser`, and
+ * that protection is checked before this list is.
+ */
+export const RETIRED_TRANSLATION_IDS: ReadonlySet<string> = new Set([
+  'mock.en.clear',
+  'mock.en.plain',
+  'mock.ar.reciter',
+  /** Returns `200` with zero rows and no attribution on NoorLife's credentials. */
+  '131',
+]);
+
+/** Reciter identifiers from the fixture-only builds. */
+export const RETIRED_RECITER_IDS: ReadonlySet<string> = new Set([
+  'mock.en.clear',
+  'mock.en.plain',
+  'mock.ar.reciter',
+]);
+
+/**
+ * Reciters NoorLife once defaulted to, and no longer does.
+ *
+ * ── Why `1` is corrected rather than left alone ─────────────────────────────
+ * It is a perfectly real, perfectly working recitation — this is not the `131` situation, where the
+ * stored id returned nothing. It is simply not the default NoorLife chose after checking the live
+ * catalogue, and an install that predates that decision has no way of knowing.
+ *
+ * The correction is therefore narrow and reversible: it applies **only** when
+ * `reciterChosenByUser` is false, so a user who deliberately selected AbdulBaset keeps him, and
+ * anyone who dislikes Sudais can select otherwise in one tap on the reciter screen.
+ */
+export const SUPERSEDED_DEFAULT_RECITER_IDS: ReadonlySet<string> = new Set(['1']);
+
 export const defaultFaithPreferences: FaithPreferences = {
-  translationId: 'mock.en.clear',
-  reciterId: 'mock.ar.reciter',
+  /**
+   * The validated default, present from the first render.
+   *
+   * This used to be `null`, which was honest about what the app knew and expensive about how it
+   * found out: every install resolved the same answer from the live catalogue across up to six
+   * sequential authenticated round trips, with the reader held in `resolving` for the duration.
+   */
+  translation: DEFAULT_TRANSLATION_CHOICE,
+  translationChosenByUser: false,
+  translationDefaultSeeded: true,
+  reciterId: DEFAULT_RECITER_ID,
+  reciterChosenByUser: false,
   calculationMethod: 'muslim-world-league',
   asrMethod: 'standard',
+  prayerNotificationsEnabled: false,
   prayerNotifications: DEFAULT_NOTIFICATIONS,
-  showTransliteration: true,
+  /**
+   * Off by default, where the unscoped flag it replaces was on.
+   *
+   * A reading aid over scripture is an addition to the page, and switching one on for everybody
+   * without being asked is the same class of default as opting a user into five daily notifications.
+   * The old `true` was not a decision anybody made about the Qur'an — it was a default chosen for a
+   * Duas feature that does not exist.
+   */
+  showQuranTransliteration: false,
+  hapticsEnabled: true,
+  /*
+    Both default to on, which is what the reader already did unconditionally. Introducing a
+    preference by changing the behaviour it describes would make the setting's first effect a
+    surprise for every existing user.
+  */
+  quranAudioEnabled: true,
+  quranAutoScroll: true,
+  tasbihMaterialId: DEFAULT_TASBIH_MATERIAL_ID,
   locationLabel: null,
 };
 
-function isPreferences(value: unknown): value is FaithPreferences {
-  if (!isRecord(value)) {
-    return false;
-  }
+function isTranslationChoice(value: unknown): value is TranslationChoice {
   return (
-    hasString(value, 'translationId') &&
-    hasString(value, 'reciterId') &&
-    hasString(value, 'calculationMethod') &&
-    hasString(value, 'asrMethod') &&
-    Array.isArray(value.prayerNotifications) &&
-    typeof value.showTransliteration === 'boolean'
+    isRecord(value) &&
+    hasString(value, 'id') &&
+    hasString(value, 'language') &&
+    hasString(value, 'name') &&
+    hasString(value, 'translator')
   );
 }
 
+function isPreferences(value: unknown): value is Partial<FaithPreferences> {
+  return isRecord(value);
+}
+
+/**
+ * The stored blob as it was written by a build that predates `TranslationChoice`.
+ *
+ * Read explicitly rather than by casting, because the whole point of the migration is that these
+ * fields are *not* trustworthy — `translationId` is exactly the value that turned out to be wrong.
+ */
+type LegacyShape = {
+  readonly translationId?: unknown;
+  readonly reciterId?: unknown;
+  /**
+   * The unscoped transliteration flag, as written by builds before it was split.
+   *
+   * Read from the legacy shape rather than from `merged`, because its meaning is exactly what is in
+   * question: it was documented for Duas, defaulted to `true`, and consumed by nothing.
+   */
+  readonly showTransliteration?: unknown;
+};
+
+/**
+ * Turns whatever is in storage into the current shape.
+ *
+ * Exported so the migration is testable on its own, without AsyncStorage in the way. Every branch
+ * below answers one of the brief's migration cases, and the order matters: the user's own choice is
+ * considered before any correction NoorLife would otherwise apply.
+ */
+export function migratePreferences(stored: unknown): FaithPreferences {
+  const record = isPreferences(stored) ? stored : {};
+  const legacy = record as LegacyShape;
+  const merged = { ...defaultFaithPreferences, ...record } as FaithPreferences;
+
+  /**
+   * The reciter, correcting NoorLife's own superseded default but never the user's choice.
+   *
+   * Order matters: the user's own decision is consulted before any correction NoorLife would
+   * otherwise apply, exactly as it is for the translation above.
+   */
+  const reciterChosenByUser = record.reciterChosenByUser === true;
+  const storedReciter = typeof legacy.reciterId === 'string' ? legacy.reciterId : null;
+  const reciterId =
+    storedReciter === null || RETIRED_RECITER_IDS.has(storedReciter)
+      ? DEFAULT_RECITER_ID
+      : reciterChosenByUser || !SUPERSEDED_DEFAULT_RECITER_IDS.has(storedReciter)
+        ? storedReciter
+        : DEFAULT_RECITER_ID;
+
+  /**
+   * Whether this install has already been offered the seeded default.
+   *
+   * Read from the stored blob rather than from `merged`, because `merged` has the current defaults
+   * spread underneath it and would report `true` for a blob written before the field existed.
+   */
+  const seeded = record.translationDefaultSeeded === true;
+
+  /*
+    Validated rather than trusted, for the same reason as the reciter above: `merged` spreads the
+    stored blob over the defaults, so anything at this key arrives intact.
+  */
+  const tasbihMaterialId: TasbihMaterialId = isTasbihMaterialId(record.tasbihMaterialId)
+    ? record.tasbihMaterialId
+    : DEFAULT_TASBIH_MATERIAL_ID;
+
+  /**
+   * The transliteration preference, migrated from the unscoped flag it replaces.
+   *
+   * ── The ambiguity, stated, and how it is resolved ───────────────────────────
+   * A stored `showTransliteration` is genuinely ambiguous. `true` is both "the user switched this on"
+   * and "this install has never been touched", because the old default was `true` — and nothing read
+   * the flag, so there was no behaviour a user could have been reacting to either way. There is no
+   * evidence in the blob that distinguishes them.
+   *
+   * So the migration takes the only unambiguous half. A stored **`false`** can only have come from
+   * somebody deliberately switching it off — no default ever produced it — and that decision is
+   * carried across and honoured. A stored `true` is treated as the untouched default it almost
+   * certainly is, and lands on the new default of `false`.
+   *
+   * That errs toward *not* enabling something on the user's behalf, which is the right direction for
+   * a flag whose old value switched on a capability that did not exist. Anyone who did want it is one
+   * tap away on a row that now says truthfully what it applies to; anyone who is silently opted in
+   * has no such signal.
+   *
+   * A blob written by the current build carries `showQuranTransliteration` and is honoured directly —
+   * that value is unambiguous, because this field has only ever meant one thing.
+   */
+  const showQuranTransliteration =
+    typeof record.showQuranTransliteration === 'boolean'
+      ? record.showQuranTransliteration
+      : legacy.showTransliteration === false
+        ? false
+        : defaultFaithPreferences.showQuranTransliteration;
+
+  /**
+   * A blob written by the current build, carrying a whole choice.
+   *
+   * Kept as-is when the user chose it. When NoorLife chose it, a retired id is dropped so a fresh
+   * default is applied — which is what migrates the accidental Bosnian default, and what corrects
+   * `131`.
+   */
+  if (isTranslationChoice(record.translation)) {
+    const chosenByUser = record.translationChosenByUser === true;
+    const retired = RETIRED_TRANSLATION_IDS.has(record.translation.id);
+    if (chosenByUser || !retired) {
+      return {
+        ...merged,
+        translation: record.translation,
+        translationChosenByUser: chosenByUser,
+        translationDefaultSeeded: true,
+        reciterId,
+        reciterChosenByUser,
+        showQuranTransliteration,
+      };
+    }
+    /**
+     * A retired id NoorLife itself chose. Replaced with the validated default rather than cleared:
+     * clearing it was correct when there was no known-good edition to name, and there is now.
+     */
+    return {
+      ...merged,
+      translation: DEFAULT_TRANSLATION_CHOICE,
+      translationChosenByUser: false,
+      translationDefaultSeeded: true,
+      reciterId,
+      reciterChosenByUser,
+    };
+  }
+
+  /**
+   * No usable choice in the blob — `null`, absent, or a legacy bare `translationId`.
+   *
+   * ── The two cases behind one value, and why `seeded` separates them ─────────
+   * An install that has never been seeded gets the validated default. An install that *has* been
+   * seeded and is nonetheless holding `null` got there by `resetToDefault`, which is the recovery
+   * path for an edition the source stopped serving — and handing that install the same constant back
+   * would restore the broken edition on the next read and make the recovery unreachable. It keeps
+   * `null`, and `useTranslationPreference` consults the live catalogue.
+   *
+   * A legacy bare `translationId` is never honoured in either case. There is no record of whether
+   * the user chose it, the screen that wrote it listed every language unfiltered, and the likeliest
+   * story for any stored value is NoorLife's own default or a mis-tap in an unnavigable list.
+   */
+  return {
+    ...merged,
+    translation: seeded ? null : DEFAULT_TRANSLATION_CHOICE,
+    translationChosenByUser: false,
+    translationDefaultSeeded: true,
+    reciterId,
+    reciterChosenByUser,
+    tasbihMaterialId,
+    showQuranTransliteration,
+  };
+}
+
 export async function readFaithPreferences(): Promise<FaithPreferences> {
-  const stored = await readJson(
+  /**
+   * Read as `unknown` and validated by the migration rather than by a type guard here.
+   *
+   * A guard that rejected an old blob would fall back to the defaults and throw away the user's
+   * calculation method, their notification choices and their location along with the one field that
+   * needed correcting. `migratePreferences` is total over anything JSON can hold, so it keeps what is
+   * still good and repairs only what is not.
+   */
+  const stored = await readJson<unknown>(
     faithStorageKeys.preferences,
-    defaultFaithPreferences,
-    isPreferences,
+    null,
+    (value): value is unknown => isRecord(value),
   );
-  // Merged over the defaults so a preference added in a later build is present even when
-  // the stored blob predates it — otherwise a new field reads as undefined at runtime
-  // despite the type claiming it exists.
-  return { ...defaultFaithPreferences, ...stored };
+  return migratePreferences(stored);
+}
+
+/** The outcome of one read-modify-write, with the persistence result kept separate from the value. */
+export type FaithPreferencesMutation = {
+  /** The merged preferences. Correct in memory even when `persisted` is false. */
+  readonly preferences: FaithPreferences;
+  /**
+   * Whether the merged value reached durable storage.
+   *
+   * Separate from `preferences` because the two genuinely differ: a rejected write leaves the app
+   * holding the value the user asked for and the device holding the value before it. Collapsing them
+   * would make the next launch silently disagree with the screen the user is looking at, which is
+   * exactly the class of claim this module refuses to make.
+   */
+  readonly persisted: boolean;
+};
+
+/**
+ * The module's only read-modify-write of the preference blob.
+ *
+ * ── Why the patch is computed from a function ───────────────────────────────
+ * So the patch is derived from what storage *actually holds at the moment of writing*, not from a
+ * value the caller captured earlier. A caller that read preferences, waited for a user to press
+ * something and then wrote `{ prayerNotifications: [...derivedFromThatOldRead] }` would silently
+ * discard anything written in between — the per-prayer switches and the master switch are two such
+ * writers, and they are one tap apart.
+ *
+ * Callers must **not** rely on this for mutual exclusion: two overlapping calls still interleave
+ * their read and write halves. Serialisation is the store's job — see `faith-preferences-store.ts`,
+ * which is the only production caller and queues every mutation through one chain.
+ */
+export async function mutateFaithPreferences(
+  updater: (current: FaithPreferences) => Partial<FaithPreferences>,
+): Promise<FaithPreferencesMutation> {
+  const current = await readFaithPreferences();
+  const next: FaithPreferences = { ...current, ...updater(current) };
+  /*
+    `writeChecked` rather than `writeJson`: a preference that failed to persist is reported. The rest
+    of this file's reads stay total — a corrupt blob still degrades to defaults — but a write the
+    device refused is something the user can act on, and hiding it is what makes a setting appear to
+    save and then come back wrong.
+  */
+  const persisted = await writeChecked(faithStorageKeys.preferences, next);
+  return { preferences: next, persisted };
 }
 
 export async function writeFaithPreferences(
   update: Partial<FaithPreferences>,
 ): Promise<FaithPreferences> {
-  const current = await readFaithPreferences();
-  const next: FaithPreferences = { ...current, ...update };
-  await writeJson(faithStorageKeys.preferences, next);
-  return next;
+  return (await mutateFaithPreferences(() => update)).preferences;
 }

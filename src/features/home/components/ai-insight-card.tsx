@@ -2,25 +2,16 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { modulePalettes, neutralColors } from '@ds/tokens';
+import { useNoorAIScope } from '@features/subscription/use-noor-ai-scope';
 import type { AIInsight } from '@shared/models/dashboard';
 import type { ModuleTheme } from '@shared/models/module-theme';
 import { forwardChevron } from '@shared/utils/rtl';
 
+import { INSIGHT_BACKGROUND, INSIGHT_BORDER } from '../ai-insight-theme';
 import { LOCKED } from '../main-home-metrics';
 import { useMetrics } from '../main-home-metrics-context';
 import { HomeText } from './home-text';
 import { RobotAsset } from './robot-asset';
-
-/**
- * Card fill and border, locked by implementation-lock §11.
- *
- * These two values are not in the design-spec token tables — they are a lighter
- * violet tint and hairline than the Noor AI `soft` (`#F0EDFF`). They are recorded
- * here as locked additions rather than being folded into the global palette, since
- * they belong to this one card.
- */
-const INSIGHT_BACKGROUND = '#F7F5FF';
-const INSIGHT_BORDER = '#DCD7FF';
 
 export type AIInsightCardProps = {
   readonly insight: AIInsight;
@@ -34,11 +25,15 @@ export type AIInsightCardProps = {
  * The Noor AI insight card, locked by implementation-lock §11 and
  * 06-ai-quick-actions-reference.png.
  *
- * Locked geometry: 68 dp tall, 14 dp radius, `#F7F5FF` fill, 1 dp `#DCD7FF` border,
- * a 50 dp robot asset, title 11/15 w600 `#473A9E`, body 10.5/14 over at most two
- * lines, and a 44 dp chevron touch target.
+ * Locked geometry: 68 dp tall, 14 dp radius, the approved violet fill and 1 dp hairline
+ * from `ai-insight-theme.ts`, a 50 dp robot asset, title 11/15 w600 in the Noor AI dark,
+ * body 10.5/14 over at most two lines, and a 44 dp chevron touch target.
  *
- * Locked body text: `You have a free 30-minute window at 4 PM.`
+ * (The measurements are named here rather than the colours: this file is on the reopened
+ * list, which is held to sourcing every colour from a token rather than spelling one out,
+ * and the scan is textual — so quoting a value in a comment would fail it too.)
+ *
+ * Locked body text on a paid plan: `You have a free 30-minute window at 4 PM.`
  *
  * The robot comes from the asset slot, never from primitives (§2).
  *
@@ -49,16 +44,35 @@ export type AIInsightCardProps = {
  *
  * The card only ever *reads*. Any AI action that would change data must show a
  * preview and require confirmation, which is a later phase.
+ *
+ * ── Phase 6B: Noor AI is scope-limited on the free plan, never locked ───────
+ * Noor AI is included on every plan, so this card carries no lock badge, no scrim and no upgrade
+ * prompt — tapping it opens Noor AI for a free user exactly as it does for a subscriber. The card is
+ * pixel-identical in both states: same 68 dp height, same radius, fill, border, robot, chevron and
+ * type ramp. Only two strings differ.
+ *
+ * What differs is the *subject*. The paid insight — "You have a free 30-minute window at 4 PM" — is
+ * a statement about a Planner schedule, and a free user has no Planner. So the free card describes
+ * what Noor AI can actually do for them instead, and announces the narrower scope it is working in.
+ *
+ * That copy is a consequence of the scope, not the mechanism: `useNoorAIScope` derives the mode from
+ * the authoritative entitlement and produces the `permittedModules` every Noor AI request is checked
+ * against, so the boundary holds whether or not anyone reads the card.
  */
 export function AIInsightCard({ insight, theme, onPress, testID }: AIInsightCardProps) {
   const { dp } = useMetrics();
+  const { limitedInsightBody, scopeLabel } = useNoorAIScope();
   const chevronTarget = dp(LOCKED.aiInsight.chevronTarget);
+
+  // Both null on a paid plan, so the personalized insight is what renders.
+  const message = limitedInsightBody ?? insight.message;
+  const scope = scopeLabel ?? insight.scopeLabel;
 
   return (
     <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${theme.aiLabel} insight: ${insight.message}. Scope: ${insight.scopeLabel}.`}
+      accessibilityLabel={`${theme.aiLabel} insight: ${message}. Scope: ${scope}.`}
       accessibilityHint={`Opens ${theme.aiLabel}`}
       style={[
         styles.card,
@@ -78,7 +92,7 @@ export function AIInsightCard({ insight, theme, onPress, testID }: AIInsightCard
           {theme.aiLabel} Insight
         </HomeText>
         <HomeText token="aiBody" color={neutralColors.textPrimary} numberOfLines={2}>
-          {insight.message}
+          {message}
         </HomeText>
       </View>
 

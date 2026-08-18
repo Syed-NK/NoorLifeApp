@@ -90,24 +90,25 @@ describe('onboarding panel', () => {
     expect(screen.getByRole('header')).toBeTruthy();
   });
 
-  it('shows the whole five-step entry sequence with the current one active', async () => {
+  it('shows exactly three dots, one per onboarding panel, with the current one active', async () => {
     await renderPanel({ step: 1 });
 
     // Onboarding is steps 0–2 of a sequence that continues through Welcome (3) and the
-    // shared Sign In / Sign Up dot (4) — see ENTRY_STEP_COUNT.
+    // one dot per onboarding panel — see ENTRY_STEP_COUNT.
     expect(screen.getByTestId('panel-dots-0')).toBeTruthy();
     expect(screen.getByTestId('panel-dots-1-active')).toBeTruthy();
     expect(screen.getByTestId('panel-dots-2')).toBeTruthy();
-    expect(screen.getByTestId('panel-dots-3')).toBeTruthy();
-    expect(screen.getByTestId('panel-dots-4')).toBeTruthy();
+    // Exactly three. A fourth or fifth dot would promise panels that do not exist.
+    expect(screen.queryByTestId('panel-dots-3')).toBeNull();
+    expect(screen.queryByTestId('panel-dots-4')).toBeNull();
     expect(screen.queryByTestId('panel-dots-5')).toBeNull();
-    expect(ENTRY_STEP_COUNT).toBe(5);
+    expect(ENTRY_STEP_COUNT).toBe(3);
   });
 
   it('announces the step to a screen reader', async () => {
     await renderPanel({ step: 1 });
 
-    expect(screen.getByLabelText('Step 2 of 5')).toBeTruthy();
+    expect(screen.getByLabelText('Step 2 of 3')).toBeTruthy();
   });
 
   it('returns to an earlier step when its dot is tapped', async () => {
@@ -124,10 +125,12 @@ describe('onboarding panel', () => {
     const user = userEvent.setup();
     await renderPanel({ step: 1 });
 
+    // The current dot and the one ahead of it. Dot 0 is deliberately not pressed here — it is a
+    // legitimate backward target from panel 2 and is covered by the test above.
     await user.press(screen.getByTestId('panel-dots-1-active'));
-    await user.press(screen.getByTestId('panel-dots-3'));
+    await user.press(screen.getByTestId('panel-dots-2'));
 
-    // Jumping to Welcome would leave onboarding unrecorded as completed.
+    // Skipping ahead would pass panels without recording onboarding as completed.
     expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 

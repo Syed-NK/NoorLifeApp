@@ -5,11 +5,17 @@ import React from 'react';
 import { AI_INSIGHT_GEOMETRY } from '@ds/components/ai-insight-geometry';
 import { FaithRepositoryProvider } from '@features/faith/di/faith-repository-context';
 import { getModulePictogram } from '@features/home/module-pictograms';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { ModuleProvider } from '../module-context';
 import { moduleColorThemes, FRAMEWORK_MODULE_IDS, type FrameworkModuleId } from '../module-tokens';
 import { ModuleAIInsightCard } from '../components/module-ai-insight-card';
 import { ModuleHomeScreen } from '../screens/module-home-screen';
+
+// Two costs this removes: the simulated latency the mock data sources sleep through on every
+// mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
+// individual test is charged for it.
+installMockLatencyTimers(() => render(<ModuleHomeScreen moduleId="planner" />));
 
 /**
  * Every module's AI Insight card is the same card.

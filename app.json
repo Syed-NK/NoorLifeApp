@@ -18,7 +18,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.NoorLifeApp"
+      "package": "com.anonymous.NoorLifeApp",
+      "permissions": ["android.permission.SCHEDULE_EXACT_ALARM"]
     },
     "web": {
       "output": "static",
@@ -27,14 +28,51 @@
     "plugins": [
       "expo-router",
       [
-        "expo-splash-screen",
+        "expo-font",
         {
-          "backgroundColor": "#FAFFFD",
-          "image": "./assets/images/entry-auth/splash-icon-robot.png",
-          "imageWidth": 120
+          "android": {
+            "fonts": [
+              "./assets/fonts/Poppins_400Regular.ttf",
+              "./assets/fonts/Poppins_500Medium.ttf",
+              "./assets/fonts/Poppins_600SemiBold.ttf",
+              "./assets/fonts/Poppins_700Bold.ttf"
+            ]
+          }
         }
       ],
-      "expo-secure-store"
+      "./plugins/with-imageless-native-splash",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FAFFFD"
+        }
+      ],
+      "expo-secure-store",
+      "./plugins/with-mailto-package-visibility",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "NoorLife uses your location to calculate prayer times and the direction of the Qibla for where you are. Your location stays on this device.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      "expo-asset",
+      [
+        "expo-notifications",
+        {
+          "enableBackgroundRemoteNotifications": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

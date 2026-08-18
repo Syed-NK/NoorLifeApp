@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 
 import { authRoutes, onboardingRoutes } from '@application/navigation/routes';
-import { useAuthActions } from '@application/providers/auth-provider';
+import { markOnboardingCompleted } from '@services/onboarding/onboarding-preferences';
 import { AuthIllustration } from '@features/entry-auth/components/auth-illustration';
 import { noorLifeAssets } from '@shared/assets/noorlife-assets';
 import { illustrationLabels, onboardingCopy } from '@features/entry-auth/entry-auth-copy';
@@ -16,13 +16,12 @@ import { OnboardingScreen } from '@features/entry-auth/screens/onboarding-screen
  */
 export default function Screen() {
   const router = useRouter();
-  const { completeOnboarding } = useAuthActions();
   const copy = onboardingCopy[0];
 
   const skip = () => {
     // Fire-and-forget: the flag is a convenience, and a storage failure must not block the user
     // from leaving onboarding. session-storage swallows its own errors for the same reason.
-    void completeOnboarding();
+    void markOnboardingCompleted();
     router.replace(authRoutes.welcome);
   };
 

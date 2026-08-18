@@ -27,6 +27,8 @@ export function PasswordField({
   label,
   error,
   autoComplete = 'current-password',
+  onFocus,
+  onBlur,
   testID,
   ...rest
 }: PasswordFieldProps) {
@@ -65,8 +67,23 @@ export function PasswordField({
           autoCorrect={false}
           accessibilityLabel={invalid ? `${label}. ${error}` : label}
           accessibilityLiveRegion={invalid ? 'polite' : 'none'}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          /**
+           * Both handlers run, the caller's second.
+           *
+           * These used to be written inside the `{...rest}` spread's path, so a caller passing
+           * `onBlur` — which Change Password now does, to decide when an inline message may
+           * appear — silently replaced the focus-ring reset and left the field drawn as focused
+           * after the keyboard had gone. Composing them keeps the border correct and lets the
+           * caller observe the event.
+           */
+          onFocus={(event) => {
+            setFocused(true);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setFocused(false);
+            onBlur?.(event);
+          }}
           testID={testID}
           {...rest}
         />
@@ -76,7 +93,10 @@ export function PasswordField({
           accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
           // The control is inside a 48 dp field, so its own box is the full field height; the
           // horizontal padding brings it to the 44 dp minimum without changing the field.
-          style={[styles.reveal, { height: dp(entryAuthLayout.inputHeight), paddingHorizontal: dp(10) }]}
+          style={[
+            styles.reveal,
+            { height: dp(entryAuthLayout.inputHeight), paddingHorizontal: dp(10) },
+          ]}
           testID={`${testID ?? 'password'}-reveal`}
         >
           <EntryAuthText token="label" color={entryAuthColors.primary}>

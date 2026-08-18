@@ -2,6 +2,7 @@ import type { FaithPage, FaithPageRequest, FaithResult } from '../faith-result';
 import {
   ayahNumber,
   surahNumber,
+  type AyahRecitation,
   type AyahText,
   type AyahTranslation,
   type QuranContentRepository,
@@ -144,23 +145,51 @@ const AYAT: Readonly<Record<string, { readonly arabic: string; readonly english:
   },
 };
 
+/**
+ * The edition catalogue, mirroring the approved source's identifiers.
+ *
+ * ── Why the ids are the vendor's and the names say "sample" ─────────────────
+ * Same reason the surah list above is complete and accurate: **catalogue metadata is mirrored,
+ * scripture is not.** An edition id is a key, and using a different one here would mean a preference
+ * chosen while running on fixtures silently stopped resolving the moment the approved adapter was
+ * wired in — the preferences screen would show nothing selected, and the reader would ask for an
+ * edition that does not exist.
+ *
+ * What is emphatically not mirrored is the content. Every string these ids resolve to in this file is
+ * `MOCK_SOURCE`-stamped sample text, the names say so, and the badge on every screen says so.
+ */
+/**
+ * Two sample editions, and a note about the ids.
+ *
+ * `131` is deliberately **absent**. It is a real catalogue id that returns nothing on NoorLife's
+ * credentials, so it is retired in `faith-preferences.ts` — leaving it here would mean the fixtures
+ * offered an edition the production code is contracted to refuse, and the default resolver would
+ * skip it in tests for a reason no reader of this file could see.
+ */
 const TRANSLATIONS: readonly TranslationEdition[] = [
   {
-    id: 'mock.en.clear',
-    language: 'English',
-    name: 'Clear rendering (sample)',
-    translator: 'NoorLife sample',
-  },
-  {
-    id: 'mock.en.plain',
+    id: '20',
     language: 'English',
     name: 'Plain rendering (sample)',
     translator: 'NoorLife sample',
   },
+  {
+    id: '126',
+    language: 'Bosnian',
+    name: 'Sample non-English rendering',
+    translator: 'NoorLife sample',
+  },
 ];
 
+/**
+ * The default reciter's real id, so the fixtures exercise the same selection production does.
+ *
+ * `3` and the name are catalogue *metadata* rather than content — the same reasoning that lets the
+ * surah list here be the real 114 entries. Nothing about the audio is sampled; there is none.
+ */
 const RECITERS: readonly ReciterEdition[] = [
-  { id: 'mock.ar.reciter', name: 'Sample reciter', style: 'Murattal' },
+  { id: '3', name: 'Abdur-Rahman as-Sudais', style: 'Murattal' },
+  { id: '1', name: 'Sample reciter', style: 'Murattal' },
 ];
 
 function ayahKeysFor(surah: SurahNumber): readonly string[] {
@@ -192,6 +221,15 @@ function toTranslation(key: string, translationId: TranslationId): AyahTranslati
 
 export function createMockQuranRepository(): QuranContentRepository {
   return {
+    /**
+     * The provenance of everything below, declared once rather than left for each screen to assert.
+     *
+     * The Qur'an screen used to import `MOCK_SOURCE` directly and render it, which was a screen
+     * making a claim about its own data — true only for as long as the mock was wired in. Reading it
+     * from the repository means the badge follows the swap.
+     */
+    source: MOCK_SOURCE,
+
     async listSurahs(): Promise<FaithResult<readonly SurahSummary[]>> {
       return delay({ kind: 'ok' as const, data: SURAHS });
     },
@@ -232,6 +270,23 @@ export function createMockQuranRepository(): QuranContentRepository {
           page,
         ),
       });
+    },
+
+    /**
+     * There is no sample recitation, and there will not be one.
+     *
+     * ── Why `empty` and not a bundled audio file ────────────────────────────
+     * Every other method here returns a fixture stamped `MOCK_SOURCE`, which the UI renders under a
+     * "not a verified source" warning — a reader can see that the text is sample data. Audio has no
+     * equivalent: a recitation *sounds* authoritative, a listener has no badge in their ear, and
+     * shipping a placeholder recitation of the Qur'an is not a thing NoorLife should do at any
+     * fidelity.
+     *
+     * `empty` is the honest answer: this build has no audio for this surah, so the reader offers no
+     * play controls. That is also exactly what a fixture-only build *should* look like.
+     */
+    async listRecitations(): Promise<FaithResult<FaithPage<AyahRecitation>>> {
+      return delay({ kind: 'empty' as const });
     },
 
     async getAyahOfTheDay(translationId: TranslationId) {

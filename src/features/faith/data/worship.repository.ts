@@ -29,8 +29,22 @@ export type WorshipEntry = {
   readonly kind: WorshipKind;
   /** The obligatory prayer this entry tracks, when `kind` is `prayer`. */
   readonly prayer?: PrayerKey;
-  /** Scheduled time or a completion word, as the approved card shows. */
-  readonly detail: string;
+  /**
+   * A scheduled time, or a short description of the act.
+   *
+   * ── Optional, because "I don't know when" is a real answer ──────────────────
+   * It used to be a required string, and the seed satisfied it by hard-coding `5:02 AM`,
+   * `12:35 PM`, `4:15 PM`, `8:44 PM`, `10:10 PM` — the same five times the deleted prayer-times
+   * fixture returned for every location on every date. The result was a Faith home whose hero
+   * showed a calculated next prayer and whose worship card, directly beneath it, showed those
+   * five constants: one screen stating two different things about the same day.
+   *
+   * A prayer's clock time is not the worship record's to know. It belongs to the prayer-times
+   * calculation, which needs a location, and a location can be absent. So this is optional, and
+   * an entry whose time cannot be calculated carries none — the row renders its label and its
+   * tick state, and says nothing about when.
+   */
+  readonly detail?: string;
   readonly status: WorshipEntryStatus;
   /** ISO timestamp of when it was marked, or null if not marked. */
   readonly completedAt: string | null;

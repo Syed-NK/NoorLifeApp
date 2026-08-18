@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
 
 import { authRoutes } from '@application/navigation/routes';
-import { useAuthActions } from '@application/providers/auth-provider';
-import { MedallionRing, SELECTED_RING } from '@features/entry-auth/components/medallion-ring';
+import { markOnboardingCompleted } from '@services/onboarding/onboarding-preferences';
+import { FULL_RING, MedallionRing } from '@features/entry-auth/components/medallion-ring';
 import { onboardingCopy } from '@features/entry-auth/entry-auth-copy';
 import { OnboardingScreen } from '@features/entry-auth/screens/onboarding-screen';
 
@@ -19,11 +19,10 @@ import { OnboardingScreen } from '@features/entry-auth/screens/onboarding-screen
  */
 export default function Screen() {
   const router = useRouter();
-  const { completeOnboarding } = useAuthActions();
   const copy = onboardingCopy[2];
 
   const finish = () => {
-    void completeOnboarding();
+    void markOnboardingCompleted();
     router.replace(authRoutes.welcome);
   };
 
@@ -33,9 +32,13 @@ export default function Screen() {
       title={copy.title}
       subtitle={copy.subtitle}
       illustration={
+        /* Seven modules around the robot, Health included. This used SELECTED_RING, which carries
+           six and drops Health — so the panel claiming module-specific AI was silently missing a
+           module. FULL_RING is the approved seven. Noor AI is not repeated on the ring, because
+           the robot at the centre already is it. */
         <MedallionRing
           size={318}
-          ring={SELECTED_RING}
+          ring={FULL_RING}
           withPrivacyShield
           testID="onboarding-three-ring"
         />

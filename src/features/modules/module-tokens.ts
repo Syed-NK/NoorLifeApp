@@ -206,6 +206,197 @@ export const moduleNeutrals = {
   infoSurface: '#EDF3FF',
 } as const;
 
+/**
+ * A locked hex colour at a stated opacity.
+ *
+ * Introduces no hue: the input must be a value from the locked palette, and the output is that
+ * value made translucent. This is the same device `onHeroColors` uses for its white steps, lifted
+ * to a helper because the reader's dock needs three steps of one hue rather than one.
+ */
+export function withAlpha(hex: string, alpha: number): string {
+  const value = hex.replace('#', '');
+  const channel = (at: number): number => Number.parseInt(value.slice(at, at + 2), 16);
+  return `rgba(${channel(0)}, ${channel(2)}, ${channel(4)}, ${alpha})`;
+}
+
+/**
+ * The opaque colour a translucent locked hue resolves to over a known ground.
+ *
+ * Contrast is a property of what the eye receives, not of what the style sheet says, so a
+ * translucent surface can only be measured once it is flattened. Exported so the contrast
+ * assertions run against the same arithmetic the compositor performs rather than a second guess
+ * at it.
+ */
+export function flattenAlpha(hex: string, alpha: number, over: string): string {
+  const parse = (input: string): readonly number[] => {
+    const value = input.replace('#', '');
+    return [0, 2, 4].map((at) => Number.parseInt(value.slice(at, at + 2), 16));
+  };
+  const top = parse(hex);
+  const ground = parse(over);
+  const mixed = top.map((channel, index) =>
+    Math.round(channel * alpha + (ground[index] ?? 0) * (1 - alpha)),
+  );
+  return `#${mixed
+    .map((channel) => channel.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()}`;
+}
+
+/**
+ * The Qur'an reader's docked player — a pale gold ground, from the locked Faith supporting hue.
+ *
+ * ── Why gold, and why this pale ───────────────────────────────────────────────
+ * The approved reader mockup draws the player as a warm panel that separates it from both the ivory
+ * reading column above and the white navigation bar below. `modulePalettes.faith.supporting` is
+ * NoorLife's own gold and the only one the locked palette carries, so the panel is that value at
+ * three opacities rather than a new hue invented at the call site.
+ *
+ * The 15% step is not a matter of taste. Every step darker measurably costs text contrast on the
+ * panel: at 22% the supporting-text grey drops under 4.5:1 against it, and at 25% the module ink
+ * does too. 15% keeps both text roles above AA — asserted in `quran-audio-player.test.tsx` — while
+ * still reading as gold rather than as another grey.
+ *
+ * ── Why these are flattened rather than left translucent ────────────────────
+ * They were `rgba(...)` at first, which is the ordinary way to express "this hue at 15%" and was
+ * wrong here for a reason only a device shows. The panel carries `shadowRaised`, which on Android
+ * is an `elevation`, and an elevated view with a **translucent** background lets its own drop
+ * shadow show through from underneath: the shadow is densest at the edges, so the panel rendered
+ * with a grey vignette around its padding and a visibly lighter rectangle in the middle. Caught on
+ * the emulator, not in Jest — no test can see a compositing artifact.
+ *
+ * Flattening the three values against the ground each actually sits on produces the identical
+ * colour with no second layer to composite. It also makes the contrast assertions exact rather than
+ * approximate: what the test measures is now literally the value that ships.
+ */
+export const readerDockColors = {
+  /**
+   * The panel itself — the specified `#FFF2D4`.
+   *
+   * ── Why this is now a literal rather than a derivation ──────────────────────
+   * It used to be Faith's supporting gold at 15% flattened over the page background, which landed
+   * near this value by construction. The correction brief specifies the audio player's ground
+   * exactly, so the exact value is what ships: a derivation that merely *approximates* a specified
+   * colour is a value nobody can check against the specification.
+   */
+  surface: '#FFF2D4',
+  /** Its edge. Decorative — the controls inside carry their own contrast. */
+  border: flattenAlpha(modulePalettes.faith.supporting, 0.75, '#FFF2D4'),
+  /**
+   * The unplayed part of the seek bar — flattened over the **panel**, not the page, because that is
+   * what it lies on.
+   */
+  track: flattenAlpha(modulePalettes.faith.supporting, 0.4, '#FFF2D4'),
+  /**
+   * The emerald the player's transport glyphs and seek bar are drawn in.
+   *
+   * ── What this is and is not fixing ──────────────────────────────────────────
+   * Stated precisely, because the easy version of this comment would be wrong. These elements are
+   * non-text UI, so their threshold is 3:1, and `faith.ink` (#217E68) clears it on this panel at
+   * **4.45:1** — as it did on the panel's previous value (#F2EDE2, 4.23:1). Nothing was failing,
+   * and switching to the specified `#FFF2D4` did not make anything worse.
+   *
+   * What it does buy is headroom. 4.45 is comfortably over 3:1 and comfortably *under* the 4.5:1
+   * a text label would need, so the transport sat one design change away from a violation: the
+   * moment any of these controls gained a visible label — a speed readout, a reciter name beside
+   * the glyph — the colour would have had to change anyway, and colours that change late get
+   * changed at the call site. `gradientStart` measures **6.33:1** here, which clears both
+   * thresholds, so the same value works whether an element is a glyph or a label.
+   *
+   * No new hue: this is Faith's own `gradientStart` from the locked palette, already asserted at
+   * 7.03:1 on white.
+   */
+  accent: DERIVED.faith.gradientStart,
+} as const;
+
+/**
+ * The Qur'an reader's page — the specified `#FDFAF5`.
+ *
+ * ── Why the reader alone leaves the shared page background ──────────────────
+ * Every other module screen sits on `moduleNeutrals.pageBackground` (#F7F9FC), a cool near-white
+ * chosen for cards and data. The reader is not a screen of cards; it is a reading column, and a
+ * long passage of scripture on a blue-grey ground reads colder and more clinical than the ivory
+ * the correction brief specifies. This is the one surface where the difference is worth a second
+ * value.
+ *
+ * Measured against it, `textPrimary` reaches 13.70:1, `textSecondary` 5.15:1 and `faith.ink`
+ * 4.75:1 — all above AA, so the reader's existing text roles need no adjustment to sit on it.
+ */
+export const readerPageBackground = '#FDFAF5';
+
+/**
+ * The Tasbih screen's ground, matched to the stage photographs.
+ *
+ * ── Why this is not `readerPageBackground` ──────────────────────────────────
+ * The six V4 stage plates are photographs on a warm studio ivory. Measured at their four corners,
+ * all six sit within a few units of **#F6ECE4** — walnut #F6EEE5, green jade #F6EDE4, black onyx
+ * #F5EBE3, white jade #F6ECE4, sandalwood #F6EDE5, figured brown #F6ECE4. The reader's ivory is
+ * #FDFAF5, which is lighter and cooler, so the plate drew a visible rectangle on the page: a hard
+ * seam exactly where the artwork was supposed to blend into the screen.
+ *
+ * Setting the screen's own ground to the photographs' ivory removes the join without touching the
+ * image — no crop, no fade mask, no scrim over the beads. The plates agree closely enough that one
+ * shared value serves all six; a per-material ground would make the page flicker on every swatch.
+ *
+ * Local to Tasbih. `moduleNeutrals.pageBackground` is untouched, as is the reader's.
+ *
+ * Measured on it: `textPrimary` 12.25:1 and `textSecondary` 4.61:1, both over the 4.5:1 AA bar, and
+ * `faith.ink` 4.25:1 against the 3:1 non-text bar. White cards separate from it at 1.16:1, which is
+ * what keeps the two control cards reading as raised surfaces.
+ */
+export const tasbihStageSurface = '#F6ECE4';
+
+/**
+ * The reader's scripture surface **before** the correction, kept so the change is checkable.
+ *
+ * This is `moduleColorThemes.faith.lightSurface` — the palest Faith green, and what the reciting
+ * ayah used to be washed with. It was rejected as too pale to read as a state at all: on a page of
+ * ivory it is a two-percent shift in luminance, which a reader following a recitation cannot find.
+ * It is named rather than described so `PREVIOUS_ACTIVE_AYAH_SURFACE` can be measured against
+ * `readerAyahColors.active` in a test, the same device `PREVIOUS_SCRIPTURE_FONT_SIZE` uses.
+ */
+export const PREVIOUS_ACTIVE_AYAH_SURFACE = DERIVED.faith.lightSurface;
+
+/**
+ * The three states one ayah can be in inside the reader, as three fills and nothing else.
+ *
+ * ── Why these are fills and never rules, rails or markers ───────────────────
+ * The reciting ayah used to carry a 3 dp dark-green bar down its leading edge on top of the wash,
+ * and the deep-linked ayah carried another one around the whole verse. Two vertical marks in the
+ * same column, in the same hue, meaning two different things — and neither of them survives the
+ * correction. A state on a page of scripture is a *ground*, because the one thing that must not
+ * change is the scripture: no border, no marker, no progress stripe and no decorative rail, so the
+ * Arabic keeps its own colour, its own size and its own measured contrast in every state.
+ *
+ * ── Why three, and why they must not be merged ──────────────────────────────
+ * They answer three different questions and the user can act on each differently:
+ *
+ *   active    the ayah being recited **right now**. The darkest of the three, because it is the one
+ *             a listener is tracking across a moving page.
+ *   focused   the ayah the player is *pointed at* — idle, paused, or stepped to. Visibly a state,
+ *             deliberately weaker than `active`: a paused player that kept the recitation's own
+ *             ground would be claiming audio is playing when none is.
+ *   selected  the ayah whose action sheet is open. Faith's supporting **gold**, not its green, so
+ *             "the one I picked" can never be mistaken for "the one being recited" — and so the
+ *             chosen verse is still identifiable through the sheet's dimming scrim.
+ *
+ * ── Measured, not chosen by eye ─────────────────────────────────────────────
+ * Every value below carries `moduleNeutrals.textPrimary` scripture on it, and each ratio is
+ * asserted in `quran-reader-actions.test.tsx` rather than recorded here on trust:
+ *
+ *   active   #D7EEE3 — 11.7:1   (requirement: ≥7:1)
+ *   focused  #EAF6F0 — 12.9:1
+ *   selected #F7EAD1 — 12.0:1
+ */
+export const readerAyahColors = {
+  /** The ayah being recited. Emerald, and the darkest of the three. */
+  active: '#D7EEE3',
+  /** The ayah the player is pointed at while idle or paused. */
+  focused: '#EAF6F0',
+  /** The ayah whose action sheet is open — Faith's supporting gold, not its green. */
+  selected: '#F7EAD1',
+} as const;
+
 /** Type ramp for module screens. `[fontSize, lineHeight]` at the 393 dp baseline. */
 export const moduleType = {
   /** Module header title. */
@@ -451,8 +642,22 @@ export const moduleLayout = {
   faithHeroDateGap: 6,
   /** Clear air before the action, so the button never touches the prayer text. */
   faithHeroButtonGap: 9,
-  /** Noor AI's four capability cards. */
-  noorAICapabilityHeight: 62,
+  /**
+   * The Noor AI composer's input, and therefore the visible field's height.
+   *
+   * This is the **`TextInput`'s** minimum height, not the wrapper's, and that distinction is the
+   * whole point of the token. The wrapper used to carry an 84 dp `minHeight` while the input sat at
+   * its natural single-line height inside it, so roughly the lower two thirds of a box that looked
+   * like a text field did not respond to a tap — found on the API 36 emulator during AI-5's
+   * verification pass, where a tap at the bottom of the field left it unfocused.
+   *
+   * The input now carries the height and its own padding, so it fills the field to the border and
+   * every part of the visible box is the input. It is a floor, never a fixed height: a long question
+   * still grows the input and the field rather than scrolling or clipping inside them.
+   *
+   * 82 + the wrapper's 1 dp border top and bottom = the 84 dp field the reference draws.
+   */
+  noorAIComposerInputHeight: 82,
   /**
    * Faith's eight approved submenu tiles: 4 columns, 9 dp gaps.
    *
@@ -495,6 +700,16 @@ export const moduleLayout = {
   /** Minimum touch target, both axes. WCAG 2.5.5 / Android accessibility. */
   minTouchTarget: 44,
   /**
+   * The pictogram inside a Faith **section hero**.
+   *
+   * Larger than `faithIdentityImage`'s 56 because the box it sits in is larger: the identity card
+   * it replaces was content-height, and this one is the full `faithHeroHeight`. 76 dp keeps the
+   * same ratio of artwork to card that Faith Home's hero draws, so a child screen's mark reads at
+   * the same weight as the home hero's artwork rather than shrinking inside a taller card.
+   */
+  faithHeroPictogram: 76,
+
+  /**
    * Space below scrollable content, on top of the navigation bar and the safe area.
    *
    * 14, down from 24. The scaffold already insets by `navHeight + insets.bottom`, so this
@@ -506,6 +721,127 @@ export const moduleLayout = {
 } as const;
 
 /**
+ * The one measured geometry every Faith hero rectangle is built from.
+ *
+ * ── Why this exists as a single object ──────────────────────────────────────
+ * Faith Home's hero and the nine section heroes (Qur'an, Hadith, Duas, Prayer, Qibla, Tasbih,
+ * Mosques, Calendar, Faith AI) are required to be the *same rectangle*: same outer height, same
+ * corner radius, same horizontal margins, same internal padding, same artwork scale, same title
+ * and subtitle positions, same responsive behaviour.
+ *
+ * "Required to be the same" is not a thing a comment can enforce. Two components each reading
+ * `moduleLayout.faithHeroHeight` are only equal until somebody tunes one screen and reaches for a
+ * literal, which is exactly how the child screens ended up with a 56 dp identity card while the
+ * home carried a 144 dp hero. So the measurements are grouped here, both components read this
+ * object rather than the individual tokens, and `faith-hero-geometry.test.ts` asserts that the
+ * rendered style of every hero matches these values — a drift becomes a failing test rather than
+ * a visual difference nobody measures.
+ *
+ * The values themselves are unchanged: they are Faith Home's, which is the stated reference.
+ *
+ * ── What is deliberately *not* in here ──────────────────────────────────────
+ * Colour and copy. The brief fixes the geometry across the nine screens, not the palette, and a
+ * hero that also owned its fill could not carry Faith Home's artwork and a child's pictogram. Fill
+ * is the component's business; the rectangle is this object's.
+ */
+export const faithHeroGeometry = {
+  /**
+   * Outer height. Faith Home's 144, not the shared 132 — see `faithHeroHeight`.
+   *
+   * ── Read as a floor on Faith Home, and as exact on the other nine ──────────
+   * The nine section heroes apply this as `height`, because their copy is baked into the artwork or
+   * fixed in the registry and nothing inside them can grow. Faith Home applies it as `minHeight`:
+   * its copy is live — a prayer name and time, a countdown joined to a resolved place name, a Hijri
+   * date — and pinning the box cropped the surplus at large OS text sizes. At ordinary sizes the
+   * content still measures under 144, so both render the identical rectangle. See `faith-hero.tsx`,
+   * and `faith-hero-geometry.test.tsx` for the two assertions that keep the distinction honest.
+   */
+  height: moduleLayout.faithHeroHeight,
+  /** Corner radius, shared with every module card. */
+  radius: moduleLayout.cardRadius,
+  /**
+   * Horizontal margin.
+   *
+   * Zero, and that is the whole point: the hero is laid out *inside* the scaffold's content
+   * column, which already applies `pagePadding` on both edges. A hero that added its own margin
+   * would sit narrower than the cards beneath it. Named rather than omitted so the requirement
+   * "same horizontal margins" has something to assert against.
+   */
+  marginHorizontal: 0,
+  /** Internal padding, per edge. */
+  paddingTop: moduleLayout.faithHeroPaddingTop,
+  paddingBottom: moduleLayout.faithHeroPaddingBottom,
+  paddingLeft: moduleLayout.heroPadding,
+  paddingRight: moduleLayout.heroPadding,
+  /** Gap between the eyebrow and the title. */
+  eyebrowGap: moduleLayout.faithHeroEyebrowGap,
+  /** Gap between the title and the supporting line. */
+  titleGap: moduleLayout.faithHeroDateGap,
+  /** Gap before a trailing action, so a button never touches the copy above it. */
+  actionGap: moduleLayout.faithHeroButtonGap,
+  /**
+   * Share of the card width reserved for artwork.
+   *
+   * Lifted from `faith-hero.tsx`, where it was `ARTWORK_RESERVE_RATIO`. It is a `maxWidth` on the
+   * copy column and never a fixed `width`, so a short title does not leave the column artificially
+   * narrow and a long one is not forced to truncate inside it.
+   */
+  artworkReserveRatio: 0.38,
+  /**
+   * How far a hero title may shrink before wrapping is preferred to shrinking.
+   *
+   * 0.8 of the token size. Below this the line stops reading as the hero's title, and a second
+   * line is the better trade — which is why titles carry `numberOfLines={2}` rather than 1.
+   */
+  titleMinScale: 0.8,
+} as const;
+
+/**
+ * The narrowest a half-width card may get, per unit of text size, before its pair stacks.
+ *
+ * ── What the unit is, and why it is not simply dp ───────────────────────────
+ * 132 **font-scale-independent** dp. A half-width card's problem is never its width alone; it is
+ * how much width it has *relative to the text it must hold*. A 176 dp column at the default text
+ * size and the same column at 1.5x are different columns, and only the second one cannot fit
+ * "Maghrib Prayer" beside a time. Dividing the measured half-column by the OS font scale expresses
+ * both in one number, so a single threshold covers every width and text size instead of a grid of
+ * device exceptions.
+ *
+ * ── Where the value comes from ──────────────────────────────────────────────
+ * Measured, not chosen. The two pairs on Faith Home — Verse of the day | Today's worship, and
+ * Upcoming | Islamic calendar — were rendered on the emulator across six widths and four text
+ * sizes, and the boundary sits between two observations:
+ *
+ *   411 dp @ 1.3  →  176 / 1.3 = 135.4  ·  everything fits, some labels take a second line
+ *   411 dp @ 1.5  →  176 / 1.5 = 117.3  ·  "Maghrib Pr…", "Verse of the …", "Islamic cale…"
+ *
+ * 132 sits inside that gap and nearer the failing end, so a layout that only just works keeps its
+ * two columns. It also produces the required behaviour at the narrow end without a second rule:
+ * 320 dp gives a 143.5 dp half-column, which clears 132 at the default text size and falls under it
+ * from 1.15x upward — which is where that width starts truncating.
+ *
+ * ── Why a threshold rather than measuring the strings ───────────────────────
+ * Measuring would be exact and would also be a layout that changes shape depending on today's
+ * observance name or a translated label, so the same device could stack on one day and not the
+ * next. A fixed threshold is predictable, and the cost of being slightly conservative is one
+ * stacked pair, not a hidden word.
+ */
+export const twoColumnMinimumHalfWidth = 132;
+
+/**
+ * Whether a two-column pair has to become a one-column stack.
+ *
+ * Pure and exported so the rule can be asserted directly rather than inferred from a rendered
+ * tree — see `__tests__/module-two-column.test.tsx`.
+ */
+export function shouldStackTwoColumn(halfColumnWidth: number, fontScale: number): boolean {
+  // A font scale at or below 1 cannot earn a card extra columns: the approved layout is the
+  // two-column one, and text smaller than default is not a reason to change shape.
+  const effective = halfColumnWidth / Math.max(fontScale, 1);
+  return effective < twoColumnMinimumHalfWidth;
+}
+
+/**
  * Layout scale for a given screen width.
  *
  * Identical rule to Main Home and the entry flow: downscale narrow screens,
@@ -513,4 +849,46 @@ export const moduleLayout = {
  */
 export function moduleScale(screenWidth: number): number {
   return Math.min(screenWidth / moduleLayout.referenceWidth, 1);
+}
+
+/**
+ * How much of the bottom of the screen the navigation bar occupies.
+ *
+ * ── Why this is a function and not a constant ───────────────────────────────
+ * Two of its three terms are only known at render: the layout scale, which depends on the device
+ * width, and the safe-area inset, which depends on the device's own gesture bar. Anything that has
+ * to clear the navigation therefore has to *ask*, and this is the one place that answers.
+ *
+ * ── Why it exists at all ────────────────────────────────────────────────────
+ * The bar is `position: absolute`, so it occupies no space in the scaffold's flex column: it draws
+ * over whatever the column put there. Three separate places had to know how tall it is anyway —
+ * the bar itself, the scroll region's bottom padding, and now the docked panel's clearance — and
+ * they each computed `dp(navHeight) + insets.bottom` inline. Two of them agreeing was a convention;
+ * this makes it a fact. The safe-area inset is added exactly once, here.
+ */
+export function moduleNavigationHeight(
+  scaled: (value: number) => number,
+  safeAreaBottom: number,
+): number {
+  return scaled(moduleLayout.navHeight) + safeAreaBottom;
+}
+
+/**
+ * How far above the screen's bottom a **docked panel** must sit to clear the navigation entirely.
+ *
+ * ── Why this is taller than the bar ─────────────────────────────────────────
+ * The centre AI control is raised: it carries `marginTop: -navAIRaise` inside the bar, so it stands
+ * 15 dp *above* the bar's own top edge. A panel that cleared only `moduleNavigationHeight` would
+ * therefore have the robot button overlapping its bottom 15 dp — which is a control covering
+ * another control, and on the reader it lands squarely on the audio player's seek row.
+ *
+ * The 15 dp between the panel and the bar is not empty space: it is the raised control's, and it is
+ * what the approved reader mockup draws. This is why the value is derived from `navAIRaise` rather
+ * than being a margin someone liked the look of.
+ */
+export function moduleDockClearance(
+  scaled: (value: number) => number,
+  safeAreaBottom: number,
+): number {
+  return moduleNavigationHeight(scaled, safeAreaBottom) + scaled(moduleLayout.navAIRaise);
 }

@@ -1,0 +1,63 @@
+-- NoorLife — converge `authenticated` privileges on public.profiles to the documented three.
+--
+-- Corrects B18. Migrations 20260729120000 and 20260729140000 are already applied and are left
+-- untouched.
+--
+-- ── What hosted verification found ──────────────────────────────────────────
+-- A read-only privilege audit of the hosted project (PostgreSQL 17.6, 2026-08-08) read the stored
+-- ACL on public.profiles as:
+--
+--     {postgres=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,...}
+--
+-- `arwdDxtm` is all eight table privileges. `authenticated` therefore held INSERT, SELECT, UPDATE,
+-- DELETE, TRUNCATE, REFERENCES, TRIGGER and MAINTAIN — five more than this repository has ever
+-- intended to grant.
+--
+-- ── Why the earlier grant did not produce the intended set ──────────────────
+-- 20260729140000 ends with `grant select, insert, update ... to authenticated`, which is purely
+-- additive. It cannot remove anything. The table was created in a schema whose default privileges
+-- grant every table privilege to the API roles, so public.profiles was born holding all eight and
+-- the grant added nothing. The same file's `revoke all ... from anon` and `... from public` are why
+-- those two roles are correctly empty today: a revoke was written for them and never for
+-- `authenticated`.
+--
+-- That is why the statement below revokes before it grants. Revoke-then-grant is the only
+-- formulation whose end state does not depend on the starting state — it is correct against the
+-- hosted eight, correct against a fresh `db reset` that re-applies the same open defaults, and
+-- correct if those defaults change again later. It is also idempotent: re-running this file
+-- converges on the same three privileges.
+--
+-- ── What is intentionally retained ──────────────────────────────────────────
+-- SELECT and UPDATE are exercised by the application: the profile read and the onboarding,
+-- display-name and account-journey writes.
+--
+-- INSERT is retained deliberately even though no client path currently inserts. It is this
+-- repository's documented intent, and the `profiles_insert_own` policy still exists as the recovery
+-- path if provisioning by the auth-user trigger ever fails. Removing the privilege while leaving
+-- that policy in place would produce a half-state that reads as an oversight. Whether that recovery
+-- path should exist at all is a separate decision, to be taken on its own evidence.
+--
+-- ── What this migration deliberately does not touch ─────────────────────────
+-- The elevated server-side role's privileges, function EXECUTE privileges, and the schema's default
+-- privileges for future objects are all out of scope here. Each was observed by the same audit,
+-- each is a real finding, and each carries a wider blast radius than this table does — the default
+-- privileges in particular will keep re-granting broad access to future objects until they are
+-- addressed separately. They are separate decisions and belong in separate migrations. Their
+-- absence here is deliberate, not an omission.
+--
+-- Nothing below changes RLS enablement, policies, triggers, functions, or any schema object.
+--
+-- ── FORCE RLS must stay off ─────────────────────────────────────────────────
+-- Row Level Security stays enabled and FORCE stays off, exactly as 20260729140000 left it. Do not
+-- "restore" FORCE here or anywhere else: it removes the table owner's exemption, and the
+-- provisioning trigger runs as that owner against policies scoped to `authenticated`, so FORCE
+-- makes the trigger's insert unsatisfiable and fails signup outright. That defect has been shipped
+-- and fixed once already; 20260729140000 records it in full.
+
+revoke all privileges on table public.profiles from authenticated;
+grant select, insert, update on table public.profiles to authenticated;
+
+-- Re-asserted so this file alone describes the intended end state. Both are already correct on the
+-- hosted project; restating them costs nothing and keeps the three roles legible side by side.
+revoke all privileges on table public.profiles from anon;
+revoke all privileges on table public.profiles from public;

@@ -1,8 +1,14 @@
-import { render, screen, userEvent, within } from '@testing-library/react-native';
+import { render, screen, userEvent } from '@testing-library/react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+
 import { MainHomeScreen } from '../screens/main-home-screen';
 import { mockRouter } from '../../../../jest.setup';
+
+// Two costs this removes: the 450 ms the mock dashboard sleeps on every mount, and the one-off
+// compile cost of the first mount, which is warmed up in `beforeAll` so no test is charged for it.
+installMockLatencyTimers(() => renderMainHome());
 
 /**
  * Main Home proof-screen tests.
@@ -10,6 +16,13 @@ import { mockRouter } from '../../../../jest.setup';
  * Renders the real screen inside the real providers — nothing in the design system
  * or the module theme registry is stubbed, so these assertions exercise the same
  * code path the device does.
+ *
+ * The screen mounts its own upgrade-sheet controller, so this is the same tree `/home`
+ * builds — nothing about the paywall behaviour depends on a test-only wrapper.
+ *
+ * The default providers resolve a **free** entitlement, so the assertions here describe
+ * the free presentation. Paid and unresolved entitlement need an injected adapter and
+ * live in `main-home-paid-content.test.tsx`.
  *
  * The dashboard hook resolves on a short timer. Real timers are used with RNTL's
  * `findBy*` queries rather than fake timers: the async settle is what the screen
@@ -182,14 +195,51 @@ describe('Main Home module grid', () => {
     },
   );
 
-  it.each(['noor-ai', 'faith', 'health', 'planner', 'finance', 'learning', 'family', 'goals'])(
-    'renders a tappable card for %s',
+  it.each(['noor-ai', 'faith'])('renders an unlocked, tappable card for %s', async (id) => {
+    await renderMainHome();
+    await settleReady();
+
+    // Faith and Noor AI are free on every plan. Faith must never carry a lock, and Noor AI is
+    // scope-limited rather than locked.
+    expect(screen.getByTestId(`module-card-${id}`)).toBeTruthy();
+    expect(screen.queryByTestId(`module-card-${id}-locked`)).toBeNull();
+    expect(screen.queryByTestId(`module-lock-${id}`)).toBeNull();
+  });
+
+  it.each(['health', 'planner', 'finance', 'learning', 'family', 'goals'])(
+    'renders a locked card for %s on the free plan',
     async (id) => {
       await renderMainHome();
       await settleReady();
-      expect(screen.getByTestId(`module-card-${id}`)).toBeTruthy();
+
+      // Still a tile in the same position with the same pictogram — locked, not removed.
+      expect(screen.getByTestId(`module-card-${id}-locked`)).toBeTruthy();
+      expect(screen.getByTestId(`module-pictogram-${id}`)).toBeTruthy();
+      expect(screen.getByTestId(`module-lock-${id}`)).toBeTruthy();
+      expect(screen.getByTestId(`module-scrim-${id}`)).toBeTruthy();
     },
   );
+
+  it('announces a locked module as a premium feature', async () => {
+    await renderMainHome();
+    await settleReady();
+
+    // The restriction is part of the accessible name, not a hint, so it cannot be skipped.
+    expect(screen.getByLabelText('Health, Premium feature')).toBeTruthy();
+    expect(screen.getByLabelText('Faith')).toBeTruthy();
+  });
+
+  it('keeps every tile in the grid, locked or not', async () => {
+    await renderMainHome();
+    await settleReady();
+
+    // Geometry is unchanged: eight tiles, same order. Locking changes the surface, not the grid.
+    const tiles = ['noor-ai', 'faith'].map((id) => screen.getByTestId(`module-card-${id}`));
+    const locked = ['health', 'planner', 'finance', 'learning', 'family', 'goals'].map((id) =>
+      screen.getByTestId(`module-card-${id}-locked`),
+    );
+    expect([...tiles, ...locked]).toHaveLength(8);
+  });
 });
 
 describe('Main Home timeline', () => {
@@ -199,8 +249,18 @@ describe('Main Home timeline', () => {
     expect(screen.getByText('Today at a Glance')).toBeTruthy();
   });
 
+  /**
+   * The three fixture rows. The prayer row is deliberately absent from this list.
+   *
+   * It used to be first, as `['Dhuhr Prayer', '12:35 PM']` — a time and a prayer name pinned by a test
+   * that could only pass while the value was fabricated. The row is calculated now, so a test asserting
+   * a literal for it would either be wrong or would have to reproduce the calculation. Its content is
+   * covered by `main-home-prayer-row.test.tsx`, which asserts the *agreement* with Faith rather than a
+   * number.
+   *
+   * These three remain fixtures: Planner and Family own no live data yet.
+   */
   it.each([
-    ['Dhuhr Prayer', '12:35 PM'],
     ['School drop-off', '8:00 AM'],
     ['Work focus time', '10:00 AM'],
     ['Family dinner', '5:30 PM'],
@@ -210,20 +270,36 @@ describe('Main Home timeline', () => {
     expect(screen.getByText(title)).toBeTruthy();
     expect(screen.getByText(time)).toBeTruthy();
   });
-});
 
-describe('Main Home summary and insight cards', () => {
-  it('renders the Family Check-in card with its value as text', async () => {
+  it('renders a prayer row that states no time it has not calculated', async () => {
     await renderMainHome();
     await settleReady();
 
-    // "Family Check-in" is deliberately present twice on this screen — as this
-    // card's heading and as a quick action — so the assertion is scoped to the
-    // card rather than made ambiguous across the screen.
-    const card = within(screen.getByTestId('family-check-in-card'));
-    expect(card.getByText('Family Check-in')).toBeTruthy();
-    expect(card.getByText('4 of 5')).toBeTruthy();
-    expect(card.getByText('complete')).toBeTruthy();
+    expect(screen.getByTestId('timeline-row-next-prayer')).toBeTruthy();
+    // The fabricated value, gone from the screen as well as from the fixture.
+    expect(screen.queryByText('12:35 PM')).toBeNull();
+    expect(screen.queryByText('Dhuhr Prayer')).toBeNull();
+  });
+});
+
+describe('Main Home summary and insight cards', () => {
+  it('renders the Family Check-in card, stating Premium rather than a figure', async () => {
+    await renderMainHome();
+    await settleReady();
+
+    // The default providers resolve a free entitlement, so the card is locked. It keeps its
+    // heading and its place; what it must not do is report a completion figure for a user
+    // who has no family check-in. `main-home-paid-content.test.tsx` covers "4 of 5 complete"
+    // on a paid entitlement.
+    //
+    // Queried from the screen rather than scoped with `within`: a locked card is a
+    // `PressableScale`, which carries the testID on its touch overlay rather than on the box
+    // holding the content. None of these strings appears anywhere else on Main Home.
+    expect(screen.getByTestId('family-check-in-card')).toBeTruthy();
+    expect(screen.getByText('Premium')).toBeTruthy();
+    expect(screen.getByText('Unlock family connection')).toBeTruthy();
+    expect(screen.queryByText('4 of 5')).toBeNull();
+    expect(screen.queryByText('complete')).toBeNull();
   });
 
   it('renders "Family Check-in" both as a summary card and as a quick action', async () => {
@@ -233,30 +309,46 @@ describe('Main Home summary and insight cards', () => {
     expect(screen.getByTestId('quick-action-family-check-in')).toBeTruthy();
   });
 
-  it('renders the Overall Progress card with a labelled progress ring', async () => {
+  it('renders the Overall Progress card with a neutral ring rather than a percentage', async () => {
     await renderMainHome();
     await settleReady();
+
+    // Free entitlement: the ring is a placeholder at the same diameter, and no figure is
+    // claimed. The 68% presentation is asserted against a paid entitlement elsewhere.
     expect(screen.getByTestId('overall-progress-card')).toBeTruthy();
     expect(screen.getByText('Overall Progress')).toBeTruthy();
-    expect(screen.getByText('68%')).toBeTruthy();
-    expect(screen.getByLabelText("Overall progress 68 percent, You're on track")).toBeTruthy();
+    expect(screen.getByText('Unlock progress')).toBeTruthy();
+    expect(screen.getByText('Included with Premium')).toBeTruthy();
+    expect(screen.getByTestId('overall-progress-locked-ring')).toBeTruthy();
+    expect(screen.queryByText('68%')).toBeNull();
+    expect(screen.queryByText("You're on track")).toBeNull();
   });
 
-  it('renders the Noor AI Insight card', async () => {
+  it('renders the Noor AI Insight card, in its application-guidance scope', async () => {
     await renderMainHome();
     await settleReady();
+
+    // The default providers resolve a free entitlement, and Noor AI is scope-limited rather than
+    // locked on it: the card is unchanged, keeps its title and stays tappable, but the personalized
+    // insight is replaced by what Noor AI can actually help a free user with. The paid
+    // "You have a free 30-minute window at 4 PM." presentation is asserted in
+    // `main-home-premium-actions.test.tsx`, which can supply a paid entitlement.
     expect(screen.getByTestId('main-home-ai-insight')).toBeTruthy();
     expect(screen.getByText('Noor AI Insight')).toBeTruthy();
-    expect(screen.getByText('You have a free 30-minute window at 4 PM.')).toBeTruthy();
+    expect(
+      screen.getByText('Ask Noor AI how to find features or manage your account.'),
+    ).toBeTruthy();
+    expect(screen.queryByText('You have a free 30-minute window at 4 PM.')).toBeNull();
   });
 
   it('carries the AI scope in the insight card accessibility label', async () => {
     await renderMainHome();
     await settleReady();
     // The reference shows no scope chip on Main Home, so scope is announced rather
-    // than drawn — but it must still travel with the insight.
+    // than drawn — but it must still travel with the insight. On the free plan the announced
+    // scope is the narrower one, because "NoorLife only" would overstate what Noor AI covers here.
     expect(screen.getByTestId('main-home-ai-insight').props.accessibilityLabel).toContain(
-      'Scope: NoorLife only',
+      'Scope: NoorLife app help only',
     );
   });
 });
@@ -323,13 +415,19 @@ describe('Main Home navigation actions', () => {
     expect(mockRouter.push).toHaveBeenCalledWith('/ai');
   });
 
-  it('navigates to the owning module from a quick action, never editing in place', async () => {
+  it('never edits in place from a quick action, and never enters a module it cannot open', async () => {
     const user = userEvent.setup();
     await renderMainHome();
     await settleReady();
 
+    // Health is premium and the default providers resolve a free entitlement, so this raises the
+    // upgrade explanation instead of navigating. What matters here is the half of the original
+    // assertion that still applies on every plan: Main Home opens no editor of its own, and it does
+    // not enter Health first. `main-home-premium-actions.test.tsx` asserts the `/health` push on a
+    // paid entitlement, which is where that expectation now belongs.
     await user.press(screen.getByTestId('quick-action-log-wellness'));
-    expect(mockRouter.push).toHaveBeenCalledWith('/health');
+    expect(mockRouter.push).not.toHaveBeenCalled();
+    expect(screen.getByTestId('main-home-upgrade-sheet')).toBeTruthy();
   });
 
   it('navigates to the source module from a timeline row', async () => {
@@ -337,7 +435,7 @@ describe('Main Home navigation actions', () => {
     await renderMainHome();
     await settleReady();
 
-    await user.press(screen.getByTestId('timeline-row-dhuhr'));
+    await user.press(screen.getByTestId('timeline-row-next-prayer'));
     expect(mockRouter.push).toHaveBeenCalledWith('/faith');
   });
 

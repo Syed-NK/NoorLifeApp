@@ -1,0 +1,64 @@
+-- NoorLife — restrict EXECUTE on the two trigger functions, and pin one search_path.
+--
+-- Addresses B13. Migrations 20260729120000, 20260729140000, 20260801120000 and 20260808120000 are
+-- already applied and are left untouched.
+--
+-- ── What the hosted inventory found ─────────────────────────────────────────
+-- A read-only per-signature inventory of schema `public` on the hosted project found exactly three
+-- functions, all application-defined and none owned by an extension:
+--
+--     public.handle_new_user()           SECURITY DEFINER, search_path='', EXECUTE already restricted
+--     public.set_updated_at()            SECURITY INVOKER, search_path='', EXECUTE to PUBLIC/anon/authenticated
+--     public.enforce_client_plan_code()  SECURITY DEFINER, search_path=public, EXECUTE to PUBLIC/anon/authenticated
+--
+-- All three return `trigger`.
+--
+-- `handle_new_user` is already correct and is deliberately not mentioned below. 20260729120000 and
+-- 20260729140000 both revoke its EXECUTE explicitly, and the hosted ACL shows that revoke survived —
+-- which is the evidence that the pattern used here reaches the hosted project intact.
+--
+-- The other two were never revoked, so they still carry what the schema's default privileges gave
+-- them at creation: PostgreSQL's own default grants EXECUTE to PUBLIC on every new function, and the
+-- project's default privileges add the API roles on top.
+--
+-- ── Why removing EXECUTE cannot stop the triggers ───────────────────────────
+-- PostgreSQL checks EXECUTE on a trigger function when the trigger is CREATED, not each time it
+-- fires. `profiles_set_updated_at` and `profiles_plan_code_guard` already exist, so they continue to
+-- fire regardless of who holds EXECUTE. Nothing needs PUBLIC, `anon` or `authenticated` to hold it.
+--
+-- Both functions also return `trigger`, so a direct call is refused by the executor with "trigger
+-- functions can only be called as triggers". The grants were therefore latent rather than live —
+-- but a SECURITY DEFINER function that `anon` may execute is not a state to leave standing on the
+-- argument that something else currently blocks it.
+--
+-- ── Why the search_path change is metadata-only ─────────────────────────────
+-- `enforce_client_plan_code` is the one SECURITY DEFINER function still resolving names through
+-- `search_path=public`. Its body is NOT replaced here: ALTER FUNCTION ... SET changes only the
+-- stored configuration.
+--
+-- The function had a fixed search_path of public, not a caller-selected path. The hosted schema ACL
+-- audit showed ordinary API roles have USAGE but not CREATE on public, so no current object-planting
+-- path for those roles was demonstrated. Pinning the function to an empty search_path is
+-- defense-in-depth: it removes reliance on the future writability and contents of public while
+-- preserving behavior because auth.uid() is already schema-qualified and the remaining references
+-- are trigger pseudo-records and literals.
+--
+-- ── What stays out of this migration ────────────────────────────────────────
+-- The elevated server-side role keeps its EXECUTE: it is simply not named in the revokes below, so
+-- its grant is untouched. It is not re-granted either, because naming that role in a tracked file
+-- trips this repository's secret scan — the same reason 20260801120000 writes around it.
+--
+-- The schema's DEFAULT privileges for future functions are NOT changed here. They will keep granting
+-- EXECUTE to the API roles on every function created from now on, and PostgreSQL's built-in default
+-- will keep granting it to PUBLIC — a grant that appears in no pg_default_acl row and therefore
+-- needs its own explicit revoke. That recurrence is a separate, wider decision and remains open.
+--
+-- Nothing below changes function bodies, triggers, tables, columns, RLS, policies, table
+-- privileges, default privileges, schemas, or handle_new_user.
+
+-- Metadata only: the body is not replaced. `revoke execute` and `revoke all` are equivalent for a
+-- function, since EXECUTE is the only privilege a function has; EXECUTE is named for precision.
+alter function public.enforce_client_plan_code() set search_path = '';
+
+revoke execute on function public.set_updated_at() from public, anon, authenticated;
+revoke execute on function public.enforce_client_plan_code() from public, anon, authenticated;

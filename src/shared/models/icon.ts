@@ -24,17 +24,31 @@ export type IconName =
   | 'search'
   | 'chevron-forward'
   | 'chevron-back'
+  | 'chevron-up'
+  | 'chevron-down'
   | 'more'
   // ── Actions ──────────────────────────────────────────────────────────────
   | 'add'
+  | 'minus'
   | 'add-circle'
   | 'check'
   | 'check-circle'
   | 'retry'
+  /*
+    Distinct from `retry` on purpose. Both are "go again" in the abstract, but a counter needs to
+    offer *step back one* and *start over* side by side, and two refresh arrows next to each other
+    say nothing about which is which — the whole point of the pair is that they are told apart at a
+    glance by somebody who is not looking carefully.
+  */
+  | 'undo'
+  | 'edit'
   | 'send'
   | 'microphone'
   | 'play'
   | 'pause'
+  // Track-step controls, distinct from the chevrons: the reader's player steps whole ayat.
+  | 'skip-previous'
+  | 'skip-next'
   | 'bookmark'
   | 'star'
   // ── Status and feedback ──────────────────────────────────────────────────
@@ -45,6 +59,8 @@ export type IconName =
   | 'lock'
   | 'shield'
   | 'sparkle'
+  | 'tap'
+  | 'octagram'
   // ── Module identities (Main Home grid) ───────────────────────────────────
   | 'module-noor-ai'
   | 'module-faith'
@@ -93,9 +109,32 @@ export type IconName =
   // ── Faith module surfaces (Phase 4A, from 03-faith.png) ──────────────────
   | 'hadith'
   | 'qibla'
+  | 'location'
+  | 'calibrate'
+  | 'signal'
+  | 'turn-left'
   | 'tasbih'
   | 'crescent'
   | 'share'
+  /**
+   * Offline recitation management, on the reciter catalogue and in the reader's player.
+   *
+   * Three glyphs rather than one state-dependent glyph: a download that has not started, one that is
+   * running, and one that can be removed are three different actions, and drawing them all as an
+   * arrow would make the destructive one look like the additive one.
+   */
+  | 'download'
+  | 'downloading'
+  | 'delete'
+  /**
+   * The two verse actions the reader's action sheet added, and neither reuses an existing name.
+   *
+   * `note` is the user's own writing about an ayah and `document` already means a stored record
+   * elsewhere; `playlist` is an ordered listening queue and `library` already means a catalogue.
+   * Reusing either would make two different actions draw the same glyph in the same sheet.
+   */
+  | 'note'
+  | 'playlist'
   // ── Health module surfaces (Phase 4A, from 04-health.png) ────────────────
   | 'medication'
   | 'weight'

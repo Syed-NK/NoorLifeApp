@@ -11,6 +11,8 @@ import {
 import { globalRoutes } from '@application/navigation/routes';
 import { FRAMEWORK_MODULE_IDS } from '@features/modules/module-tokens';
 import { ModuleHomeScreen } from '@features/modules/screens/module-home-screen';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+
 import { mockRouter } from '../../../../jest.setup';
 
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
@@ -22,7 +24,8 @@ import { DuasScreen } from '../screens/duas-screen';
 import { FaithAiScreen } from '../screens/faith-ai-screen';
 import { HadithScreen } from '../screens/hadith-screen';
 import { MoreScreen } from '../screens/more-screen';
-import { MosquesScreen, QiblaScreen } from '../screens/location-screens';
+import { MosquesScreen } from '../screens/mosques-screen';
+import { QiblaScreen } from '../screens/qibla-screen';
 import { PrayerTimesScreen } from '../screens/prayer-times-screen';
 import { PreferencesScreen } from '../screens/preferences-screen';
 import { QuranScreen } from '../screens/quran-screen';
@@ -30,6 +33,11 @@ import { ReaderScreen } from '../screens/reader-screen';
 import { SearchScreen } from '../screens/search-screen';
 import { TasbihScreen } from '../screens/tasbih-screen';
 import { WorshipScreen } from '../screens/worship-screen';
+
+// Two costs this removes: the simulated latency the mock data sources sleep through on every
+// mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
+// individual test is charged for it.
+installMockLatencyTimers(() => renderIn(<ModuleHomeScreen moduleId="faith" />));
 
 /**
  * The navigation hierarchy, asserted at every level.

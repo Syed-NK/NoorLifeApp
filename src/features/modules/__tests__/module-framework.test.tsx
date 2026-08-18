@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
+import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { ModuleProvider } from '../module-context';
 import { moduleRegistry } from '../module-registry';
@@ -15,6 +16,10 @@ import {
   ModuleOfflineState,
   ModulePermissionState,
 } from '../components';
+
+// Mounts screens backed by simulated-latency mocks. Advancing those timers rather than
+// sleeping through them is what keeps this suite inside Jest's default per-test budget.
+installMockLatencyTimers(() => render(<ModuleHomeScreen moduleId="planner" />));
 
 /**
  * The framework, rendered.
@@ -218,14 +223,21 @@ describe('module sub-screen', () => {
 });
 
 describe('feature grid', () => {
+  /*
+    Health rather than Faith. Faith's two unavailable capabilities — Qibla and Dhikr — were marked
+    "arrives in a later release" while both screens were shipped and linked from the Faith home, so
+    the registry and the app were making opposite claims. Correcting that left Faith with no
+    unavailable capability to assert against, which is the right outcome for Faith and the wrong
+    fixture for this case. Health's Sleep and Water genuinely have no screen behind them.
+  */
   it('marks an unavailable capability disabled and explains why', async () => {
     await render(
-      <ModuleProvider moduleId="faith">
+      <ModuleProvider moduleId="health">
         <ModuleFeatureGrid testID="grid" />
       </ModuleProvider>,
     );
 
-    const unavailable = moduleRegistry.faith.capabilities.find((item) => !item.available)!;
+    const unavailable = moduleRegistry.health.capabilities.find((item) => !item.available)!;
     const tile = screen.getByTestId(`grid-${unavailable.key}`);
     expect(tile.props.accessibilityState).toMatchObject({ disabled: true });
     // The reason must reach the user, not just the code comment.
@@ -242,6 +254,23 @@ describe('feature grid', () => {
     const available = moduleRegistry.faith.capabilities.find((item) => item.available)!;
     const tile = screen.getByTestId(`grid-${available.key}`);
     expect(tile.props.accessibilityState?.disabled ?? false).toBe(false);
+  });
+
+  /**
+   * Faith claims nothing it has not built.
+   *
+   * Every Faith capability now carries an `href`, and each one is a route that exists — which is the
+   * property the two corrected entries violated. A future capability with no screen behind it is
+   * still allowed; it just has to say so, and this asserts the registry and the app agree.
+   */
+  it('offers no Faith capability without a destination', () => {
+    for (const capability of moduleRegistry.faith.capabilities) {
+      if (capability.available) {
+        expect(capability.href).toBeDefined();
+      } else {
+        expect(capability.unavailableReason).toBeDefined();
+      }
+    }
   });
 });
 

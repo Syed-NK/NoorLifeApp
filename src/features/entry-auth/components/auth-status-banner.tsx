@@ -15,7 +15,11 @@ export type AuthStatusBannerProps = {
 const TONE = {
   error: { fill: '#FDECEC', border: '#F5C2C2', text: entryAuthColors.error },
   success: { fill: '#E7F7F0', border: '#B8E6D2', text: entryAuthColors.success },
-  info: { fill: entryAuthColors.secondaryMint, border: '#CDE7DD', text: entryAuthColors.textPrimary },
+  info: {
+    fill: entryAuthColors.secondaryMint,
+    border: '#CDE7DD',
+    text: entryAuthColors.textPrimary,
+  },
 } as const;
 
 /**

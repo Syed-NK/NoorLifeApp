@@ -126,9 +126,7 @@ describe('provider marks carry no placeholder', () => {
 
 describe('medallion treatment', () => {
   it('defines a saturated fill for every module', () => {
-    expect(Object.keys(medallionColors).sort()).toEqual(
-      Object.keys(noorLifeAssets.modules).sort(),
-    );
+    expect(Object.keys(medallionColors).sort()).toEqual(Object.keys(noorLifeAssets.modules).sort());
     for (const hex of Object.values(medallionColors)) {
       expect(hex).toMatch(/^#[0-9A-F]{6}$/i);
     }

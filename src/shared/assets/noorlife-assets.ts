@@ -24,8 +24,24 @@ export const REQUIRED_GOOGLE_MARK_PATH = 'assets/brand/google/g-logo.png';
 
 export const noorLifeAssets = {
   entryAuth: {
-    /** The locked splash, used unchanged and full-screen. */
-    splash: require('@assets/images/entry-auth/splash-soft-mint.png') as ImageSourcePropType,
+    /**
+     * The approved splash, used unchanged and full-screen.
+     *
+     * ── Superseded asset ──────────────────────────────────────────────────────
+     * This pointed at `splash-soft-mint.png` until Phase 5B. That artwork carried the family
+     * characters and the full robot, which made the splash near-indistinguishable from onboarding
+     * panel 1 — the same people, the same robot, twice in three seconds.
+     *
+     * The approved replacement is the luminous family-heart emblem ringed by the eight module
+     * pictograms, with the wordmark and tagline. Same 852 x 1846 canvas, so
+     * `resolveSplashResizeMode` and its crop arithmetic are unaffected.
+     *
+     * The old file is deliberately left on disk rather than overwritten: swapping bytes behind an
+     * unchanged filename hides the change from review, whereas a new filename makes it a visible
+     * one-line edit. See docs/PHASE_5B_PROTECTED_HASHES_BEFORE.md.
+     */
+    splash:
+      require('@assets/images/entry-auth/splash-luminous-family-emblem.png') as ImageSourcePropType,
     /** Approved 3D privacy shield — screens 04 and 11. */
     privacyShield: require('@assets/images/entry-auth/privacy-shield.png') as ImageSourcePropType,
     /** Approved 3D envelope — screens 05, 08, 09 and 10. */

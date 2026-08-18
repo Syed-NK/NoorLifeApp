@@ -50,6 +50,10 @@ export function SecondaryButton({
         token="button"
         color={entryAuthColors.textPrimary}
         numberOfLines={1}
+        // Shrink to fit rather than ellipsize, for the reason recorded in `primary-button.tsx`: the
+        // pair are used together on the callback screen and must behave identically.
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
         maxFontSizeMultiplier={1.3}
       >
         {label}

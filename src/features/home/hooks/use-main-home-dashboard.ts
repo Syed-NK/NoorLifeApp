@@ -4,6 +4,8 @@ import { mockMainHomeDashboard } from '@mocks/main-home';
 import type { MainHomeDashboard } from '@shared/models/dashboard';
 import type { AsyncState } from '@shared/states/app-state';
 
+import { usePrayerTimelineEntry } from './use-prayer-timeline-entry';
+
 /**
  * Simulated latency for the mock aggregation, in milliseconds.
  *
@@ -52,6 +54,20 @@ export function useMainHomeDashboard(options?: {
   const [attempt, setAttempt] = useState(0);
   const [settled, setSettled] = useState<Settled | null>(null);
 
+  /**
+   * The one row that is real, fanned in here because this is the seam for exactly that.
+   *
+   * The doc comment above describes this hook as "the seam where those module repositories will be
+   * fanned in", and Faith is the first module to have a repository worth fanning. Composing it here
+   * rather than in `main-home-screen.tsx` matters: that screen's byte-for-byte lock was reopened only
+   * for the upgrade-sheet provider, and adding data assembly to it would exceed that permission. The
+   * screen still receives one `MainHomeDashboard` and renders it unchanged.
+   *
+   * It is called unconditionally, before the `simulateFailure` branch, because it is a hook. On the
+   * error path its value is simply unused — the screen renders its error state and no timeline.
+   */
+  const prayerRow = usePrayerTimelineEntry();
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setSettled({
@@ -73,8 +89,32 @@ export function useMainHomeDashboard(options?: {
 
   // A result from an earlier attempt is ignored, so pressing retry returns to the
   // loading branch immediately.
-  const state: AsyncState<MainHomeDashboard> =
+  const resolved: AsyncState<MainHomeDashboard> =
     settled !== null && settled.attempt === attempt ? settled.state : { status: 'loading' };
+
+  /**
+   * The prayer row is merged on **read**, not at settle time.
+   *
+   * ── Why that distinction matters ────────────────────────────────────────────
+   * `settled` is written once when the simulated aggregation finishes, and the prayer calculation
+   * resolves on its own schedule — a location fix can take seconds, and the countdown then updates
+   * every fifteen seconds after that. Merging into `settled` would freeze whatever the prayer row
+   * happened to be at that instant, which is the same staleness bug as the hero's frozen countdown,
+   * reintroduced one layer down.
+   *
+   * Composing here means the row's own transitions — loading, then a time, or the location prompt —
+   * flow through without the dashboard needing to re-settle, and a failed prayer calculation cannot
+   * take the rest of Main Home with it.
+   *
+   * It is prepended, holding the position and the Faith accent the locked composition gives it.
+   */
+  const state: AsyncState<MainHomeDashboard> =
+    resolved.status === 'ready'
+      ? {
+          ...resolved,
+          data: { ...resolved.data, timeline: [prayerRow, ...resolved.data.timeline] },
+        }
+      : resolved;
 
   return { state, reload };
 }

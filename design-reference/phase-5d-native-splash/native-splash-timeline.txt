@@ -1,0 +1,43 @@
+NoorLife — native splash no-touch verification
+Generated 2026-08-01T07:18:11Z  commit 8261eec
+
+METHOD: adb screencap only. No 'adb shell input' command is issued anywhere in this run.
+        The emulator is not touched by hand at any point.
+
+=== A. RELEASE APK, fresh install, app data cleared ===
+t=500ms (actual +584ms)  01-500ms.png  123892 bytes
+t=1000ms (actual +1355ms)  02-1000ms.png  123892 bytes
+t=2000ms (actual +2064ms)  03-2000ms.png  2407133 bytes
+t=3000ms (actual +4001ms)  04-3000ms.png  858135 bytes
+t=~6500ms  05-final-onboarding.png  858135 bytes
+
+  RESULT: native mint at 0.5-1.0s -> branded splash by 2.0s -> onboarding by 4.0s.
+  Advanced with zero input. Branded splash visible ~2.0s, clearing its 1800ms minimum.
+
+=== B. RETURNING COLD LAUNCH (data intact, onboarding recorded) ===
+t=700ms (actual +844ms)  returning-700.png  124638 bytes
+t=1500ms (actual +2624ms)  returning-1500.png  2320778 bytes
+t=3000ms (actual +5385ms)  returning-3000.png  858521 bytes
+=== C. DEBUG / DEV-CLIENT APK, no Metro running ===
+t=1000ms (actual +1107ms)  debug-1000.png  124638 bytes
+t=3000ms (actual +3042ms)  debug-3000.png  124638 bytes
+t=6000ms (actual +6045ms)  debug-6000.png  124488 bytes
+--- input events during the whole run (expect none from adb) ---
+  (none — this run issued no `adb shell input` command at all)
+
+  RESULT B: returning launch advanced automatically. Branded splash by ~2.6s, onboarding by ~5.4s.
+
+  RESULT C: the debug build does NOT show NoorLife's native splash at all. The frames are
+  expo-dev-client's own launcher screen (the blue Expo "A"), shown because no Metro server is
+  running, so the JS bundle never loads and neither preventAutoHideAsync nor hideAsync is ever
+  reached. This is expo-dev-client behaviour, not the application's splash, and no change to
+  NoorLife's startup code can dismiss it — the fix for that state is to start Metro or install the
+  release build. It is called out here because it is exactly the confusion the brief warns about:
+  a dev client waiting for Metro looks like a frozen splash but is a different screen entirely.
+
+=== VERDICT ===
+Release APK: native splash dismisses automatically, no interaction, on both first and returning
+cold launches. Verified from a fresh uninstall/install with app data cleared.
+
+Debug APK without Metro: shows the dev-client launcher, not NoorLife's splash. Out of scope of the
+native handoff; documented rather than "fixed".

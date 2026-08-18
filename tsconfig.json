@@ -22,5 +22,10 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
-  "exclude": ["node_modules", "dist", "android", "ios"]
+  // `supabase/` holds the Deno Edge Function (Phase AI-2). It is a different runtime with different
+  // globals and different module resolution — `Deno.serve`, `.ts` import specifiers — so compiling it
+  // with the app's React Native compiler would report errors that are not errors. It is type-checked by
+  // its own toolchain instead: `deno check` from `supabase/functions`, wired into the `verify` task in
+  // `supabase/functions/deno.json` alongside `deno fmt`, `deno lint` and `deno test`.
+  "exclude": ["node_modules", "dist", "android", "ios", "supabase"]
 }
