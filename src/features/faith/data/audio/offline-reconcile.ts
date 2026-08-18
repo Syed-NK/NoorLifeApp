@@ -42,7 +42,7 @@ import {
  * full comparison after a clean no-mutation response is explicitly optional.
  *
  * No recitation mutation has been observed on the feed, and nothing here may be described as a proven
- * mutation mechanism. `faith-recitation-check.ts` keeps `mutationEverObserved` false until one is
+ * mutation mechanism. The generation manifest keeps `mutationEverObserved` false until one is
  * actually read off the wire — it is a **factual diagnostic only**. Its being false is the expected
  * state and carries no compliance meaning; it is not evidence that retention permission is unmet.
  * ═══════════════════════════════════════════════════════════════════════════

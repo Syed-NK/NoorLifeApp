@@ -30,7 +30,6 @@ import {
   readActiveGeneration,
   sweepGenerations,
 } from '../../storage/faith-sync-generation';
-import { RECITATION_CHECK_INTERVAL_MS } from '../../storage/faith-recitation-check';
 import { publishRevision, updateSyncStatus } from './content-sync.revision';
 import { isPublishableAttribution, resolveTranslationAttribution } from './translation-attribution';
 import type { SyncSessionGuard } from './content-sync.session';
@@ -664,8 +663,20 @@ export function createContentSyncOrchestrator(
     const elapsedAudio = previous === null ? null : at - previous.manifest.recitation.lastCheckedAt;
     /* A clock that moved backwards is treated as due rather than as fresh; failing toward a check. */
     const feedDue = elapsedFeed === null || elapsedFeed < 0 || elapsedFeed >= SYNC_INTERVAL_MS;
+    /*
+      ── The recitation clock is the integrity clock, and only that ──────────
+      This compared `recitation.lastCheckedAt` against a **seven-day** window, which looked like the
+      C7 obligation and was not. That timestamp advances only when a resource-3 snapshot is staged,
+      and a snapshot is deliberately taken about once a month — so from day seven until day thirty it
+      was permanently in the past, `audioDue` was permanently true, and every startup, foreground and
+      reconnection published a fresh generation, damped only by the thirty-second minimum attempt gap.
+
+      The seven-connected-day obligation is carried by `feedDue` above, on `manifest.createdAt`,
+      which advances on every successful publication including a clean no-mutation one. This clock is
+      the bounded integrity safeguard and belongs on the integrity interval.
+    */
     const audioDue =
-      elapsedAudio === null || elapsedAudio < 0 || elapsedAudio >= RECITATION_CHECK_INTERVAL_MS;
+      elapsedAudio === null || elapsedAudio < 0 || elapsedAudio >= RECITATION_INTEGRITY_INTERVAL_MS;
     /**
      * A published generation whose translator credit is unusable is **due** for a run.
      *
@@ -734,13 +745,8 @@ export function createContentSyncOrchestrator(
       previous === null ||
       previous.recitations.rows.length === 0 ||
       previous.recitations.resourceId !== SUDAIS_RESOURCE_ID;
-    const integrityReconciliationDue =
-      previous !== null &&
-      (() => {
-        const since = at - previous.manifest.recitation.lastCheckedAt;
-        /* A clock that moved backwards is treated as due, failing toward a check. */
-        return since < 0 || since >= RECITATION_INTEGRITY_INTERVAL_MS;
-      })();
+    /* The same question `audioDue` already answered, so it is not asked a second way. */
+    const integrityReconciliationDue = previous !== null && audioDue;
     const recitationBaselineRequired =
       force || recitationBaselineMissing || integrityReconciliationDue;
     report({ status: 'checking', isRunning: true });

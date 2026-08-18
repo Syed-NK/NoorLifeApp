@@ -53,7 +53,6 @@ describe('large datasets are file-backed', () => {
       ['storage', 'faith-sync-generation.ts'],
       ['storage', 'faith-sync-rows.ts'],
       ['storage', 'faith-sync-checkpoint.ts'],
-      ['storage', 'faith-recitation-check.ts'],
       ['data', 'sync', 'content-sync.orchestrator.ts'],
       ['data', 'audio', 'offline-migration.ts'],
     ] as const;
@@ -137,7 +136,6 @@ describe('nothing sensitive is logged', () => {
     for (const segments of [
       ['storage', 'faith-sync-generation.ts'],
       ['data', 'sync', 'content-sync.orchestrator.ts'],
-      ['storage', 'faith-recitation-check.ts'],
       ['data', 'audio', 'offline-migration.ts'],
       ['data', 'connectivity', 'expo-connectivity.port.ts'],
       ['data', 'connectivity', 'connectivity.port.ts'],

@@ -138,7 +138,11 @@ export const faithStorageKeys = {
    * evidence that the audio was ever checked at all.
    *
    * Holds two timestamps and one closed enum. No content, no URL, no id beyond the approved one.
-   * See `faith-recitation-check.ts`.
+   * Retired. The generation manifest is the single authority for both the seven-day feed clock
+   * (`createdAt`) and the recitation integrity clock (`recitation.lastCheckedAt`), so nothing reads
+   * or writes this key any more. It is left declared, and deliberately not migrated or deleted from
+   * devices: an inert private key costs nothing, and a migration that touched it could only risk
+   * data it no longer owns.
    */
   quranRecitationCheck: `${NAMESPACE}.quran.recitation-check`,
   /**
