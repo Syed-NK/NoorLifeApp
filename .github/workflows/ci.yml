@@ -1,0 +1,209 @@
+name: CI
+
+# Minimal gate that runs before feature branches merge.
+#
+# Deliberately does NOT run `npm run validate`. That script is
+# `format:check && lint && typecheck && test`, and `format:check` currently fails
+# repo-wide, so the chain short-circuits at the first stage and the three stages
+# that matter never run. The stages are invoked individually here instead.
+#
+# `format:check` is intentionally absent from this workflow. It is added in a
+# follow-up commit, once the dedicated mechanical formatting commit has landed.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - feature/entry-auth-supabase
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: App (lint, types, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Expo lint
+        run: npx expo lint
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Jest (complete suite)
+        run: npx jest --ci
+
+      - name: No skipped or focused tests
+        # A `.only` silently disables every other test in its file, and a stray
+        # `.skip` hides a failure behind a green run.
+        run: |
+          set -uo pipefail
+          set +e
+          hits="$(git grep -nE -e '\b(describe|it|test)\.(only|skip)\b' -e '\b(fdescribe|fit|xdescribe|xit)\(' -- 'src/**/*.test.ts' 'src/**/*.test.tsx' 'supabase/functions/**/*_test.ts')"
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            echo "::error::Focused/skipped-test scan failed to run (git grep exit $status)."
+            exit 1
+          fi
+          if [ "$status" -eq 0 ]; then
+            echo "::error::Focused or skipped tests found:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "No focused or skipped tests."
+
+      - name: Whitespace check
+        # Trailing whitespace, leading tab/space damage and conflict markers in
+        # the diff this PR actually introduces.
+        run: |
+          set -euo pipefail
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            git fetch --no-tags origin \
+              "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
+            base="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)"
+          elif git rev-parse --verify -q HEAD~1 >/dev/null; then
+            base="$(git rev-parse HEAD~1)"
+          else
+            echo "No base to compare against; skipping."
+            exit 0
+          fi
+          git diff --check "$base" HEAD
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No environment files are tracked
+        run: |
+          set -uo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$' || true)"
+          if [ -n "$tracked" ]; then
+            echo "::error::Environment files are tracked in git:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "No tracked environment files."
+
+      - name: Secret scan self-test
+        # Proves the scanner can still go red. The first revision of this file
+        # passed while scanning nothing, and a check that cannot fail is worse
+        # than no check, because it reads as evidence.
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          # The fixture value is split across two adjacent shell strings so that
+          # this file does not itself contain a literal the scan matches. That
+          # keeps ci.yml inside the scanned set instead of excluded from it.
+          echo "AKIA""IOSFODNN7EXAMPLE" > "$fixture"
+          if ! grep -qIE -e "$(cat .github/secret-patterns.txt)" "$fixture"; then
+            echo "::error::Self-test failed: the pattern set no longer matches a known-bad fixture."
+            exit 1
+          fi
+          rm -f "$fixture"
+          echo "Self-test passed: the pattern set matches a synthetic secret."
+
+      - name: High-signal secret patterns
+        # Self-contained on purpose: no third-party action, nothing to pin and no
+        # licence key. A floor, not a full scanner.
+        #
+        # `git grep` rather than `grep`, for two reasons that both bit the first
+        # revision of this file:
+        #   * the pattern set starts with `-----BEGIN`, and plain grep parses a
+        #     leading `-` as options. It exited 2, `|| true` swallowed that, and
+        #     the job passed having scanned nothing.
+        #   * `git ls-files | xargs grep` batches, and overran the argument limit.
+        # `git grep` takes the pattern after `-e`, scans the tracked set in one
+        # process, and exits 0 on a hit, 1 on a clean tree and >1 on a real error
+        # -- which is now a failure rather than being read as "clean".
+        run: |
+          set -uo pipefail
+          patterns="$(cat .github/secret-patterns.txt)"
+          set +e
+          hits="$(git grep -nIE -e "$patterns" -- ':!package-lock.json' ':!.github/secret-patterns.txt')"
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            echo "::error::Secret scan failed to run (git grep exit $status). Not treating this as clean."
+            exit 1
+          fi
+          if [ "$status" -eq 0 ]; then
+            echo "::error::Possible secret material found:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "No high-signal secret patterns found."
+
+  edge:
+    name: Supabase Edge Functions (Deno)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes under supabase/functions
+        id: changed
+        run: |
+          set -euo pipefail
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            git fetch --no-tags origin \
+              "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
+            base="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)"
+          elif git rev-parse --verify -q HEAD~1 >/dev/null; then
+            base="$(git rev-parse HEAD~1)"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "No base to compare against; running Deno verification."
+            exit 0
+          fi
+          if git diff --quiet "$base" HEAD -- supabase/functions; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No changes under supabase/functions; skipping Deno verification."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Deno
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          curl -fsSL https://deno.land/install.sh | DENO_INSTALL="$HOME/.deno" sh -s -- --yes
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+
+      - name: Deno format check
+        if: steps.changed.outputs.run == 'true'
+        working-directory: supabase/functions
+        run: deno fmt --check
+
+      - name: Deno lint
+        if: steps.changed.outputs.run == 'true'
+        working-directory: supabase/functions
+        run: deno lint
+
+      - name: Deno tests
+        if: steps.changed.outputs.run == 'true'
+        working-directory: supabase/functions
+        run: deno task test
