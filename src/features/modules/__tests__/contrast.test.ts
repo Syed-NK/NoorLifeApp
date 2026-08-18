@@ -36,17 +36,11 @@ describe('contrastRatio', () => {
   });
 
   it('is symmetric', () => {
-    expect(contrastRatio('#14265F', '#ECF8F2')).toBeCloseTo(
-      contrastRatio('#ECF8F2', '#14265F'),
-      9,
-    );
+    expect(contrastRatio('#14265F', '#ECF8F2')).toBeCloseTo(contrastRatio('#ECF8F2', '#14265F'), 9);
   });
 
   it('is case-insensitive about the hex', () => {
-    expect(contrastRatio('#abcdef', '#FFFFFF')).toBeCloseTo(
-      contrastRatio('#ABCDEF', '#ffffff'),
-      9,
-    );
+    expect(contrastRatio('#abcdef', '#FFFFFF')).toBeCloseTo(contrastRatio('#ABCDEF', '#ffffff'), 9);
   });
 });
 

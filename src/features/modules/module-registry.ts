@@ -105,9 +105,27 @@ const noorAI: ModuleDefinition = {
   ],
   capabilities: [
     { key: 'find-feature', label: 'Find a feature', icon: 'search', href: '/ai', available: true },
-    { key: 'explain-progress', label: 'Explain my progress', icon: 'insights', href: '/insights', available: true },
-    { key: 'help-plan', label: 'Help me plan', icon: 'calendar', href: '/planner', available: true },
-    { key: 'app-settings', label: 'App settings', icon: 'settings', href: '/settings', available: true },
+    {
+      key: 'explain-progress',
+      label: 'Explain my progress',
+      icon: 'insights',
+      href: '/insights',
+      available: true,
+    },
+    {
+      key: 'help-plan',
+      label: 'Help me plan',
+      icon: 'calendar',
+      href: '/planner',
+      available: true,
+    },
+    {
+      key: 'app-settings',
+      label: 'App settings',
+      icon: 'settings',
+      href: '/settings',
+      available: true,
+    },
   ],
   permissions: [
     {
@@ -171,7 +189,13 @@ const faith: ModuleDefinition = {
     { key: 'ask-faith-ai', label: 'Ask Faith AI', icon: 'robot', href: '/faith/ai' },
   ],
   capabilities: [
-    { key: 'prayer-times', label: 'Prayer', icon: 'worship', href: '/faith/prayer-times', available: true },
+    {
+      key: 'prayer-times',
+      label: 'Prayer',
+      icon: 'worship',
+      href: '/faith/prayer-times',
+      available: true,
+    },
     { key: 'quran', label: 'Qur’an', icon: 'quran', href: '/faith/quran', available: true },
     { key: 'today', label: 'Today', icon: 'today', href: '/faith', available: true },
     { key: 'more', label: 'More', icon: 'more', href: '/faith/more', available: true },
@@ -261,7 +285,8 @@ const health: ModuleDefinition = {
       label: 'Sleep',
       icon: 'sleep',
       available: false,
-      unavailableReason: 'Automatic sleep tracking needs health data access, coming in a later release.',
+      unavailableReason:
+        'Automatic sleep tracking needs health data access, coming in a later release.',
     },
     {
       key: 'water',
@@ -335,9 +360,21 @@ const planner: ModuleDefinition = {
   ],
   capabilities: [
     { key: 'today', label: 'Today', icon: 'today', href: '/planner', available: true },
-    { key: 'calendar', label: 'Calendar', icon: 'calendar', href: '/planner/calendar', available: true },
+    {
+      key: 'calendar',
+      label: 'Calendar',
+      icon: 'calendar',
+      href: '/planner/calendar',
+      available: true,
+    },
     { key: 'tasks', label: 'Tasks', icon: 'tasks', href: '/planner/tasks', available: true },
-    { key: 'routines', label: 'Routines', icon: 'routines', href: '/planner/routines', available: true },
+    {
+      key: 'routines',
+      label: 'Routines',
+      icon: 'routines',
+      href: '/planner/routines',
+      available: true,
+    },
     {
       key: 'focus',
       label: 'Focus',
@@ -350,7 +387,8 @@ const planner: ModuleDefinition = {
     {
       key: 'calendar',
       title: 'Your device calendar',
-      rationale: 'To show your existing events beside NoorLife tasks. Read-only unless you add an event.',
+      rationale:
+        'To show your existing events beside NoorLife tasks. Read-only unless you add an event.',
       required: false,
     },
     {
@@ -417,7 +455,13 @@ const finance: ModuleDefinition = {
       href: '/finance/transactions',
       available: true,
     },
-    { key: 'budgets', label: 'Budgets', icon: 'budgets', href: '/finance/budgets', available: true },
+    {
+      key: 'budgets',
+      label: 'Budgets',
+      icon: 'budgets',
+      href: '/finance/budgets',
+      available: true,
+    },
     { key: 'goals', label: 'Savings', icon: 'target', href: '/finance/goals', available: true },
     {
       key: 'bank-sync',
@@ -497,8 +541,20 @@ const learning: ModuleDefinition = {
   ],
   capabilities: [
     { key: 'learn', label: 'Learn', icon: 'learn', href: '/learning', available: true },
-    { key: 'library', label: 'Library', icon: 'library', href: '/learning/library', available: true },
-    { key: 'progress', label: 'Progress', icon: 'progress', href: '/learning/progress', available: true },
+    {
+      key: 'library',
+      label: 'Library',
+      icon: 'library',
+      href: '/learning/library',
+      available: true,
+    },
+    {
+      key: 'progress',
+      label: 'Progress',
+      icon: 'progress',
+      href: '/learning/progress',
+      available: true,
+    },
     { key: 'saved', label: 'Saved', icon: 'bookmark', href: '/learning/saved', available: true },
     {
       key: 'quiz',
@@ -564,8 +620,20 @@ const family: ModuleDefinition = {
   ],
   capabilities: [
     { key: 'family', label: 'Family', icon: 'family', href: '/family', available: true },
-    { key: 'calendar', label: 'Calendar', icon: 'calendar', href: '/family/calendar', available: true },
-    { key: 'memories', label: 'Memories', icon: 'memories', href: '/family/memories', available: true },
+    {
+      key: 'calendar',
+      label: 'Calendar',
+      icon: 'calendar',
+      href: '/family/calendar',
+      available: true,
+    },
+    {
+      key: 'memories',
+      label: 'Memories',
+      icon: 'memories',
+      href: '/family/memories',
+      available: true,
+    },
     { key: 'safety', label: 'Safety', icon: 'safety', href: '/family/safety', available: true },
     {
       key: 'chores',
@@ -644,7 +712,13 @@ const goals: ModuleDefinition = {
   capabilities: [
     { key: 'goals', label: 'Goals', icon: 'target', href: '/goals', available: true },
     { key: 'habits', label: 'Habits', icon: 'habits', href: '/goals/habits', available: true },
-    { key: 'progress', label: 'Progress', icon: 'progress', href: '/goals/progress', available: true },
+    {
+      key: 'progress',
+      label: 'Progress',
+      icon: 'progress',
+      href: '/goals/progress',
+      available: true,
+    },
     { key: 'wins', label: 'Wins', icon: 'wins', href: '/goals/wins', available: true },
     {
       key: 'shared-goals',

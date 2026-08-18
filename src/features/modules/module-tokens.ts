@@ -222,11 +222,13 @@ export const moduleType = {
   /**
    * Faith's combined prayer and time line, e.g. "Dhuhr 12:35 PM".
    *
-   * 24 dp, the lower end of the brief's 24-27 dp band, chosen so the string fits one line at
-   * the 361 dp card width with margin to spare. The brief permits reducing to 22 dp if it does
-   * not fit; it does, so no reduction is applied.
+   * 20 dp. It was 24 while the copy was centred across the full 361 dp card; the left-copy
+   * hero gives it a 199 dp column instead, where 24 dp measured ~158 dp and left too little
+   * margin once Android's font scale applied. At 20 dp the string measures ~132 dp and holds
+   * one line with room to spare, which is the requirement — and 20 dp remains comfortably
+   * above the accessible floor for a display line.
    */
-  faithPrayer: [24, 28],
+  faithPrayer: [20, 25],
   /** Health's wellness score, larger again at ~40 dp in its reference. */
   heroScore: [30, 34],
   /** Hero supporting line. */
@@ -291,6 +293,17 @@ export const moduleType = {
   stateBody: [12.5, 18],
   /** Status-banner message. */
   banner: [12, 17],
+  /**
+   * The AI Insight card's title and body.
+   *
+   * Main Home's `aiTitle` / `aiBody` values exactly — restated here so the module layer
+   * does not import a locked file, and asserted equal by
+   * `design-system/components/__tests__/ai-insight-geometry.test.ts`. They are smaller
+   * than `cardTitle` / `body` on purpose: the card's height is fixed at 68 dp and this
+   * ramp is what makes a title plus two body lines fit inside it.
+   */
+  aiInsightTitle: [10.5, 14],
+  aiInsightBody: [10, 13],
 } as const;
 
 export type ModuleTypeToken = keyof typeof moduleType;
@@ -309,20 +322,23 @@ export const moduleLayout = {
   /**
    * Vertical gap between stacked sections.
    *
-   * 10 dp, measured off the approved individual-core-screen references. It was 18 dp
-   * while the framework had one generic composition, and at that value neither Faith nor
-   * Health fits its reference: the eight sections Faith needs plus a 68 dp navigation bar
-   * exceed a 852 dp viewport before any card grows. Density is not decoration here — it
-   * is what makes the approved screens fit.
+   * 7 dp. It was 18 while the framework had one generic composition, then 8 once the
+   * approved compositions landed, and 7 after Faith Home was measured on a Pixel 8 and
+   * found to overflow by 10.9 dp. Density is not decoration here — it is what makes the
+   * approved screens fit without scrolling, and the alternative was dropping content the
+   * reference shows.
+   *
+   * (The comment here previously claimed 10, which never matched the value. Corrected.)
    */
-  sectionGap: 8,
+  sectionGap: 7,
   /** Gap between a section heading and its content. */
   headingGap: 10,
   /** Gap between cards within a section. */
   cardGap: 10,
   /** Module header. */
   headerHeight: 54,
-  headerIcon: 22,
+  /** Back and Help glyph. 19 dp, mid of the specified 18-20 band. */
+  headerIcon: 19,
   /** Profile portrait (brief: 34-36 dp). Its touch target is the full 44 dp. */
   headerAvatar: 35,
   /** Gap between Help and Profile (brief: 4-8 dp). */
@@ -410,16 +426,54 @@ export const moduleLayout = {
   heroCopyPaddingV: 12,
   /** Hero call-to-action height (brief: 34-38 dp). */
   heroButtonHeight: 34,
+  /**
+   * Faith's hero height — 144, taller than the shared 132.
+   *
+   * ── Why Faith alone is taller ───────────────────────────────────────────
+   * Faith stacks five elements where every other hero stacks three: eyebrow, prayer
+   * line, two date lines, and a button. Measured, that column needs 142 dp. At the
+   * shared 132 it overflowed by 14 and the button clipped — which is the clipping the
+   * correction brief forbids, and the brief is equally explicit that content must not be
+   * dropped to make it fit. Raising the box is the only remaining lever.
+   *
+   * The cost, stated plainly: `03-faith-hero-left-copy-v2.png` is 2105 x 747, which at
+   * the 361 dp content width is 128 dp tall. Covering a 144 dp box therefore scales by
+   * height and crops ~22 dp from each side — 5.5%. On this asset that removes empty green
+   * on the left and the outermost palm fronds on the right; the dome, the minaret and the
+   * lanterns all sit well inside. Verified on device.
+   */
+  faithHeroHeight: 144,
   /** Faith hero spacing, all explicit per the correction brief. */
-  faithHeroPaddingTop: 15,
-  faithHeroPaddingBottom: 12,
-  faithHeroDateGap: 7,
-  faithHeroButtonGap: 10,
+  faithHeroPaddingTop: 12,
+  faithHeroPaddingBottom: 11,
+  /** Clear air between "Next Prayer" and the prayer line. */
+  faithHeroEyebrowGap: 4,
+  faithHeroDateGap: 6,
+  /** Clear air before the action, so the button never touches the prayer text. */
+  faithHeroButtonGap: 9,
   /** Noor AI's four capability cards. */
   noorAICapabilityHeight: 62,
-  /** Faith's eight-card feature grid: 4 columns, 9 dp gaps, 54 dp tall. */
-  faithFeatureHeight: 48,
-  faithFeatureIcon: 27,
+  /**
+   * Faith's eight approved submenu tiles: 4 columns, 9 dp gaps.
+   *
+   * 74 dp tall with a 40 dp image box. The previous 48/27 pair drew a small glyph in a
+   * short tile and left the large unused band the correction brief calls out; at 40 dp the
+   * pictogram is big enough to read as artwork, and 74 dp leaves 3 dp of gap plus a 15 dp
+   * label line beneath it without wrapping. Both clear the 44 dp touch minimum.
+   */
+  faithSubmenuTileHeight: 74,
+  faithSubmenuImage: 40,
+  /**
+   * The pictogram a Faith child screen repeats from the tile that opened it.
+   *
+   * 56 dp, mid-band of the specified 48–64, and identical on all eight children: they are
+   * seen in sequence, so a per-screen size would read as a hierarchy that does not exist.
+   */
+  faithIdentityImage: 56,
+  /** The Continue-Quran card's identity pictogram. */
+  faithContinueImage: 42,
+  /** The supporting date cards' identity pictogram — smaller, as they are secondary. */
+  faithCompactImage: 28,
   /** Health's four metric cards: icon left, value/label stacked right. */
   healthMetricHeight: 42,
   healthMetricIcon: 21,
@@ -440,8 +494,15 @@ export const moduleLayout = {
   insightRobot: 50,
   /** Minimum touch target, both axes. WCAG 2.5.5 / Android accessibility. */
   minTouchTarget: 44,
-  /** Space reserved below scrollable content so the nav bar never covers a card. */
-  scrollBottomInset: 24,
+  /**
+   * Space below scrollable content, on top of the navigation bar and the safe area.
+   *
+   * 14, down from 24. The scaffold already insets by `navHeight + insets.bottom`, so this
+   * is purely breathing room under the last card — and it was the cheapest 10 dp of the
+   * 10.9 dp Faith Home was overflowing by. 14 dp still keeps the AI Insight visibly clear
+   * of the bar rather than tucked against it.
+   */
+  scrollBottomInset: 14,
 } as const;
 
 /**

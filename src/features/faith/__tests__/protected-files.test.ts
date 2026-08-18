@@ -1,0 +1,144 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+import {
+  readBaselineFile,
+  resolveProtectedBaseline,
+  type ResolvedBaseline,
+} from '../../../test-support/protected-baseline';
+
+/**
+ * Design-locked files must be unchanged from the branch point.
+ *
+ * ── Why this compares against git rather than a stored hash ─────────────────
+ * A checked-in hash list is a second thing to keep in step, and the failure mode is
+ * someone updating the hash instead of reverting the file — which is precisely the change
+ * this test exists to catch. Diffing against the branch point asks git the real question:
+ * "did this branch touch a locked file?"
+ *
+ * The list is Main Home and Entry/Auth, which the briefs name as untouchable. Shared
+ * module-framework files are *not* listed: this work legitimately changes the module
+ * scaffold, header and navigation, and locking the whole framework would make that
+ * impossible to do honestly.
+ */
+
+const PROTECTED_PATHS: readonly string[] = [
+  // Main Home — design-locked.
+  'src/features/home/screens/main-home-screen.tsx',
+  'src/features/home/components/home-header.tsx',
+  'src/features/home/components/home-hero.tsx',
+  'src/features/home/components/module-grid.tsx',
+  'src/features/home/components/today-timeline.tsx',
+  'src/features/home/components/home-summary-row.tsx',
+  'src/features/home/components/quick-actions-row.tsx',
+  'src/features/home/components/ai-insight-card.tsx',
+  'src/features/home/components/home-bottom-navigation.tsx',
+  'src/features/home/components/robot-asset.tsx',
+  'src/features/home/main-home-metrics.ts',
+  'src/features/home/module-pictograms.ts',
+  'src/features/home/module-tile-theme.ts',
+  // Entry / Auth — approved layouts.
+  'src/features/entry-auth/entry-auth-tokens.ts',
+  'src/features/entry-auth/entry-auth-copy.ts',
+  'src/features/entry-auth/entry-auth-assets.ts',
+  'src/features/entry-auth/screens/splash-screen.tsx',
+  // Authentication service — not a layout, but out of scope for design work.
+  'src/services/auth/auth.service.ts',
+];
+
+/**
+ * Entry screens deliberately reopened, with the reason recorded rather than the entry deleted.
+ *
+ * The entry sequence was asked to carry a shared step indicator and swipe-back navigation across
+ * onboarding, Welcome and the credentials screens, so the user can return to an earlier screen.
+ * That cannot be built without editing these four files, so their byte-for-byte lock was lifted on
+ * request. Leaving them silently absent from the list above is the failure mode this whole test is
+ * designed to catch, so they are named here instead.
+ *
+ * What remains locked is the part that carries the approved design: `entry-auth-tokens.ts`,
+ * `entry-auth-copy.ts`, `entry-auth-assets.ts` and the splash composition are all still above, and
+ * this work changed none of them — no colour, measurement, string or asset moved. The changes are
+ * structural: a footer slot, a dot row and a gesture wrapper.
+ *
+ * Anything beyond that still needs the design owner's sign-off.
+ */
+const REOPENED_ON_REQUEST: readonly string[] = [
+  'src/features/entry-auth/screens/onboarding-screen.tsx',
+  'src/features/entry-auth/screens/welcome-screen.tsx',
+  'src/features/entry-auth/screens/login-screen.tsx',
+  'src/features/entry-auth/screens/sign-up-screen.tsx',
+];
+
+/**
+ * Line endings are normalised before comparing.
+ *
+ * `core.autocrlf` is true on Windows, so git stores LF and checks out CRLF. `git show`
+ * returns the stored blob while the filesystem returns the working copy, and the two
+ * differ on every line by an invisible byte nobody typed. Comparing raw would make this
+ * test fail after a `git checkout` — a *restore*, which is the opposite of the edit it
+ * exists to catch.
+ *
+ * Everything else stays byte-exact: a changed space, a reordered import or a reworded
+ * comment all still fail.
+ */
+function normalise(value: string): string {
+  return value.replace(/\r\n/g, '\n');
+}
+
+/**
+ * The baseline, resolved once and lazily.
+ *
+ * Deliberately not inside a `try`. `resolveProtectedBaseline` throws when none of the local branch,
+ * the remote-tracking branch or the pinned commit resolves, and that exception is allowed to reach
+ * Jest from whichever test asked for it. Every assertion below therefore fails when the baseline is
+ * unreachable — none of them can quietly pass, and none of them is skipped.
+ */
+let resolved: ResolvedBaseline | null = null;
+function baseline(): ResolvedBaseline {
+  resolved ??= resolveProtectedBaseline();
+  return resolved;
+}
+
+describe('protected design-locked files', () => {
+  it('can resolve the base ref to compare against', () => {
+    // If this fails the suite below is meaningless, so it is asserted rather than
+    // silently skipped — a protection test that quietly does nothing is worse than none.
+    const { ref, source } = baseline();
+    expect(ref).toBeTruthy();
+    expect(['local-branch', 'remote-branch', 'immutable-sha']).toContain(source);
+  });
+
+  it.each(PROTECTED_PATHS)('%s is unchanged from the branch point', (filePath) => {
+    const { ref } = baseline();
+
+    const baselineContent = readBaselineFile(ref, filePath);
+    expect(baselineContent).not.toBeNull();
+
+    const current = fs.readFileSync(path.join(process.cwd(), filePath), 'utf8');
+    expect(normalise(current)).toBe(normalise(baselineContent as string));
+  });
+});
+
+/**
+ * The reopened entry screens keep the *visual* lock even though the byte lock is gone.
+ *
+ * A file removed from the list above would otherwise be free to drift in any direction. These two
+ * checks keep the part that matters: the approved palette and measurements stay in the locked token
+ * file, so a colour or size cannot be quietly introduced at the call site.
+ */
+describe('entry screens reopened on request', () => {
+  it('does not also claim to lock them, which would contradict itself', () => {
+    for (const filePath of REOPENED_ON_REQUEST) {
+      expect(PROTECTED_PATHS).not.toContain(filePath);
+    }
+  });
+
+  it.each(REOPENED_ON_REQUEST)('%s hard-codes no colour of its own', (filePath) => {
+    const current = fs.readFileSync(path.join(process.cwd(), filePath), 'utf8');
+
+    // Every colour on these screens must come from entryAuthColors. A literal here would be a
+    // visual change escaping the lock on entry-auth-tokens.ts.
+    expect(current).not.toMatch(/#[0-9A-Fa-f]{3,8}\b/);
+    expect(current).not.toMatch(/\brgba?\(/);
+  });
+});

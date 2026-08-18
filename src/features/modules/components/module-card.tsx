@@ -121,7 +121,12 @@ export function ModuleCardHeading({
 
   return (
     <View style={[styles.headingRow, { marginBottom: dp(6), columnGap: dp(6) }]}>
-      <ModuleText token="cardHeading" numberOfLines={1} accessibilityRole="header" style={styles.flex}>
+      <ModuleText
+        token="cardHeading"
+        numberOfLines={1}
+        accessibilityRole="header"
+        style={styles.flex}
+      >
         {title}
       </ModuleText>
       {actionLabel === undefined || onAction === undefined ? null : (

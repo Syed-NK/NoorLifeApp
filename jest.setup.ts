@@ -19,7 +19,16 @@ const mockRouterInstance = {
   back: jest.fn(),
   canGoBack: jest.fn(() => true),
   dismiss: jest.fn(),
+  /**
+   * The header back arrow's method.
+   *
+   * `dismissTo(href)` pops to `href` when it is on the stack and replaces the current
+   * screen with it when it is not — which is what makes a deep-linked module child return
+   * to its module home instead of exiting the app.
+   */
+  dismissTo: jest.fn(),
   dismissAll: jest.fn(),
+  canDismiss: jest.fn(() => true),
   setParams: jest.fn(),
 };
 

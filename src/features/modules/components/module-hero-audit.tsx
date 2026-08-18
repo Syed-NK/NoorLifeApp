@@ -27,9 +27,12 @@ export function ModuleHeroAudit({ testID }: ModuleHeroAuditProps) {
 
   // What the bundler actually resolved. In a release bundle `uri` is absent and
   // `width`/`height` carry the intrinsic pixel size, so both cases are handled.
-  const resolved = Image.resolveAssetSource(module.heroPictogram) as
-    | { uri?: string; width?: number; height?: number; scale?: number }
-    | null;
+  const resolved = Image.resolveAssetSource(module.heroPictogram) as {
+    uri?: string;
+    width?: number;
+    height?: number;
+    scale?: number;
+  } | null;
 
   /**
    * The asset's identifying path — the last two segments, e.g. `normalized/faith.png`.

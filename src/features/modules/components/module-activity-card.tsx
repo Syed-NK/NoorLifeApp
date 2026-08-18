@@ -72,7 +72,10 @@ export function ModuleActivityCard({ items, testID }: ModuleActivityCardProps) {
     <View
       style={[
         styles.card,
-        { borderRadius: dp(moduleLayout.cardRadius), paddingHorizontal: dp(moduleLayout.cardPadding) },
+        {
+          borderRadius: dp(moduleLayout.cardRadius),
+          paddingHorizontal: dp(moduleLayout.cardPadding),
+        },
       ]}
       testID={testID}
     >
@@ -93,7 +96,11 @@ export function ModuleActivityCard({ items, testID }: ModuleActivityCardProps) {
               )}
               style={[
                 styles.row,
-                { minHeight: dp(moduleLayout.minTouchTarget), columnGap: dp(10), paddingVertical: dp(9) },
+                {
+                  minHeight: dp(moduleLayout.minTouchTarget),
+                  columnGap: dp(10),
+                  paddingVertical: dp(9),
+                },
               ]}
               testID={`${testID ?? 'module-activity'}-${item.key}`}
             >
@@ -135,7 +142,11 @@ export function ModuleActivityCard({ items, testID }: ModuleActivityCardProps) {
                   },
                 ]}
               >
-                <AppIcon name={STATUS_ICON[item.status]} size={dp(11)} color={statusColor[item.status]} />
+                <AppIcon
+                  name={STATUS_ICON[item.status]}
+                  size={dp(11)}
+                  color={statusColor[item.status]}
+                />
                 <ModuleText
                   token="caption"
                   color={statusColor[item.status]}

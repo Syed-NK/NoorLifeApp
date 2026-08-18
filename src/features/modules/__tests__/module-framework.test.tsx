@@ -51,7 +51,8 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
 
     // Every one of the five slots, with the AI control in the centre.
     for (const item of definition.navigation) {
-      const testID = item.isAI === true ? `${moduleId}-home-nav-ai` : `${moduleId}-home-nav-${item.key}`;
+      const testID =
+        item.isAI === true ? `${moduleId}-home-nav-ai` : `${moduleId}-home-nav-${item.key}`;
       expect(screen.getByTestId(testID)).toBeTruthy();
     }
   });
@@ -63,7 +64,7 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
     expect(screen.getByTestId(`${moduleId}-home-header-profile`)).toBeTruthy();
     expect(screen.getByTestId(`${moduleId}-home-header-help`)).toBeTruthy();
     expect(screen.getByLabelText('Back to Main Home')).toBeTruthy();
-    expect(screen.getByLabelText(`Help with ${definition.name}`)).toBeTruthy();
+    expect(screen.getByLabelText(`${definition.name} help`)).toBeTruthy();
   });
 
   it('renders the locked hero artwork, covered and untinted', async () => {
@@ -208,9 +209,11 @@ describe('module sub-screen', () => {
     expect(screen.getByTestId('health-trends-nav-trends').props.accessibilityState).toMatchObject({
       selected: true,
     });
-    expect(screen.getByTestId('health-trends-nav-overview').props.accessibilityState).toMatchObject({
-      selected: false,
-    });
+    expect(screen.getByTestId('health-trends-nav-overview').props.accessibilityState).toMatchObject(
+      {
+        selected: false,
+      },
+    );
   });
 });
 
@@ -252,7 +255,9 @@ describe('state components', () => {
 
     const state = screen.getByTestId('module-empty-state');
     expect(state.props.accessibilityLiveRegion).toBe('polite');
-    expect(String(state.props.accessibilityLabel)).toContain(moduleRegistry.goals.stateCopy.empty.title);
+    expect(String(state.props.accessibilityLabel)).toContain(
+      moduleRegistry.goals.stateCopy.empty.title,
+    );
   });
 
   it('always give an error state a way out', async () => {
@@ -298,7 +303,11 @@ describe('state components', () => {
     const permission = moduleRegistry.health.permissions[0]!;
     await render(
       <ModuleProvider moduleId="health">
-        <ModulePermissionState permission={permission} onGrant={() => undefined} onSkip={() => undefined} />
+        <ModulePermissionState
+          permission={permission}
+          onGrant={() => undefined}
+          onSkip={() => undefined}
+        />
       </ModuleProvider>,
     );
 

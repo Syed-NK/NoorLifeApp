@@ -5,6 +5,14 @@ import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
 
 export type AuthFormScaffoldProps = {
   readonly children: React.ReactNode;
+  /**
+   * Fixed content pinned below the scrolling form.
+   *
+   * Passed straight through to `AuthScaffold`, which places it *outside* the keyboard-avoiding
+   * view. That is deliberate: an opening keyboard shrinks the form and scrolls it, and the footer
+   * goes behind the keyboard rather than being dragged up over the fields.
+   */
+  readonly footer?: React.ReactNode;
   readonly testID?: string;
 };
 
@@ -20,11 +28,11 @@ export type AuthFormScaffoldProps = {
  * submit button while the keyboard is open is consumed dismissing the keyboard, so the user has to
  * tap twice.
  */
-export function AuthFormScaffold({ children, testID }: AuthFormScaffoldProps) {
+export function AuthFormScaffold({ children, footer, testID }: AuthFormScaffoldProps) {
   const { dp } = useEntryAuthMetrics();
 
   return (
-    <AuthScaffold testID={testID}>
+    <AuthScaffold testID={testID} footer={footer}>
       <KeyboardAvoidingView
         style={styles.fill}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

@@ -55,6 +55,7 @@ export const iconRegistry = {
   send: mci('send'),
   microphone: mci('microphone'),
   play: mci('play'),
+  pause: mci('pause'),
   bookmark: mci('bookmark'),
   star: mci('star'),
 

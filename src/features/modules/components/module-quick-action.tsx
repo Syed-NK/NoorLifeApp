@@ -71,7 +71,11 @@ export function ModuleQuickAction({ action, onPress, testID }: ModuleQuickAction
           },
         ]}
       >
-        <AppIcon name={action.icon} size={dp(moduleLayout.quickActionIcon * 0.75)} color={theme.ink} />
+        <AppIcon
+          name={action.icon}
+          size={dp(moduleLayout.quickActionIcon * 0.75)}
+          color={theme.ink}
+        />
       </View>
       <ModuleText token="quickAction" numberOfLines={2} style={styles.label}>
         {action.label}

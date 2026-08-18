@@ -65,8 +65,8 @@ function ComingSoonBody({
           {feature} is on the way
         </ModuleText>
         <ModuleText token="stateBody" align="center" numberOfLines={3}>
-          It arrives with the {moduleName} module’s full release. Everything else in{' '}
-          {moduleName} works now.
+          It arrives with the {moduleName} module’s full release. Everything else in {moduleName}{' '}
+          works now.
         </ModuleText>
         <PressableScale
           onPress={() => router.back()}

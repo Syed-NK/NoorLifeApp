@@ -11,9 +11,12 @@ import { AuthHeader } from '../components/auth-header';
 import { AuthStatusBanner } from '../components/auth-status-banner';
 import { AuthTextField } from '../components/auth-text-field';
 import { EntryAuthText } from '../components/entry-auth-text';
+import { EntryStepDots } from '../components/entry-step-dots';
+import { EntrySwipeBack } from '../components/entry-swipe-back';
 import { PasswordField } from '../components/password-field';
 import { PasswordStrengthMeter } from '../components/password-strength-meter';
 import { PrimaryButton } from '../components/primary-button';
+import { entryStepIndex } from '../entry-steps';
 import { authErrorCopy, signUpCopy } from '../entry-auth-copy';
 import { entryAuthColors } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
@@ -90,142 +93,151 @@ export function SignUpScreen() {
   };
 
   return (
-    <AuthFormScaffold testID="signup-screen">
-      <AuthHeader
-        onBack={() => router.back()}
-        title={signUpCopy.title}
-        subtitle={signUpCopy.subtitle}
-        testID="signup-header"
-      />
-
-      {submit.error === null ? null : (
-        <AuthStatusBanner tone="error" message={submit.error.message} testID="signup-banner" />
-      )}
-
-      <View style={{ gap: dp(14) }}>
-        <AuthTextField
-          label={signUpCopy.fullName}
-          placeholder={signUpCopy.fullNamePlaceholder}
-          value={fullName}
-          onChangeText={setFullName}
-          error={errors.fullName}
-          autoComplete="name"
-          textContentType="name"
-          testID="signup-name"
-        />
-        <AuthTextField
-          label={signUpCopy.email}
-          placeholder={signUpCopy.emailPlaceholder}
-          value={email}
-          onChangeText={setEmail}
-          error={errors.email}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="email"
-          textContentType="emailAddress"
-          testID="signup-email"
-        />
-        <View style={{ gap: dp(8) }}>
-          <PasswordField
-            label={signUpCopy.password}
-            placeholder="••••••••"
-            value={password}
-            onChangeText={setPassword}
-            error={errors.password}
-            autoComplete="new-password"
-            testID="signup-password"
-          />
-          <PasswordStrengthMeter password={password} testID="signup-strength" />
-        </View>
-        <PasswordField
-          label={signUpCopy.confirmPassword}
-          placeholder="••••••••"
-          value={confirm}
-          onChangeText={setConfirm}
-          error={errors.confirm}
-          autoComplete="new-password"
-          testID="signup-confirm"
-        />
-      </View>
-
-      <Pressable
-        onPress={() => setAccepted((v) => !v)}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: accepted }}
-        accessibilityLabel="I agree to the Terms of Service and Privacy Policy"
-        hitSlop={8}
-        style={[styles.termsRow, { columnGap: dp(10), minHeight: dp(44) }]}
-        testID="signup-terms"
+    <EntrySwipeBack activeIndex={entryStepIndex.credentials} testID="signup-swipe">
+      <AuthFormScaffold
+        testID="signup-screen"
+        footer={<EntryStepDots activeIndex={entryStepIndex.credentials} testID="signup-dots" />}
       >
-        <View
-          style={{
-            width: dp(18),
-            height: dp(18),
-            borderRadius: dp(4),
-            borderWidth: 1.5,
-            borderColor:
-              errors.terms !== undefined
-                ? entryAuthColors.error
-                : accepted
-                  ? entryAuthColors.primary
-                  : entryAuthColors.border,
-            backgroundColor: accepted ? entryAuthColors.primary : entryAuthColors.surface,
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginTop: dp(2),
-          }}
-        >
-          {accepted ? (
-            <View
-              style={{
-                width: dp(9),
-                height: dp(5),
-                borderLeftWidth: 2,
-                borderBottomWidth: 2,
-                borderColor: entryAuthColors.onPrimary,
-                transform: [{ rotate: '-45deg' }, { translateY: -dp(1) }],
-              }}
+        <AuthHeader
+          onBack={() => router.back()}
+          title={signUpCopy.title}
+          subtitle={signUpCopy.subtitle}
+          testID="signup-header"
+        />
+
+        {submit.error === null ? null : (
+          <AuthStatusBanner tone="error" message={submit.error.message} testID="signup-banner" />
+        )}
+
+        <View style={{ gap: dp(14) }}>
+          <AuthTextField
+            label={signUpCopy.fullName}
+            placeholder={signUpCopy.fullNamePlaceholder}
+            value={fullName}
+            onChangeText={setFullName}
+            error={errors.fullName}
+            autoComplete="name"
+            textContentType="name"
+            testID="signup-name"
+          />
+          <AuthTextField
+            label={signUpCopy.email}
+            placeholder={signUpCopy.emailPlaceholder}
+            value={email}
+            onChangeText={setEmail}
+            error={errors.email}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="email"
+            textContentType="emailAddress"
+            testID="signup-email"
+          />
+          <View style={{ gap: dp(8) }}>
+            <PasswordField
+              label={signUpCopy.password}
+              placeholder="••••••••"
+              value={password}
+              onChangeText={setPassword}
+              error={errors.password}
+              autoComplete="new-password"
+              testID="signup-password"
             />
-          ) : null}
+            <PasswordStrengthMeter password={password} testID="signup-strength" />
+          </View>
+          <PasswordField
+            label={signUpCopy.confirmPassword}
+            placeholder="••••••••"
+            value={confirm}
+            onChangeText={setConfirm}
+            error={errors.confirm}
+            autoComplete="new-password"
+            testID="signup-confirm"
+          />
         </View>
-        <EntryAuthText token="caption" style={styles.termsText}>
-          {signUpCopy.termsPrefix}
-          <EntryAuthText token="caption" color={entryAuthColors.primary}>
-            {signUpCopy.terms}
-          </EntryAuthText>
-          {signUpCopy.termsJoin}
-          <EntryAuthText token="caption" color={entryAuthColors.primary}>
-            {signUpCopy.privacy}
-          </EntryAuthText>
-        </EntryAuthText>
-      </Pressable>
-      {errors.terms === undefined ? null : (
-        <EntryAuthText token="caption" color={entryAuthColors.error} accessibilityLiveRegion="polite">
-          {errors.terms}
-        </EntryAuthText>
-      )}
 
-      <PrimaryButton
-        label={signUpCopy.submit}
-        onPress={onSubmit}
-        loading={submit.loading}
-        testID="signup-submit"
-      />
-
-      <EntryAuthText token="caption" align="center">
-        {signUpCopy.signInPrompt}
-        <EntryAuthText
-          token="caption"
-          color={entryAuthColors.primary}
-          onPress={() => router.replace(authRoutes.signIn)}
-          accessibilityRole="link"
-          testID="signup-signin"
+        <Pressable
+          onPress={() => setAccepted((v) => !v)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: accepted }}
+          accessibilityLabel="I agree to the Terms of Service and Privacy Policy"
+          hitSlop={8}
+          style={[styles.termsRow, { columnGap: dp(10), minHeight: dp(44) }]}
+          testID="signup-terms"
         >
-          {signUpCopy.signInAction}
+          <View
+            style={{
+              width: dp(18),
+              height: dp(18),
+              borderRadius: dp(4),
+              borderWidth: 1.5,
+              borderColor:
+                errors.terms !== undefined
+                  ? entryAuthColors.error
+                  : accepted
+                    ? entryAuthColors.primary
+                    : entryAuthColors.border,
+              backgroundColor: accepted ? entryAuthColors.primary : entryAuthColors.surface,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginTop: dp(2),
+            }}
+          >
+            {accepted ? (
+              <View
+                style={{
+                  width: dp(9),
+                  height: dp(5),
+                  borderLeftWidth: 2,
+                  borderBottomWidth: 2,
+                  borderColor: entryAuthColors.onPrimary,
+                  transform: [{ rotate: '-45deg' }, { translateY: -dp(1) }],
+                }}
+              />
+            ) : null}
+          </View>
+          <EntryAuthText token="caption" style={styles.termsText}>
+            {signUpCopy.termsPrefix}
+            <EntryAuthText token="caption" color={entryAuthColors.primary}>
+              {signUpCopy.terms}
+            </EntryAuthText>
+            {signUpCopy.termsJoin}
+            <EntryAuthText token="caption" color={entryAuthColors.primary}>
+              {signUpCopy.privacy}
+            </EntryAuthText>
+          </EntryAuthText>
+        </Pressable>
+        {errors.terms === undefined ? null : (
+          <EntryAuthText
+            token="caption"
+            color={entryAuthColors.error}
+            accessibilityLiveRegion="polite"
+          >
+            {errors.terms}
+          </EntryAuthText>
+        )}
+
+        <PrimaryButton
+          label={signUpCopy.submit}
+          onPress={onSubmit}
+          loading={submit.loading}
+          testID="signup-submit"
+        />
+
+        <EntryAuthText token="caption" align="center">
+          {signUpCopy.signInPrompt}
+          <EntryAuthText
+            token="caption"
+            color={entryAuthColors.primary}
+            onPress={() => router.replace(authRoutes.signIn)}
+            accessibilityRole="link"
+            testID="signup-signin"
+          >
+            {signUpCopy.signInAction}
+          </EntryAuthText>
         </EntryAuthText>
-      </EntryAuthText>
-    </AuthFormScaffold>
+      </AuthFormScaffold>
+    </EntrySwipeBack>
   );
 }
 

@@ -46,8 +46,12 @@ describe.each(FRAMEWORK_MODULE_IDS)('module theme: %s', (moduleId) => {
   });
 
   it('keeps the shared neutrals readable on the module surface', () => {
-    expect(contrast(moduleNeutrals.textPrimary, theme.lightSurface)).toBeGreaterThanOrEqual(AA_TEXT);
-    expect(contrast(moduleNeutrals.textSecondary, theme.lightSurface)).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(contrast(moduleNeutrals.textPrimary, theme.lightSurface)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
+    expect(contrast(moduleNeutrals.textSecondary, theme.lightSurface)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
   });
 
   it('takes its brand hue from the locked palette rather than re-typing it', () => {

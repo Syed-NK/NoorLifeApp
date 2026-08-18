@@ -57,7 +57,9 @@ export function ModuleBottomNavigation({
       onNavigate(item);
       return;
     }
-    router.push(item.href);
+    // `navigate`, not `push`: the five slots are peers, and pushing would stack a new
+    // screen on every tab tap so Android back walked the whole tab history in reverse.
+    router.navigate(item.href);
   };
 
   return (

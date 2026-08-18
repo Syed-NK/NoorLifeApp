@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { Image, StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
@@ -15,12 +15,16 @@ export type ModuleHeaderProps = {
   /** Overrides the module name — used on sub-screens ("Prayer Times"). */
   readonly title?: string;
   /**
-   * Where Back goes. Defaults to Main Home.
+   * Where the visible back arrow goes, one level up the hierarchy.
    *
-   * The brief fixes Back's meaning as "return to Main Home", not "pop one screen". A module
-   * is entered from the grid, so popping would strand a user who arrived three screens deep
-   * from a notification.
+   * Supplied by `ModuleScaffold` from `resolveBackDestination`, so a screen never
+   * decides the rule for itself: a module home goes up to Main Home, a module child
+   * goes up to its module home.
    */
+  readonly backHref: Href;
+  /** Human-readable destination for the accessibility label, e.g. "Faith". */
+  readonly backLabel: string;
+  /** Escape hatch for a screen with a genuinely different back meaning. */
   readonly onBack?: () => void;
   readonly testID?: string;
 };
@@ -42,16 +46,32 @@ export type ModuleHeaderProps = {
  * ── Why Profile is last ─────────────────────────────────────────────────────
  * It used to sit beside Back, which the brief rules out. Both right-hand controls carry the
  * full 44 dp touch target while the avatar itself stays 34–36 dp, so the visible portrait is
- * the reference's size without the tappable area being under-sized.
+ * the reference's size without the tappable area being under-sized. The portrait is the
+ * approved `profileAvatar` PNG — never an initial or a letter placeholder.
+ *
+ * ── Where Back goes ─────────────────────────────────────────────────────────
+ * One level up the hierarchy, resolved by `resolveBackDestination` and passed in. A module
+ * home goes to Main Home; a module child goes to its module home and never straight to Main
+ * Home. See `application/navigation/module-navigation.ts` for why that is a property of the
+ * route rather than of the history.
  */
-export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
+export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: ModuleHeaderProps) {
   const router = useRouter();
   const module = useModule();
   const { dp, pagePadding } = useModuleMetrics();
 
   const iconSize = dp(moduleLayout.headerIcon);
   const avatarSize = dp(moduleLayout.headerAvatar);
+  /** The tappable rectangle: 44 dp, the accessibility minimum on both axes. */
   const target = dp(moduleLayout.minTouchTarget);
+  /**
+   * The visible disc inside it: 36 dp, as both approved references draw it.
+   *
+   * Target and visual were the same 44 dp rectangle before, which made the chrome heavier
+   * than the reference and left no gap between Help and the profile portrait. Separating
+   * them keeps the 44 dp target while the drawn circle matches the design.
+   */
+  const disc = dp(moduleLayout.headerControl);
   const prefix = testID ?? 'module-header';
 
   return (
@@ -78,22 +98,43 @@ export function ModuleHeader({ title, onBack, testID }: ModuleHeaderProps) {
       </View>
 
       <PressableScale
-        onPress={onBack ?? (() => router.replace(globalRoutes.home))}
-        style={[styles.control, styles.disc, { width: target, height: target, borderRadius: target / 2 }]}
-        {...iconButtonA11y('Back to Main Home')}
+        /*
+          `dismissTo`, not `replace` or `back`.
+
+          `back()` pops history, which exits the app on a cold deep link and skips the
+          module home when the user arrived from Main Home's timeline. `replace()` would
+          leave a duplicate entry when the destination is already below us in the stack.
+          `dismissTo` pops *to* the destination when it is present and replaces when it
+          is not — the same visible outcome from any entry point, with no duplicate push.
+        */
+        onPress={onBack ?? (() => router.dismissTo(backHref))}
+        style={[styles.control, { width: target, height: target }]}
+        {...iconButtonA11y(`Back to ${backLabel}`)}
         testID={`${prefix}-back`}
       >
-        <AppIcon name="back" size={iconSize} color={moduleNeutrals.textPrimary} />
+        <View
+          style={[styles.disc, { width: disc, height: disc, borderRadius: disc / 2 }]}
+          pointerEvents="none"
+        >
+          <AppIcon name="back" size={iconSize} color={moduleNeutrals.textPrimary} />
+        </View>
       </PressableScale>
 
       <View style={[styles.rightCluster, { columnGap: dp(moduleLayout.headerControlGap) }]}>
         <PressableScale
           onPress={() => router.push(module.routes.help)}
-          style={[styles.control, styles.disc, { width: target, height: target, borderRadius: target / 2 }]}
-          {...iconButtonA11y(`Help with ${module.name}`)}
+          style={[styles.control, { width: target, height: target }]}
+          accessibilityRole="button"
+          accessibilityLabel={`${module.name} help`}
+          accessibilityHint={`Opens help for the ${module.name} module.`}
           testID={`${prefix}-help`}
         >
-          <AppIcon name="help" size={iconSize} color={module.theme.ink} />
+          <View
+            style={[styles.disc, { width: disc, height: disc, borderRadius: disc / 2 }]}
+            pointerEvents="none"
+          >
+            <AppIcon name="help" size={iconSize} color={module.theme.ink} />
+          </View>
         </PressableScale>
 
         <PressableScale
@@ -150,10 +191,13 @@ const styles = StyleSheet.create({
   /**
    * The bordered white disc both approved references draw around Back and Help.
    *
-   * The disc *is* the 44 dp touch target, so the visible chrome and the tappable area are the
-   * same rectangle — no hit-slop to keep in step with a smaller visual.
+   * 36 dp, centred inside a 44 dp pressable. The two were the same rectangle before, which
+   * drew heavier chrome than the reference and closed the gap to the profile portrait.
+   * `pointerEvents: 'none'` keeps the pressable — not the disc — the accessibility node.
    */
   disc: {
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: moduleNeutrals.surface,
     borderWidth: 1,
     borderColor: moduleNeutrals.border,

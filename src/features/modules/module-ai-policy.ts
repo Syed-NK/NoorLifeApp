@@ -1,4 +1,8 @@
-import { canAccessModule, type AIRequestContext, type ScopeDecision } from '@shared/permissions/ai-scope';
+import {
+  canAccessModule,
+  type AIRequestContext,
+  type ScopeDecision,
+} from '@shared/permissions/ai-scope';
 
 import type { FrameworkModuleId } from './module-tokens';
 
@@ -246,7 +250,8 @@ const learning: ModuleAIPolicy = {
     {
       kind: 'refuse',
       subject: 'completing graded work to be submitted as the user’s own',
-      message: 'I won’t write work you’ll submit as your own. I can explain it or quiz you instead.',
+      message:
+        'I won’t write work you’ll submit as your own. I can explain it or quiz you instead.',
     },
   ],
   outOfScopeMessage: 'Learn AI only covers your Learning module.',
