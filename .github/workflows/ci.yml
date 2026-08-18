@@ -114,7 +114,10 @@ jobs:
         run: |
           set -euo pipefail
           fixture="$(mktemp)"
-          echo 'AKIAIOSFODNN7EXAMPLE' > "$fixture"
+          # The fixture value is split across two adjacent shell strings so that
+          # this file does not itself contain a literal the scan matches. That
+          # keeps ci.yml inside the scanned set instead of excluded from it.
+          echo "AKIA""IOSFODNN7EXAMPLE" > "$fixture"
           if ! grep -qIE -e "$(cat .github/secret-patterns.txt)" "$fixture"; then
             echo "::error::Self-test failed: the pattern set no longer matches a known-bad fixture."
             exit 1
