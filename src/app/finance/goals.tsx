@@ -1,5 +1,14 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
 
+/** Finance → Savings. */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="finance" activeKey="goals" title="Savings Goals" />;
+  return (
+    <ModuleSectionScreen
+      moduleId="finance"
+      activeKey="goals"
+      title="Savings"
+      heroTitle="Saving toward something specific"
+      heroBody="Name the thing, set the amount, and watch the gap close."
+    />
+  );
 }

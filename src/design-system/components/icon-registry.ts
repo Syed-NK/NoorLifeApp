@@ -116,4 +116,21 @@ export const iconRegistry = {
   money: mci('wallet'),
   document: mci('file-document-outline'),
   image: mci('image-multiple-outline'),
+
+  // ── Faith module surfaces (Phase 4A) ──────────────────────────────────────
+  // 'Duas' reuses `worship` (hands-pray) and 'Prayer'/'Mosques' reuse `mosque`,
+  // matching the reference, which also draws those two from the same subject.
+  hadith: mci('script-text-outline'),
+  qibla: mci('compass-outline'),
+  tasbih: mci('circle-multiple-outline'),
+  crescent: mci('moon-waning-crescent'),
+  share: mci('share-variant-outline'),
+
+  // ── Health module surfaces (Phase 4A) ─────────────────────────────────────
+  medication: mci('pill'),
+  weight: mci('scale-bathroom'),
+  walk: mci('walk'),
+  breathing: mci('spa-outline'),
+  'chart-bar': mci('chart-bar'),
+  'info-outline': mci('information-outline'),
 } as const satisfies Record<IconName, GlyphRef>;

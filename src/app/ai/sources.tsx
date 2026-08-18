@@ -1,7 +1,14 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
 
+/** Noor AI → Sources and citations. */
 export default function Screen() {
   return (
-    <ModulePlaceholderScreen moduleId="noor-ai" activeKey="ask-ai" title="Sources & Citations" />
+    <ModuleSectionScreen
+      moduleId="noor-ai"
+      activeKey="ask-ai"
+      title="Sources"
+      heroTitle="Where an answer came from"
+      heroBody="Noor AI cites what it used, so you can check it."
+    />
   );
 }

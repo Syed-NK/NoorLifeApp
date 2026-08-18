@@ -53,6 +53,35 @@ export const noorLifeAssets = {
     goals: require('@assets/images/pictograms/goals.png') as ImageSourcePropType,
   },
 
+  /**
+   * The locked, text-free module hero artwork.
+   *
+   * Source: `design-reference/module-hero-assets/README.md`. Every file is exactly
+   * 1083 × 396 px — which is 361 × 132 dp at 3×, i.e. precisely the width of the module
+   * content column. That is not a coincidence: the canvas was cut to this layout, so a
+   * 132 dp hero renders each asset one-to-one with no crop and no stretch.
+   *
+   * Rules these carry with them, from the README and enforced by test:
+   *   • `resizeMode="cover"`, absolute-fill inside the hero card
+   *   • the card supplies the corner radius and clips with `overflow: 'hidden'`
+   *   • no tint, border, background tile, pedestal or padding
+   *   • all text, values, rings and buttons stay live React Native above the image
+   *   • the small Main Home pictogram is never substituted for one of these
+   *
+   * `00-module-hero-contact-sheet.png` is a preview and is deliberately not copied into
+   * the project.
+   */
+  moduleHeroes: {
+    noorAI: require('@assets/images/modules/heroes/02-noor-ai-hero.png') as ImageSourcePropType,
+    faith: require('@assets/images/modules/heroes/03-faith-hero.png') as ImageSourcePropType,
+    health: require('@assets/images/modules/heroes/04-health-hero.png') as ImageSourcePropType,
+    planner: require('@assets/images/modules/heroes/05-planner-hero.png') as ImageSourcePropType,
+    finance: require('@assets/images/modules/heroes/06-finance-hero.png') as ImageSourcePropType,
+    learning: require('@assets/images/modules/heroes/07-learning-hero.png') as ImageSourcePropType,
+    family: require('@assets/images/modules/heroes/08-family-hero.png') as ImageSourcePropType,
+    goals: require('@assets/images/modules/heroes/09-goals-hero.png') as ImageSourcePropType,
+  },
+
   brand: {
     /**
      * Official Google "G". Null until `assets/brand/google/g-logo.png` is supplied.

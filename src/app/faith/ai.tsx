@@ -1,5 +1,6 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleAIScreen } from '@features/modules/screens/module-ai-screen';
 
+/** Faith module AI (workflow §3.3: the centre slot opens AI inside the module). */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="faith" activeKey="faith-ai" title="Faith AI" />;
+  return <ModuleAIScreen moduleId="faith" />;
 }

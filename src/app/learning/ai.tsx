@@ -1,5 +1,6 @@
-import { ModulePlaceholderScreen } from '@features/placeholder/module-placeholder-screen';
+import { ModuleAIScreen } from '@features/modules/screens/module-ai-screen';
 
+/** Learning module AI (workflow §3.3: the centre slot opens AI inside the module). */
 export default function Screen() {
-  return <ModulePlaceholderScreen moduleId="learning" activeKey="learn-ai" title="Learn AI" />;
+  return <ModuleAIScreen moduleId="learning" />;
 }
