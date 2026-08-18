@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react';
 import { act, cleanup, render } from '@testing-library/react-native';
 
 /**
@@ -76,27 +77,35 @@ jest.mock('@application/providers/auth-provider', () => ({
 const coordinator = require('@features/faith/di/content-sync-coordinator') as {
   ContentSyncCoordinator: () => null;
   resetContentSyncCoordinator: () => void;
+  isDueBoundaryArmed: () => boolean;
   DUE_BOUNDARY_CHUNK_MS: number;
   DUE_BOUNDARY_MIN_DELAY_MS: number;
 };
 
 const { ContentSyncCoordinator, resetContentSyncCoordinator, DUE_BOUNDARY_CHUNK_MS } = coordinator;
+const isDueBoundaryArmed = (coordinator as unknown as { isDueBoundaryArmed: () => boolean })
+  .isDueBoundaryArmed;
 
-const ONLINE = {
-  isConnected: true,
-  reachability: 'online' as const,
-  kind: 'wifi' as const,
-  isWifi: true,
-  isMetered: false,
-};
+/**
+ * Lets the arming chain settle.
+ *
+ * Arming is several awaits deep — the run resolves, then the generation is read, then the timer is
+ * set — so a fixed pair of flushes would sometimes assert before the timer exists. This is settling
+ * an async chain inside `act`, not widening a timeout to paper over a race: nothing here waits on
+ * wall-clock time.
+ */
+async function settle() {
+  await act(async () => {
+    for (let i = 0; i < 8; i += 1) {
+      await Promise.resolve();
+    }
+  });
+}
 
 /** Mounts the coordinator and lets the startup run settle. */
 async function mount() {
   const view = render(<ContentSyncCoordinator />);
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
+  await settle();
   return view;
 }
 
@@ -116,21 +125,12 @@ async function advance(ms: number) {
     clock += delta;
     await act(async () => {
       jest.advanceTimersByTime(delta);
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+      for (let i = 0; i < 8; i += 1) {
+        await Promise.resolve();
+      }
     });
     remaining -= delta;
   }
-}
-
-/** Re-renders the same tree, so an auth change runs the existing effect's cleanup and body. */
-async function rerender(view: { rerender: (node: React.ReactElement) => void }) {
-  view.rerender(<ContentSyncCoordinator />);
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
 }
 
 beforeEach(() => {
@@ -273,5 +273,43 @@ describe('what the timer does with each outcome', () => {
     /* It re-evaluated rather than sleeping for a year; whether it ran is the orchestrator's call. */
     expect(jest.getTimerCount()).toBeGreaterThan(0);
     expect(mockRun.mock.calls.length).toBeGreaterThanOrEqual(afterStartup);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ownership and disposal
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Re-renders the same tree, so an auth change runs the existing effect's cleanup and body. */
+async function rerender(view: { rerender: (node: ReactElement) => void }) {
+  view.rerender(<ContentSyncCoordinator />);
+  await settle();
+}
+
+describe('one scheduler, one owner', () => {
+  it('a disposed owner cannot start a request when its callback fires', async () => {
+    const view = await mount();
+    /* Dispose behind the component's back, exactly as a sign-out would. */
+    resetContentSyncCoordinator();
+    const afterDispose = mockRun.mock.calls.length;
+
+    await advance(SYNC_INTERVAL + 1000);
+
+    expect(mockRun.mock.calls.length).toBe(afterDispose);
+    view.unmount();
+  });
+});
+
+describe('lifecycle disposal', () => {
+  it('disposes on sign-out', async () => {
+    const view = await mount();
+    mockAuthStatus = 'signed-out';
+    mockAuthUserId = null;
+    await rerender(view);
+    const afterSignOut = mockRun.mock.calls.length;
+
+    expect(isDueBoundaryArmed()).toBe(false);
+    await advance(SYNC_INTERVAL * 2);
+    expect(mockRun.mock.calls.length).toBe(afterSignOut);
   });
 });

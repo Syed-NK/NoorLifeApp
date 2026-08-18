@@ -14,6 +14,10 @@ import {
 import { readActiveGeneration } from '../storage/faith-sync-generation';
 import { clearSessionSyncStatus } from '../data/sync/content-sync.revision';
 import { createSyncSession, type SyncSession } from '../data/sync/content-sync.session';
+import {
+  createDueBoundaryScheduler,
+  type DueBoundaryScheduler,
+} from '../data/sync/due-boundary.scheduler';
 import { createQuranContentEndpoint } from '../data/quran-foundation/quran-content.endpoint';
 
 /**
@@ -165,64 +169,55 @@ export async function runContentSync(
 }
 
 /**
- * The largest single wakeup this schedules.
+ * The largest single wakeup the scheduler arms.
  *
- * ── Why the seven-day delay is not simply handed to setTimeout ─────────────
+ * ── Why a seven-day delay is not simply handed to setTimeout ───────────────
  * It would fit — seven days is well inside the 2^31-1 millisecond ceiling — and it would still be
  * the wrong thing to rely on. A single timer armed for a week has to survive every doze, throttle
- * and timer-coalescing decision the platform makes in between, and if it is dropped the boundary
- * passes in silence. Waking every few hours to ask "is it due yet?" costs one comparison against a
- * timestamp already in memory, makes no request until the answer is yes, and self-corrects if a
- * wakeup is missed.
+ * and coalescing decision the platform makes in between, and if it is dropped the boundary passes in
+ * silence. Waking every few hours to ask "is it due yet?" costs one comparison against a timestamp
+ * already in memory, sends nothing until the answer is yes, and self-corrects if a wakeup is missed.
  *
- * It also bounds the damage of a clock that jumps: the next evaluation is never more than this far
- * away, whatever the device thinks the time is.
+ * It also bounds the damage of a clock that jumps: the next evaluation is never further away than
+ * this, whatever the device believes the time to be.
  */
 export const DUE_BOUNDARY_CHUNK_MS = 6 * 60 * 60 * 1000;
 
 /**
  * The floor on any rescheduling, so a past-due boundary cannot become a zero-delay loop.
  *
- * Reached when the boundary is already behind us and the run that followed did not publish — an
- * offline device, a throttled attempt, a failure. Without a floor each of those would reschedule
- * immediately and re-ask the same question forever.
+ * Reached when the boundary is behind us and the run that followed did not publish — an offline
+ * device, a throttled attempt, a failure. Without a floor each of those would reschedule instantly
+ * and re-ask the same question for ever.
  */
 export const DUE_BOUNDARY_MIN_DELAY_MS = 60 * 1000;
 
 /**
- * The one due-boundary timer, beside the one owner it belongs to.
+ * The scheduler belonging to the current owner.
  *
- * Module-level for the same reason the orchestrator is: a hook would give every mount its own timer,
- * and two timers are two triggers. Exactly one exists at a time, and `clearDueBoundary` is called
- * before any new one is armed, so re-rendering, remounting or replacing the session cannot
- * accumulate them.
+ * Held beside `owner` and `orchestrator` because all three are one session's belongings: created
+ * together, discarded together. What changed is that the timer handle now lives *inside* the
+ * scheduler rather than in a module variable of its own, so a disposed owner's pending callback can
+ * consult its own disposed flag instead of a flag the next owner has since overwritten.
  */
-let dueTimer: ReturnType<typeof setTimeout> | null = null;
-
-function clearDueBoundary(): void {
-  if (dueTimer !== null) {
-    clearTimeout(dueTimer);
-    dueTimer = null;
-  }
-}
+let scheduler: DueBoundaryScheduler | null = null;
 
 /**
  * How long until the feed check is next owed, from the authoritative clock.
  *
- * The clock is `manifest.createdAt` on the active generation — the same timestamp the orchestrator's
- * own due gate reads, so this can never disagree with it. Nothing is persisted here and no second
- * timestamp is introduced; this is a question asked of state that already exists.
+ * `manifest.createdAt` on the active generation — the same timestamp the orchestrator's own due gate
+ * reads, so this cannot disagree with it. Nothing is persisted here and no second clock is created.
  *
  * A missing generation, a clock that moved backwards and a boundary already passed all answer
- * "now", and the caller applies the floor. A future `createdAt` cannot postpone the check by its
- * own distance, because the wait is capped at one chunk regardless.
+ * "now", and the floor is applied by the caller. A `createdAt` in the future cannot postpone the
+ * check by its own distance, because the wait is capped at one chunk regardless.
  */
-async function nextDueDelayMs(now: number): Promise<number> {
+async function nextDueDelayMs(at: number): Promise<number> {
   const generation = await readActiveGeneration();
   if (generation === null) {
     return DUE_BOUNDARY_MIN_DELAY_MS;
   }
-  const remaining = generation.manifest.createdAt + SYNC_INTERVAL_MS - now;
+  const remaining = generation.manifest.createdAt + SYNC_INTERVAL_MS - at;
   if (remaining <= 0) {
     return 0;
   }
@@ -230,83 +225,42 @@ async function nextDueDelayMs(now: number): Promise<number> {
 }
 
 /**
- * Arms the next evaluation, replacing whatever was armed before.
+ * The scheduler for `session`, built if there is not already a live one.
  *
- * `delayOverride` carries the backoff the orchestrator already decided. When a run comes back
- * throttled it says how long to wait, and re-deriving that here would be a second retry policy
- * disagreeing with the first.
+ * A disposed scheduler is replaced rather than revived: a remount must not inherit a pending
+ * callback, a retry deadline or a released flag from the mount before it.
  */
-export async function scheduleDueBoundary(delayOverride?: number): Promise<void> {
-  clearDueBoundary();
+function ownedScheduler(session: SyncSession): DueBoundaryScheduler {
+  if (scheduler === null || scheduler.isDisposed()) {
+    scheduler = createDueBoundaryScheduler({
+      dueDelayMs: nextDueDelayMs,
+      run: () => runContentSync(),
+      /* Both halves: the same session, and that session still valid. */
+      isLive: () => owner === session && session.isValid(),
+      minDelayMs: DUE_BOUNDARY_MIN_DELAY_MS,
+    });
+  }
+  return scheduler;
+}
+
+/** Disposes the current scheduler, if any. Idempotent. */
+function disposeScheduler(): void {
+  scheduler?.dispose();
+  scheduler = null;
+}
+
+/** Arms the due boundary for the live owner. A no-op when there is not one. */
+export async function scheduleDueBoundary(): Promise<void> {
   const session = owner;
   if (session === null || !session.isValid()) {
     return;
   }
-  const delay = delayOverride ?? Math.max(await nextDueDelayMs(Date.now()), 0);
-  /*
-    Re-checked after the await: a sign-out during the read must not arm a timer for a session that
-    has since ended, and `clearDueBoundary` above already ran before it.
-  */
-  if (owner !== session || !session.isValid()) {
-    return;
-  }
-  dueTimer = setTimeout(
-    () => {
-      dueTimer = null;
-      void onDueBoundary(session);
-    },
-    Math.max(delay, 0),
-  );
+  await ownedScheduler(session).arm();
 }
 
-/**
- * One evaluation at the boundary.
- *
- * Runs the **existing** single-flight path rather than anything of its own, so a timer firing beside
- * a foreground event or a reconnection produces one transaction and not two — the orchestrator
- * decides that, exactly as it does for every other trigger.
- *
- * Whatever comes back, the next evaluation is armed from it: a publication moves the clock forward a
- * week, a throttle supplies its own retry delay, and everything else waits at least the floor. There
- * is no branch that reschedules at zero.
- */
-async function onDueBoundary(session: SyncSession): Promise<void> {
-  if (owner !== session || !session.isValid()) {
-    return;
-  }
-  /*
-    ── A chunk wakeup is a question, not a request ─────────────────────────
-    Most wakeups are not the boundary: they exist so a week-long wait is never entrusted to a single
-    timer. Re-deriving the delay costs one subtraction against a timestamp, and asking the
-    orchestrator instead would send a trigger every few hours — the orchestrator would answer
-    'not-due' each time, but only after the coordinator had claimed a run and told every Faith screen
-    a sync was under way.
-  */
-  const remaining = await nextDueDelayMs(Date.now());
-  if (owner !== session || !session.isValid()) {
-    return;
-  }
-  if (remaining > 0) {
-    await scheduleDueBoundary(remaining);
-    return;
-  }
-
-  const outcome = await runContentSync();
-  if (owner !== session || !session.isValid()) {
-    return;
-  }
-  if (outcome !== null && outcome.kind === 'throttled') {
-    await scheduleDueBoundary(Math.max(outcome.retryAfterMs, DUE_BOUNDARY_MIN_DELAY_MS));
-    return;
-  }
-  /*
-    'synced' moved the clock, so the derived delay is a fresh week. 'not-due' means something else
-    published first. Offline and failure leave the boundary in the past, and the floor is what stops
-    that becoming a spin — the device waits a minute and asks again, and the connectivity trigger
-    will usually beat it to the answer.
-  */
-  const derived = await nextDueDelayMs(Date.now());
-  await scheduleDueBoundary(Math.max(derived, derived === 0 ? DUE_BOUNDARY_MIN_DELAY_MS : 0));
+/** Whether a due-boundary wakeup is currently armed. For tests and diagnostics. */
+export function isDueBoundaryArmed(): boolean {
+  return scheduler?.isArmed() ?? false;
 }
 
 /** Whether a transaction is in flight. For a screen that renders "checking". */
@@ -342,7 +296,7 @@ export function resetContentSyncCoordinator(): void {
     dead one. A pending wakeup belongs to the session that armed it and must not outlive it: left
     behind, it would wake into the next sign-in and evaluate a boundary on somebody else's clock.
   */
-  clearDueBoundary();
+  disposeScheduler();
   previous?.invalidate();
 }
 
@@ -441,7 +395,7 @@ export function ContentSyncCoordinator() {
         cancelled on the way out and re-derived on the way back in, which is the same answer a
         moment later.
       */
-      clearDueBoundary();
+      disposeScheduler();
     });
 
     /*
@@ -486,7 +440,7 @@ export function ContentSyncCoordinator() {
         component that is going away. Left armed across an unmount it would fire into a released
         closure, and across React's development double-mount it would be the second of two.
       */
-      clearDueBoundary();
+      disposeScheduler();
     };
   }, [auth.authority, ownerKey, status]);
 
