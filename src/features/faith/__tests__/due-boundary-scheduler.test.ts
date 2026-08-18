@@ -215,6 +215,49 @@ describe('cancellation and disposal', () => {
     expect(h.runs()).toBe(0);
   });
 
+  it('a callback the platform already dispatched cannot request, once disposed', async () => {
+    /*
+      ── The race cancellation cannot win ────────────────────────────────────
+      The two cases around this one prove the *outcome* — nothing runs — but they reach it through
+      `clearTimer`, which removes the pending callback outright. That is not the dangerous case. The
+      dangerous case is a callback the platform has already dispatched, where clearing the handle
+      comes too late to stop it: on a device the timer fires anyway.
+
+      Reproduced by making `clearTimer` a no-op, so disposal cannot unqueue anything, and then firing
+      the callback by hand. What stops a request here is the liveness re-check inside the armed
+      callback — and removing it makes this fail, which the cancellation-based cases do not.
+    */
+    let fired: (() => void) | null = null;
+    let runs = 0;
+    const scheduler = createDueBoundaryScheduler({
+      dueDelayMs: async () => 0,
+      run: async () => {
+        runs += 1;
+        return { kind: 'not-due' };
+      },
+      isLive: () => true,
+      minDelayMs: MIN_DELAY,
+      now: () => 0,
+      setTimer: (callback) => {
+        fired = callback;
+        return 1 as unknown as TimerHandle;
+      },
+      /* Deliberately inert: the platform has already dispatched, and nothing can recall it. */
+      clearTimer: () => {},
+    });
+
+    await scheduler.arm();
+    expect(typeof fired).toBe('function');
+
+    scheduler.dispose();
+    (fired as unknown as () => void)();
+    for (let i = 0; i < 12; i += 1) {
+      await Promise.resolve();
+    }
+
+    expect(runs).toBe(0);
+  });
+
   it('a callback fired after the owner is invalidated is inert', async () => {
     const h = harness(0);
     await h.scheduler.arm();
