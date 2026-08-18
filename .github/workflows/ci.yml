@@ -50,13 +50,57 @@ jobs:
       - name: Jest (complete suite)
         run: npx jest --ci
 
+      - name: Focused-test gate covers every test location
+        # The gate below is only as good as the paths it looks at. It originally named
+        # three directory prefixes and missed `plugins/__tests__` (3 files) and
+        # `scripts/__tests__` (1). This step fails if any tracked test file falls
+        # outside the pathspecs, so the blind spot cannot silently come back.
+        run: |
+          set -euo pipefail
+          git ls-files | grep -E '(\.test\.tsx?|_test\.ts)$' | sort > all-tests.txt
+          git ls-files -- ':(glob)**/*.test.ts' ':(glob)**/*.test.tsx' ':(glob)**/*_test.ts' \
+            | sort > scanned-tests.txt
+          missed="$(comm -23 all-tests.txt scanned-tests.txt)"
+          if [ -n "$missed" ]; then
+            echo "::error::Tracked test files outside the focused-test gate's pathspecs:"
+            echo "$missed"
+            exit 1
+          fi
+          echo "Gate covers $(wc -l < scanned-tests.txt) tracked test files, none outside it."
+          rm -f all-tests.txt scanned-tests.txt
+
+      - name: Focused-test pattern self-test
+        # Proves the pattern still catches a focused test, and still ignores prose.
+        run: |
+          set -euo pipefail
+          pattern='\b(describe|it|test)\.(only|skip)\b'
+
+          focused="$(mktemp)"
+          echo 'it.only("x", () => {});' > "$focused"
+          if ! grep -qE -e "$pattern" "$focused"; then
+            echo "::error::Self-test failed: the pattern no longer matches a focused test."
+            exit 1
+          fi
+
+          prose="$(mktemp)"
+          echo 'This helper is only used by the reader; the test only covers the happy path.' > "$prose"
+          echo 'Read-only mode is fine, and we skip the network here.' >> "$prose"
+          echo 'Only the owner may skip this step.' >> "$prose"
+          if grep -qE -e "$pattern" "$prose"; then
+            echo "::error::Self-test failed: the pattern fires on prose containing only/skip."
+            exit 1
+          fi
+
+          rm -f "$focused" "$prose"
+          echo "Self-test passed: matches a focused test, ignores prose."
+
       - name: No skipped or focused tests
         # A `.only` silently disables every other test in its file, and a stray
         # `.skip` hides a failure behind a green run.
         run: |
           set -uo pipefail
           set +e
-          hits="$(git grep -nE -e '\b(describe|it|test)\.(only|skip)\b' -e '\b(fdescribe|fit|xdescribe|xit)\(' -- 'src/**/*.test.ts' 'src/**/*.test.tsx' 'supabase/functions/**/*_test.ts')"
+          hits="$(git grep -nE -e '\b(describe|it|test)\.(only|skip)\b' -e '\b(fdescribe|fit|xdescribe|xit)\(' -- ':(glob)**/*.test.ts' ':(glob)**/*.test.tsx' ':(glob)**/*_test.ts')"
           status=$?
           set -e
           if [ "$status" -gt 1 ]; then
