@@ -9,6 +9,9 @@ import {
   MIN_SURAH,
   type QuranPayload,
   SCRIPTURE_EDITION,
+  SYNC_RESOURCES,
+  type SyncResourceGroup,
+  WIRE_MUTATION_TYPES,
   type WireChapter,
   type WireEdition,
   type WireMutation,
@@ -20,9 +23,6 @@ import {
   type WireSyncRow,
   type WireTranslation,
   type WireVerse,
-  SYNC_RESOURCES,
-  type SyncResourceGroup,
-  WIRE_MUTATION_TYPES,
 } from './contract.ts';
 import type { NormalizeReason, QuranQuery, TranslationAttribution } from './ports.ts';
 import { cursorFromNextPageUrl, isApprovedSnapshotUrl } from './quran-foundation-client.ts';
@@ -735,7 +735,9 @@ export function normalizeAudioUrl(raw: unknown): string | null {
  * The single exception is a mutation for a resource outside NoorLife’s permission table. That is not
  * corruption — it is scope — and it is skipped deliberately; see `normalizeMutation`.
  */
-export function normalizeSync(body: unknown): Extract<QuranPayload, { operation: 'sync_content_resources' }> | null {
+export function normalizeSync(
+  body: unknown,
+): Extract<QuranPayload, { operation: 'sync_content_resources' }> | null {
   const sync = asRecord(asRecord(body)?.sync);
   if (sync === null) {
     return null;
@@ -922,7 +924,9 @@ function normalizeSyncRow(raw: unknown, group: SyncResourceGroup): WireSyncRow |
  * page and wrong here: a sync feed carries changes for any surah, and there is no request to check
  * against. Both halves are still bounded.
  */
-function parseAnyVerseKey(value: unknown): { readonly surah: number; readonly ayah: number } | null {
+function parseAnyVerseKey(
+  value: unknown,
+): { readonly surah: number; readonly ayah: number } | null {
   const text = nonEmptyString(value);
   if (text === null) {
     return null;
@@ -944,7 +948,10 @@ function parseAnyVerseKey(value: unknown): { readonly surah: number; readonly ay
  * NoorLife’s local copy of one resource with the contents of another — the most destructive thing
  * this feed can do, since a snapshot replaces every row.
  */
-export function normalizeSnapshot(body: unknown, group: SyncResourceGroup): Extract<QuranPayload, { operation: 'get_content_snapshot' }> | null {
+export function normalizeSnapshot(
+  body: unknown,
+  group: SyncResourceGroup,
+): Extract<QuranPayload, { operation: 'get_content_snapshot' }> | null {
   const record = asRecord(body);
   if (record === null) {
     return null;
