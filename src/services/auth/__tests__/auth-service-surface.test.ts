@@ -1,4 +1,9 @@
 import { execFileSync } from 'node:child_process';
+
+import {
+  readBaselineFile,
+  resolveProtectedBaseline,
+} from '../../../test-support/protected-baseline';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -27,9 +32,19 @@ import * as authService from '../auth.service';
  * the thing that goes stale.
  */
 
-const BASE_REF = 'feature/core-module-framework';
 const FILE = 'src/services/auth/auth.service.ts';
 const ROOT = join(__dirname, '..', '..', '..', '..');
+
+/**
+ * The branch point, resolved the same way `protected-files.test.ts` resolves it.
+ *
+ * Shared rather than reimplemented: both suites compare against the same commit, and two copies of
+ * this logic would be two chances to drift apart about which commit that is. The resolver tries the
+ * local branch, then `origin/<branch>`, then the pinned commit, and throws when none resolves —
+ * which is what previously made this suite fail on CI, where the local branch name does not exist.
+ */
+const BASE = resolveProtectedBaseline();
+const BASE_REF = BASE.ref;
 
 function git(args: readonly string[]): string | null {
   try {
@@ -39,12 +54,7 @@ function git(args: readonly string[]): string | null {
   }
 }
 
-function baseExists(): boolean {
-  return git(['rev-parse', '--verify', BASE_REF]) !== null;
-}
-
-const available = baseExists();
-const baseline = available ? git(['show', `${BASE_REF}:${FILE}`]) : null;
+const baseline = readBaselineFile(BASE_REF, FILE);
 const current = readFileSync(join(ROOT, FILE), 'utf8');
 
 /**
@@ -74,7 +84,8 @@ function exportedNames(source: string): readonly string[] {
 describe('the exported surface', () => {
   it('can resolve the base ref to compare against', () => {
     // A protection test that quietly does nothing is worse than none, so this is asserted.
-    expect(available).toBe(true);
+    expect(BASE_REF).toBeTruthy();
+    expect(['local-branch', 'remote-branch', 'immutable-sha']).toContain(BASE.source);
     expect(baseline).not.toBeNull();
   });
 
@@ -133,7 +144,9 @@ describe('the diff against the branch point', () => {
   function changedLines(): readonly string[] {
     const diff = git(['diff', '--unified=0', BASE_REF, '--', FILE]);
     if (diff === null) {
-      return [];
+      // Previously this returned an empty list, so a failed diff read as "nothing changed" and the
+      // confinement assertions below passed without having compared anything.
+      throw new Error(`Cannot diff ${FILE} against ${BASE_REF}: git diff failed.`);
     }
     return diff
       .split('\n')
