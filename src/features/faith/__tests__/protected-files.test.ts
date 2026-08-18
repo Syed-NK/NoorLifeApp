@@ -1,6 +1,11 @@
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+
+import {
+  readBaselineFile,
+  resolveProtectedBaseline,
+  type ResolvedBaseline,
+} from '../../../test-support/protected-baseline';
 
 /**
  * Design-locked files must be unchanged from the branch point.
@@ -16,8 +21,6 @@ import path from 'node:path';
  * scaffold, header and navigation, and locking the whole framework would make that
  * impossible to do honestly.
  */
-
-const BASE_REF = 'feature/core-module-framework';
 
 const PROTECTED_PATHS: readonly string[] = [
   // Main Home — design-locked.
@@ -82,45 +85,37 @@ function normalise(value: string): string {
   return value.replace(/\r\n/g, '\n');
 }
 
-function gitShow(ref: string, filePath: string): string | null {
-  try {
-    return execFileSync('git', ['show', `${ref}:${filePath}`], {
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024,
-    });
-  } catch {
-    return null;
-  }
-}
-
-function baseExists(): boolean {
-  try {
-    execFileSync('git', ['rev-parse', '--verify', BASE_REF], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * The baseline, resolved once and lazily.
+ *
+ * Deliberately not inside a `try`. `resolveProtectedBaseline` throws when none of the local branch,
+ * the remote-tracking branch or the pinned commit resolves, and that exception is allowed to reach
+ * Jest from whichever test asked for it. Every assertion below therefore fails when the baseline is
+ * unreachable — none of them can quietly pass, and none of them is skipped.
+ */
+let resolved: ResolvedBaseline | null = null;
+function baseline(): ResolvedBaseline {
+  resolved ??= resolveProtectedBaseline();
+  return resolved;
 }
 
 describe('protected design-locked files', () => {
-  const available = baseExists();
-
   it('can resolve the base ref to compare against', () => {
     // If this fails the suite below is meaningless, so it is asserted rather than
     // silently skipped — a protection test that quietly does nothing is worse than none.
-    expect(available).toBe(true);
+    const { ref, source } = baseline();
+    expect(ref).toBeTruthy();
+    expect(['local-branch', 'remote-branch', 'immutable-sha']).toContain(source);
   });
 
   it.each(PROTECTED_PATHS)('%s is unchanged from the branch point', (filePath) => {
-    if (!available) {
-      throw new Error(`Cannot verify ${filePath}: base ref ${BASE_REF} is unavailable.`);
-    }
+    const { ref } = baseline();
 
-    const baseline = gitShow(BASE_REF, filePath);
-    expect(baseline).not.toBeNull();
+    const baselineContent = readBaselineFile(ref, filePath);
+    expect(baselineContent).not.toBeNull();
 
     const current = fs.readFileSync(path.join(process.cwd(), filePath), 'utf8');
-    expect(normalise(current)).toBe(normalise(baseline as string));
+    expect(normalise(current)).toBe(normalise(baselineContent as string));
   });
 });
 
