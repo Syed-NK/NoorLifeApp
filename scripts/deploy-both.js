@@ -131,31 +131,50 @@ function waitForApp(serial) {
   return false;
 }
 
-if (!skipBuild) {
-  build();
+/**
+ * Everything with a side effect, behind one entry point.
+ *
+ * This used to run at module scope, so merely `require`-ing this file started a Gradle release build
+ * and then `adb install` on every attached device. Nothing in the repository imports it, so nothing
+ * was actually triggering it — but "no current caller" is not a safety property, and a script that
+ * builds and installs on import is one stray import away from doing so inside a test run.
+ *
+ * `require.main === module` is true only when node was pointed at this file directly, which is what
+ * `npm run deploy:both` does. Importing it now yields the module and runs nothing.
+ */
+function main() {
+  if (!skipBuild) {
+    build();
+  }
+
+  if (!fs.existsSync(APK)) {
+    console.error(`No APK at ${APK}`);
+    process.exit(1);
+  }
+
+  const found = targets();
+  if (found.length === 0) {
+    console.error('No devices attached. Start the emulator and/or reconnect the phone:');
+    console.error('  emulator -avd Pixel_8 &');
+    console.error('  adb connect <phone-ip>:<port>   # port from Wireless debugging on the phone');
+    process.exit(1);
+  }
+
+  // Named up front, so a run against only one target is obvious rather than looking complete.
+  console.log(`${found.length} target(s): ${found.map((s) => `${label(s)} (${s})`).join(', ')}`);
+  if (found.length < 2) {
+    console.log(
+      'NOTE: only one target — the other still needs checking before this counts as verified.',
+    );
+  }
+
+  for (const serial of found) {
+    deploy(serial);
+  }
 }
 
-if (!fs.existsSync(APK)) {
-  console.error(`No APK at ${APK}`);
-  process.exit(1);
-}
+module.exports = { main };
 
-const found = targets();
-if (found.length === 0) {
-  console.error('No devices attached. Start the emulator and/or reconnect the phone:');
-  console.error('  emulator -avd Pixel_8 &');
-  console.error('  adb connect <phone-ip>:<port>   # port from Wireless debugging on the phone');
-  process.exit(1);
-}
-
-// Named up front, so a run against only one target is obvious rather than looking complete.
-console.log(`${found.length} target(s): ${found.map((s) => `${label(s)} (${s})`).join(', ')}`);
-if (found.length < 2) {
-  console.log(
-    'NOTE: only one target — the other still needs checking before this counts as verified.',
-  );
-}
-
-for (const serial of found) {
-  deploy(serial);
+if (require.main === module) {
+  main();
 }
