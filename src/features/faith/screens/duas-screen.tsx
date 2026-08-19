@@ -153,7 +153,7 @@ export function DuasScreen() {
                 <CategoryCard
                   key={category.id}
                   category={category}
-                  width={stackTwoColumns ? undefined : twoColumnWidth}
+                  halfWidth={stackTwoColumns ? null : twoColumnWidth}
                   personalCount={selectionsForCategory(category.id, selections.selections).length}
                   reviewedCount={reviewedForCategory(category.reviewedCategories, reviewed).length}
                   onPress={() => router.push(duaCategoryHref(category.id))}
@@ -421,9 +421,14 @@ function SearchResults({
             selection={result.selection}
             resolution={selections.resolve(result.selection)}
             activeCounterId={tasbih.session?.counterId ?? null}
+            /* Sequenced for the same reason the category list sequences it: the counter must be
+               switched before anything reads it back. This path does not navigate, so the race is
+               invisible rather than absent — which is a worse kind of wrong, not a lesser one. */
             onUse={() => {
-              void selections.markUsed(result.selection.id);
-              void tasbih.chooseCounter(result.selection.id);
+              void (async () => {
+                await selections.markUsed(result.selection.id);
+                await tasbih.chooseCounter(result.selection.id);
+              })();
             }}
             onRead={() => onRead(result.selection.surah, result.selection.startAyah)}
             onToggleFavourite={() => void selections.toggleFavourite(result.selection.id)}
@@ -461,21 +466,32 @@ function SearchResults({
 /**
  * One category card.
  *
- * ── Why the width is a prop and not a flex basis ───────────────────────────
+ * ── Where the width comes from ─────────────────────────────────────────────
  * `useModuleMetrics` already measures the half-column and already decides when a pair must stack —
  * `shouldStackTwoColumn`, whose threshold was measured on device across six widths and four text
  * sizes. Reusing it means this grid collapses at exactly the same point every other two-column pair
- * in the app collapses, rather than at a number chosen here. `undefined` means full width.
+ * in the app collapses, rather than at a number chosen here.
+ *
+ * ── Why it is a flex basis and not a fixed width ───────────────────────────
+ * A fixed `width` of exactly half the column is a layout that fits with nothing to spare, and on
+ * device it did not fit: two 174 dp cards plus the 10 dp gap came to within a few pixels of the
+ * container, and rounding pushed the second card onto its own line — ten stacked cards where the
+ * design has five rows of two. Measured on the emulator at 411 dp, which is the reference width, so
+ * every device would have shown it.
+ *
+ * A basis one dp under the half-column can never exceed half, and `flexGrow` lets the pair take back
+ * the rounding slack so the two cards still meet the gap exactly.
  */
 function CategoryCard({
   category,
-  width,
+  halfWidth,
   personalCount,
   reviewedCount,
   onPress,
 }: {
   readonly category: DuaCategory;
-  readonly width: number | undefined;
+  /** The measured half-column, or `null` when the pair must stack and each card takes the row. */
+  readonly halfWidth: number | null;
   readonly personalCount: number;
   readonly reviewedCount: number;
   readonly onPress: () => void;
@@ -505,11 +521,14 @@ function CategoryCard({
       }`}
       style={[
         styles.card,
+        halfWidth === null
+          ? styles.fullRow
+          : { flexBasis: halfWidth - 1, flexGrow: 1, flexShrink: 1 },
         {
-          width,
           borderRadius: dp(moduleLayout.cardRadius),
           padding: dp(moduleLayout.cardPadding),
-          columnGap: dp(10),
+          /* 8, not 10: the label needs the difference to keep its longest word whole. */
+          columnGap: dp(8),
           minHeight: dp(88),
           /* Pressed, not selected: nothing on this screen is permanently highlighted. */
           backgroundColor: pressed ? MINT : moduleNeutrals.surface,
@@ -626,6 +645,8 @@ const styles = StyleSheet.create({
   */
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   card: { alignItems: 'center', flexDirection: 'row' },
+  /* Stacked: one card per line, filling it, so the wrap rule needs no second branch. */
+  fullRow: { flexBasis: '100%' },
   scrim: { backgroundColor: '#14265F55', flex: 1, justifyContent: 'flex-end' },
   sheet: { backgroundColor: moduleNeutrals.surface },
   filterRow: { alignItems: 'center', flexDirection: 'row' },

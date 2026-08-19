@@ -455,3 +455,39 @@ describe('the personal categories still work', () => {
     expect(withoutAdd.queryByTestId('faith-dua-category-add-selection')).toBeNull();
   });
 });
+
+describe('sending a selection to Tasbih', () => {
+  it('switches the counter before the screen that reads it is opened', async () => {
+    /*
+      ── The defect this pins, found on device ─────────────────────────────────
+      The handler fired `markUsed`, `chooseCounter` and `router.push` without awaiting, so the Tasbih
+      screen mounted and read the store before the counter switch had landed. Storage settled
+      correctly; what was wrong was what the user saw — tapping count on 2:255 opened a counter still
+      captioned 5:1, on the one screen whose entire job is to say what is being counted.
+
+      Asserted by driving the real screen and reading the store back, because the ordering is the
+      behaviour: a test that only checked the final value would pass against the broken version too.
+    */
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    await saveQuranSelection({ surah: 112, startAyah: 1, endAyah: 1 }, null);
+
+    const repository = createLocalTasbihRepository();
+    await repository.startSession('q.112.1.1', { target: 33 });
+    await repository.increment();
+
+    const view = await renderCategory('my-quran-selections');
+    fireEvent.press(await view.findByTestId('faith-dua-category-selection-use-q.2.255.255'));
+
+    await waitFor(async () => {
+      const session = await createLocalTasbihRepository().getSession();
+      expect(session.kind === 'ok' && session.data.counterId).toBe('q.2.255.255');
+    });
+
+    /* And the counter it moved away from kept its count, which is the guarantee underneath. */
+    await repository.startSession('q.112.1.1');
+    const previous = await repository.getSession();
+    expect(previous.kind).toBe('ok');
+    if (previous.kind !== 'ok') return;
+    expect(previous.data.count).toBe(1);
+  });
+});

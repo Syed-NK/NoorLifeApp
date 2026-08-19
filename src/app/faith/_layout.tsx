@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 
 import { LegacyDataPrompt } from '@features/faith/components/legacy-data-prompt';
+import { FaithRouteGuard } from '@features/faith/di/faith-route-guard';
 import { FaithRepositoryProvider } from '@features/faith/di/faith-repository-context';
 import { OfflineRecitationProvider } from '@features/faith/di/offline-recitation-context';
 import { FaithPreferencesProvider } from '@features/faith/state/faith-preferences-provider';
@@ -12,6 +13,13 @@ import { FaithPreferencesProvider } from '@features/faith/state/faith-preference
  * shares one set of data sources — which is what makes swapping in the approved Quran
  * Foundation adapter a single-file change, and what lets a test override one repository
  * for the whole module at once.
+ *
+ * ── The guard is outermost, and that placement is the fix ──────────────────
+ * `src/app/index.tsx` was the application's only authentication gate, and it is the entry route: a
+ * deep link into `/faith/*` renders its target directly and never touches it. Putting the guard here
+ * means every route in this stack — including one arrived at by link — takes the decision before any
+ * provider mounts, so no repository is constructed and no screen issues a read for somebody the app
+ * has not established is signed in. See `faith-route-guard.tsx` for what it admits and why.
  */
 export default function Layout() {
   return (
@@ -22,9 +30,10 @@ export default function Layout() {
       `faith-preferences-store.ts` — so being a provider is about naming the hydration point, not
       about scoping the value.
     */
-    <FaithPreferencesProvider>
-      <FaithRepositoryProvider>
-        {/*
+    <FaithRouteGuard>
+      <FaithPreferencesProvider>
+        <FaithRepositoryProvider>
+          {/*
           The offline recitation service is Faith-scoped and deliberately not mounted at application
           startup: it reads a manifest, sweeps partials and repairs an index against the filesystem,
           which is work no launch that never opens the Qur'an should do. Mounting it here means one
@@ -34,9 +43,9 @@ export default function Layout() {
           It starts no download. See `OfflineRecitationProvider` — the mount effect hydrates and
           migrates, and there is no call to `start`, `resume` or `prepare` anywhere in it.
         */}
-        <OfflineRecitationProvider>
-          <Stack screenOptions={{ headerShown: false }} />
-          {/*
+          <OfflineRecitationProvider>
+            <Stack screenOptions={{ headerShown: false }} />
+            {/*
             The one-time question about unowned Faith data found on this device.
 
             Mounted over the whole Faith stack rather than placed on one screen, because it has to be
@@ -49,9 +58,10 @@ export default function Layout() {
             Main Home or Profile: the choice is about bookmarks, notes and prayer settings, and it
             belongs where the user can see what it is about.
           */}
-          <LegacyDataPrompt />
-        </OfflineRecitationProvider>
-      </FaithRepositoryProvider>
-    </FaithPreferencesProvider>
+            <LegacyDataPrompt />
+          </OfflineRecitationProvider>
+        </FaithRepositoryProvider>
+      </FaithPreferencesProvider>
+    </FaithRouteGuard>
   );
 }

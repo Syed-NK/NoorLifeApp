@@ -156,10 +156,22 @@ function CategoryBody({ category }: { readonly category: DuaCategory }) {
             selection={selection}
             resolution={selections.resolve(selection)}
             activeCounterId={tasbih.session?.counterId ?? null}
+            /*
+              ── Awaited before navigating, and that is the whole point ─────────
+              Fired-and-forgotten, these three lines race: `router.push` runs immediately, the Tasbih
+              screen mounts, and `useTasbih` reads the store *before* `chooseCounter`'s write lands —
+              so the counter opens showing whichever selection was active before. Seen on device:
+              tapping count on 2:255 opened a counter still captioned 5:1.
+
+              Storage settled correctly either way, so nothing was lost. What was wrong is what the
+              user saw, on the one screen whose entire job is to show what they are counting.
+            */
             onUse={() => {
-              void selections.markUsed(selection.id);
-              void tasbih.chooseCounter(selection.id);
-              router.push(faithRoutes.tasbih);
+              void (async () => {
+                await selections.markUsed(selection.id);
+                await tasbih.chooseCounter(selection.id);
+                router.push(faithRoutes.tasbih);
+              })();
             }}
             onRead={() => read(selection.surah, selection.startAyah)}
             onToggleFavourite={() => void selections.toggleFavourite(selection.id)}

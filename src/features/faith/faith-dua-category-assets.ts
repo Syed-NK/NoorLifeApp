@@ -77,15 +77,24 @@ export type DuaCategoryIconEntry = {
 /**
  * The registry, in grid order with Continue last.
  *
- * `renderedAtDp` is 44 for the grid cards and 40 for Continue, matching the approved mock's optical
- * sizes. The value is here rather than in the screen so the asset brief and the layout cannot drift.
+ * ── Why the card icon is 40 dp and not 44 ──────────────────────────────────
+ * 44 was the first reading of the mock's optical size, and on device it cost the title the width it
+ * needed: a half-column card at 411 dp leaves the label about 97 dp beside a 44 dp icon, and
+ * "Remembrances" does not fit in that, so React Native broke it mid-word — "Daily Remembr / ances".
+ * Measured on the emulator, at the reference width, so every device would have shown it.
+ *
+ * 40 dp with an 8 dp gap returns 9 dp to the label, which is enough for the longest word in the
+ * approved set to stay whole. The alternative was a smaller type token, and shrinking the label to
+ * protect the icon is the wrong way round — the words are what the card is for.
+ *
+ * The value lives here rather than in the screen so the asset brief and the layout cannot drift.
  */
 export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
   {
     id: 'daily-remembrances',
     file: 'duas/dc1-daily-remembrances.png',
     subject: 'Golden sunrise behind an emerald mosque',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: {
       status: 'awaiting-artwork',
       developmentFallback: { kind: 'vector', icon: 'crescent' },
@@ -95,35 +104,35 @@ export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
     id: 'morning-evening',
     file: 'duas/dc2-morning-evening.png',
     subject: 'Sunrise and crescent over a mosque',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'mosque' } },
   },
   {
     id: 'food-drink',
     file: 'duas/dc3-food-drink.png',
     subject: 'Ivory bowl and cup with emerald and gold decoration',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'meal' } },
   },
   {
     id: 'travel',
     file: 'duas/dc4-travel.png',
     subject: 'Emerald suitcase with gold hardware',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'walk' } },
   },
   {
     id: 'home-family',
     file: 'duas/dc5-home-family.png',
     subject: 'Ivory-and-emerald home with a gold heart',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'home' } },
   },
   {
     id: 'joy-distress',
     file: 'duas/dc6-joy-distress.png',
     subject: 'Cupped hands holding a small gold heart of light',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: {
       status: 'awaiting-artwork',
       developmentFallback: { kind: 'vector', icon: 'wellness' },
@@ -134,7 +143,7 @@ export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
     /* Reused, exact: the open Qur'an on a carved wooden rehal the Faith submenu already ships. */
     file: 'submenu/01-quran.png',
     subject: 'Open Qur’an on a carved wooden rehal',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: {
       status: 'installed',
       source: require('@assets/images/modules/faith/submenu/01-quran.png') as ImageSourcePropType,
@@ -145,7 +154,7 @@ export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
     /* Reused, exact: emerald beads, gold separators, gold tassel. */
     file: 'submenu/06-tasbih.png',
     subject: 'Emerald prayer beads with a gold separator and tassel',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: {
       status: 'installed',
       source: require('@assets/images/modules/faith/submenu/06-tasbih.png') as ImageSourcePropType,
@@ -156,7 +165,7 @@ export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
     /* Reused: H2, the open cream book with an emerald and gold ribbon bookmark. */
     file: 'pictograms/h2-bookmarked-book.png',
     subject: 'Open Qur’an with an emerald bookmark',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: {
       status: 'installed',
       source:
@@ -167,7 +176,7 @@ export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
     id: 'favourites',
     file: 'duas/dc7-favourites.png',
     subject: 'Dimensional gold star in an ivory medallion',
-    renderedAtDp: 44,
+    renderedAtDp: 40,
     asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'star' } },
   },
   {
