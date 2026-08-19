@@ -101,43 +101,24 @@ describe('Hadith draws H1, H2, H3 and S1', () => {
   });
 });
 
-describe('Duas draws D1, D2, the reused H2, and S1', () => {
-  it.each([
-    ['Morning & evening', 'faith-duas-row-morning-evening-pictogram', 'd1'],
-    ['Everyday moments', 'faith-duas-row-everyday-pictogram', 'd2'],
-    ['Bookmarks', 'faith-duas-row-bookmarks-pictogram', 'd3'],
-    ['the trust notice', 'faith-duas-trust-shield', 's1'],
-  ] as const)('%s renders %s', async (_row, testID, id) => {
+/*
+  ── The Duas pictogram block used to be here ────────────────────────────────
+  It asserted D1, D2 and the reused H2 on three disabled preview rows, and that those rows had no
+  press handler. The rows are gone: Duas is not a locked library any more — it lists the user's own
+  Quran selections, drawn from the copy of the Arabic this device retained — so there are no preview
+  rows to draw pictograms in.
+
+  What survives is asserted where it still holds. `D3 === H2` is a registry fact and is covered by
+  `faith-pictogram-registry.test.ts`; the shield on the Duas trust notice is S1 and is asserted
+  below with the other S1 usages. The Duas screen's own behaviour is in `faith-duas-screen.test.tsx`.
+*/
+describe('Duas keeps the S1 shield on its trust notice', () => {
+  it('draws the approved shield rather than a second drawing of the same idea', async () => {
     await renderScreen(<DuasScreen />);
     await screen.findByTestId('faith-duas');
 
-    expect(sourceOf(testID)).toBe(expected(id));
-    expect(expected(id)).toBeDefined();
-  });
-
-  /**
-   * D3 is H2's image, not a lookalike.
-   *
-   * Asserted across two screens rather than inside the registry, because the thing worth proving is
-   * that a reader who taps from Hadith to Duas sees the same drawing for the same idea.
-   */
-  it('gives the Dua bookmark row the very same image as the Hadith one', async () => {
-    await renderScreen(<DuasScreen />);
-    const dua = sourceOf('faith-duas-row-bookmarks-pictogram');
-
-    await renderScreen(<HadithScreen />);
-    const hadith = sourceOf('faith-hadith-row-bookmarks-pictogram');
-
-    expect(dua).toBe(hadith);
-    expect(getFaithPictogram('d3').file).toBe('h2-bookmarked-book.png');
-  });
-
-  it('leaves the provider-locked state intact', async () => {
-    await renderScreen(<DuasScreen />);
+    expect(sourceOf('faith-duas-trust-shield')).toBe(expected('s1'));
     expect(await screen.findByText('No unverified supplications are shown.')).toBeTruthy();
-    expect(
-      (await screen.findByTestId('faith-duas-row-morning-evening')).props.onPress,
-    ).toBeUndefined();
   });
 });
 
