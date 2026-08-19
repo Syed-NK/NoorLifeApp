@@ -302,6 +302,40 @@ function generationDirectory(generationId: string): Directory {
   return new Directory(rootDirectory(), generationId);
 }
 
+/**
+ * Where a not-yet-complete Arabic baseline accumulates, and why it lives inside the generation root.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A complete Arabic baseline is roughly 180 authenticated `list_verses` requests. That is not work a
+ * single run can be relied upon to finish — a rate limit, a lost connection or the process being
+ * killed will interrupt it — and a design that restarted from surah 1 each time would spend the
+ * vendor's rate limit repeatedly to arrive nowhere. So partial work is durable, and a run resumes
+ * where the last one stopped.
+ *
+ * It sits **inside** the generation root rather than beside it for one reason: this is Quran
+ * Foundation's Arabic text on disk, under the same permission as everything else here, and the root
+ * is the directory the iOS backup exclusion is applied to. A sibling directory would need its own
+ * exclusion, its own path allowance in the native module, and its own way to be wrong.
+ *
+ * It is deliberately **not** a generation. It has no manifest, no pointer and no reader — nothing
+ * outside the sync transaction opens it, and it becomes visible only by being validated in full and
+ * published into a real generation. The sweeper skips it by name for that reason: it is neither an
+ * active generation nor an unreferenced one, and deleting it between two runs would reset the
+ * baseline to zero on every publication.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const ARABIC_STAGING_DIRECTORY = '_arabic-staging';
+
+/** The staging directory, created on demand. The root's backup exclusion covers everything in it. */
+export function arabicStagingDirectory(): Directory {
+  ensureRoot();
+  const directory = new Directory(rootDirectory(), ARABIC_STAGING_DIRECTORY);
+  if (!directory.exists) {
+    directory.create();
+  }
+  return directory;
+}
+
 /** `Paths.document` is the app-internal files directory: not shared media, not user-visible. */
 function ensureRoot(): void {
   const root = rootDirectory();
@@ -881,6 +915,14 @@ export async function sweepGenerations(): Promise<{
     const name = entry.uri.replace(/\/+$/, '').split('/').pop() ?? '';
     if (name === '' || name === active) {
       /* The active generation is never a candidate, whatever else is true of it. */
+      continue;
+    }
+    if (name === ARABIC_STAGING_DIRECTORY) {
+      /*
+        Not a generation and not an unreferenced one. It holds a partial Arabic baseline that the
+        next run will resume, and sweeping it after every publication would restart that baseline
+        from surah 1 forever — the exact failure the staging directory exists to prevent.
+      */
       continue;
     }
     try {

@@ -24,12 +24,23 @@ import type {
 } from '../../storage/faith-sync-rows';
 import {
   type ActiveGeneration,
+  arabicRetentionAllowed,
   checksumOf,
   type GenerationDraft,
   publishGeneration,
   readActiveGeneration,
   sweepGenerations,
 } from '../../storage/faith-sync-generation';
+import { ARABIC_SCRIPT, type ArabicRow, MAX_SURAH } from '../../storage/faith-arabic-rows';
+import {
+  type ArabicStagingPlan,
+  collectArabicBaseline,
+  discardArabicStaging,
+  openArabicStaging,
+  pendingSurahs,
+  readArabicStagingPlan,
+  recordArabicSurah,
+} from '../../storage/faith-arabic-staging';
 import { publishRevision, updateSyncStatus } from './content-sync.revision';
 import { isPublishableAttribution, resolveTranslationAttribution } from './translation-attribution';
 import type { SyncSessionGuard } from './content-sync.session';
@@ -179,6 +190,45 @@ export const TRANSLATION_METADATA_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
  */
 export const SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * How long a connected device may hold retained Arabic without re-reading it.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Why this is a re-read and not a feed check ─────────────────────────────
+ * The 2026-08-18 permission requires checking for updates at least every seven connected days and
+ * applying corrections, updates and removals. For recitations and translations that obligation is
+ * discharged by reading the change feed, because those two resources are on it.
+ *
+ * **Arabic is not.** The canonical filter is `recitations:3;translations:85`, Content Sync carries no
+ * scripture resource, and the Content API exposes no revision, digest or modified-since field for
+ * `list_verses`. There is therefore no cheap question this client can ask that would reveal a
+ * correction to the text. The only conforming check available is to read the text again and see.
+ *
+ * ── The cost, stated plainly rather than hidden ────────────────────────────
+ * That is roughly 180 authenticated requests per device per week. It is genuinely expensive and it
+ * is not a preference — the alternative is to hold retained scripture without checking it, which the
+ * permission does not allow. It is made survivable by three things: the read is resumable, so a
+ * device pays for the pages it actually fetched; it runs only on the ordinary sync triggers, never on
+ * a screen; and it is bounded per run so one device cannot exhaust the shared rate limit in a burst.
+ *
+ * If Quran Foundation later exposes a cheaper currency signal for scripture, this constant is where
+ * that change lands.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const ARABIC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Verses per `list_verses` page. The server's documented maximum, so the run makes fewest requests. */
+const ARABIC_PAGE_SIZE = 50;
+
+/**
+ * The request ceiling for one run's Arabic work.
+ *
+ * A complete baseline is about 180 requests, so this is not a budget the ordinary run spends — it is
+ * the absurdity guard for a server that never stops paginating, the same role `MAX_PAGES` plays for
+ * the feed. A run that hits it stops with its progress on disk and the next run resumes.
+ */
+const MAX_ARABIC_REQUESTS = 400;
+
 /** A page count that cannot be a real run. Guards against a server that never sets `hasMore: false`. */
 const MAX_PAGES = 500;
 
@@ -200,6 +250,15 @@ export type SyncOutcome =
       readonly recitationMutationObserved: boolean;
       readonly recitationReconciliation: RecitationReconciliation;
       readonly translationsReplaced: boolean;
+      /**
+       * What the Arabic baseline did on this run.
+       *
+       * `complete` means the whole 6,236-verse set validated and was staged for publication.
+       * `partial` means work was done and persisted and the baseline is still being built — an
+       * ordinary state, not a failure. `skipped` means the check was not due or the device cannot
+       * lawfully retain Arabic. The three are distinguished because only the first is a fresh check.
+       */
+      readonly arabic: 'complete' | 'partial' | 'skipped';
       readonly at: number;
     }
   /** Nothing was owed. The check is not due and no work was needed. */
@@ -286,7 +345,26 @@ type Staged = {
   recitations: { readonly rows: readonly RecitationRow[] } | null;
   recitationMutationObserved: boolean;
   recitationReconciliation: RecitationReconciliation;
+  arabic: { readonly rows: readonly ArabicRow[]; readonly lastCheckedAt: number } | null;
 };
+
+/**
+ * What the Arabic step achieved, read from durable state rather than from a flag someone set.
+ *
+ * `partial` is answered by the staging plan itself: if a plan is on disk with surahs still pending,
+ * work was done and persisted and the next run will continue it. Deriving it this way means the
+ * outcome cannot claim progress the device does not actually hold.
+ */
+function arabicOutcome(staged: Staged, due: boolean): 'complete' | 'partial' | 'skipped' {
+  if (staged.arabic !== null) {
+    return 'complete';
+  }
+  if (!due) {
+    return 'skipped';
+  }
+  const plan = readArabicStagingPlan();
+  return plan !== null && pendingSurahs(plan).length > 0 ? 'partial' : 'skipped';
+}
 
 export type ContentSyncOrchestrator = {
   /**
@@ -598,6 +676,212 @@ export function createContentSyncOrchestrator(
     return { kind: 'ok' };
   };
 
+  /**
+   * The publisher's ayah counts, from its own chapter list.
+   *
+   * This repository does not author a table of 114 ayah counts — that is scholarly content, and
+   * inventing it is the kind of reconstruction the permission forbids. So "complete" is measured
+   * against what the publisher says, and the one check applied to that answer is that it sums to
+   * 6,236, which is the total the rest of the feature already states as a constant.
+   */
+  const fetchAyahCounts = async (): Promise<
+    { readonly kind: 'counts'; readonly counts: readonly number[] } | Stage
+  > => {
+    const answer = await request({ operation: 'list_chapters' });
+    if (answer.kind !== 'ok') {
+      return answer;
+    }
+    if (answer.data.operation !== 'list_chapters') {
+      return { kind: 'failed', failure: 'invalid-response' };
+    }
+    const counts: number[] = [];
+    for (let surah = 1; surah <= MAX_SURAH; surah += 1) {
+      const chapter = answer.data.chapters.find((entry) => entry.number === surah);
+      if (chapter === undefined) {
+        /* A chapter list missing a surah cannot describe a complete Qur'an. */
+        return { kind: 'failed', failure: 'invalid-response' };
+      }
+      counts.push(chapter.ayahCount);
+    }
+    return { kind: 'counts', counts };
+  };
+
+  /**
+   * Follows the cursor the server gave, and never computes one.
+   *
+   * The encoding is documented as the server's business; this decodes only what it was handed, which
+   * mirrors `pagingFor` in the repository. A cursor that cannot be followed fails the run rather than
+   * being guessed at, because guessing the next page is how a run silently skips fifty verses.
+   */
+  const pageFromCursor = (cursor: string): number | null => {
+    const parsed = Number.parseInt(cursor, 10);
+    return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
+  };
+
+  /**
+   * Fetches one complete surah, page by page. Nothing is written until every page of it has arrived.
+   */
+  const fetchSurah = async (
+    surah: number,
+    spend: () => boolean,
+  ): Promise<
+    | { readonly kind: 'rows'; readonly rows: readonly ArabicRow[] }
+    | Stage
+    | { readonly kind: 'budget' }
+  > => {
+    const rows: ArabicRow[] = [];
+    let page: number | null = 1;
+
+    while (page !== null) {
+      if (!spend()) {
+        return { kind: 'budget' };
+      }
+      const answer = await request({
+        operation: 'list_verses',
+        surah,
+        page,
+        per_page: ARABIC_PAGE_SIZE,
+      });
+      if (answer.kind !== 'ok') {
+        return answer;
+      }
+      const payload = answer.data;
+      if (payload.operation !== 'list_verses') {
+        return { kind: 'failed', failure: 'invalid-response' };
+      }
+      for (const verse of payload.verses) {
+        if (verse.surah !== surah) {
+          /* A page answering for another surah would file one surah's text under another's key. */
+          return { kind: 'failed', failure: 'invalid-response' };
+        }
+        rows.push({
+          verseKey: `${verse.surah}:${verse.ayah}`,
+          surah: verse.surah,
+          ayah: verse.ayah,
+          /* Copied. There is no transformation on this path, here or anywhere upstream of it. */
+          text: verse.arabic,
+          script: ARABIC_SCRIPT,
+        });
+      }
+      if (payload.pagination.nextCursor === null) {
+        break;
+      }
+      const next = pageFromCursor(payload.pagination.nextCursor);
+      if (next === null || next <= page) {
+        /* A cursor that does not advance is an unbounded loop wearing a pagination object. */
+        return { kind: 'failed', failure: 'invalid-response' };
+      }
+      page = next;
+    }
+    return { kind: 'rows', rows };
+  };
+
+  /**
+   * Builds — or resumes building — the complete Arabic baseline, and stages it only when it is whole.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── What this step may and may not leave behind ────────────────────────────
+   * It writes to the staging directory freely: that area has no reader, no manifest and no pointer,
+   * and a partial baseline there is invisible to the application. What it may not do is put anything
+   * incomplete into `staged.arabic`, because that is what gets published — and a Qur'an missing one
+   * verse is not a smaller licensed artefact, it is an unlicensed one.
+   *
+   * So the exit is all-or-nothing. Either the whole 6,236-verse set validates and is staged, or this
+   * returns `ok` having staged nothing and the run publishes whatever Arabic it already held.
+   *
+   * ── Why an interruption is not a failure ───────────────────────────────────
+   * Running out of the per-run request budget returns `ok`, not a failure. Nothing is broken: the
+   * device has more of the baseline on disk than it did, and the next ordinary trigger continues. A
+   * real failure — a refused request, a malformed page — is reported as one and takes its backoff.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  const stageArabicBaseline = async (
+    staged: Staged,
+    previous: ActiveGeneration | null,
+  ): Promise<Stage> => {
+    if (!arabicRetentionAllowed().allowed) {
+      /*
+        The device cannot hold retained Arabic within the terms of the permission — on iOS, that the
+        generation root is confirmed excluded from backup. Spending 180 requests to fetch text that
+        would then be refused at publication is worse than not asking, so the run does not ask.
+      */
+      return { kind: 'ok' };
+    }
+
+    const counts = await fetchAyahCounts();
+    if (counts.kind !== 'counts') {
+      return counts;
+    }
+
+    const held = previous?.arabic ?? null;
+    const stored = readArabicStagingPlan();
+    if (stored !== null && held !== null && stored.startedAt <= held.lastCheckedAt) {
+      /*
+        The plan on disk is the one that produced the Arabic already held, left behind by a run that
+        published and then died before clearing it. Resuming it would report a fresh check on a
+        dataset fetched a week ago, so it is discarded and this check starts over. A plan started
+        *after* the held check is an in-progress newer build and is resumed.
+      */
+      discardArabicStaging();
+    }
+
+    let plan: ArabicStagingPlan | null = openArabicStaging(
+      counts.counts,
+      ARABIC_SCRIPT,
+      deps.now(),
+    );
+    if (plan === null) {
+      /* Unusable counts, or a staging area that cannot be written. Neither is worth 180 requests. */
+      return { kind: 'ok' };
+    }
+
+    let spent = 0;
+    const spend = (): boolean => {
+      if (spent >= MAX_ARABIC_REQUESTS) {
+        return false;
+      }
+      spent += 1;
+      return true;
+    };
+
+    for (const surah of pendingSurahs(plan)) {
+      const fetched = await fetchSurah(surah, spend);
+      if (fetched.kind === 'budget') {
+        return { kind: 'ok' };
+      }
+      if (fetched.kind !== 'rows') {
+        return fetched;
+      }
+      const recorded = recordArabicSurah(plan, surah, fetched.rows);
+      if (recorded === null) {
+        /*
+          The surah did not match the publisher's own count for it, or it could not be written. Either
+          way this baseline cannot become complete, and continuing would spend the remaining requests
+          to arrive at a dataset that fails validation anyway.
+        */
+        return { kind: 'failed', failure: 'invalid-response' };
+      }
+      plan = recorded;
+    }
+
+    if (pendingSurahs(plan).length > 0) {
+      return { kind: 'ok' };
+    }
+
+    const rows = collectArabicBaseline(plan);
+    if (rows === null) {
+      /*
+        Every surah was recorded and the assembled set still does not validate, so something on disk
+        decayed between being written and being read. The partial area is discarded rather than
+        resumed: resuming it would skip the surahs whose files are the suspect ones.
+      */
+      discardArabicStaging();
+      return { kind: 'failed', failure: 'invalid-response' };
+    }
+    staged.arabic = { rows, lastCheckedAt: deps.now() };
+    return { kind: 'ok' };
+  };
+
   const runTransaction = async (force: boolean): Promise<SyncOutcome> => {
     const at = deps.now();
 
@@ -702,7 +986,47 @@ export function createContentSyncOrchestrator(
       previous.translations.rows.length > 0 &&
       !isPublishableAttribution(previous.translations.attribution, TRANSLATION_RESOURCE_ID);
 
-    if (!force && !feedDue && !audioDue && !attributionRepairDue && previous !== null) {
+    /**
+     * Whether the Arabic baseline is owed — because none is held, or because its own clock elapsed.
+     *
+     * ═════════════════════════════════════════════════════════════════════
+     * ── A third clock, and why it is not one of the other two ─────────────
+     * `feedDue` measures the change feed, which carries recitations and translations and no
+     * scripture. `audioDue` measures the bounded recitation integrity safeguard. Neither says
+     * anything about the Arabic text, so neither can discharge the obligation to check it — and
+     * borrowing one of them would mean a device that reads the feed weekly reports a currency it
+     * never established for the retained Qur'an.
+     *
+     * The clock lives inside the generation, beside the text it describes, for the same reason the
+     * token does: a timestamp that outlives the content it refers to is a claim that work was done
+     * which was not. There is deliberately no competing record of it in key-value storage.
+     *
+     * Held-but-unretained is treated as due. A device that could not confirm backup exclusion when
+     * it last published holds no Arabic, and that state should resolve itself the moment the
+     * platform can confirm it rather than waiting a week for a clock that never started.
+     * ═════════════════════════════════════════════════════════════════════
+     */
+    const heldArabic = previous?.arabic ?? null;
+    const elapsedArabic = heldArabic === null ? null : at - heldArabic.lastCheckedAt;
+    /*
+      A device that may not retain Arabic is never due for it. Without this the condition would be
+      permanently true on such a device — no Arabic is held, so no clock ever starts — and every
+      trigger would begin a run that reads the feed, republishes a generation and refuses the Arabic
+      at the last step. Nothing is owed when nothing may lawfully be kept, and the moment the
+      platform can confirm exclusion the condition becomes true on its own.
+    */
+    const arabicDue =
+      arabicRetentionAllowed().allowed &&
+      (elapsedArabic === null || elapsedArabic < 0 || elapsedArabic >= ARABIC_INTERVAL_MS);
+
+    if (
+      !force &&
+      !feedDue &&
+      !audioDue &&
+      !attributionRepairDue &&
+      !arabicDue &&
+      previous !== null
+    ) {
       report({
         /*
           `current` regardless of whether a mutation was ever seen. Quran Foundation confirmed that a
@@ -755,6 +1079,7 @@ export function createContentSyncOrchestrator(
       recitations: null,
       recitationMutationObserved: false,
       recitationReconciliation: 'none',
+      arabic: null,
     };
 
     const fail = async (failure: SyncFailure): Promise<SyncOutcome> => {
@@ -891,6 +1216,23 @@ export function createContentSyncOrchestrator(
       }
     }
 
+    // ── Step 5b: the Arabic baseline, resumed rather than restarted ─────────
+    /*
+      Last of the fetching steps, and deliberately so. It is by far the most expensive — about 180
+      requests where everything above it is a handful — so a run that is going to fail on the feed or
+      on a snapshot fails before spending any of them. It is also the only step whose partial work
+      survives the run, which is what makes putting it last safe rather than wasteful.
+    */
+    if (arabicDue) {
+      const stage = await stageArabicBaseline(staged, previous);
+      if (stage.kind === 'cancelled') {
+        return ended(false);
+      }
+      if (stage.kind === 'failed') {
+        return await fail(stage.failure);
+      }
+    }
+
     // ── Step 6: one generation, published by one pointer write ─────────────
     /*
       ── Why this is a single act and the previous version was not ───────────
@@ -955,6 +1297,19 @@ export function createContentSyncOrchestrator(
       translations = { attribution: repaired.attribution, rows: translations.rows };
     }
     const recitations = staged.recitations ?? previous?.recitations ?? { rows: [] };
+    /*
+      Carried forward when this run did not restage it, exactly as the other datasets are. A run that
+      was due for the feed and completed no Arabic work must not drop the Arabic the device already
+      holds — that would delete a lawfully retained complete Qur'an to publish a translation update.
+    */
+    const arabic =
+      staged.arabic === null
+        ? (previous?.arabic ?? null)
+        : {
+            script: ARABIC_SCRIPT,
+            rows: staged.arabic.rows,
+            lastCheckedAt: staged.arabic.lastCheckedAt,
+          };
 
     const method =
       staged.recitationReconciliation === 'none'
@@ -983,6 +1338,7 @@ export function createContentSyncOrchestrator(
           (previous?.manifest.recitation.mutationEverObserved ?? false) ||
           staged.recitationMutationObserved,
       },
+      ...(arabic === null ? {} : { arabic }),
     };
 
     /*
@@ -1022,6 +1378,18 @@ export function createContentSyncOrchestrator(
       invalidate the one just published — the sweeper never touches the generation the pointer names.
     **/
     await sweepGenerations();
+    /*
+      The staging area has served its purpose: the text it held is now inside a published generation,
+      validated and reachable through the pointer. Released only after the pointer write, because
+      before it there is still a previous generation this build was meant to replace.
+    */
+    if (
+      staged.arabic !== null &&
+      published.kind === 'published' &&
+      !published.arabicRefusedForBackup
+    ) {
+      discardArabicStaging();
+    }
     /* The failure state is cleared by a publication, never by an attempt. */
     await clearSyncFailure(deps.now());
 
@@ -1064,6 +1432,7 @@ export function createContentSyncOrchestrator(
       recitationMutationObserved: staged.recitationMutationObserved,
       recitationReconciliation: staged.recitationReconciliation,
       translationsReplaced: staged.translations !== null,
+      arabic: arabicOutcome(staged, arabicDue),
       at,
     };
   };
