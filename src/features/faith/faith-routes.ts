@@ -172,6 +172,29 @@ export function duaCategoryHref(categoryId: string): Href {
   return { pathname: '/faith/duas/[category]', params: { category: categoryId } };
 }
 
+/**
+ * One Dua, opened in full.
+ *
+ * ── Why one route serves a reviewed entry and a personal selection ─────────
+ * Because they are the same *presentation* of the same kind of thing: a reference, the scripture it
+ * names, the translator who rendered it, and the actions available on it. Two routes would be two
+ * copies of that page, and the copies would eventually disagree about which translator produced the
+ * meaning somebody was reading — a divergence the licence does not permit and nobody would notice.
+ *
+ * What the page must never do is let one pass for the other, and the id is what makes that safe rather
+ * than careful. A selection's id begins `q.`; the manifest parser rejects a reviewed id that does. So
+ * the two namespaces partition the parameter space, `parseDuaDetailId` reads the prefix, and there is
+ * no lookup order to get wrong. See `dua-detail.ts`.
+ *
+ * ── Why `item` and not a second dynamic segment ───────────────────────────
+ * `/faith/duas/[category]` already claims the segment under `duas`. A static `item` segment is
+ * unambiguous against it — Expo Router prefers a static match — where a second dynamic segment at the
+ * same depth would make `/faith/duas/x` mean two things depending on file-sort order.
+ */
+export function duaDetailHref(duaId: string): Href {
+  return { pathname: '/faith/duas/item/[duaId]', params: { duaId } };
+}
+
 export function faithAiHref(surah?: number, ayah?: number): Href {
   return surah === undefined || ayah === undefined
     ? faithRoutes.ai
