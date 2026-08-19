@@ -19,7 +19,12 @@ import { FaithPictogram } from '../components/faith-locked-library';
 import { FaithScreen } from '../components/faith-screen';
 import { SelectionOriginBadge } from '../components/quran-selection-view';
 import { reviewedQuranDuas } from '../data/dhikr/reviewed-dua-manifest';
-import { categoryCountLabel, DUA_CATEGORIES, type DuaCategory } from '../data/duas/dua-categories';
+import {
+  categoryCountLabel,
+  duaGridColumns,
+  DUA_CATEGORIES,
+  type DuaCategory,
+} from '../data/duas/dua-categories';
 import {
   DUA_LIBRARY_FILTERS,
   reviewedForCategory,
@@ -66,7 +71,7 @@ const EMERALD_DEEP = modulePalettes.faith.dark;
 const MINT = modulePalettes.faith.soft;
 
 export function DuasScreen() {
-  const { dp, twoColumnWidth, stackTwoColumns } = useModuleMetrics();
+  const { dp, type, fontScale, twoColumnWidth, stackTwoColumns } = useModuleMetrics();
   const router = useRouter();
   const selections = useQuranSelections();
   const tasbih = useTasbih();
@@ -88,6 +93,26 @@ export function DuasScreen() {
     }
     return names;
   }, [surahs]);
+
+  /**
+   * One column or two, decided before anything is laid out.
+   *
+   * The app-wide rule decides the floor; the label test decides the rest. What binds on this grid is
+   * not the card width but the 12 characters of "Remembrances" beside a 40 dp icon — at 393 dp with a
+   * 1.3 text scale the half-column clears the shared threshold and still cannot hold the word, and
+   * React Native's answer to that is to break it in half. See `duaGridColumns`.
+   */
+  const labelChromeWidth =
+    dp(duaCategoryIcon('daily-remembrances').renderedAtDp) +
+    dp(8) +
+    dp(moduleLayout.cardPadding) * 2;
+  const columns = duaGridColumns({
+    halfColumnWidth: twoColumnWidth,
+    stackTwoColumns,
+    /* Rendered size: the token times the OS scale, which `type()` deliberately leaves out. */
+    labelFontSize: type('body').fontSize * fontScale,
+    labelChromeWidth,
+  });
 
   /* Results replace the grid only when the user asked for them. */
   const searching = query.trim().length > 0 || filter !== 'all';
@@ -153,7 +178,7 @@ export function DuasScreen() {
                 <CategoryCard
                   key={category.id}
                   category={category}
-                  halfWidth={stackTwoColumns ? null : twoColumnWidth}
+                  halfWidth={columns === 1 ? null : twoColumnWidth}
                   personalCount={selectionsForCategory(category.id, selections.selections).length}
                   reviewedCount={reviewedForCategory(category.reviewedCategories, reviewed).length}
                   onPress={() => router.push(duaCategoryHref(category.id))}
@@ -222,8 +247,18 @@ function SearchRow({
   readonly onOpenFilter: () => void;
   readonly filter: DuaLibraryFilter;
 }) {
-  const { dp } = useModuleMetrics();
+  const { dp, type, fontScale, contentWidth } = useModuleMetrics();
   const active = DUA_LIBRARY_FILTERS.find((item) => item.id === filter);
+
+  /*
+    The field's own width, less its icon, its padding and the filter button beside it — measured the
+    same way the grid measures a card, rather than guessed from a breakpoint. `compact` is true when
+    the full phrase would not fit, which is a question about this device and this text size together.
+  */
+  const fieldWidth =
+    contentWidth - dp(moduleLayout.minTouchTarget) - dp(moduleLayout.cardGap) - dp(18) - dp(24);
+  const compact =
+    'Find a remembrance'.length * type('body').fontSize * fontScale * 0.625 > fieldWidth;
 
   return (
     <View style={[styles.searchRow, { columnGap: dp(moduleLayout.cardGap) }]}>
@@ -239,13 +274,40 @@ function SearchRow({
         ]}
       >
         <AppIcon name="search" size={dp(18)} color={moduleNeutrals.textSecondary} />
+        {/*
+          ── The placeholder shortens; the spoken name never does ──────────────
+          "Find a remembrance" is a single line in a `TextInput`, which cannot wrap, so at 320 dp with
+          a 1.5 text scale it was clipped mid-phrase to "Find a" — a label that reads as an unfinished
+          sentence and says less than nothing.
+
+          At compact widths it becomes "Search", which is short enough to render whole and is honest
+          about what the field does. `accessibilityLabel` keeps the full phrase either way, so
+          assistive technology is told the purpose in full at every size — the visible text is what
+          gives way to the width, not the meaning.
+        */}
         <TextInput
           value={value}
           onChangeText={onChange}
-          placeholder="Find a remembrance"
+          placeholder={compact ? 'Search' : 'Find a remembrance'}
           placeholderTextColor={moduleNeutrals.textTertiary}
           accessibilityLabel="Find a remembrance"
-          style={[styles.flex, { color: moduleNeutrals.textPrimary, paddingVertical: dp(10) }]}
+          accessibilityHint="Searches your Qur’an selections by reference, surah name or your own note"
+          style={[
+            styles.flex,
+            {
+              color: moduleNeutrals.textPrimary,
+              paddingVertical: dp(10),
+              /*
+                ── The input had no size, and that was the actual defect ──────
+                A `TextInput` does not inherit `ModuleText`'s token, so this field was rendering at
+                the platform default. At a 1.5 text scale that is visibly larger than every label
+                around it, which is why "Find a remembrance" clipped to "Find a" while the card
+                titles beside it fitted comfortably. Giving it the body token makes it scale like the
+                rest of the screen instead of on its own curve.
+              */
+              fontSize: type('body').fontSize,
+            },
+          ]}
           testID="faith-duas-search"
         />
         {/*

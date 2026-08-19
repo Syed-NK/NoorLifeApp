@@ -338,36 +338,75 @@ describe('the icon registry', () => {
     expect(essential.asset.source).toBe(continues.asset.source);
   });
 
-  it('reuses approved Faith artwork for the four subjects that already exist', () => {
-    const installed = duaCategoryIcons
-      .filter((entry) => entry.asset.status === 'installed')
-      .map((entry) => entry.id);
-    expect(installed.sort()).toEqual(
-      ['adhkar', 'continue', 'essential-duas', 'my-quran-selections'].sort(),
-    );
+  it('has every one of the eleven slots installed', () => {
+    /*
+      The seven commissioned icons landed, so no slot renders scaffolding any more. Asserted as a
+      count rather than a list of ids: what matters is that none is missing, and naming them here
+      would be a second copy of the registry.
+    */
+    const installed = duaCategoryIcons.filter((entry) => entry.asset.status === 'installed');
+    expect(installed).toHaveLength(duaCategoryIcons.length);
+    expect(duaCategoryAssetGaps()).toEqual([]);
   });
 
-  it('names the exact file every missing subject is waiting for', () => {
-    const gaps = duaCategoryAssetGaps();
-    expect(gaps.map((gap) => gap.file)).toEqual([
-      'duas/dc1-daily-remembrances.png',
-      'duas/dc2-morning-evening.png',
-      'duas/dc3-food-drink.png',
-      'duas/dc4-travel.png',
-      'duas/dc5-home-family.png',
-      'duas/dc6-joy-distress.png',
-      'duas/dc7-favourites.png',
-    ]);
-    // A handoff is only actionable if every gap says what the artwork should be.
-    for (const gap of gaps) {
-      expect(gap.subject.trim().length).toBeGreaterThan(0);
+  it('points the seven commissioned subjects at the delivered files', () => {
+    const byId = new Map(duaCategoryIcons.map((entry) => [entry.id, entry.file]));
+    expect(byId.get('daily-remembrances')).toBe('duas/dc1-daily-remembrances.png');
+    expect(byId.get('morning-evening')).toBe('duas/dc2-morning-evening.png');
+    expect(byId.get('food-drink')).toBe('duas/dc3-food-drink.png');
+    expect(byId.get('travel')).toBe('duas/dc4-travel.png');
+    expect(byId.get('home-family')).toBe('duas/dc5-home-family.png');
+    expect(byId.get('joy-distress')).toBe('duas/dc6-joy-distress.png');
+    expect(byId.get('favourites')).toBe('duas/dc7-favourites.png');
+  });
+
+  it('keeps the four reused Faith assets pointed at their original files', () => {
+    const byId = new Map(duaCategoryIcons.map((entry) => [entry.id, entry.file]));
+    expect(byId.get('essential-duas')).toBe('submenu/01-quran.png');
+    expect(byId.get('continue')).toBe('submenu/01-quran.png');
+    expect(byId.get('adhkar')).toBe('submenu/06-tasbih.png');
+    expect(byId.get('my-quran-selections')).toBe('pictograms/h2-bookmarked-book.png');
+  });
+
+  it('has the delivered artwork on disk, at the size it was approved at', () => {
+    /*
+      The registry naming a file proves nothing about the file existing. Read the PNG header directly:
+      1254×1254 with an alpha channel is what was delivered and what `contain` rendering assumes.
+    */
+    for (const name of [
+      'dc1-daily-remembrances.png',
+      'dc2-morning-evening.png',
+      'dc3-food-drink.png',
+      'dc4-travel.png',
+      'dc5-home-family.png',
+      'dc6-joy-distress.png',
+      'dc7-favourites.png',
+    ]) {
+      const file = join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        '..',
+        'assets',
+        'images',
+        'modules',
+        'faith',
+        'duas',
+        name,
+      );
+      const header = readFileSync(file).subarray(0, 26);
+      expect(header.subarray(1, 4).toString('latin1')).toBe('PNG');
+      expect(header.readUInt32BE(16)).toBe(1254);
+      expect(header.readUInt32BE(20)).toBe(1254);
+      // Colour type 6 is RGBA — an icon without alpha would sit on a white square.
+      expect(header[25]).toBe(6);
     }
   });
 
-  it('renders a restrained vector where artwork is missing — never an emoji or a glyph', () => {
+  it('renders every slot as bundled artwork — never an emoji or a glyph', () => {
     for (const entry of duaCategoryIcons) {
-      const slot = duaCategoryIconSlot(entry.id);
-      expect(slot.kind === 'png' || slot.kind === 'vector').toBe(true);
+      expect(duaCategoryIconSlot(entry.id).kind).toBe('png');
     }
     const source = readFileSync(join(__dirname, '..', 'faith-dua-category-assets.ts'), 'utf8');
     /*

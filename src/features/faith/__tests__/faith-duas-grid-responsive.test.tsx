@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import { shouldStackTwoColumn, twoColumnMinimumHalfWidth } from '@features/modules/module-tokens';
 
+import { duaGridColumns, LONGEST_CATEGORY_WORD } from '../data/duas/dua-categories';
+
 /**
  * **The grid's responsive rule, and the two things its icons may never do.**
  *
@@ -65,6 +67,122 @@ describe('two columns, and when they must stop being two', () => {
     */
     expect(source).not.toMatch(/screenWidth\s*[<>]/);
     expect(source).not.toMatch(/Dimensions\.get/);
+  });
+});
+
+describe('the label decides the columns, not just the card width', () => {
+  /**
+   * The three acceptance sizes, with the numbers the device actually reports.
+   *
+   * `halfColumn` and `chrome` are in rendered dp: the layout scale is `screenWidth / 393`, and the
+   * label size is the type token times *both* that scale and the OS font scale — the second of which
+   * `useModuleMetrics().type()` deliberately omits, because React Native applies it at render.
+   *
+   * Getting that second multiplication wrong is exactly how this rule first shipped: it kept two
+   * columns at 393 dp / 1.3 while the device was visibly splitting "Remembrances" in half.
+   */
+  const layoutScale = (width: number) => Math.min(width / 393, 1);
+  const round = (value: number, scale: number) => Math.round(value * scale);
+  const chrome = (width: number) => {
+    const scale = layoutScale(width);
+    return round(40, scale) + round(8, scale) + round(11, scale) * 2;
+  };
+  /* `body` is 12.5 dp, scaled by the layout scale and then by the OS font scale at render. */
+  const labelSize = (width: number, fontScale: number) =>
+    +(12.5 * layoutScale(width)).toFixed(1) * fontScale;
+
+  it.each([
+    ['411 dp at 1.0 — the reference device keeps two columns', 411, 1.0, 2],
+    ['393 dp at 1.3 — stacks rather than splitting "Remembrances"', 393, 1.3, 1],
+    ['320 dp at 1.5 — already stacked by the shared rule', 320, 1.5, 1],
+    ['600 dp tablet at 1.0 — comfortably two', 600, 1.0, 2],
+  ] as const)('%s', (_name, width, fontScale, expected) => {
+    const half = halfColumn(width);
+    expect(
+      duaGridColumns({
+        halfColumnWidth: half,
+        stackTwoColumns: shouldStackTwoColumn(half, fontScale),
+        labelFontSize: labelSize(width, fontScale),
+        labelChromeWidth: chrome(width),
+      }),
+    ).toBe(expected);
+  });
+
+  it('keeps margin on both sides of the decision rather than sitting on the edge', () => {
+    /*
+      The coefficient is calibrated between two device measurements, not taken from a font metric.
+      These assert it has not drifted onto either boundary, where a font substitution or a rounding
+      change would flip the layout.
+    */
+    const twoColumn = duaGridColumns({
+      halfColumnWidth: halfColumn(411),
+      stackTwoColumns: false,
+      labelFontSize: labelSize(411, 1.0) * 1.1,
+      labelChromeWidth: chrome(411),
+    });
+    const oneColumn = duaGridColumns({
+      halfColumnWidth: halfColumn(393),
+      stackTwoColumns: false,
+      labelFontSize: labelSize(393, 1.3) * 0.9,
+      labelChromeWidth: chrome(393),
+    });
+    // 10% larger text at 411 still fits; 10% smaller text at 393 still does not.
+    expect(twoColumn).toBe(2);
+    expect(oneColumn).toBe(1);
+  });
+
+  it('measures the longest word rather than the longest label', () => {
+    /*
+      A label may wrap — "Morning &" / "Evening" is what the design draws. A word may not: React
+      Native breaks one that overflows its line, and "Daily Reme / mbrances" is what that looked like
+      on device.
+    */
+    expect(LONGEST_CATEGORY_WORD).toBe('Remembrances');
+  });
+
+  it('never returns two columns when the shared rule says stack', () => {
+    /*
+      The app-wide threshold is the floor. This grid may be stricter than every other two-column pair
+      in the app; it may never be laxer, or it would keep two columns on a device where Faith Home
+      had already stacked.
+    */
+    expect(
+      duaGridColumns({
+        halfColumnWidth: halfColumn(320),
+        stackTwoColumns: true,
+        labelFontSize: 10,
+        labelChromeWidth: 0,
+      }),
+    ).toBe(1);
+  });
+
+  it('does not shrink the label to keep two columns', () => {
+    const source = readFileSync(join(__dirname, '..', 'screens', 'duas-screen.tsx'), 'utf8');
+    /*
+      No `adjustsFontSizeToFit` and no `minimumFontScale` on this screen: the stated preference is a
+      stacked card over shrunken text, and the layout is what gives way.
+    */
+    expect(source).not.toMatch(/adjustsFontSizeToFit/);
+    expect(source).not.toMatch(/minimumFontScale/);
+  });
+
+  it('feeds the rule the rendered label size, not the unscaled token', () => {
+    const source = readFileSync(join(__dirname, '..', 'screens', 'duas-screen.tsx'), 'utf8');
+    expect(source).toContain("labelFontSize: type('body').fontSize * fontScale");
+  });
+});
+
+describe('the search field', () => {
+  it('keeps the full purpose in its accessible name at every width', () => {
+    const source = readFileSync(join(__dirname, '..', 'screens', 'duas-screen.tsx'), 'utf8');
+    /*
+      The visible placeholder shortens to "Search" where the full phrase would clip. The spoken name
+      does not, so assistive technology is told the purpose in full at every size — what gives way to
+      the width is the visible text, never the meaning.
+    */
+    expect(source).toContain('accessibilityLabel="Find a remembrance"');
+    expect(source).toContain("compact ? 'Search' : 'Find a remembrance'");
+    expect(source).toContain('accessibilityHint=');
   });
 });
 

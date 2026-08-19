@@ -185,3 +185,89 @@ export function categoryCountLabel(
   }
   return reviewedCount === 0 ? '–' : String(reviewedCount);
 }
+
+/**
+ * The longest unbreakable word any category label contains.
+ *
+ * ── Why the rule measures a *word* and not the label ───────────────────────
+ * A label is allowed to wrap: "Morning &" / "Evening" is exactly what the approved design draws. A
+ * *word* is not — React Native, given a word wider than its line, breaks it mid-word, and
+ * "Daily Remembr / ances" appeared on device at 393 dp with a 1.3 text scale. So the question the
+ * layout has to answer is not "does the label fit?" but "does its longest word fit?", and that is a
+ * different and much smaller number.
+ *
+ * Derived from `DUA_CATEGORIES` rather than written down, so a future card cannot add a longer word
+ * and leave the threshold describing the old set.
+ */
+export const LONGEST_CATEGORY_WORD = DUA_CATEGORIES.reduce((longest, category) => {
+  const word = category.label.split(/\s+/).reduce((a, b) => (b.length > a.length ? b : a), '');
+  return word.length > longest.length ? word : longest;
+}, '');
+
+/**
+ * A rough advance width for a run of text, in rendered dp.
+ *
+ * ── Why an approximation, and where the number came from ───────────────────
+ * Measuring the real glyphs would need a layout pass, which means the grid would have to render
+ * wrong once and correct itself — a visible reflow on every open. Measured text also changes with
+ * whatever font the OS resolves, so the same device could stack on one launch and not the next.
+ *
+ * `0.625` is **calibrated from two device measurements**, not taken from a font metric. Both were
+ * read off the emulator with `uiautomator`, on the two sizes that bracket the decision. Note that
+ * the half-column and the chrome are identical at both — `moduleScale` clamps at 1, so a 411 dp
+ * screen and a 393 dp one lay out the same. The only thing that changes is the rendered label:
+ *
+ *   411 dp @ 1.0  →  label 12.5 dp in a 106 dp box, "Remembrances" whole  ⇒  k must be ≤ 0.707
+ *   393 dp @ 1.3  →  label 16.25 dp in the same box, "Remembrances" split ⇒  k must be >  0.544
+ *
+ * 0.625 sits between them with room on both sides — about 12 dp of slack at 411 and 16 dp of margin
+ * at 393 — rather than on either edge, where a font substitution or a rounding change would flip the
+ * layout. A tighter value would be more "accurate" and would make the grid fragile, which is the
+ * wrong trade for a rule whose only job is to keep a word intact.
+ *
+ * `fontSize` is the **rendered** size: the caller multiplies the type token by the OS font scale,
+ * because `useModuleMetrics().type()` deliberately does not — React Native applies that scale itself
+ * at render, and a hook that also applied it would scale text twice.
+ */
+function approximateTextWidth(word: string, fontSize: number): number {
+  return word.length * fontSize * 0.625;
+}
+
+/**
+ * How many columns the category grid may use.
+ *
+ * ── The rule, and why it is not `shouldStackTwoColumn` alone ───────────────
+ * `shouldStackTwoColumn` is the app-wide two-column rule and it is applied first, so this grid never
+ * keeps two columns where any other pair in the app would stack. What it cannot know is that these
+ * particular cards carry a 12-character word beside a 40 dp icon, and that is the constraint that
+ * actually binds here: at 393 dp with a 1.3 scale the half-column clears the shared threshold and
+ * still cannot hold "Remembrances".
+ *
+ * So the shared rule decides the floor and this adds the label test on top. The result at the three
+ * acceptance sizes: two columns at 411 dp / 1.0, one column at 393 dp / 1.3, one column at
+ * 320 dp / 1.5 — which is the stated preference, a stacked card over a split word.
+ *
+ * Nothing here shrinks type. The layout gives way; the words do not.
+ */
+export function duaGridColumns(input: {
+  /** The measured half-column width in dp, from `useModuleMetrics`. */
+  readonly halfColumnWidth: number;
+  /** The app-wide two-column verdict, already computed. */
+  readonly stackTwoColumns: boolean;
+  /**
+   * The rendered label size in dp — the type token **multiplied by the OS font scale**.
+   *
+   * Spelled out because getting it wrong is silent: `type('body').fontSize` alone is the unscaled
+   * value, and passing it made this rule keep two columns at 393 dp / 1.3 while the device was
+   * visibly splitting "Remembrances" in half.
+   */
+  readonly labelFontSize: number;
+  /** The icon box, its gap and the card's two paddings — everything the label does not get. */
+  readonly labelChromeWidth: number;
+}): 1 | 2 {
+  if (input.stackTwoColumns) {
+    return 1;
+  }
+  const available = input.halfColumnWidth - input.labelChromeWidth;
+  return approximateTextWidth(LONGEST_CATEGORY_WORD, input.labelFontSize) <= available ? 2 : 1;
+}

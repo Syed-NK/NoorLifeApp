@@ -15,10 +15,10 @@ import type { DuaCategoryId } from './data/duas/dua-categories';
  *
  * A consequence worth stating plainly: **nothing here can be fetched.** There is no URL, no `uri`
  * source and no remote host anywhere in this file, so the grid cannot download an image, and
- * `faith-duas-category-grid.test.tsx` asserts that by scanning the module.
+ * `faith-duas-grid-responsive.test.tsx` asserts that by scanning the module.
  *
- * ── Reuse first, and only where it is exact ────────────────────────────────
- * Four slots are filled by artwork this app already ships and approved for the same subject:
+ * ── Where the eleven come from ─────────────────────────────────────────────
+ * Four are artwork this app already shipped, reused because the subject is exactly the same:
  *
  *   • `essential-duas` and `continue` — the open Qur'an on a carved wooden rehal, from the Faith
  *     submenu. The design brief names the Continue asset as "the approved open-Qur'an asset", and
@@ -27,22 +27,19 @@ import type { DuaCategoryId } from './data/duas/dua-categories';
  *     look alike today.
  *   • `adhkar` — the emerald prayer beads with gold separators and a tassel, from the Faith submenu.
  *   • `my-quran-selections` — the open cream book with an emerald and gold ribbon bookmark, the H2
- *     pictogram. Matches the required subject exactly; the approved mock draws the same idea with a
- *     rehal beneath it, which is a difference in composition rather than in subject, and is recorded
- *     in the handoff rather than papered over.
+ *     pictogram.
  *
- * ── The seven that are missing, and what must not happen to them ───────────
- * Seven subjects have no approved artwork. Each is `awaiting-artwork`, carries the exact filename it
- * is waiting for, and renders a restrained NoorLife vector in the meantime.
+ * The other seven were commissioned for this grid and are installed under `faith/duas/`. Each is a
+ * 1254×1254 RGBA PNG on a transparent field, rendered with `contain` so the square canvas keeps its
+ * aspect ratio inside whatever box the card gives it — see `FaithPictogram`, which never stretches
+ * and never crops.
  *
- * That fallback is **development scaffolding, not a shipping decision**. It is a thin vector where
- * the design calls for a dimensional raster, and a screen drawing seven of them has not matched the
- * locked design however correct its layout is. `duaCategoryAssetGaps()` exists so a build can be
- * asked the question directly instead of somebody eyeballing a screenshot.
- *
- * What the fallback is deliberately not: an emoji, a platform glyph, or a crop out of the mock. All
- * three would look finished at a glance and be wrong — an emoji renders differently on every OS and
- * font, and a crop of a design mock is a raster nobody can re-render at another size.
+ * ── `awaiting-artwork` is kept, with nothing in it ─────────────────────────
+ * The variant stays even though no slot uses it. It is what makes a *future* subject — an eleventh
+ * card, a re-cut icon — describable as "known, named, not yet drawn" rather than silently absent,
+ * and `duaCategoryAssetGaps()` is what a build asks instead of somebody eyeballing a screenshot.
+ * Its fallback was always development scaffolding: a thin vector where the design calls for a
+ * dimensional raster, never an emoji, a platform glyph or a crop out of the mock.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -56,7 +53,8 @@ export type DuaCategoryAsset =
    * No approved artwork exists for this subject.
    *
    * Carries the exact filename the asset pipeline should deliver, so the handoff is a list that can
-   * be acted on rather than a description somebody has to translate into filenames.
+   * be acted on rather than a description somebody has to translate into filenames. Currently unused
+   * — every slot is installed — and deliberately retained; see the module note.
    */
   | {
       readonly status: 'awaiting-artwork';
@@ -65,7 +63,7 @@ export type DuaCategoryAsset =
 
 export type DuaCategoryIconEntry = {
   readonly id: DuaCategoryIconId;
-  /** Where the artwork lives, or must be delivered to, relative to `assets/images/modules/faith/`. */
+  /** Where the artwork lives, relative to `assets/images/modules/faith/`. */
   readonly file: string;
   /** The approved subject, in the words of the design brief. Never paraphrased loosely. */
   readonly subject: string;
@@ -80,12 +78,12 @@ export type DuaCategoryIconEntry = {
  * ── Why the card icon is 40 dp and not 44 ──────────────────────────────────
  * 44 was the first reading of the mock's optical size, and on device it cost the title the width it
  * needed: a half-column card at 411 dp leaves the label about 97 dp beside a 44 dp icon, and
- * "Remembrances" does not fit in that, so React Native broke it mid-word — "Daily Remembr / ances".
- * Measured on the emulator, at the reference width, so every device would have shown it.
+ * "Remembrances" does not fit in that, so React Native broke it mid-word. Measured on the emulator,
+ * at the reference width, so every device would have shown it.
  *
- * 40 dp with an 8 dp gap returns 9 dp to the label, which is enough for the longest word in the
- * approved set to stay whole. The alternative was a smaller type token, and shrinking the label to
- * protect the icon is the wrong way round — the words are what the card is for.
+ * 40 dp with an 8 dp gap returns 9 dp to the label, which is enough at the default text size. Larger
+ * text sizes are handled by the grid dropping to one column rather than by shrinking either the icon
+ * or the words — see `duaGridColumns`.
  *
  * The value lives here rather than in the screen so the asset brief and the layout cannot drift.
  */
@@ -96,8 +94,9 @@ export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
     subject: 'Golden sunrise behind an emerald mosque',
     renderedAtDp: 40,
     asset: {
-      status: 'awaiting-artwork',
-      developmentFallback: { kind: 'vector', icon: 'crescent' },
+      status: 'installed',
+      source:
+        require('@assets/images/modules/faith/duas/dc1-daily-remembrances.png') as ImageSourcePropType,
     },
   },
   {
@@ -105,28 +104,43 @@ export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
     file: 'duas/dc2-morning-evening.png',
     subject: 'Sunrise and crescent over a mosque',
     renderedAtDp: 40,
-    asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'mosque' } },
+    asset: {
+      status: 'installed',
+      source:
+        require('@assets/images/modules/faith/duas/dc2-morning-evening.png') as ImageSourcePropType,
+    },
   },
   {
     id: 'food-drink',
     file: 'duas/dc3-food-drink.png',
     subject: 'Ivory bowl and cup with emerald and gold decoration',
     renderedAtDp: 40,
-    asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'meal' } },
+    asset: {
+      status: 'installed',
+      source:
+        require('@assets/images/modules/faith/duas/dc3-food-drink.png') as ImageSourcePropType,
+    },
   },
   {
     id: 'travel',
     file: 'duas/dc4-travel.png',
     subject: 'Emerald suitcase with gold hardware',
     renderedAtDp: 40,
-    asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'walk' } },
+    asset: {
+      status: 'installed',
+      source: require('@assets/images/modules/faith/duas/dc4-travel.png') as ImageSourcePropType,
+    },
   },
   {
     id: 'home-family',
     file: 'duas/dc5-home-family.png',
     subject: 'Ivory-and-emerald home with a gold heart',
     renderedAtDp: 40,
-    asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'home' } },
+    asset: {
+      status: 'installed',
+      source:
+        require('@assets/images/modules/faith/duas/dc5-home-family.png') as ImageSourcePropType,
+    },
   },
   {
     id: 'joy-distress',
@@ -134,8 +148,9 @@ export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
     subject: 'Cupped hands holding a small gold heart of light',
     renderedAtDp: 40,
     asset: {
-      status: 'awaiting-artwork',
-      developmentFallback: { kind: 'vector', icon: 'wellness' },
+      status: 'installed',
+      source:
+        require('@assets/images/modules/faith/duas/dc6-joy-distress.png') as ImageSourcePropType,
     },
   },
   {
@@ -177,7 +192,11 @@ export const duaCategoryIcons: readonly DuaCategoryIconEntry[] = [
     file: 'duas/dc7-favourites.png',
     subject: 'Dimensional gold star in an ivory medallion',
     renderedAtDp: 40,
-    asset: { status: 'awaiting-artwork', developmentFallback: { kind: 'vector', icon: 'star' } },
+    asset: {
+      status: 'installed',
+      source:
+        require('@assets/images/modules/faith/duas/dc7-favourites.png') as ImageSourcePropType,
+    },
   },
   {
     id: 'continue',
@@ -216,9 +235,9 @@ export function duaCategoryIconSlot(id: DuaCategoryIconId): FaithPictogramSlot {
 /**
  * The exact files still owed, for the asset handoff.
  *
- * Returned rather than logged, so a test can assert the count and a report can list the filenames
- * without anybody transcribing them. An empty result is the only state in which this screen can
- * honestly be called visually complete.
+ * **Empty.** Every slot is installed, which is the only state in which this screen can honestly be
+ * called visually complete. Kept as a function rather than deleted because that is the question a
+ * build should be able to ask when an eleventh card is added.
  */
 export function duaCategoryAssetGaps(): readonly {
   readonly file: string;
