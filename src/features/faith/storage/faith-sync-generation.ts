@@ -2,6 +2,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 
 import { faithStorageKeys, isRecord, readJson, removeKey, writeChecked } from './faith-storage';
 import type { RecitationRow, TranslationAttribution, TranslationRow } from './faith-sync-rows';
+import type { ArabicRow } from './faith-arabic-rows';
 
 /**
  * Synchronised Qur'an content, published as immutable file-backed generations.
@@ -49,7 +50,19 @@ import type { RecitationRow, TranslationAttribution, TranslationRow } from './fa
  */
 
 /** The on-disk schema. A mismatch rejects the generation rather than migrating it. */
-export const GENERATION_SCHEMA_VERSION = 1;
+/**
+ * The generation schema version.
+ *
+ * Raised to 2 when Arabic joined the generation. A v1 generation is still a valid, readable
+ * generation — it simply predates the Arabic permission and holds no Arabic — so the reader accepts
+ * both and reports Arabic as unavailable for v1. Refusing v1 outright would discard a perfectly good
+ * translation and recitation index and force an eight-mebibyte re-download to arrive at the same
+ * bytes.
+ */
+export const GENERATION_SCHEMA_VERSION = 2;
+
+/** Versions this build can open. Anything else is not a generation this code understands. */
+export const READABLE_SCHEMA_VERSIONS: readonly number[] = [1, 2];
 
 /** The pointer schema, versioned separately because it changes far less often. */
 export const GENERATION_POINTER_VERSION = 1;
@@ -59,6 +72,16 @@ const ROOT_DIRECTORY = 'quran-sync';
 
 const TRANSLATIONS_FILE = 'translations.json';
 const RECITATIONS_FILE = 'recitations.json';
+const ARABIC_FILE = 'arabic.json';
+
+/**
+ * Arabic carries no vendor resource id, unlike translations (85) and recitations (3).
+ *
+ * The shared dataset validator compares one, so a value is required; zero is the explicit
+ * "not applicable" marker rather than a real identifier. The script name is Arabic's actual identity,
+ * and it is validated separately against the manifest.
+ */
+const ARABIC_RESOURCE_ID = 0;
 /** Written last inside a generation directory. Its absence means the generation is unpublishable. */
 const MANIFEST_FILE = 'generation.json';
 const PART_SUFFIX = '.part';
@@ -115,6 +138,24 @@ export type GenerationManifest = {
   };
   readonly translations: DatasetIntegrity & { readonly hasAttribution: boolean };
   readonly recitations: DatasetIntegrity;
+  /**
+   * The complete Arabic Qur'an, when this generation carries it.
+   *
+   * Optional because a v1 generation predates the permission. `null` is the honest value for
+   * "this generation has no Arabic", and every reader must treat it as unavailable rather than
+   * substituting anything — there is no fallback text and no reconstruction.
+   *
+   * `lastCheckedAt` is the seven-connected-day Arabic clock. It lives here, inside the generation,
+   * for the same reason the feed token does: it is a claim about the content in this directory, and
+   * a clock in AsyncStorage could drift away from the rows it describes. There is deliberately no
+   * competing standalone Arabic clock anywhere.
+   */
+  readonly arabic:
+    | (DatasetIntegrity & {
+        readonly script: string;
+        readonly lastCheckedAt: number;
+      })
+    | null;
   /** How the recitation resource was reconciled, and when. Part of the generation, not a side record. */
   readonly recitation: {
     readonly lastCheckedAt: number;
@@ -149,6 +190,12 @@ export type ActiveGeneration = {
     readonly resourceId: number;
     readonly rows: readonly RecitationRow[];
   };
+  /** `null` on a v1 generation, and on any generation published before a complete baseline existed. */
+  readonly arabic: {
+    readonly script: string;
+    readonly rows: readonly ArabicRow[];
+    readonly lastCheckedAt: number;
+  } | null;
 };
 
 /** What a caller hands over to publish. Everything a generation needs, in one value. */
@@ -159,6 +206,8 @@ export type GenerationDraft = {
   readonly translations: ActiveGeneration['translations'];
   readonly recitations: ActiveGeneration['recitations'];
   readonly recitation: GenerationManifest['recitation'];
+  /** Omitted or `null` publishes a generation with no Arabic, which stays a valid generation. */
+  readonly arabic?: ActiveGeneration['arabic'];
 };
 
 export type PublishFailure =
@@ -352,6 +401,37 @@ function readTranslationRows(
   return out;
 }
 
+/**
+ * Reads Arabic rows back, refusing anything the writer could not have produced.
+ *
+ * Strict on purpose: this is the read side of an exactness guarantee. A row whose key disagrees with
+ * its numbers, or whose script is not the one the manifest names, means the file is not the dataset
+ * the manifest describes — and a Qur'an assembled from a file that is not what it claims is exactly
+ * what the whole generation model exists to prevent.
+ *
+ * The text is passed through untouched. There is no trim, no normalise, no substitution.
+ */
+function readArabicRows(rows: readonly unknown[], script: string): ArabicRow[] | null {
+  const out: ArabicRow[] = [];
+  for (const raw of rows) {
+    if (!isRecord(raw)) {
+      return null;
+    }
+    const { verseKey, surah, ayah, text } = raw;
+    if (typeof surah !== 'number' || typeof ayah !== 'number' || verseKey !== `${surah}:${ayah}`) {
+      return null;
+    }
+    if (typeof text !== 'string' || text.length === 0) {
+      return null;
+    }
+    if (raw.script !== script) {
+      return null;
+    }
+    out.push({ verseKey, surah, ayah, text, script: script as ArabicRow['script'] });
+  }
+  return out;
+}
+
 function readRecitationRows(rows: readonly unknown[], resourceId: number): RecitationRow[] | null {
   const out: RecitationRow[] = [];
   for (const raw of rows) {
@@ -380,9 +460,21 @@ function isManifest(value: unknown): value is GenerationManifest {
   if (!isRecord(value)) {
     return false;
   }
-  const { schemaVersion, generationId, feed, translations, recitations, recitation } = value;
+  const { schemaVersion, generationId, feed, translations, recitations, recitation, arabic } =
+    value;
+  /*
+    A v1 manifest has no `arabic` key at all; a v2 manifest has one, and it is either null or a
+    complete integrity block. A present-but-malformed block is a corrupt generation, not an absent
+    Arabic dataset, so it is refused rather than read as null.
+  */
+  const arabicOk =
+    arabic === undefined ||
+    arabic === null ||
+    (isRecord(arabic) && typeof arabic.script === 'string');
   return (
-    schemaVersion === GENERATION_SCHEMA_VERSION &&
+    arabicOk &&
+    typeof schemaVersion === 'number' &&
+    READABLE_SCHEMA_VERSIONS.includes(schemaVersion) &&
     typeof generationId === 'string' &&
     generationId.length > 0 &&
     isRecord(feed) &&
@@ -449,8 +541,38 @@ export function openGeneration(generationId: string): ActiveGeneration | null {
     return null;
   }
 
+  /*
+    Arabic is read only when the manifest says this generation carries it. A v1 generation, or a v2
+    one published before a complete baseline existed, answers `null` — and every reader treats that
+    as "Arabic unavailable" rather than substituting anything.
+
+    When the manifest *does* claim Arabic, a missing or failing file is a corrupt generation, not an
+    absent dataset: the whole generation is refused, so no half-updated Qur'an can be exposed.
+  */
+  let arabic: ActiveGeneration['arabic'] = null;
+  if (manifest.arabic != null) {
+    const arabicText = readTextFile(directory, ARABIC_FILE);
+    if (arabicText === null) {
+      return null;
+    }
+    const arabicFile = validateDataset(arabicText, manifest.arabic);
+    if (arabicFile === null) {
+      return null;
+    }
+    const arabicRows = readArabicRows(arabicFile.rows, manifest.arabic.script);
+    if (arabicRows === null || arabicRows.length !== manifest.arabic.rowCount) {
+      return null;
+    }
+    arabic = {
+      script: manifest.arabic.script,
+      rows: arabicRows,
+      lastCheckedAt: manifest.arabic.lastCheckedAt,
+    };
+  }
+
   return {
     manifest,
+    arabic,
     translations: {
       resourceId: manifest.translations.resourceId,
       attribution: isRecord(attribution)
@@ -556,10 +678,25 @@ export async function publishGeneration(
 ): Promise<PublishOutcome> {
   const translationsText = serialiseTranslations(draft);
   const recitationsText = serialiseRecitations(draft);
+  const arabic = draft.arabic ?? null;
+  /*
+    Serialised in the same shape as the other datasets so one validator covers all three. Absent
+    Arabic stages no file at all, rather than an empty one — an empty Arabic file would be a dataset
+    claiming to be a complete Qur'an with nothing in it.
+  */
+  const arabicText =
+    arabic === null
+      ? null
+      : JSON.stringify({
+          resourceId: ARABIC_RESOURCE_ID,
+          script: arabic.script,
+          rows: arabic.rows,
+        });
   /* Measured as encoded bytes, because that is what the filesystem and the preflight deal in. */
   const translationBytes = utf8Length(translationsText);
   const recitationBytes = utf8Length(recitationsText);
-  const bytes = translationBytes + recitationBytes;
+  const arabicBytes = arabicText === null ? 0 : utf8Length(arabicText);
+  const bytes = translationBytes + recitationBytes + arabicBytes;
 
   if (!hasRoomFor(bytes)) {
     return { kind: 'failed', reason: 'insufficient-storage' };
@@ -603,11 +740,24 @@ export async function publishGeneration(
       checksum: checksumOf(recitationsText),
     },
     recitation: draft.recitation,
+    arabic:
+      arabic === null || arabicText === null
+        ? null
+        : {
+            resourceId: 0,
+            script: arabic.script,
+            rowCount: arabic.rows.length,
+            byteLength: arabicBytes,
+            charLength: arabicText.length,
+            checksum: checksumOf(arabicText),
+            lastCheckedAt: arabic.lastCheckedAt,
+          },
   };
 
   if (
     !stageFile(directory, TRANSLATIONS_FILE, translationsText) ||
     !stageFile(directory, RECITATIONS_FILE, recitationsText) ||
+    (arabicText !== null && !stageFile(directory, ARABIC_FILE, arabicText)) ||
     /* The manifest is written last, so a directory without one is unmistakably incomplete. */
     !stageFile(directory, MANIFEST_FILE, JSON.stringify(manifest))
   ) {
