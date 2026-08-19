@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { modulePalettes } from '@ds/tokens';
@@ -12,9 +12,9 @@ import {
   readerPageBackground,
 } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { SelectionItem } from '../components/dua-library-items';
+import { DuaFilterSheet, DuaSearchRow } from '../components/dua-search-controls';
 import { FaithPictogram } from '../components/faith-locked-library';
 import { FaithScreen } from '../components/faith-screen';
 import { SelectionOriginBadge } from '../components/quran-selection-view';
@@ -114,6 +114,8 @@ export function DuasScreen() {
     labelChromeWidth,
   });
 
+  const activeFilterLabel = DUA_LIBRARY_FILTERS.find((item) => item.id === filter)?.label ?? 'All';
+
   /* Results replace the grid only when the user asked for them. */
   const searching = query.trim().length > 0 || filter !== 'all';
   const results = useMemo(
@@ -150,11 +152,14 @@ export function DuasScreen() {
       testID="faith-duas"
     >
       <View style={{ rowGap: dp(moduleLayout.cardGap) }}>
-        <SearchRow
+        <DuaSearchRow
           value={query}
           onChange={setQuery}
           onOpenFilter={() => setFilterOpen(true)}
-          filter={filter}
+          filterActive={filter !== 'all'}
+          filterLabel={activeFilterLabel}
+          searchHint="Searches your Qur’an selections by reference, surah name or your own note"
+          testIDPrefix="faith-duas"
         />
 
         {searching ? (
@@ -219,226 +224,18 @@ export function DuasScreen() {
         </ModuleCard>
       </View>
 
-      <FilterSheet
+      <DuaFilterSheet
         open={filterOpen}
+        options={DUA_LIBRARY_FILTERS}
         selected={filter}
         onSelect={(next) => {
           setFilter(next);
           setFilterOpen(false);
         }}
         onClose={() => setFilterOpen(false)}
+        testIDPrefix="faith-duas"
       />
     </FaithScreen>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Search and filter
-// ─────────────────────────────────────────────────────────────────────────────
-
-function SearchRow({
-  value,
-  onChange,
-  onOpenFilter,
-  filter,
-}: {
-  readonly value: string;
-  readonly onChange: (text: string) => void;
-  readonly onOpenFilter: () => void;
-  readonly filter: DuaLibraryFilter;
-}) {
-  const { dp, type, fontScale, contentWidth } = useModuleMetrics();
-  const active = DUA_LIBRARY_FILTERS.find((item) => item.id === filter);
-
-  /*
-    The field's own width, less its icon, its padding and the filter button beside it — measured the
-    same way the grid measures a card, rather than guessed from a breakpoint. `compact` is true when
-    the full phrase would not fit, which is a question about this device and this text size together.
-  */
-  const fieldWidth =
-    contentWidth - dp(moduleLayout.minTouchTarget) - dp(moduleLayout.cardGap) - dp(18) - dp(24);
-  const compact =
-    'Find a remembrance'.length * type('body').fontSize * fontScale * 0.625 > fieldWidth;
-
-  return (
-    <View style={[styles.searchRow, { columnGap: dp(moduleLayout.cardGap) }]}>
-      <View
-        style={[
-          styles.search,
-          {
-            borderRadius: dp(moduleLayout.radiusSmall),
-            minHeight: dp(moduleLayout.minTouchTarget),
-            paddingHorizontal: dp(12),
-            columnGap: dp(10),
-          },
-        ]}
-      >
-        <AppIcon name="search" size={dp(18)} color={moduleNeutrals.textSecondary} />
-        {/*
-          ── The placeholder shortens; the spoken name never does ──────────────
-          "Find a remembrance" is a single line in a `TextInput`, which cannot wrap, so at 320 dp with
-          a 1.5 text scale it was clipped mid-phrase to "Find a" — a label that reads as an unfinished
-          sentence and says less than nothing.
-
-          At compact widths it becomes "Search", which is short enough to render whole and is honest
-          about what the field does. `accessibilityLabel` keeps the full phrase either way, so
-          assistive technology is told the purpose in full at every size — the visible text is what
-          gives way to the width, not the meaning.
-        */}
-        <TextInput
-          value={value}
-          onChangeText={onChange}
-          placeholder={compact ? 'Search' : 'Find a remembrance'}
-          placeholderTextColor={moduleNeutrals.textTertiary}
-          accessibilityLabel="Find a remembrance"
-          accessibilityHint="Searches your Qur’an selections by reference, surah name or your own note"
-          style={[
-            styles.flex,
-            {
-              color: moduleNeutrals.textPrimary,
-              paddingVertical: dp(10),
-              /*
-                ── The input had no size, and that was the actual defect ──────
-                A `TextInput` does not inherit `ModuleText`'s token, so this field was rendering at
-                the platform default. At a 1.5 text scale that is visibly larger than every label
-                around it, which is why "Find a remembrance" clipped to "Find a" while the card
-                titles beside it fitted comfortably. Giving it the body token makes it scale like the
-                rest of the screen instead of on its own curve.
-              */
-              fontSize: type('body').fontSize,
-            },
-          ]}
-          testID="faith-duas-search"
-        />
-        {/*
-          Offered only when there is something to clear. A permanent clear button on an empty field
-          is a control that does nothing, and a screen reader announces it just as loudly.
-        */}
-        {value.length === 0 ? null : (
-          <PressableScale
-            onPress={() => onChange('')}
-            accessibilityRole="button"
-            accessibilityLabel="Clear the search"
-            hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
-            testID="faith-duas-search-clear"
-          >
-            <AppIcon name="close" size={dp(18)} color={moduleNeutrals.textSecondary} />
-          </PressableScale>
-        )}
-      </View>
-
-      <PressableScale
-        onPress={onOpenFilter}
-        accessibilityRole="button"
-        accessibilityLabel={`Filter. Currently ${active?.label ?? 'All'}.`}
-        style={[
-          styles.filterButton,
-          {
-            width: dp(moduleLayout.minTouchTarget),
-            height: dp(moduleLayout.minTouchTarget),
-            borderRadius: dp(moduleLayout.radiusSmall),
-            /* The active filter is carried by the border weight as well as the fill, never by colour alone. */
-            borderColor: filter === 'all' ? moduleNeutrals.border : EMERALD,
-            borderWidth: filter === 'all' ? 1 : 2,
-            backgroundColor: filter === 'all' ? moduleNeutrals.surface : MINT,
-          },
-        ]}
-        testID="faith-duas-filter"
-      >
-        <AppIcon name="settings" size={dp(18)} color={EMERALD_DEEP} />
-      </PressableScale>
-    </View>
-  );
-}
-
-/**
- * The filter sheet.
- *
- * A `Modal` rather than an inline row, because the approved design puts the control behind a button
- * and an inline row of four chips would push the first grid row below the fold at every text size.
- */
-function FilterSheet({
-  open,
-  selected,
-  onSelect,
-  onClose,
-}: {
-  readonly open: boolean;
-  readonly selected: DuaLibraryFilter;
-  readonly onSelect: (filter: DuaLibraryFilter) => void;
-  readonly onClose: () => void;
-}) {
-  const { dp } = useModuleMetrics();
-
-  return (
-    <Modal
-      visible={open}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-      testID="faith-duas-filter-sheet"
-    >
-      {/* The scrim dismisses, and is labelled, so it is not a silent trap for a screen reader. */}
-      <Pressable
-        style={styles.scrim}
-        onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel="Close the filter"
-        testID="faith-duas-filter-scrim"
-      >
-        <View
-          style={[
-            styles.sheet,
-            {
-              borderTopLeftRadius: dp(moduleLayout.cardRadius),
-              borderTopRightRadius: dp(moduleLayout.cardRadius),
-              padding: dp(moduleLayout.cardPadding),
-              rowGap: dp(6),
-            },
-          ]}
-        >
-          <ModuleText token="cardTitle" numberOfLines={1} accessibilityRole="header">
-            Show
-          </ModuleText>
-          {DUA_LIBRARY_FILTERS.map((item) => {
-            const active = item.id === selected;
-            return (
-              <PressableScale
-                key={item.id}
-                onPress={() => onSelect(item.id)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={item.label}
-                style={[
-                  styles.filterRow,
-                  {
-                    minHeight: dp(moduleLayout.minTouchTarget),
-                    borderRadius: dp(moduleLayout.radiusSmall),
-                    paddingHorizontal: dp(12),
-                    columnGap: dp(8),
-                    backgroundColor: active ? MINT : moduleNeutrals.surface,
-                    borderColor: active ? EMERALD : moduleNeutrals.border,
-                    borderWidth: active ? 2 : 1,
-                  },
-                ]}
-                testID={`faith-duas-filter-${item.id}`}
-              >
-                <ModuleText
-                  token="body"
-                  color={moduleNeutrals.textPrimary}
-                  numberOfLines={2}
-                  style={styles.flex}
-                >
-                  {item.label}
-                </ModuleText>
-                {/* A tick as well as the fill: the selected row must not depend on colour alone. */}
-                {active ? <AppIcon name="check" size={dp(18)} color={EMERALD_DEEP} /> : null}
-              </PressableScale>
-            );
-          })}
-        </View>
-      </Pressable>
-    </Modal>
   );
 }
 

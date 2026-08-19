@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
@@ -46,6 +47,7 @@ export function SelectionItem({
   onRead,
   onToggleFavourite,
   onRemove,
+  onOpen,
   testIDPrefix = 'faith-duas-selection',
 }: {
   readonly selection: QuranSelection;
@@ -55,6 +57,20 @@ export function SelectionItem({
   readonly onRead: () => void;
   readonly onToggleFavourite: () => void;
   readonly onRemove: () => void;
+  /**
+   * Opens this selection's own detail page, or `undefined` where there is nowhere to open it.
+   *
+   * ── Why the row gained a target rather than losing its actions ────────────
+   * The four action buttons are what this row has always offered and what the device pass verified;
+   * removing them to make the whole row one big tap would take away the ability to star something
+   * without leaving the list. So the *reading* region — the badge, the note and the scripture — becomes
+   * its own labelled target, and the actions keep their own. Two targets, each saying what it does,
+   * rather than one that does whichever the finger landed nearest.
+   *
+   * Optional because the search results on the library screen have no detail route to send anybody to
+   * that the row does not already reach.
+   */
+  readonly onOpen?: () => void;
   readonly testIDPrefix?: string;
 }) {
   const { dp } = useModuleMetrics();
@@ -79,19 +95,25 @@ export function SelectionItem({
         ) : null}
       </View>
 
-      {selection.label === null ? null : (
-        <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
-          {selection.label}
-        </ModuleText>
-      )}
+      <OpenTarget
+        onOpen={onOpen}
+        label={`Open Qur’an ${reference}`}
+        testID={`${testIDPrefix}-open-${selection.id}`}
+      >
+        {selection.label === null ? null : (
+          <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
+            {selection.label}
+          </ModuleText>
+        )}
 
-      <QuranSelectionView
-        resolution={resolution}
-        reference={reference}
-        arabicLines={3}
-        translationLines={5}
-        testID={`${testIDPrefix}-body-${selection.id}`}
-      />
+        <QuranSelectionView
+          resolution={resolution}
+          reference={reference}
+          arabicLines={3}
+          translationLines={5}
+          testID={`${testIDPrefix}-body-${selection.id}`}
+        />
+      </OpenTarget>
 
       <View style={[styles.actions, { columnGap: dp(8), rowGap: dp(8) }]}>
         <Action
@@ -141,11 +163,14 @@ export function ReviewedItem({
   resolution,
   onUse,
   onRead,
+  onOpen,
 }: {
   readonly entry: CuratedDhikrReference;
   readonly resolution: SelectionResolution;
   readonly onUse: () => void;
   readonly onRead: () => void;
+  /** Opens this entry's detail page, where the full review record is disclosed. */
+  readonly onOpen?: () => void;
 }) {
   const { dp } = useModuleMetrics();
   const reference = referenceLabel(entry);
@@ -160,17 +185,23 @@ export function ReviewedItem({
     >
       <SelectionOriginBadge origin="reviewed" />
 
-      <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
-        {entry.title}
-      </ModuleText>
+      <OpenTarget
+        onOpen={onOpen}
+        label={`Open ${entry.title}`}
+        testID={`faith-duas-reviewed-open-${entry.id}`}
+      >
+        <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
+          {entry.title}
+        </ModuleText>
 
-      <QuranSelectionView
-        resolution={resolution}
-        reference={reference}
-        arabicLines={3}
-        translationLines={5}
-        testID={`faith-duas-reviewed-body-${entry.id}`}
-      />
+        <QuranSelectionView
+          resolution={resolution}
+          reference={reference}
+          arabicLines={3}
+          translationLines={5}
+          testID={`faith-duas-reviewed-body-${entry.id}`}
+        />
+      </OpenTarget>
 
       {/* The context the review supplied. Required for approval — see the catalogue's gate. */}
       {entry.contextNote === null ? null : (
@@ -232,6 +263,46 @@ export function AddSelection({
       <ModuleText token="button" color={moduleNeutrals.surface} numberOfLines={2}>
         Choose a verse from the Qur’an
       </ModuleText>
+    </PressableScale>
+  );
+}
+
+/**
+ * The reading region of a row, as a target when there is somewhere to go.
+ *
+ * ── Why a wrapper rather than two copies of the row ────────────────────────
+ * Without `onOpen` it renders its children in a plain `View` and adds no accessibility node at all —
+ * so a row on a surface with no detail route is exactly what it was before, with no announced button
+ * that does nothing. With one, the same children become a labelled button. One layout, one set of
+ * children, and the difference is a prop rather than a branch in each caller.
+ */
+function OpenTarget({
+  onOpen,
+  label,
+  testID,
+  children,
+}: {
+  readonly onOpen: (() => void) | undefined;
+  readonly label: string;
+  readonly testID: string;
+  readonly children: ReactNode;
+}) {
+  const { dp } = useModuleMetrics();
+
+  if (onOpen === undefined) {
+    return <View style={{ rowGap: dp(8) }}>{children}</View>;
+  }
+
+  return (
+    <PressableScale
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint="Opens the full dua, its source and its actions"
+      style={{ rowGap: dp(8), minHeight: dp(moduleLayout.minTouchTarget) }}
+      testID={testID}
+    >
+      {children}
     </PressableScale>
   );
 }
