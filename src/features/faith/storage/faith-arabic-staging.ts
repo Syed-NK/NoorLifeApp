@@ -140,7 +140,12 @@ function stage(directory: Directory, name: string, text: string): boolean {
       partial.delete();
       return false;
     }
-    partial.moveSync(new File(directory, name));
+    /*
+      `overwrite` is not optional here. The plan file is rewritten after every surah, so its
+      destination exists from the second write onward — and the option defaults to false, which is
+      how a baseline that looked correct in every test stalled after one surah on a real device.
+    */
+    partial.moveSync(new File(directory, name), { overwrite: true });
     return true;
   } catch {
     return false;
@@ -248,34 +253,49 @@ export function arabicStagingProgress(plan: ArabicStagingPlan): ArabicStagingPro
 }
 
 /**
- * Records one complete surah, or refuses it.
+ * Records one complete surah, or says which way it failed.
  *
  * Validated at the moment it is written rather than only at the end. A surah short by one verse that
  * was accepted here would be found 180 requests later, and the only remedy then is to discard
  * everything and start again — so the cheap check happens where the mistake is cheap.
+ *
+ * ── Why "rejected" and "unwritable" are different answers ──────────────────
+ * They were one answer once, and the first run on a real device showed the cost: a plan file that
+ * could not be rewritten surfaced as `invalid-response`, which is a claim about the **publisher**.
+ * An operator reading that would go and look at the vendor's payloads for a fault that was entirely
+ * local. The publisher sending the wrong number of verses and this device being unable to store the
+ * right ones are different problems with different remedies, and the failure record should say which
+ * one happened.
  */
+export type ArabicSurahRecord =
+  | { readonly kind: 'recorded'; readonly plan: ArabicStagingPlan }
+  /** The publisher's answer did not match the publisher's own count for this surah. */
+  | { readonly kind: 'rejected' }
+  /** The answer was fine and this device could not store it. */
+  | { readonly kind: 'unwritable' };
+
 export function recordArabicSurah(
   plan: ArabicStagingPlan,
   surah: number,
   rows: readonly unknown[],
-): ArabicStagingPlan | null {
+): ArabicSurahRecord {
   const ayahCount = plan.ayahCounts[surah - 1];
   if (ayahCount === undefined) {
-    return null;
+    return { kind: 'rejected' };
   }
   const validation = validateArabicDataset(rows, surahVerseKeys(surah, ayahCount));
   if (!validation.ok) {
-    return null;
+    return { kind: 'rejected' };
   }
   const text = JSON.stringify({ surah, script: plan.script, rows: validation.rows });
   let directory: Directory;
   try {
     directory = arabicStagingDirectory();
   } catch {
-    return null;
+    return { kind: 'unwritable' };
   }
   if (!stage(directory, surahFile(surah), text)) {
-    return null;
+    return { kind: 'unwritable' };
   }
   /*
     The surah file is written before the plan names it. The other order would leave a plan claiming a
@@ -287,7 +307,7 @@ export function recordArabicSurah(
     ...plan,
     completed: [...plan.completed.filter((entry) => entry !== surah), surah].sort((a, b) => a - b),
   };
-  return writePlan(next) ? next : null;
+  return writePlan(next) ? { kind: 'recorded', plan: next } : { kind: 'unwritable' };
 }
 
 /**

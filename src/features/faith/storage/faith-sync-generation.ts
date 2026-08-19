@@ -706,7 +706,13 @@ function stageFile(directory: Directory, name: string, text: string): boolean {
       partial.delete();
       return false;
     }
-    partial.moveSync(new File(directory, name));
+    /*
+      A generation id is derived from the run so a retry reuses the directory, which means the
+      destination can already exist — the sweeper's "partials left by an interrupted re-publication
+      of the same id" is that case named. `overwrite` defaults to false, so without this a retried
+      publication fails at the first dataset it re-stages.
+    */
+    partial.moveSync(new File(directory, name), { overwrite: true });
     return true;
   } catch {
     return false;

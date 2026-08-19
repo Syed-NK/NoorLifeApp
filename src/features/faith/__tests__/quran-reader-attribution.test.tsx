@@ -54,6 +54,32 @@ describe('the reader’s source credit', () => {
     expect(source).not.toContain('provided by Quran Foundation');
   });
 
+  it('sits ahead of the verses, so no amount of paging stands between a reader and it', () => {
+    /**
+     * The property a release build on a device proved was missing.
+     *
+     * This line was at the foot of the reading column first. It rendered — a four-verse surah showed
+     * it perfectly — and on a hundred-and-ten-verse surah it was unreachable, because the reader
+     * loads twenty verses at a time and the foot of the column sits behind however many presses of
+     * "Continue reading" the surah is long. A credit a user has to page fifteen screens to reach is
+     * not displayed, and presence alone could never have caught that: the tree contains it either
+     * way. Order is what distinguishes the two, so order is what is asserted.
+     */
+    const source = readFileSync(
+      join(process.cwd(), 'src/features/faith/screens/reader-screen.tsx'),
+      'utf8',
+    );
+    const body = source.slice(source.indexOf('function ReaderBody'));
+    const attribution = body.indexOf('<SourceAttribution />');
+    const verses = body.indexOf('{items.map(');
+    const continueReading = body.indexOf('<ContinueReading');
+
+    expect(attribution).toBeGreaterThan(-1);
+    expect(verses).toBeGreaterThan(-1);
+    expect(attribution).toBeLessThan(verses);
+    expect(attribution).toBeLessThan(continueReading);
+  });
+
   it('keeps the translator credit as a separate line, because one does not satisfy the other', async () => {
     /*
       Two requirements: this sentence credits the *source*, and the translator credit names the

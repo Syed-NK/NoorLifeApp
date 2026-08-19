@@ -853,15 +853,19 @@ export function createContentSyncOrchestrator(
         return fetched;
       }
       const recorded = recordArabicSurah(plan, surah, fetched.rows);
-      if (recorded === null) {
+      if (recorded.kind !== 'recorded') {
         /*
-          The surah did not match the publisher's own count for it, or it could not be written. Either
-          way this baseline cannot become complete, and continuing would spend the remaining requests
-          to arrive at a dataset that fails validation anyway.
+          Either way this baseline cannot become complete, and continuing would spend the remaining
+          requests to arrive at a dataset that fails validation anyway. The two are reported apart
+          because they send an operator to different places: `invalid-response` is a claim about the
+          publisher's payload, and a device that cannot write its own files is not that.
         */
-        return { kind: 'failed', failure: 'invalid-response' };
+        return {
+          kind: 'failed',
+          failure: recorded.kind === 'unwritable' ? 'write-failed' : 'invalid-response',
+        };
       }
-      plan = recorded;
+      plan = recorded.plan;
     }
 
     if (pendingSurahs(plan).length > 0) {

@@ -1313,6 +1313,8 @@ function ReaderBody({
       */}
       {translation === null ? null : <TranslationCredit translation={translation} />}
 
+      <SourceAttribution />
+
       <SurahOpening surah={page.surah} />
 
       {items.map((item) => (
@@ -1361,8 +1363,6 @@ function ReaderBody({
           />
         </View>
       )}
-
-      <SourceAttribution />
     </View>
   );
 }
@@ -1377,10 +1377,20 @@ function ReaderBody({
  * complete Arabic text requires the sentence below to be **displayed**, and a sentence reachable
  * only by opening a secondary screen is not displayed where the content is.
  *
- * So it sits once, at the foot of the reading column, where a reader arrives having read rather than
- * before they have started. The translator credit stays at the top and is a separate requirement:
- * that one names the person whose reading of the meaning is on screen, and neither line substitutes
- * for the other.
+ * ── Where it sits, and the placement that was wrong ───────────────────────
+ * At the top of the reading column, beside the translator credit. It was at the **foot** first,
+ * which reads well and fails the condition: a release build on a device showed it present on a
+ * four-verse surah and unreachable on a hundred-and-ten-verse one, because the reader pages twenty
+ * verses at a time and the foot of the column is behind however many presses of "Continue reading"
+ * the surah is long. A credit a user has to page fifteen screens to reach is not displayed.
+ *
+ * The reader's own reasoning for the translator credit already said this — "once, where the reading
+ * starts, is the only placement that is both honest and legible" — and it is just as true of the
+ * source. The two are separate requirements and neither substitutes for the other: this names where
+ * the text came from, that names the person whose reading of the meaning is on screen.
+ *
+ * It renders unconditionally, where the translator credit renders only with a translation. The
+ * Arabic is Quran Foundation's whether or not a meaning is shown beside it.
  *
  * The sentence is imported, never retyped. It is specified exactly — a full stop lost to a layout
  * squeeze is a licence condition broken — and it has one home, pinned byte for byte by its own test.

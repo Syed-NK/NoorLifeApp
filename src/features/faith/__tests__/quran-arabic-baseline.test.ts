@@ -58,6 +58,7 @@ import { createFakeConnectivity, WIFI_ONLINE } from '@/test-support/fake-connect
  */
 
 const NOW = 1_700_000_000_000;
+const GEN_ROOT = 'file:///documents/quran-sync';
 
 /** Synthetic per-surah counts summing to 6,236. Shaped like the real thing, and not it. */
 function syntheticCounts(): number[] {
@@ -466,6 +467,27 @@ describe('a baseline that cannot be completed', () => {
     /* Not one of the ~180 requests is spent on text that would be refused at publication. */
     expect(verseRequests(endpoint)).toHaveLength(0);
     expect(endpoint.requests.filter((r) => r.operation === 'list_chapters')).toHaveLength(0);
+  });
+});
+
+describe('telling a publisher fault apart from a device fault', () => {
+  it('reports a short surah as an invalid response, which is a claim about the payload', async () => {
+    const endpoint = endpointFor({ shortSurah: 3 });
+    const outcome = await runnerFor(endpoint, { current: NOW }).run();
+
+    expect(outcome.kind === 'failed' && outcome.failure).toBe('invalid-response');
+  });
+
+  it('reports a staging area it cannot write to as a write failure, not a bad payload', async () => {
+    /*
+      The distinction the first release-device run proved was needed. A plan file that could not be
+      rewritten surfaced as `invalid-response`, and an operator reading that would go and look at the
+      vendor's payloads for a fault that was entirely local.
+    */
+    mockFileSystem.failWritesTo(`${GEN_ROOT}/_arabic-staging/s-1.json.part`);
+
+    const outcome = await runnerFor(endpointFor(), { current: NOW }).run();
+    expect(outcome.kind === 'failed' && outcome.failure).toBe('write-failed');
   });
 });
 
