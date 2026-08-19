@@ -174,15 +174,39 @@ describe('the label decides the columns, not just the card width', () => {
 
 describe('the search field', () => {
   it('keeps the full purpose in its accessible name at every width', () => {
-    const source = readFileSync(join(__dirname, '..', 'screens', 'duas-screen.tsx'), 'utf8');
     /*
+      Scanned in `dua-search-controls.tsx`, which is where the field now lives: the category pages need
+      the same control, and a second copy would have been a second answer to the questions this rule
+      settles. The rule itself has not moved an inch — what follows is the same three assertions about
+      the same behaviour, against the file that now implements it.
+
       The visible placeholder shortens to "Search" where the full phrase would clip. The spoken name
       does not, so assistive technology is told the purpose in full at every size — what gives way to
       the width is the visible text, never the meaning.
     */
-    expect(source).toContain('accessibilityLabel="Find a remembrance"');
-    expect(source).toContain("compact ? 'Search' : 'Find a remembrance'");
+    const source = readFileSync(
+      join(__dirname, '..', 'components', 'dua-search-controls.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('accessibilityLabel={FULL_PLACEHOLDER}');
+    expect(source).toContain("const FULL_PLACEHOLDER = 'Find a remembrance'");
+    expect(source).toContain("const COMPACT_PLACEHOLDER = 'Search'");
+    expect(source).toContain('placeholder={compact ? COMPACT_PLACEHOLDER : FULL_PLACEHOLDER}');
     expect(source).toContain('accessibilityHint=');
+  });
+
+  it('is the only implementation of the field, so the fix cannot be half-applied', () => {
+    /*
+      Both Duas surfaces render the shared control. A local `TextInput` reappearing on either screen
+      would be a second search field with its own idea of when to shorten a placeholder — which is the
+      state this extraction ended.
+    */
+    for (const screen of ['duas-screen.tsx', 'dua-category-screen.tsx']) {
+      const source = readFileSync(join(__dirname, '..', 'screens', screen), 'utf8');
+      expect(source).not.toMatch(/<TextInput/);
+      expect(source).toContain('DuaSearchRow');
+    }
   });
 });
 

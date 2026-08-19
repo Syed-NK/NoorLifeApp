@@ -30,11 +30,16 @@ import {
  * reviewer's name".
  *
  * ── What an entry may never carry ──────────────────────────────────────────
- * Arabic, translation or transliteration, under any key. Not because the parser would fail to
- * understand it, but because a manifest that carries scripture is a second copy of it — outside the
- * retained generation, outside its refresh obligations, and unable to pick up a correction. An entry
- * with any such key is rejected outright rather than stripped, because a manifest that arrived with
- * text in it is a manifest whose provenance is now in question.
+ * Arabic, translation or transliteration **text**, under any key. Not because the parser would fail
+ * to understand it, but because a manifest that carries scripture is a second copy of it — outside
+ * the retained generation, outside its refresh obligations, and unable to pick up a correction. An
+ * entry carrying such text is rejected outright rather than stripped, because a manifest that
+ * arrived with text in it is a manifest whose provenance is now in question.
+ *
+ * It may, and must, carry the *identity* of the resources that supply those things: which translation
+ * a reviewer approved, which provider resource holds a romanisation. Those are provenance, they are
+ * what makes a translator credit resolvable, and they are integers. See `CONTENT_IDENTITY_KEYS` for
+ * how the gate tells naming a resource apart from carrying its contents.
  *
  * ── Nothing here approves anything ─────────────────────────────────────────
  * `REVIEWED_DUA_MANIFEST` is empty, and this file cannot make it otherwise. Approval is a religious
@@ -138,21 +143,87 @@ function positiveInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : null;
 }
 
-/** Whether any key on the entry, at any depth of one, names content this manifest may not hold. */
+/**
+ * The shape a content-identity value may take. Neither can hold a character of scripture.
+ *
+ * `provider-resource-id` is a positive integer or `null` — the identifier of a resource at the
+ * approved provider, the same kind of number `RetainedQuran.translations.resourceId` already holds.
+ * `arabic-strategy` is a member of a closed set of two-word slugs.
+ */
+type ContentIdentityShape = 'provider-resource-id' | 'arabic-strategy';
+
+/**
+ * The **only** keys permitted to match a forbidden name, and the exact value each may hold.
+ *
+ * ── Why the gate had to learn the difference between naming and carrying ────
+ * The rule above rejects a key by its *name*: anything containing `translat` or `transliterat` is
+ * refused. That was right while an entry was a reference and nothing else, and it is what made it
+ * impossible for a manifest to describe **which** translation a reviewer approved, or which provider
+ * resource supplies a romanisation. Those are facts about provenance, and a reviewed entry that
+ * cannot state them is one whose translator credit nobody can resolve.
+ *
+ * So the gate now asks the question it always meant: *is this field carrying content?* A key on this
+ * list is admitted only when its value is a **positive integer** or a member of a **closed set of
+ * slugs**. An integer cannot be a verse. A closed set cannot be a verse. Every other key, and every
+ * value of any other shape, is refused exactly as before — including a string in one of these fields,
+ * which is the case that would otherwise let `transliterationResourceId: '<Arabic>'` through.
+ *
+ * That makes this net strictly stronger than the name check it extends, not weaker: a value test
+ * catches embedded content under an *innocent* key name too, which a name test never could.
+ *
+ * The list is closed and deliberately short. A future field wanting in has to be added here, in a
+ * file whose subject is why scripture may not be.
+ */
+const CONTENT_IDENTITY_KEYS: ReadonlyMap<string, ContentIdentityShape> = new Map([
+  ['translationresourceid', 'provider-resource-id'],
+  ['transliterationresourceid', 'provider-resource-id'],
+  ['arabicsource', 'arabic-strategy'],
+]);
+
+/**
+ * The ways a reviewed entry's Arabic may be obtained. One, and it is not "from the manifest".
+ *
+ * Exported so the domain layer and the parser cannot disagree about what a legal strategy is, and so
+ * a second value cannot be added without the test that pins this array failing.
+ */
+export const ARABIC_SOURCE_STRATEGIES: readonly string[] = ['retained-generation'];
+
+function satisfiesIdentityShape(shape: ContentIdentityShape, value: unknown): boolean {
+  if (shape === 'provider-resource-id') {
+    /* `null` is a legitimate answer: the review named no resource for this field. */
+    return value === null || positiveInteger(value) !== null;
+  }
+  return typeof value === 'string' && ARABIC_SOURCE_STRATEGIES.includes(value);
+}
+
+/** Whether any key on the entry, at any depth of one, carries content this manifest may not hold. */
 function carriesEmbeddedContent(record: Record<string, unknown>): boolean {
-  const suspicious = (key: string): boolean => {
+  const carriesContent = (key: string, value: unknown): boolean => {
     const lower = key.toLowerCase();
-    return (
+    const named =
       FORBIDDEN_KEY_FRAGMENTS.some((fragment) => lower.includes(fragment)) ||
-      FORBIDDEN_KEY_NAMES.includes(lower)
-    );
+      FORBIDDEN_KEY_NAMES.includes(lower);
+    if (!named) {
+      return false;
+    }
+    const shape = CONTENT_IDENTITY_KEYS.get(lower);
+    /*
+      A forbidden-named key that is not an identity field is refused outright, as it always was. One
+      that is has to prove its value is an identifier — a name on the list buys the *opportunity* to
+      be checked, never an exemption from checking.
+    */
+    return shape === undefined || !satisfiesIdentityShape(shape, value);
   };
   for (const [key, value] of Object.entries(record)) {
-    if (suspicious(key)) {
+    if (carriesContent(key, value)) {
       return true;
     }
-    if (isRecord(value) && Object.keys(value).some(suspicious)) {
-      return true;
+    if (isRecord(value)) {
+      for (const [nestedKey, nestedValue] of Object.entries(value)) {
+        if (carriesContent(nestedKey, nestedValue)) {
+          return true;
+        }
+      }
     }
   }
   return false;
