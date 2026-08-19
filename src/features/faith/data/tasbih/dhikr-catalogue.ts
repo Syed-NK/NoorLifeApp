@@ -78,7 +78,23 @@ export type DhikrEntry = {
   readonly suggestedTarget: number | null;
 };
 
-export type DhikrSectionId = 'verified' | 'quran' | 'personal' | 'favourites' | 'recent';
+export type DhikrSectionId =
+  | 'verified'
+  /** Scholarly-reviewed Quran references. Shut until a reviewer approves one. */
+  | 'quran'
+  /**
+   * The user's **own** Quran selections.
+   *
+   * A separate section from `quran` and never merged into it, because the two make different
+   * claims: one says a qualified reviewer approved this reference for this purpose, and the other
+   * says somebody chose a verse. Both render the same publisher scripture, which is precisely why
+   * they must not sit under one heading — a user who cannot tell them apart will reasonably assume
+   * NoorLife vouched for both.
+   */
+  | 'selections'
+  | 'personal'
+  | 'favourites'
+  | 'recent';
 
 export type DhikrSection = {
   readonly id: DhikrSectionId;
@@ -115,6 +131,8 @@ export function dhikrCatalogue(input: {
   readonly favourites: readonly string[];
   readonly recent: readonly string[];
   readonly quranState?: DhikrSectionState;
+  /** How many Quran selections the user has saved. Decides whether that section is empty. */
+  readonly selectionCount?: number;
 }): readonly DhikrSection[] {
   return [
     /*
@@ -128,6 +146,20 @@ export function dhikrCatalogue(input: {
       summary:
         'Scholarly-reviewed references, resolved live from Quran Foundation with the translator credited',
       state: input.quranState ?? { kind: 'locked', reason: 'awaiting-scholarly-review' },
+    },
+    /*
+      The user's own selections come second: after the section NoorLife vouches for and before the
+      ones it does not. The ordering is the strongest available signal of which list is which, and
+      putting a private choice first under a heading about dhikr is the thing this screen must not do.
+    */
+    {
+      id: 'selections',
+      title: 'Your Quran selections',
+      summary: 'Verses you chose yourself. NoorLife makes no religious claim about them.',
+      state:
+        (input.selectionCount ?? 0) === 0
+          ? { kind: 'empty' }
+          : { kind: 'ready', entries: [] as readonly DhikrEntry[] },
     },
     {
       id: 'verified',
@@ -201,6 +233,7 @@ export function lockMessage(reason: DhikrLockReason): { title: string; body: str
  */
 export const DHIKR_CATEGORIES = [
   { id: 'quranic', label: 'Quranic', section: 'quran' },
+  { id: 'selections', label: 'My selections', section: 'selections' },
   { id: 'morning-evening', label: 'Morning & Evening', section: 'verified' },
   { id: 'after-prayer', label: 'After Prayer', section: 'verified' },
   { id: 'praise', label: 'Praise', section: 'verified' },

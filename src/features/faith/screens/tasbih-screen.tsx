@@ -16,11 +16,11 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { minimumHitSlop, useReducedMotion } from '@shared/utils/a11y';
 
 import { FaithScreen } from '../components/faith-screen';
+import { QuranSelectionView, SelectionOriginBadge } from '../components/quran-selection-view';
 import { hasTravelled, TAP_SLOP_DP } from '../components/tap-travel';
 import {
   MAX_TASBIH_TARGET,
   MIN_TASBIH_TARGET,
-  type CounterLabel,
   type TasbihSession,
 } from '../data/tasbih.repository';
 import { DEFAULT_COUNTER } from '../data/tasbih/local-tasbih.repository';
@@ -33,8 +33,13 @@ import {
 } from '../data/tasbih/tasbih-materials';
 import { faithNavKeys, faithRoutes } from '../faith-routes';
 import { useFaithPreferences } from '../hooks/use-faith-preferences';
+import {
+  counterSpokenName,
+  counterSummaryLine,
+  useActiveCounter,
+  type ActiveCounterView,
+} from '../hooks/use-active-counter';
 import { useHaptics } from '../hooks/use-haptics';
-import { useSelectedQuranDhikrTitle } from '../hooks/use-quran-dhikr';
 import { useTasbih } from '../hooks/use-tasbih';
 
 /**
@@ -59,19 +64,24 @@ import { useTasbih } from '../hooks/use-tasbih';
  * travelled, because a swipe over a screen with nothing to scroll would otherwise arrive as a
  * completed press and invent a repetition that never happened.
  *
- * ── The content boundary ────────────────────────────────────────────────────
- * The mock fills the current-dhikr row with a well-known phrase. That establishes layout, not
- * authorisation.
+ * ── The content boundary, and why it moved ──────────────────────────────────
+ * This screen used to render no scripture at all, in any state, and the row read "Not selected"
+ * because the only thing it could name was a reviewed catalogue that is still empty. That was the
+ * honest state of a screen with nothing to show.
  *
- * Quran Foundation has since given written permission for a Quran-derived Dhikr selector, so the row
- * is now wired to the **title** of a selected reference — resolved from a stored catalogue id, never
- * a copied string. What has not happened is NoorLife's own scholarly review, so the production
- * catalogue holds no approved entry, nothing resolves, and the row reads "Not selected". That is the
- * honest state and not a placeholder.
+ * It now shows the **current selection**: its Arabic, its surah and ayah reference, and the
+ * translator credited for the meaning. Three things had to be true first, and all three are:
  *
- * **No Arabic, transliteration, translation or reference is rendered on this screen** in any state.
- * The counter counts; the selector is where content lives. See `data/dhikr/` for the gate and
- * `docs/QURAN_FOUNDATION_DHIKR_PERMISSION.md` for what was granted.
+ *   • the text is Quran Foundation's own, resolved from the retained generation this device
+ *     validated in full — not a string in the bundle and not a copy in user storage;
+ *   • it is resolved **offline**, through a seam that cannot issue a request, so the counter does
+ *     not spend a round trip to draw a verse;
+ *   • what it is called is honest. A user's own selection is badged as theirs and never as a dhikr,
+ *     a dua, or something recommended. A reviewed entry is badged as reviewed, and there are none.
+ *
+ * The empty state is unchanged and still real: with nothing selected the row says so and offers the
+ * selector. No default dhikr is invented to fill it. See `data/quran-selection/` for the resolver
+ * and `docs/QURAN_FOUNDATION_DHIKR_PERMISSION.md` for what was granted.
  */
 
 const TARGET_STEP = 1;
@@ -89,7 +99,14 @@ export function TasbihScreen() {
   const haptics = useHaptics();
   const { preferences, update } = useFaithPreferences();
 
-  const counter = labels.find((item) => item.id === session?.counterId) ?? null;
+  /*
+    ── The screen no longer waits for a *label* ──────────────────────────────
+    It used to resolve `labels.find(id === session.counterId)` and render "Preparing your counter…"
+    until that found something. A Quran selection has no label — it is a reference, not a private
+    note — so that lookup would never succeed and the counter would sit on its loading state forever
+    while a perfectly good session was in storage. What the stage actually needs is a *name*, and
+    every kind of counter can produce one.
+  */
 
   /**
    * A completed round is the one moment the feedback differs.
@@ -111,10 +128,12 @@ export function TasbihScreen() {
 
   const openSelector = useCallback(() => router.push(faithRoutes.dhikr), [router]);
   /*
-    Resolved from the stored id against the in-memory catalogue — no fetch, so opening the counter
-    still costs nothing. `null` while the catalogue holds no approved entry, which is today.
+    Resolved from the stored counter id against the user's selections, the reviewed manifest and the
+    retained generation. Two storage reads and no request — opening the counter costs nothing on the
+    network, which is the property that lets this render in aeroplane mode.
   */
-  const selectedDhikrTitle = useSelectedQuranDhikrTitle();
+  const active = useActiveCounter(session?.counterId ?? null, labels);
+  const counterName = counterSpokenName(active.view);
 
   return (
     <FaithScreen
@@ -132,7 +151,7 @@ export function TasbihScreen() {
           />
         )}
 
-        {counter === null || session === null ? (
+        {session === null ? (
           <ModuleCard testID="faith-tasbih-loading">
             <ModuleText token="body">Preparing your counter…</ModuleText>
           </ModuleCard>
@@ -140,7 +159,7 @@ export function TasbihScreen() {
           <>
             <CountingStage
               session={session}
-              counter={counter}
+              counterName={counterName}
               material={preferences.tasbihMaterialId}
               onCount={() => void count()}
             />
@@ -149,11 +168,10 @@ export function TasbihScreen() {
               onSelect={(material) => void update({ tasbihMaterialId: material })}
             />
             <DhikrControlCard
-              counter={counter}
               target={session.target}
               hapticsEnabled={preferences.hapticsEnabled}
               onToggleHaptics={(next) => void update({ hapticsEnabled: next })}
-              selectedDhikrTitle={selectedDhikrTitle}
+              active={active.view}
               onOpenSelector={openSelector}
               onUndo={() => {
                 haptics.undo();
@@ -176,12 +194,20 @@ export function TasbihScreen() {
  */
 function CountingStage({
   session,
-  counter,
+  counterName,
   material,
   onCount,
 }: {
   readonly session: TasbihSession;
-  readonly counter: CounterLabel;
+  /**
+   * What is being counted, in one line.
+   *
+   * A name rather than a `CounterLabel`, because three different things can be counted and only one
+   * of them has a label. It is spoken by the counting button, so it is the user's own words for a
+   * personal counter and a reference for a selection — never the Arabic, which a screen reader
+   * announcing "3 of 33" alongside would render at the wrong moment and out of context.
+   */
+  readonly counterName: string;
   readonly material: TasbihMaterialId;
   readonly onCount: () => void;
 }) {
@@ -241,7 +267,7 @@ function CountingStage({
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       accessibilityRole="button"
-      accessibilityLabel={`${counter.name}. ${session.count} of ${session.target}. ${
+      accessibilityLabel={`${counterName}. ${session.count} of ${session.target}. ${
         session.rounds === 0
           ? 'No completed rounds yet'
           : `${session.rounds} round${session.rounds === 1 ? '' : 's'} completed`
@@ -452,11 +478,41 @@ function BeadMaterialCard({
 }
 
 /**
- * The compact control card: current dhikr, active counter, and the three allowed controls.
+ * What kind of thing the active counter is, in one word the design has room for.
+ *
+ * The distinction between "Selection" and "Reviewed" is the only one on this screen that carries a
+ * claim, and it is why the two are never collapsed into one word: a verse somebody chose for
+ * themselves and a verse a named scholar approved look identical on a counter otherwise.
+ */
+function counterKindLabel(active: ActiveCounterView): string {
+  switch (active.kind) {
+    case 'selection':
+      return 'Selection';
+    case 'reviewed':
+      return 'Reviewed';
+    case 'personal':
+      return active.label.id === DEFAULT_COUNTER.id ? 'Default' : 'Personal';
+    case 'none':
+      return 'None';
+  }
+}
+
+/**
+ * The compact control card: the current selection, the active counter, and the three allowed
+ * controls.
+ *
+ * ── What changed inside the locked composition, and what did not ───────────
+ * The card is the same card: same order, same divider, same three controls, same `Change` affordance
+ * in the same place. What the first region *contains* has changed — it used to be a label and the
+ * word "Not selected", because there was nothing to put there, and it now carries the selection's
+ * Arabic, its reference and the translator credited for its meaning.
+ *
+ * The scripture block is clamped to two lines per verse. A selection can be ten verses long, and a
+ * counting screen that scrolls is a counting screen where the tap target moves under a thumb that is
+ * not looking — so the card shows the opening of the passage and the selector shows it whole.
  */
 function DhikrControlCard({
-  counter,
-  selectedDhikrTitle,
+  active,
   target,
   hapticsEnabled,
   onToggleHaptics,
@@ -464,16 +520,14 @@ function DhikrControlCard({
   onUndo,
   onAdjustTarget,
 }: {
-  readonly counter: CounterLabel;
   /**
-   * The title of the selected Quran-derived reference, or `null` when none is selected.
+   * What is being counted, already resolved.
    *
-   * Resolved from the catalogue through a stored **id**, never from a copied string, so a reference
-   * that is corrected or withdrawn upstream stops being named here on the next launch. `null` is the
-   * only value this can take while no scholarly-reviewed entry exists, which is why the row still
-   * reads "Not selected" today — the wiring is real and the catalogue is empty.
+   * Carries the reference, the retained scripture and the credit together, so this card cannot draw
+   * a translation without its translator — see `QuranSelectionView`, which is where both are
+   * rendered and where they are deliberately inseparable.
    */
-  readonly selectedDhikrTitle: string | null;
+  readonly active: ActiveCounterView;
   readonly target: number;
   readonly hapticsEnabled: boolean;
   readonly onToggleHaptics: (next: boolean) => void;
@@ -482,6 +536,7 @@ function DhikrControlCard({
   readonly onAdjustTarget: (delta: number) => void;
 }) {
   const { dp } = useModuleMetrics();
+  const summary = counterSummaryLine(active);
 
   return (
     <ModuleCard testID="faith-tasbih-current">
@@ -502,19 +557,16 @@ function DhikrControlCard({
               numberOfLines={1}
               style={styles.shrink}
             >
-              Current Dhikr
+              Current
             </ModuleText>
             <View style={styles.flex} />
             {/*
-            The mock shows a well-known phrase here. That is layout, not authorisation.
+              A reference, the user's own note, or a reviewer-supplied title — never the Arabic. A
+              verse truncated to fit a caption slot is a verse rendered wrongly, and the scripture
+              has its own block below where it is given the room the script needs.
 
-            What fills this now is the *title* of a scholarly-reviewed Quran reference the user
-            selected, resolved from the catalogue through a stored id. It is not the dhikr's Arabic
-            and not a remembered string: no scripture is held in the bundle, and a title copied into
-            user storage would survive a correction upstream. With no approved entry in the catalogue
-            there is nothing to resolve, so this reads "Not selected" — honestly, and for a reason
-            the selector screen states in full.
-          */}
+              "Not selected" is a real state and stays one: no default dhikr is invented to fill it.
+            */}
             <ModuleText
               token="body"
               color={moduleNeutrals.textSecondary}
@@ -522,13 +574,13 @@ function DhikrControlCard({
               style={styles.shrink}
               testID="faith-tasbih-dhikr-value"
             >
-              {selectedDhikrTitle ?? 'Not selected'}
+              {summary ?? 'Not selected'}
             </ModuleText>
           </View>
           <PressableScale
             onPress={onOpenSelector}
             accessibilityRole="button"
-            accessibilityLabel="Change dhikr"
+            accessibilityLabel={summary === null ? 'Choose what to count' : 'Change what you count'}
             hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
             style={[
               styles.outlined,
@@ -544,17 +596,38 @@ function DhikrControlCard({
           >
             <AppIcon name="edit" size={dp(15)} color={FAITH_INK} />
             <ModuleText token="caption" color={FAITH_INK} numberOfLines={1}>
-              Change
+              {summary === null ? 'Choose' : 'Change'}
             </ModuleText>
           </PressableScale>
         </View>
+
+        {/*
+          The scripture, when there is any. Absent for a personal counter and for nothing selected —
+          those two have no verse behind them, and drawing an empty block for them would suggest one
+          failed to load.
+        */}
+        {active.kind === 'selection' || active.kind === 'reviewed' ? (
+          <View style={{ rowGap: dp(6) }} testID="faith-tasbih-selection">
+            <SelectionOriginBadge
+              origin={active.kind === 'selection' ? 'personal' : 'reviewed'}
+              testID="faith-tasbih-selection-origin"
+            />
+            <QuranSelectionView
+              resolution={active.resolution}
+              reference={active.reference}
+              arabicLines={2}
+              translationLines={2}
+              testID="faith-tasbih-selection-body"
+            />
+          </View>
+        ) : null}
 
         <View style={styles.divider} />
 
         <PressableScale
           onPress={onOpenSelector}
           accessibilityRole="button"
-          accessibilityLabel={`My counter. ${counter.name}.`}
+          accessibilityLabel={`${counterSpokenName(active)}. ${counterKindLabel(active)}.`}
           style={[styles.row, { columnGap: dp(10), minHeight: dp(moduleLayout.minTouchTarget) }]}
           testID="faith-tasbih-counter-row"
         >
@@ -568,6 +641,10 @@ function DhikrControlCard({
             install starts with is itself called "My counter" — echoing it into the value slot would
             print the row's own label twice. The name is carried in the row's spoken label and is the
             heading of the selector this row opens.
+
+            The kind now also distinguishes a Quran selection from a private label, which is the one
+            distinction on this screen that carries a claim: a private note must never read as
+            something NoorLife stands behind.
           */}
           <ModuleText
             token="body"
@@ -576,7 +653,7 @@ function DhikrControlCard({
             style={{ maxWidth: '46%' }}
             testID="faith-tasbih-counter-kind"
           >
-            {counter.id === DEFAULT_COUNTER.id ? 'Default' : 'Personal'}
+            {counterKindLabel(active)}
           </ModuleText>
           <AppIcon name="chevron-forward" size={dp(20)} color={FAITH_INK} />
         </PressableScale>

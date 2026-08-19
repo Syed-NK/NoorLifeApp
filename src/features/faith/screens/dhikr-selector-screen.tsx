@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
@@ -16,6 +17,7 @@ import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { ArabicText } from '../components/faith-list';
 import { FaithScreen } from '../components/faith-screen';
+import { QuranSelectionView, SelectionOriginBadge } from '../components/quran-selection-view';
 import { QURAN_CONTENT_ATTRIBUTION } from '../data/dhikr/quran-content-attribution';
 import { referenceLabel } from '../data/dhikr/quran-dhikr-catalogue';
 import type { ResolvedDhikr } from '../data/dhikr/quran-dhikr.repository';
@@ -28,9 +30,16 @@ import {
   type DhikrSection,
   type DhikrSectionState,
 } from '../data/tasbih/dhikr-catalogue';
+import {
+  selectionReferenceLabel,
+  type QuranSelection,
+  type QuranSelectionRef,
+} from '../data/quran-selection/quran-selection';
+import type { SelectionResolution } from '../data/quran-selection/retained-selection.resolver';
 import { DEFAULT_COUNTER, MAX_LABEL_LENGTH } from '../data/tasbih/local-tasbih.repository';
-import { faithNavKeys } from '../faith-routes';
+import { faithNavKeys, faithRoutes, readerHref } from '../faith-routes';
 import { useQuranDhikr } from '../hooks/use-quran-dhikr';
+import { useQuranSelections } from '../hooks/use-quran-selections';
 import { useTasbih } from '../hooks/use-tasbih';
 
 /**
@@ -74,7 +83,14 @@ export function DhikrSelectorScreen() {
 
 function SelectorBody() {
   const { dp } = useModuleMetrics();
+  const router = useRouter();
   const tasbih = useTasbih();
+  /*
+    The user's own selections, read from storage and resolved against the retained generation.
+    Neither can reach the network, so opening this screen in aeroplane mode shows every selection
+    with its scripture — see `use-quran-selections.ts`.
+  */
+  const quranSelections = useQuranSelections();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<DhikrCategoryId | null>(null);
   const [draft, setDraft] = useState('');
@@ -118,8 +134,9 @@ function SelectorBody() {
         favourites: quran.userState.favouriteEntryIds,
         recent: quran.userState.recentEntryIds,
         quranState,
+        selectionCount: quranSelections.selections.length,
       }),
-    [personal, quran.userState, quranState],
+    [personal, quran.userState, quranState, quranSelections.selections.length],
   );
 
   /**
@@ -169,6 +186,25 @@ function SelectorBody() {
     [personal, query],
   );
 
+  /**
+   * Selections matching the search: their reference and the user's own note.
+   *
+   * Deliberately does **not** search the Arabic. A query is typed in the interface's script, and
+   * matching it against scripture would be a transliteration guess — the same rule the reviewed
+   * list already follows.
+   */
+  const selectionMatches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (needle.length === 0) {
+      return quranSelections.selections;
+    }
+    return quranSelections.selections.filter(
+      (selection) =>
+        selectionReferenceLabel(selection).includes(needle) ||
+        selection.label?.toLowerCase().includes(needle) === true,
+    );
+  }, [quranSelections.selections, query]);
+
   if (tasbih.loading) {
     return (
       <View style={{ rowGap: dp(12) }} testID="faith-dhikr-loading">
@@ -187,6 +223,26 @@ function SelectorBody() {
           key={section.id}
           section={section}
           quranEntries={section.id === 'quran' ? quranMatches : []}
+          selections={section.id === 'selections' ? selectionMatches : []}
+          resolveSelection={quranSelections.resolve}
+          onChooseSelection={(selection) => {
+            void quranSelections.markUsed(selection.id);
+            void tasbih.chooseCounter(selection.id);
+          }}
+          onToggleSelectionFavourite={(id) => void quranSelections.toggleFavourite(id)}
+          onRemoveSelection={(id) => {
+            void quranSelections.remove(id);
+            /*
+              The counting state goes with it. Nothing could ever select that counter again, and
+              `forgetCounter` touches exactly one — removing a selection must not be able to disturb
+              the count on another.
+            */
+            void tasbih.forgetCounter(id);
+          }}
+          onReadSelection={(selection) =>
+            router.push(readerHref(selection.surah, selection.startAyah))
+          }
+          onAddSelection={() => router.push(faithRoutes.quranSelection)}
           selectedEntryId={quran.userState.selectedEntryId}
           favouriteEntryIds={quran.userState.favouriteEntryIds}
           onChooseQuranEntry={(entryId) => void quran.select(entryId)}
@@ -343,6 +399,13 @@ function Chip({
 function SectionCard({
   section,
   quranEntries,
+  selections,
+  resolveSelection,
+  onChooseSelection,
+  onToggleSelectionFavourite,
+  onRemoveSelection,
+  onReadSelection,
+  onAddSelection,
   selectedEntryId,
   favouriteEntryIds,
   onChooseQuranEntry,
@@ -361,6 +424,14 @@ function SectionCard({
   readonly section: DhikrSection;
   /** Resolved Quran-derived entries, for the `quran` section only. Empty for every other. */
   readonly quranEntries: readonly ResolvedDhikr[];
+  /** The user's own selections, for the `selections` section only. Empty for every other. */
+  readonly selections: readonly QuranSelection[];
+  readonly resolveSelection: (ref: QuranSelectionRef) => SelectionResolution;
+  readonly onChooseSelection: (selection: QuranSelection) => void;
+  readonly onToggleSelectionFavourite: (id: string) => void;
+  readonly onRemoveSelection: (id: string) => void;
+  readonly onReadSelection: (selection: QuranSelection) => void;
+  readonly onAddSelection: () => void;
   readonly selectedEntryId: string | null;
   readonly favouriteEntryIds: readonly string[];
   readonly onChooseQuranEntry: (entryId: string) => void;
@@ -410,6 +481,29 @@ function SectionCard({
           />
         ) : null}
 
+        {section.id === 'selections' ? (
+          <View style={{ rowGap: dp(10) }}>
+            {selections.length === 0 ? (
+              <ModuleText token="body" testID="faith-dhikr-selections-empty">
+                {section.state.kind === 'empty'
+                  ? 'You have not kept any verses yet. Choose one below — it is your own selection, and NoorLife makes no religious claim about it.'
+                  : 'No selection matches that search.'}
+              </ModuleText>
+            ) : (
+              <QuranSelectionsList
+                selections={selections}
+                resolve={resolveSelection}
+                activeCounterId={activeCounterId}
+                onChoose={onChooseSelection}
+                onToggleFavourite={onToggleSelectionFavourite}
+                onRemove={onRemoveSelection}
+                onRead={onReadSelection}
+              />
+            )}
+            <AddSelectionCard onPress={onAddSelection} />
+          </View>
+        ) : null}
+
         {section.id === 'personal' && section.state.kind !== 'locked' ? (
           <PersonalList
             personal={personal}
@@ -425,7 +519,9 @@ function SectionCard({
           />
         ) : null}
 
-        {section.state.kind === 'empty' && section.id !== 'personal' ? (
+        {section.state.kind === 'empty' &&
+        section.id !== 'personal' &&
+        section.id !== 'selections' ? (
           <ModuleText token="body" testID={`faith-dhikr-${section.id}-empty`}>
             Nothing here yet.
           </ModuleText>
@@ -869,6 +965,149 @@ function NewCounter({
             </ModuleText>
           </PressableScale>
         </View>
+      </View>
+    </ModuleCard>
+  );
+}
+
+/**
+ * The user's own Quran selections, each with the scripture it names and the badge that says whose
+ * choice it was.
+ *
+ * ── Why these rows look like the reviewed ones and are labelled unlike them ─
+ * They render the same publisher text through the same component, because it is the same text. What
+ * differs is the claim, and the claim is carried by `SelectionOriginBadge` on every row — never by
+ * the section heading alone, because a row is what somebody screenshots, scrolls to, and remembers.
+ *
+ * ── Resolution is offline and synchronous ──────────────────────────────────
+ * `resolve` is a pure function over the generation this screen already read. Twenty selections cost
+ * twenty map lookups, not twenty promises, and none of them can reach the network.
+ */
+function QuranSelectionsList({
+  selections,
+  resolve,
+  activeCounterId,
+  onChoose,
+  onToggleFavourite,
+  onRemove,
+  onRead,
+}: {
+  readonly selections: readonly QuranSelection[];
+  readonly resolve: (ref: QuranSelectionRef) => SelectionResolution;
+  readonly activeCounterId: string | null;
+  readonly onChoose: (selection: QuranSelection) => void;
+  readonly onToggleFavourite: (id: string) => void;
+  readonly onRemove: (id: string) => void;
+  readonly onRead: (selection: QuranSelection) => void;
+}) {
+  const { dp } = useModuleMetrics();
+
+  return (
+    <View style={{ rowGap: dp(10) }} testID="faith-dhikr-selection-list">
+      {selections.map((selection) => {
+        const reference = selectionReferenceLabel(selection);
+        const selected = activeCounterId === selection.id;
+
+        return (
+          <View key={selection.id} style={{ rowGap: dp(6) }}>
+            <PressableScale
+              onPress={() => onChoose(selection)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              /*
+                The spoken label names the reference and says whose selection it is. A badge visible
+                on screen and absent from the accessible name is a distinction that has not been made
+                for anybody using a screen reader.
+              */
+              accessibilityLabel={`Qur'an ${reference}. Your own selection.${
+                selection.label === null ? '' : ` ${selection.label}.`
+              }${selected ? ' Currently counting.' : ''}`}
+              style={[
+                styles.quranEntry,
+                {
+                  borderRadius: dp(moduleLayout.radiusSmall),
+                  padding: dp(12),
+                  rowGap: dp(6),
+                  borderColor: selected ? EMERALD : moduleNeutrals.border,
+                },
+              ]}
+              testID={`faith-dhikr-selection-${selection.id}`}
+            >
+              <View style={[styles.row, { columnGap: dp(8) }]}>
+                <SelectionOriginBadge origin="personal" />
+                <View style={styles.flex} />
+                {selection.favourite ? (
+                  <ModuleText token="caption" numberOfLines={1}>
+                    Favourite
+                  </ModuleText>
+                ) : null}
+              </View>
+
+              {selection.label === null ? null : (
+                <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
+                  {selection.label}
+                </ModuleText>
+              )}
+
+              <QuranSelectionView
+                resolution={resolve(selection)}
+                reference={reference}
+                arabicLines={3}
+                translationLines={4}
+                testID={`faith-dhikr-selection-body-${selection.id}`}
+              />
+            </PressableScale>
+
+            <View style={[styles.row, { columnGap: dp(8) }]}>
+              <RowButton
+                icon={selection.favourite ? 'check' : 'edit'}
+                label={
+                  selection.favourite
+                    ? `Remove Qur'an ${reference} from favourites`
+                    : `Add Qur'an ${reference} to favourites`
+                }
+                onPress={() => onToggleFavourite(selection.id)}
+                testID={`faith-dhikr-selection-favourite-${selection.id}`}
+              />
+              <RowButton
+                icon="check"
+                label={`Read Qur'an ${reference} in the reader`}
+                onPress={() => onRead(selection)}
+                testID={`faith-dhikr-selection-read-${selection.id}`}
+              />
+              <RowButton
+                icon="close"
+                label={`Remove Qur'an ${reference} from your selections`}
+                onPress={() => onRemove(selection.id)}
+                testID={`faith-dhikr-selection-remove-${selection.id}`}
+              />
+              <View style={styles.flex} />
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** The one way into the browser, offered wherever selections are listed. */
+function AddSelectionCard({ onPress }: { readonly onPress: () => void }) {
+  const { dp } = useModuleMetrics();
+
+  return (
+    <ModuleCard
+      onPress={onPress}
+      accessibilityLabel="Choose a verse from the Qur'an"
+      testID="faith-dhikr-add-selection"
+    >
+      <View style={{ rowGap: dp(4) }}>
+        <ModuleText token="cardTitle" numberOfLines={2}>
+          Choose a verse from the Qur’an
+        </ModuleText>
+        <ModuleText token="caption" numberOfLines={3}>
+          Browse all 114 surahs and keep one verse, or a run of verses next to each other. It stays
+          on this device as your own selection.
+        </ModuleText>
       </View>
     </ModuleCard>
   );

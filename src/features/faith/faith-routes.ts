@@ -39,6 +39,18 @@ export const faithRoutes = {
    * sheet over a counting surface can carry without burying the thing being counted.
    */
   dhikr: '/faith/dhikr',
+  /**
+   * Browsing the Qur'an to choose a verse or a contiguous range to keep.
+   *
+   * ── Why it is not a section of the Dhikr selector ────────────────────────
+   * Because it is a different task with a different shape. The selector is a list of things the user
+   * already has; this is a search across 114 surahs, a range control and a preview of scripture, and
+   * folding it in would put a browser inside a picker and make the thing being picked scroll away.
+   *
+   * Reached from the Dhikr selector and from Duas, which are the two places somebody is already
+   * looking at their selections when they want another one.
+   */
+  quranSelection: '/faith/quran-selection',
   mosques: '/faith/mosques',
   calendar: '/faith/calendar',
 

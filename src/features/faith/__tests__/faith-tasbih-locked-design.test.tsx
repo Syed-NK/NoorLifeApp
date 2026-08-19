@@ -623,7 +623,13 @@ describe('the control card matches the locked design', () => {
     const change = view.getByTestId('faith-tasbih-change');
 
     expect(change.props.accessibilityRole).toBe('button');
-    expect(String(change.props.accessibilityLabel)).toMatch(/change dhikr/i);
+    /*
+      ── The label used to say "Change dhikr", and that had become wrong ───────
+      What this control changes may be a private counter or a Quran selection the user chose, and
+      neither is a dhikr — calling a verse somebody picked for themselves a dhikr is the claim this
+      module spends most of its code refusing to make. The label states the action instead.
+    */
+    expect(String(change.props.accessibilityLabel)).toMatch(/choose what to count/i);
     fireEvent.press(change);
     await settle(200);
 
