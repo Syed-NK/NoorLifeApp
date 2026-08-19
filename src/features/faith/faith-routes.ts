@@ -159,6 +159,19 @@ export function readerHref(surah: number, ayah?: number): Href {
  * something had altered it in transit. A pair of integers cannot be corrupted into a wrong verse
  * without becoming a different, visibly wrong citation.
  */
+/**
+ * One category of the Duas library.
+ *
+ * ── Why the id travels as a route parameter ────────────────────────────────
+ * The alternative was ten routes, one per card, which would put the category list in two places —
+ * `DUA_CATEGORIES` and the router — and make adding a card a two-file change with a silent failure
+ * mode if only one was done. A parameter keeps the closed enum the single source, and
+ * `duaCategoryById` refuses anything that is not one.
+ */
+export function duaCategoryHref(categoryId: string): Href {
+  return { pathname: '/faith/duas/[category]', params: { category: categoryId } };
+}
+
 export function faithAiHref(surah?: number, ayah?: number): Href {
   return surah === undefined || ayah === undefined
     ? faithRoutes.ai

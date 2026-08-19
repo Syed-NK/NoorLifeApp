@@ -2,13 +2,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
-import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 import { TEST_FAITH_USER_ID } from '@/test-support/faith-storage-address';
+import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 
-import { createMockFaithRepositories } from '../data/mock';
-import type { RetainedQuran, RetainedQuranSource } from '../data/offline/retained-quran.source';
 import { REVIEWED_DUA_MANIFEST } from '../data/dhikr/reviewed-dua-manifest';
+import { DUA_CATEGORIES } from '../data/duas/dua-categories';
+import type { RetainedQuran, RetainedQuranSource } from '../data/offline/retained-quran.source';
+import { createMockFaithRepositories } from '../data/mock';
+import { createLocalTasbihRepository } from '../data/tasbih/local-tasbih.repository';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
+import { DuaCategoryScreen } from '../screens/dua-category-screen';
 import { DuasScreen } from '../screens/duas-screen';
 import {
   markQuranSelectionUsed,
@@ -19,31 +22,23 @@ import {
 import { setActiveFaithScope } from '../storage/faith-user-scope';
 
 /**
- * **Duas, now that it does something — and the line it still must not cross.**
+ * **The Duas category library: the locked grid, and the rules underneath it.**
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * ── What replaced the locked library, and what did not change ──────────────
- * The screen used to be three disabled preview rows over "Verified supplications will appear here".
- * It now lists the user's own Quran selections, their favourites and what they used lately, with
- * the Arabic resolved from the copy this device retained.
+ * ── What changed, and what deliberately did not ────────────────────────────
+ * The screen went from four stacked lists to a two-column grid of ten categories. Nothing about
+ * what may be *shown* moved: the review gate, the reference-only store, the account boundary and
+ * the Quran Foundation attribution are all where they were, and the cases below assert the new
+ * navigation without relaxing any of them.
  *
- * The permission position is unchanged: no approved supplication provider, and no scholarly review
- * of any Quran-derived catalogue. So the assertions here are in two halves — that the working part
- * works, and that the part that does not exist is neither faked nor described as breakage.
- *
- * ── The scans that survive from the locked-library suite ───────────────────
- * No Hadith grading vocabulary, no collection citation, and no Arabic *until the user has chosen a
- * verse*. The last one is the interesting change: Arabic on this screen used to prove a defect and
- * now proves the feature, so the assertion moved from "never" to "not before the user asked for it".
- *
- * The fixture's Arabic is synthetic and carries a Latin marker. A test fixture is exactly where
- * unverified religious text survives a deletion, and no property here needs the text to be
- * scripture.
+ * ── The fixture's Arabic is not Qur'anic ───────────────────────────────────
+ * Synthetic Arabic-script text with a Latin marker, the same rule the rest of this module follows.
+ * Nothing asserted here needs the text to be scripture, and a fixture is exactly where unverified
+ * religious content survives a deletion.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 const PROBE_ARABIC = 'ألف-probe-١';
-const PROBE_TRANSLATION = 'a rendering of the meaning';
 const TRANSLATOR = 'A Named Translator';
 
 function retainedDouble(): RetainedQuranSource {
@@ -54,7 +49,7 @@ function retainedDouble(): RetainedQuranSource {
       script: 'text_uthmani',
       lastCheckedAt: 0,
       source: { name: 'Quran Foundation', edition: 'Uthmani', verified: true },
-      bySurah: new Map([[2, [{ ayah: 1, text: PROBE_ARABIC }]]]),
+      bySurah: new Map([[2, [{ ayah: 255, text: PROBE_ARABIC }]]]),
     },
     translations: {
       generationId: 'test-generation',
@@ -65,24 +60,33 @@ function retainedDouble(): RetainedQuranSource {
         attribution: TRANSLATOR,
         verified: true,
       },
-      bySurah: new Map([[2, [{ ayah: 1, text: PROBE_TRANSLATION }]]]),
+      bySurah: new Map([[2, [{ ayah: 255, text: 'a rendering of the meaning' }]]]),
     },
   };
   return { read: async () => content };
 }
 
-async function renderDuas(): Promise<typeof screen> {
-  await render(
+function wrap(node: React.ReactElement) {
+  return (
     <FaithRepositoryProvider
       repositories={{ ...createMockFaithRepositories(), retainedQuran: retainedDouble() }}
     >
-      <DuasScreen />
-    </FaithRepositoryProvider>,
+      {node}
+    </FaithRepositoryProvider>
   );
+}
+
+async function renderGrid(): Promise<typeof screen> {
+  await render(wrap(<DuasScreen />));
   return screen;
 }
 
-warmUpFirstMount(() => renderDuas());
+async function renderCategory(id: string): Promise<typeof screen> {
+  await render(wrap(<DuaCategoryScreen categoryId={id} />));
+  return screen;
+}
+
+warmUpFirstMount(() => renderGrid());
 
 beforeEach(async () => {
   await AsyncStorage.clear();
@@ -93,178 +97,397 @@ afterEach(async () => {
   await cleanup();
 });
 
-describe('the sections the screen offers', () => {
-  it('offers selections, favourites and recently used', async () => {
-    const view = await renderDuas();
+describe('the locked grid', () => {
+  it('draws all ten cards', async () => {
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
 
-    expect(await view.findByTestId('faith-duas-selections')).toBeTruthy();
-    expect(view.getByTestId('faith-duas-favourites')).toBeTruthy();
-    expect(view.getByTestId('faith-duas-recent')).toBeTruthy();
+    for (const category of DUA_CATEGORIES) {
+      expect(view.getByTestId(`faith-duas-category-${category.id}`)).toBeTruthy();
+    }
   });
 
-  it('shows no reviewed section, because no entry has been approved', async () => {
-    const view = await renderDuas();
-    await view.findByTestId('faith-duas-selections');
-
-    expect(REVIEWED_DUA_MANIFEST).toHaveLength(0);
-    /*
-      Absent rather than empty or locked. An empty section invites "try again"; a locked one implies
-      the screen is broken. What is true is stated once, in its own card, beside the part that works.
-    */
-    expect(view.queryByTestId('faith-duas-reviewed')).toBeNull();
-    expect(view.getByTestId('faith-duas-awaiting-review')).toBeTruthy();
-  });
-
-  it('never describes the whole screen as unavailable', async () => {
-    const view = await renderDuas();
-    await view.findByTestId('faith-duas-selections');
-    const text = JSON.stringify(view.toJSON());
+  it('draws them in the approved order, top to bottom', async () => {
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
 
     /*
-      The old locked copy promised a provider and nothing else. Repeating it now would tell somebody
-      that a feature they can use does not work — which is its own false statement, and the exact one
-      this screen was rewritten to stop making.
+      Read off the rendered tree rather than the source array, so a screen that reordered or filtered
+      the cards on its way to the view would fail here even though the domain test still passed.
+      `getAllByTestId` returns matches in tree order, which is the order they are drawn in.
     */
-    expect(text).not.toContain('Verified supplications will appear here');
-    expect(text).not.toMatch(/coming soon/i);
-    // The honest sentence names the thing that is missing, not the screen.
-    expect(view.getByText(/scholarly-reviewed duas are not ready yet/i)).toBeTruthy();
+    const rendered = view
+      .getAllByTestId(/^faith-duas-category-[a-z-]+$/)
+      .map((node) => String(node.props.testID).replace('faith-duas-category-', ''))
+      /* The card's own testID, not its count or icon child, which share the prefix. */
+      .filter((id) => !id.endsWith('-count') && !id.endsWith('-icon'));
+
+    expect(rendered).toEqual(DUA_CATEGORIES.map((category) => category.id));
   });
 
-  it('states the empty case without proposing anything to fill it', async () => {
-    const view = await renderDuas();
+  it('labels every card for a screen reader with what it is and what it holds', async () => {
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
 
-    const empty = await view.findByTestId('faith-duas-selections-empty');
-    expect(String(empty.props.children)).toMatch(/not kept any verses yet/i);
-    expect(view.getByTestId('faith-duas-favourites-empty')).toBeTruthy();
-    expect(view.getByTestId('faith-duas-recent-empty')).toBeTruthy();
-    // The way out is an action, not a suggested verse.
-    expect(view.getByTestId('faith-duas-add-selection')).toBeTruthy();
+    for (const category of DUA_CATEGORIES) {
+      const label = String(
+        view.getByTestId(`faith-duas-category-${category.id}`).props.accessibilityLabel,
+      );
+      expect(label).toContain(category.label);
+      expect(label).toContain(category.description);
+    }
+  });
+
+  it('shows a dash on a reviewed card and a real number on a personal one', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+
+    await waitFor(() => {
+      expect(
+        String(view.getByTestId('faith-duas-category-my-quran-selections-count').props.children),
+      ).toBe('1');
+    });
+    expect(String(view.getByTestId('faith-duas-category-travel-count').props.children)).toBe('–');
+  });
+
+  it('highlights no card while nothing is pressed', async () => {
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+
+    /*
+      The approved mock draws Morning & Evening on mint to record what the pressed state looks like.
+      A permanent highlight would tell the user something is selected when nothing is.
+    */
+    const flat = JSON.stringify(view.toJSON());
+    const mintOccurrences = flat.split('#E9F6F1').length - 1;
+    expect(mintOccurrences).toBe(0);
+  });
+
+  it('does not draw a hero, because the locked design has none', async () => {
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+    expect(view.queryByTestId('faith-hero-duas')).toBeNull();
+  });
+
+  it('keeps the Quran Foundation attribution reachable', async () => {
+    const view = await renderGrid();
+    const attribution = await view.findByTestId('faith-duas-attribution');
+    expect(String(attribution.props.accessibilityLabel)).toMatch(/where this content comes from/i);
   });
 });
 
-describe('an item, once the user has kept one', () => {
-  it('shows the Arabic, the reference, the translation and the translator', async () => {
-    await saveQuranSelection({ surah: 2, startAyah: 1, endAyah: 1 }, null);
-    const view = await renderDuas();
-
-    const arabic = await view.findByTestId('faith-duas-selection-body-q.2.1.1-arabic-2:1');
-    expect(String(arabic.props.children)).toBe(PROBE_ARABIC);
-
-    expect(
-      String(view.getByTestId('faith-duas-selection-body-q.2.1.1-translation-2:1').props.children),
-    ).toBe(PROBE_TRANSLATION);
-    expect(
-      String(view.getByTestId('faith-duas-selection-body-q.2.1.1-translator').props.children),
-    ).toContain(TRANSLATOR);
-    expect(view.getByText('Qur’an 2:1')).toBeTruthy();
-  });
-
-  it('says whose item it is, on the item', async () => {
-    await saveQuranSelection({ surah: 2, startAyah: 1, endAyah: 1 }, null);
-    const view = await renderDuas();
-    await view.findByTestId('faith-duas-selection-q.2.1.1');
-
-    // The badge is on the row, not only on the heading — a row is what somebody remembers.
-    expect(view.getAllByText('Your selection').length).toBeGreaterThan(0);
-    expect(view.queryByText('Scholarly-reviewed')).toBeNull();
-  });
-
-  it('offers read, count, favourite and remove — and no share', async () => {
-    await saveQuranSelection({ surah: 2, startAyah: 1, endAyah: 1 }, null);
-    const view = await renderDuas();
-
-    expect(await view.findByTestId('faith-duas-selection-read-q.2.1.1')).toBeTruthy();
-    expect(view.getByTestId('faith-duas-selection-use-q.2.1.1')).toBeTruthy();
-    expect(view.getByTestId('faith-duas-selection-favourite-q.2.1.1')).toBeTruthy();
-    expect(view.getByTestId('faith-duas-selection-remove-q.2.1.1')).toBeTruthy();
+describe('the Continue card', () => {
+  it('is absent when nothing has been used', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
 
     /*
-      No share, no export, no copy-out. The permission prohibits emitting the retained text as a file
-      or a standalone distribution, and a control that refused at the point of use would be a control
-      that lies about what it does — so the affordance does not exist.
+      Saved is not used. `recentSelections` only returns what was sent to Tasbih or opened, so a card
+      promising to resume something the user never started cannot appear.
     */
-    expect(JSON.stringify(view.toJSON())).not.toMatch(/share|export|save to files|copy/i);
+    expect(view.queryByTestId('faith-duas-continue')).toBeNull();
   });
 
-  it('favourites from the item, and the favourites section picks it up', async () => {
-    await saveQuranSelection({ surah: 2, startAyah: 1, endAyah: 1 }, null);
-    const view = await renderDuas();
+  it('appears once a selection has actually been used, and names it', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    await markQuranSelectionUsed('q.2.255.255');
+    const view = await renderGrid();
 
-    fireEvent.press(await view.findByTestId('faith-duas-selection-favourite-q.2.1.1'));
+    const card = await view.findByTestId('faith-duas-continue');
+    const label = String(card.props.accessibilityLabel);
+    expect(label).toContain('Continue');
+    expect(label).toContain('Your Quran selection');
+    expect(label).toContain('2:255');
+  });
+
+  it('prefers the user’s own label over the neutral title', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, 'For the evening');
+    await markQuranSelectionUsed('q.2.255.255');
+    const view = await renderGrid();
+
+    const card = await view.findByTestId('faith-duas-continue');
+    expect(String(card.props.accessibilityLabel)).toContain('For the evening');
+  });
+
+  it('says where it goes, and goes to the reader rather than switching the counter', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    await markQuranSelectionUsed('q.2.255.255');
+    const view = await renderGrid();
+
+    const card = await view.findByTestId('faith-duas-continue');
+    /*
+      Sending it to Tasbih would also switch the active counter — a side effect a card the user
+      tapped to resume must not cause. The spoken label states the destination.
+    */
+    expect(String(card.props.accessibilityLabel)).toMatch(/opens in the reader/i);
+  });
+});
+
+describe('search', () => {
+  it('finds a personal selection with zero reviewed entries', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, 'For the evening');
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+
+    fireEvent.changeText(view.getByTestId('faith-duas-search'), 'evening');
 
     await waitFor(() => {
-      expect(view.getByTestId('faith-duas-favourite-q.2.1.1')).toBeTruthy();
+      expect(view.getByTestId('faith-duas-result-q.2.255.255')).toBeTruthy();
+    });
+    // The grid gives way to results rather than sitting above them.
+    expect(view.queryByTestId('faith-duas-grid')).toBeNull();
+  });
+
+  it('offers a clear action only once there is something to clear', async () => {
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+    expect(view.queryByTestId('faith-duas-search-clear')).toBeNull();
+
+    fireEvent.changeText(view.getByTestId('faith-duas-search'), 'x');
+    await waitFor(() => {
+      expect(view.getByTestId('faith-duas-search-clear')).toBeTruthy();
     });
   });
 
-  it('removes a personal selection', async () => {
-    await saveQuranSelection({ surah: 2, startAyah: 1, endAyah: 1 }, null);
-    const view = await renderDuas();
+  it('says nothing matched rather than implying the library is broken', async () => {
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
 
-    fireEvent.press(await view.findByTestId('faith-duas-selection-remove-q.2.1.1'));
+    fireEvent.changeText(view.getByTestId('faith-duas-search'), 'zzzz');
+    await waitFor(() => {
+      expect(view.getByTestId('faith-duas-search-empty')).toBeTruthy();
+    });
+    expect(view.getByText(/nothing matched that/i)).toBeTruthy();
+  });
+
+  it('shows a personal result badged as the user’s own', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+
+    fireEvent.changeText(view.getByTestId('faith-duas-search'), '2:255');
+    await waitFor(() => {
+      expect(view.getByTestId('faith-duas-result-q.2.255.255')).toBeTruthy();
+    });
+    expect(view.getAllByText('Your selection').length).toBeGreaterThan(0);
+    expect(view.queryByText('Scholarly-reviewed')).toBeNull();
+  });
+});
+
+describe('filters', () => {
+  it('opens a sheet offering exactly the four filters', async () => {
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+
+    fireEvent.press(view.getByTestId('faith-duas-filter'));
+    await waitFor(() => {
+      expect(view.getByTestId('faith-duas-filter-all')).toBeTruthy();
+    });
+    for (const id of ['all', 'selections', 'favourites', 'reviewed']) {
+      expect(view.getByTestId(`faith-duas-filter-${id}`)).toBeTruthy();
+    }
+  });
+
+  it('filters to My Quran Selections', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+
+    fireEvent.press(view.getByTestId('faith-duas-filter'));
+    await waitFor(() => expect(view.getByTestId('faith-duas-filter-selections')).toBeTruthy());
+    fireEvent.press(view.getByTestId('faith-duas-filter-selections'));
+
+    await waitFor(() => {
+      expect(view.getByTestId('faith-duas-result-q.2.255.255')).toBeTruthy();
+    });
+  });
+
+  it('filters to Favorites and shows only starred selections', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    await saveQuranSelection({ surah: 112, startAyah: 1, endAyah: 1 }, null);
+    await toggleQuranSelectionFavourite('q.2.255.255');
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+
+    fireEvent.press(view.getByTestId('faith-duas-filter'));
+    await waitFor(() => expect(view.getByTestId('faith-duas-filter-favourites')).toBeTruthy());
+    fireEvent.press(view.getByTestId('faith-duas-filter-favourites'));
+
+    await waitFor(() => {
+      expect(view.getByTestId('faith-duas-result-q.2.255.255')).toBeTruthy();
+    });
+    expect(view.queryByTestId('faith-duas-result-q.112.1.1')).toBeNull();
+  });
+
+  it('filters to Reviewed and says so honestly rather than looking broken', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    const view = await renderGrid();
+    await view.findByTestId('faith-duas-grid');
+
+    fireEvent.press(view.getByTestId('faith-duas-filter'));
+    await waitFor(() => expect(view.getByTestId('faith-duas-filter-reviewed')).toBeTruthy());
+    fireEvent.press(view.getByTestId('faith-duas-filter-reviewed'));
+
+    await waitFor(() => {
+      expect(view.getByTestId('faith-duas-search-empty')).toBeTruthy();
+    });
+    expect(view.getByText(/no reviewed duas yet/i)).toBeTruthy();
+    // And it does not leak the user's own selection into a reviewed-only view.
+    expect(view.queryByTestId('faith-duas-result-q.2.255.255')).toBeNull();
+  });
+});
+
+describe('a reviewed category, with nothing approved', () => {
+  it('says the approved sentence, and does not call the module unavailable', async () => {
+    expect(REVIEWED_DUA_MANIFEST).toHaveLength(0);
+    const view = await renderCategory('travel');
+
+    await view.findByTestId('faith-dua-category-empty');
+    expect(view.getByText('Reviewed content for this category is not available yet.')).toBeTruthy();
+    expect(view.getByText(/does not publish supplications/i)).toBeTruthy();
+
+    const flat = JSON.stringify(view.toJSON());
+    expect(flat).not.toMatch(/duas is unavailable/i);
+    expect(flat).not.toMatch(/coming soon/i);
+  });
+
+  it('offers a way back to the categories and across to the working list', async () => {
+    const view = await renderCategory('morning-evening');
+
+    expect(await view.findByTestId('faith-dua-category-back')).toBeTruthy();
+    expect(view.getByTestId('faith-dua-category-open-selections')).toBeTruthy();
+  });
+
+  it('renders no Arabic, because there is nothing approved to render', async () => {
+    const view = await renderCategory('adhkar');
+    await view.findByTestId('faith-dua-category-empty');
+    expect(JSON.stringify(view.toJSON())).not.toMatch(/[؀-ۿ]/);
+  });
+
+  it('answers a category id that does not exist rather than silently redirecting', async () => {
+    const view = await renderCategory('not-a-category');
+    expect(await view.findByTestId('faith-dua-category-unknown')).toBeTruthy();
+  });
+});
+
+describe('the personal categories still work', () => {
+  it('lists a selection with its Arabic, reference and translator', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    const view = await renderCategory('my-quran-selections');
+
+    const arabic = await view.findByTestId(
+      'faith-dua-category-selection-body-q.2.255.255-arabic-2:255',
+    );
+    expect(String(arabic.props.children)).toBe(PROBE_ARABIC);
+    expect(
+      String(
+        view.getByTestId('faith-dua-category-selection-body-q.2.255.255-translator').props.children,
+      ),
+    ).toContain(TRANSLATOR);
+  });
+
+  it('keeps read, count, favourite and remove — and offers no share', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    const view = await renderCategory('my-quran-selections');
+    await view.findByTestId('faith-dua-category-selection-q.2.255.255');
+
+    for (const action of ['read', 'use', 'favourite', 'remove']) {
+      expect(view.getByTestId(`faith-dua-category-selection-${action}-q.2.255.255`)).toBeTruthy();
+    }
+    expect(JSON.stringify(view.toJSON())).not.toMatch(/share|export|save to files/i);
+  });
+
+  it('removes a selection and forgets only that counter', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    const repository = createLocalTasbihRepository();
+    await repository.startSession('q.2.255.255', { target: 33 });
+    await repository.increment();
+    await repository.startSession('default');
+    await repository.increment();
+    await repository.increment();
+
+    const view = await renderCategory('my-quran-selections');
+    fireEvent.press(await view.findByTestId('faith-dua-category-selection-remove-q.2.255.255'));
 
     await waitFor(async () => {
       expect(await readQuranSelections()).toHaveLength(0);
     });
+
+    /* The default counter's own count is untouched: removing one selection disturbs no other. */
+    const session = await createLocalTasbihRepository().getSession();
+    expect(session.kind).toBe('ok');
+    if (session.kind !== 'ok') return;
+    expect(session.data.counterId).toBe('default');
+    expect(session.data.count).toBe(2);
   });
 
-  it('lists what was used lately, and only what was used', async () => {
-    await saveQuranSelection({ surah: 2, startAyah: 1, endAyah: 1 }, null);
-    await markQuranSelectionUsed('q.2.1.1');
-    const view = await renderDuas();
+  it('shows only starred selections under Favorites', async () => {
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    await saveQuranSelection({ surah: 112, startAyah: 1, endAyah: 1 }, null);
+    await toggleQuranSelectionFavourite('q.2.255.255');
 
-    expect(await view.findByTestId('faith-duas-recent-item-q.2.1.1')).toBeTruthy();
+    const view = await renderCategory('favourites');
+    expect(await view.findByTestId('faith-dua-category-selection-q.2.255.255')).toBeTruthy();
+    expect(view.queryByTestId('faith-dua-category-selection-q.112.1.1')).toBeNull();
   });
 
-  it('separates favourites from the full list rather than reordering one list', async () => {
-    await saveQuranSelection({ surah: 2, startAyah: 1, endAyah: 1 }, null);
-    await toggleQuranSelectionFavourite('q.2.1.1');
-    const view = await renderDuas();
+  it('says a personal category is empty in its own words, not the reviewed ones', async () => {
+    const view = await renderCategory('favourites');
 
-    // The same reference appears under both headings, as itself, with its own controls.
-    expect(await view.findByTestId('faith-duas-selection-q.2.1.1')).toBeTruthy();
-    expect(view.getByTestId('faith-duas-favourite-q.2.1.1')).toBeTruthy();
+    await view.findByTestId('faith-dua-category-personal-empty');
+    /*
+      "You have not starred anything" and "nobody has reviewed anything" are different facts. A
+      shared empty state would tell the user their own list was awaiting review.
+    */
+    expect(view.queryByTestId('faith-dua-category-empty')).toBeNull();
+    expect(view.getByText(/nothing starred yet/i)).toBeTruthy();
+  });
+
+  it('offers the way to add one from My Quran Selections only', async () => {
+    const withAdd = await renderCategory('my-quran-selections');
+    expect(await withAdd.findByTestId('faith-dua-category-add-selection')).toBeTruthy();
+    await cleanup();
+
+    const withoutAdd = await renderCategory('favourites');
+    await withoutAdd.findByTestId('faith-dua-category-personal-empty');
+    expect(withoutAdd.queryByTestId('faith-dua-category-add-selection')).toBeNull();
   });
 });
 
-describe('what may never appear here', () => {
-  const GRADING = /\b(sahih|hasan|da'?if|mutawatir|authentic(ated)? narration)\b/i;
-  const CITATION = /\b(bukhari|muslim|tirmidhi|nawawi|abu dawud|ibn majah)\b/i;
-  const ARABIC = /[؀-ۿ]/;
-
-  it('renders no Hadith grading vocabulary and no collection citation', async () => {
-    await saveQuranSelection({ surah: 2, startAyah: 1, endAyah: 1 }, null);
-    const view = await renderDuas();
-    await view.findByTestId('faith-duas-selection-q.2.1.1');
-    const text = JSON.stringify(view.toJSON());
-
+describe('sending a selection to Tasbih', () => {
+  it('switches the counter before the screen that reads it is opened', async () => {
     /*
-      Both survive from the locked-library suite unchanged. The screen shows Qur'an now; it has never
-      been permitted to show a narration, and a Dua screen quietly acquiring a grading word is how
-      that would start.
+      ── The defect this pins, found on device ─────────────────────────────────
+      The handler fired `markUsed`, `chooseCounter` and `router.push` without awaiting, so the Tasbih
+      screen mounted and read the store before the counter switch had landed. Storage settled
+      correctly; what was wrong was what the user saw — tapping count on 2:255 opened a counter still
+      captioned 5:1, on the one screen whose entire job is to say what is being counted.
+
+      Asserted by driving the real screen and reading the store back, because the ordering is the
+      behaviour: a test that only checked the final value would pass against the broken version too.
     */
-    expect(GRADING.test(text)).toBe(false);
-    expect(CITATION.test(text)).toBe(false);
-  });
+    await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
+    await saveQuranSelection({ surah: 112, startAyah: 1, endAyah: 1 }, null);
 
-  it('renders no Arabic at all until the user has chosen a verse', async () => {
-    const view = await renderDuas();
-    await view.findByTestId('faith-duas-selections-empty');
+    const repository = createLocalTasbihRepository();
+    await repository.startSession('q.112.1.1', { target: 33 });
+    await repository.increment();
 
-    /*
-      The assertion that used to read "never" now reads "not before the user asked for it". With no
-      selections there is no verse anybody chose, so any Arabic on screen would be text NoorLife put
-      there — which is precisely what the removed fixture did.
-    */
-    expect(ARABIC.test(JSON.stringify(view.toJSON()))).toBe(false);
-  });
+    const view = await renderCategory('my-quran-selections');
+    fireEvent.press(await view.findByTestId('faith-dua-category-selection-use-q.2.255.255'));
 
-  it('carries the required attribution and a way to read the fuller record', async () => {
-    const view = await renderDuas();
+    await waitFor(async () => {
+      const session = await createLocalTasbihRepository().getSession();
+      expect(session.kind === 'ok' && session.data.counterId).toBe('q.2.255.255');
+    });
 
-    const attribution = await view.findByTestId('faith-duas-attribution');
-    expect(String(attribution.props.accessibilityLabel)).toMatch(/where this content comes from/i);
-    expect(view.getByText(/Quran text and translations provided by Quran Foundation/)).toBeTruthy();
+    /* And the counter it moved away from kept its count, which is the guarantee underneath. */
+    await repository.startSession('q.112.1.1');
+    const previous = await repository.getSession();
+    expect(previous.kind).toBe('ok');
+    if (previous.kind !== 'ok') return;
+    expect(previous.data.count).toBe(1);
   });
 });

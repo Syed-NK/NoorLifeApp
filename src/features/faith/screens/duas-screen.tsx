@@ -1,567 +1,715 @@
 import { useRouter } from 'expo-router';
-import { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { modulePalettes } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
 import { ModuleCard } from '@features/modules/components/module-card';
-import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
+import {
+  moduleLayout,
+  moduleNeutrals,
+  readerPageBackground,
+} from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
+import { minimumHitSlop } from '@shared/utils/a11y';
 
-import { FaithSectionHero } from '../components/faith-section-hero';
+import { SelectionItem } from '../components/dua-library-items';
+import { FaithPictogram } from '../components/faith-locked-library';
 import { FaithScreen } from '../components/faith-screen';
-import { FaithTrustNotice } from '../components/faith-locked-library';
-import { QuranSelectionView, SelectionOriginBadge } from '../components/quran-selection-view';
-import { QURAN_CONTENT_ATTRIBUTION } from '../data/dhikr/quran-content-attribution';
-import { referenceLabel, type CuratedDhikrReference } from '../data/dhikr/quran-dhikr-catalogue';
+import { SelectionOriginBadge } from '../components/quran-selection-view';
 import { reviewedQuranDuas } from '../data/dhikr/reviewed-dua-manifest';
 import {
-  selectionReferenceLabel,
-  type QuranSelection,
-  type QuranSelectionRef,
-} from '../data/quran-selection/quran-selection';
-import type { SelectionResolution } from '../data/quran-selection/retained-selection.resolver';
-import { faithHeroImages } from '../faith-hero-images';
-import { faithPictogramSlot } from '../faith-pictogram-assets';
-import { faithNavKeys, faithRoutes, readerHref } from '../faith-routes';
+  categoryCountLabel,
+  duaGridColumns,
+  DUA_CATEGORIES,
+  type DuaCategory,
+} from '../data/duas/dua-categories';
+import {
+  DUA_LIBRARY_FILTERS,
+  reviewedForCategory,
+  searchDuaLibrary,
+  selectionsForCategory,
+  type DuaLibraryFilter,
+  type DuaSearchResult,
+} from '../data/duas/dua-library';
+import { duaCategoryIcon, duaCategoryIconSlot } from '../faith-dua-category-assets';
+import { duaCategoryHref, faithNavKeys, faithRoutes, readerHref } from '../faith-routes';
+import { useCachedSurahNames } from '../hooks/use-cached-surah-names';
 import { useQuranSelections } from '../hooks/use-quran-selections';
 import { useTasbih } from '../hooks/use-tasbih';
-import { favouriteSelections, recentSelections } from '../storage/faith-quran-selections';
+import { recentSelections } from '../storage/faith-quran-selections';
 
 /**
- * **Duas — a screen that does something now, and is honest about the half that does not.**
+ * **Duas — the approved category library.**
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * ── What this replaced, and why it could finally be replaced ───────────────
- * Three disabled preview rows over a card reading "Verified supplications will appear here when a
- * trusted source is connected". That was the correct screen at the time: the version before it
- * carried Arabic, transliteration, translation, a hadith reference and a repetition count for
- * supplications from a fixture, presented at display size as text a user may recite, none of it
- * checked. Removing it was the fix, and a locked screen was what remained.
+ * ── What this replaced, and what it kept ───────────────────────────────────
+ * A list-first screen with four stacked sections. Everything it did still works — My Quran
+ * Selections, Favorites, recently used, Reader navigation, Tasbih, offline resolution, the
+ * account-scoped reference-only store, the review gate and the Quran Foundation attribution — and
+ * the navigation around it is now the locked two-column grid.
  *
- * What has changed is not the permission position — NoorLife still has no approved Dua provider and
- * no scholarly review of any Quran-derived catalogue. What has changed is that the user can now
- * *keep verses of the Qur'an themselves*, from a copy this device retained and validated, and that
- * is content this screen is entitled to show and the user is entitled to organise.
+ * The change is presentation. Not one rule about what may be shown moved.
  *
- * ── The distinction the whole screen is built around ───────────────────────
- * A verse somebody chose is not a supplication NoorLife endorsed. Both render the same publisher
- * scripture; only one carries a claim. So every item is badged with its origin, the reviewed
- * section is a *separate* section rather than a merge, and that section appears **only** when the
- * manifest holds an approved entry. There are none, and the screen says which thing is missing
- * rather than describing itself as unavailable — because personal selections work, and telling
- * somebody a working feature is unavailable is its own kind of false statement.
+ * ── Why the grid is the default view and the list is a result ──────────────
+ * A library of ten places is a thing you navigate; a list of two selections is a thing you scroll.
+ * The screen shows the grid until the user says otherwise — a query, or a filter other than All —
+ * and then shows results. One function answers both, so "what is in Favorites?" cannot have two
+ * answers depending on which control you reached it from.
  *
- * ── What is deliberately not here ─────────────────────────────────────────
- * No share, no export, no copy-out. The permission prohibits emitting retained text as a file or a
- * standalone distribution, and the honest way to comply is to not build the control. The required
- * attribution is on the screen and the fuller record is one tap away.
+ * ── The mint card is a state, not a card ───────────────────────────────────
+ * The approved mock draws Morning & Evening on mint with an emerald border. That is the **pressed**
+ * state, shown on one card so the design records what it looks like — not a permanent highlight.
+ * Nothing here is highlighted while nothing is pressed, and the state is carried by border weight as
+ * well as colour so it does not depend on colour alone.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 const EMERALD = modulePalettes.faith.primary;
 const EMERALD_DEEP = modulePalettes.faith.dark;
+const MINT = modulePalettes.faith.soft;
 
 export function DuasScreen() {
-  const { dp } = useModuleMetrics();
+  const { dp, type, fontScale, twoColumnWidth, stackTwoColumns } = useModuleMetrics();
   const router = useRouter();
   const selections = useQuranSelections();
   const tasbih = useTasbih();
+  const { surahs } = useCachedSurahNames();
+
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<DuaLibraryFilter>('all');
+  const [filterOpen, setFilterOpen] = useState(false);
 
   /** Zero until a manifest carries an entry a named reviewer approved on a stated date. */
   const reviewed = useMemo(() => reviewedQuranDuas(), []);
 
-  const favourites = useMemo(
-    () => favouriteSelections(selections.selections),
+  const surahNames = useMemo(() => {
+    const names = new Map<number, string>();
+    for (const surah of surahs) {
+      if (surah.name !== null) {
+        names.set(surah.number, surah.name);
+      }
+    }
+    return names;
+  }, [surahs]);
+
+  /**
+   * One column or two, decided before anything is laid out.
+   *
+   * The app-wide rule decides the floor; the label test decides the rest. What binds on this grid is
+   * not the card width but the 12 characters of "Remembrances" beside a 40 dp icon — at 393 dp with a
+   * 1.3 text scale the half-column clears the shared threshold and still cannot hold the word, and
+   * React Native's answer to that is to break it in half. See `duaGridColumns`.
+   */
+  const labelChromeWidth =
+    dp(duaCategoryIcon('daily-remembrances').renderedAtDp) +
+    dp(8) +
+    dp(moduleLayout.cardPadding) * 2;
+  const columns = duaGridColumns({
+    halfColumnWidth: twoColumnWidth,
+    stackTwoColumns,
+    /* Rendered size: the token times the OS scale, which `type()` deliberately leaves out. */
+    labelFontSize: type('body').fontSize * fontScale,
+    labelChromeWidth,
+  });
+
+  /* Results replace the grid only when the user asked for them. */
+  const searching = query.trim().length > 0 || filter !== 'all';
+  const results = useMemo(
+    () =>
+      searching
+        ? searchDuaLibrary({
+            query,
+            filter,
+            selections: selections.selections,
+            reviewed,
+            surahNames,
+          })
+        : [],
+    [searching, query, filter, selections.selections, reviewed, surahNames],
+  );
+
+  /**
+   * The most recently used selection, or `null`.
+   *
+   * `recentSelections` returns only entries the user actually used — sending one to Tasbih or
+   * opening it stamps it, and rendering a list never does. So the Continue card cannot appear for
+   * something merely scrolled past, which is the whole reason it is trustworthy.
+   */
+  const continueSelection = useMemo(
+    () => recentSelections(selections.selections, 1)[0] ?? null,
     [selections.selections],
   );
-  const recent = useMemo(() => recentSelections(selections.selections), [selections.selections]);
-
-  /*
-    Not named `use…`: a function beginning with `use` is a hook by convention and by lint, and this is
-    an event handler that happens to be about the Tasbih screen.
-  */
-  const sendToTasbih = (id: string): void => {
-    void selections.markUsed(id);
-    void tasbih.chooseCounter(id);
-    router.push(faithRoutes.tasbih);
-  };
-
-  const remove = (id: string): void => {
-    void selections.remove(id);
-    /*
-      The counting state goes with it, and only it. `forgetCounter` takes one id and affects one
-      counter — removing a selection must never be able to disturb the count on another.
-    */
-    void tasbih.forgetCounter(id);
-  };
-
-  const read = (ref: QuranSelectionRef): void => {
-    router.push(readerHref(ref.surah, ref.startAyah));
-  };
 
   return (
-    <FaithScreen title="Duas" activeKey={faithNavKeys.more} testID="faith-duas">
-      <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
-        <FaithSectionHero
-          submenu="duas"
-          heroImage={faithHeroImages.duas}
-          summary="Verses you keep, and the ones a scholar has approved."
+    <FaithScreen
+      title="Duas"
+      activeKey={faithNavKeys.more}
+      background={readerPageBackground}
+      testID="faith-duas"
+    >
+      <View style={{ rowGap: dp(moduleLayout.cardGap) }}>
+        <SearchRow
+          value={query}
+          onChange={setQuery}
+          onOpenFilter={() => setFilterOpen(true)}
+          filter={filter}
         />
 
-        {/*
-          ── The reviewed section exists only when there is something in it ──────
-          Not a locked placeholder, and not an empty list. A section rendered with nothing in it
-          invites "try again"; a locked one implies the screen is broken. What is true is that
-          NoorLife's scholarly review has not happened, and that is stated once, below, beside the
-          thing that *does* work.
-        */}
-        {reviewed.length === 0 ? null : (
-          <Section
-            title="Reviewed Quranic Duas"
-            summary="References a named reviewer approved, with the basis of the review recorded."
-            testID="faith-duas-reviewed"
-          >
-            {reviewed.map((entry) => (
-              <ReviewedItem
-                key={entry.id}
-                entry={entry}
-                resolution={selections.resolve({
-                  surah: entry.surah,
-                  startAyah: entry.startAyah,
-                  endAyah: entry.endAyah,
-                })}
-                onUse={() =>
-                  void tasbih.chooseCounter(entry.id, entry.recommendedTarget ?? undefined)
-                }
-                onRead={() => read(entry)}
-              />
-            ))}
-          </Section>
-        )}
-
-        <Section
-          title="My Quran selections"
-          summary="Verses you chose. NoorLife makes no religious claim about them."
-          testID="faith-duas-selections"
-        >
-          {selections.selections.length === 0 ? (
-            <ModuleText token="body" numberOfLines={4} testID="faith-duas-selections-empty">
-              You have not kept any verses yet. Choose one from the Qur’an and it appears here, with
-              its Arabic and its translation.
-            </ModuleText>
-          ) : (
-            selections.selections.map((selection) => (
-              <SelectionItem
-                key={selection.id}
-                selection={selection}
-                resolution={selections.resolve(selection)}
-                activeCounterId={tasbih.session?.counterId ?? null}
-                onUse={() => sendToTasbih(selection.id)}
-                onRead={() => read(selection)}
-                onToggleFavourite={() => void selections.toggleFavourite(selection.id)}
-                onRemove={() => remove(selection.id)}
-              />
-            ))
-          )}
-          <AddSelection onPress={() => router.push(faithRoutes.quranSelection)} />
-        </Section>
-
-        <Section
-          title="Favourites"
-          summary="The selections you starred"
-          testID="faith-duas-favourites"
-        >
-          {favourites.length === 0 ? (
-            <ModuleText token="body" numberOfLines={3} testID="faith-duas-favourites-empty">
-              Nothing starred yet.
-            </ModuleText>
-          ) : (
-            favourites.map((selection) => (
-              <SelectionItem
-                key={selection.id}
-                selection={selection}
-                resolution={selections.resolve(selection)}
-                activeCounterId={tasbih.session?.counterId ?? null}
-                onUse={() => sendToTasbih(selection.id)}
-                onRead={() => read(selection)}
-                onToggleFavourite={() => void selections.toggleFavourite(selection.id)}
-                onRemove={() => remove(selection.id)}
-                testIDPrefix="faith-duas-favourite"
-              />
-            ))
-          )}
-        </Section>
-
-        <Section
-          title="Recently used"
-          summary="Selections you counted or opened lately"
-          testID="faith-duas-recent"
-        >
-          {recent.length === 0 ? (
-            <ModuleText token="body" numberOfLines={3} testID="faith-duas-recent-empty">
-              Nothing used yet. Sending a selection to Tasbih or opening it in the Reader puts it
-              here.
-            </ModuleText>
-          ) : (
-            recent.map((selection) => (
-              <SelectionItem
-                key={selection.id}
-                selection={selection}
-                resolution={selections.resolve(selection)}
-                activeCounterId={tasbih.session?.counterId ?? null}
-                onUse={() => sendToTasbih(selection.id)}
-                onRead={() => read(selection)}
-                onToggleFavourite={() => void selections.toggleFavourite(selection.id)}
-                onRemove={() => remove(selection.id)}
-                testIDPrefix="faith-duas-recent-item"
-              />
-            ))
-          )}
-        </Section>
-
-        {/*
-          Stated once, where it is true, and next to the thing that works rather than instead of it.
-          "Duas is unavailable" would be false — the selections above are usable — and "coming soon"
-          would promise a date nobody has.
-        */}
-        {reviewed.length === 0 ? (
-          <ModuleCard testID="faith-duas-awaiting-review">
-            <View style={{ rowGap: dp(4) }}>
-              <ModuleText token="cardTitle" numberOfLines={2}>
-                Scholarly-reviewed duas are not ready yet
-              </ModuleText>
-              <ModuleText token="caption" numberOfLines={5}>
-                NoorLife will not decide on its own which verses count as a dua, in what context, or
-                how many times to say them. Nothing appears in that section until a qualified
-                reviewer has approved each reference and their review is recorded. Your own
-                selections above are unaffected.
-              </ModuleText>
+        {searching ? (
+          <SearchResults
+            results={results}
+            filter={filter}
+            selections={selections}
+            tasbih={tasbih}
+            onRead={(surah, ayah) => router.push(readerHref(surah, ayah))}
+          />
+        ) : (
+          <>
+            <View
+              style={[
+                styles.grid,
+                { columnGap: dp(moduleLayout.cardGap), rowGap: dp(moduleLayout.cardGap) },
+              ]}
+              testID="faith-duas-grid"
+            >
+              {DUA_CATEGORIES.map((category) => (
+                <CategoryCard
+                  key={category.id}
+                  category={category}
+                  halfWidth={columns === 1 ? null : twoColumnWidth}
+                  personalCount={selectionsForCategory(category.id, selections.selections).length}
+                  reviewedCount={reviewedForCategory(category.reviewedCategories, reviewed).length}
+                  onPress={() => router.push(duaCategoryHref(category.id))}
+                />
+              ))}
             </View>
-          </ModuleCard>
-        ) : null}
+
+            {continueSelection === null ? null : (
+              <ContinueCard
+                label={continueSelection.label}
+                reference={`${continueSelection.surah}:${continueSelection.startAyah}${
+                  continueSelection.endAyah === continueSelection.startAyah
+                    ? ''
+                    : `-${continueSelection.endAyah}`
+                }`}
+                /*
+                  Opens the Reader, not Tasbih. The card shows a Qur'an reference, and "Continue"
+                  beside one reads as "keep reading"; sending it to Tasbih would also *switch the
+                  active counter*, which is a side effect a card the user tapped to resume should not
+                  cause. Counting is offered on the item itself, deliberately.
+                */
+                onPress={() =>
+                  router.push(readerHref(continueSelection.surah, continueSelection.startAyah))
+                }
+              />
+            )}
+          </>
+        )}
 
         <ModuleCard
           onPress={() => router.push(faithRoutes.contentInfo)}
           accessibilityLabel="Where this content comes from"
           testID="faith-duas-attribution"
         >
-          <View style={{ rowGap: dp(4) }}>
-            <ModuleText token="caption" numberOfLines={3}>
-              {QURAN_CONTENT_ATTRIBUTION}
-            </ModuleText>
-            <ModuleText token="caption" color={EMERALD_DEEP} numberOfLines={1}>
-              Where this content comes from
-            </ModuleText>
-          </View>
+          <ModuleText token="caption" color={EMERALD_DEEP} numberOfLines={1}>
+            Where this content comes from
+          </ModuleText>
         </ModuleCard>
-
-        <FaithTrustNotice
-          pictogram={faithPictogramSlot('s1')}
-          message="No unverified supplications are shown."
-          testID="faith-duas-trust"
-        />
       </View>
+
+      <FilterSheet
+        open={filterOpen}
+        selected={filter}
+        onSelect={(next) => {
+          setFilter(next);
+          setFilterOpen(false);
+        }}
+        onClose={() => setFilterOpen(false)}
+      />
     </FaithScreen>
   );
 }
 
-function Section({
-  title,
-  summary,
-  children,
-  testID,
+// ─────────────────────────────────────────────────────────────────────────────
+// Search and filter
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SearchRow({
+  value,
+  onChange,
+  onOpenFilter,
+  filter,
 }: {
-  readonly title: string;
-  readonly summary: string;
-  readonly children: React.ReactNode;
-  readonly testID: string;
+  readonly value: string;
+  readonly onChange: (text: string) => void;
+  readonly onOpenFilter: () => void;
+  readonly filter: DuaLibraryFilter;
+}) {
+  const { dp, type, fontScale, contentWidth } = useModuleMetrics();
+  const active = DUA_LIBRARY_FILTERS.find((item) => item.id === filter);
+
+  /*
+    The field's own width, less its icon, its padding and the filter button beside it — measured the
+    same way the grid measures a card, rather than guessed from a breakpoint. `compact` is true when
+    the full phrase would not fit, which is a question about this device and this text size together.
+  */
+  const fieldWidth =
+    contentWidth - dp(moduleLayout.minTouchTarget) - dp(moduleLayout.cardGap) - dp(18) - dp(24);
+  const compact =
+    'Find a remembrance'.length * type('body').fontSize * fontScale * 0.625 > fieldWidth;
+
+  return (
+    <View style={[styles.searchRow, { columnGap: dp(moduleLayout.cardGap) }]}>
+      <View
+        style={[
+          styles.search,
+          {
+            borderRadius: dp(moduleLayout.radiusSmall),
+            minHeight: dp(moduleLayout.minTouchTarget),
+            paddingHorizontal: dp(12),
+            columnGap: dp(10),
+          },
+        ]}
+      >
+        <AppIcon name="search" size={dp(18)} color={moduleNeutrals.textSecondary} />
+        {/*
+          ── The placeholder shortens; the spoken name never does ──────────────
+          "Find a remembrance" is a single line in a `TextInput`, which cannot wrap, so at 320 dp with
+          a 1.5 text scale it was clipped mid-phrase to "Find a" — a label that reads as an unfinished
+          sentence and says less than nothing.
+
+          At compact widths it becomes "Search", which is short enough to render whole and is honest
+          about what the field does. `accessibilityLabel` keeps the full phrase either way, so
+          assistive technology is told the purpose in full at every size — the visible text is what
+          gives way to the width, not the meaning.
+        */}
+        <TextInput
+          value={value}
+          onChangeText={onChange}
+          placeholder={compact ? 'Search' : 'Find a remembrance'}
+          placeholderTextColor={moduleNeutrals.textTertiary}
+          accessibilityLabel="Find a remembrance"
+          accessibilityHint="Searches your Qur’an selections by reference, surah name or your own note"
+          style={[
+            styles.flex,
+            {
+              color: moduleNeutrals.textPrimary,
+              paddingVertical: dp(10),
+              /*
+                ── The input had no size, and that was the actual defect ──────
+                A `TextInput` does not inherit `ModuleText`'s token, so this field was rendering at
+                the platform default. At a 1.5 text scale that is visibly larger than every label
+                around it, which is why "Find a remembrance" clipped to "Find a" while the card
+                titles beside it fitted comfortably. Giving it the body token makes it scale like the
+                rest of the screen instead of on its own curve.
+              */
+              fontSize: type('body').fontSize,
+            },
+          ]}
+          testID="faith-duas-search"
+        />
+        {/*
+          Offered only when there is something to clear. A permanent clear button on an empty field
+          is a control that does nothing, and a screen reader announces it just as loudly.
+        */}
+        {value.length === 0 ? null : (
+          <PressableScale
+            onPress={() => onChange('')}
+            accessibilityRole="button"
+            accessibilityLabel="Clear the search"
+            hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
+            testID="faith-duas-search-clear"
+          >
+            <AppIcon name="close" size={dp(18)} color={moduleNeutrals.textSecondary} />
+          </PressableScale>
+        )}
+      </View>
+
+      <PressableScale
+        onPress={onOpenFilter}
+        accessibilityRole="button"
+        accessibilityLabel={`Filter. Currently ${active?.label ?? 'All'}.`}
+        style={[
+          styles.filterButton,
+          {
+            width: dp(moduleLayout.minTouchTarget),
+            height: dp(moduleLayout.minTouchTarget),
+            borderRadius: dp(moduleLayout.radiusSmall),
+            /* The active filter is carried by the border weight as well as the fill, never by colour alone. */
+            borderColor: filter === 'all' ? moduleNeutrals.border : EMERALD,
+            borderWidth: filter === 'all' ? 1 : 2,
+            backgroundColor: filter === 'all' ? moduleNeutrals.surface : MINT,
+          },
+        ]}
+        testID="faith-duas-filter"
+      >
+        <AppIcon name="settings" size={dp(18)} color={EMERALD_DEEP} />
+      </PressableScale>
+    </View>
+  );
+}
+
+/**
+ * The filter sheet.
+ *
+ * A `Modal` rather than an inline row, because the approved design puts the control behind a button
+ * and an inline row of four chips would push the first grid row below the fold at every text size.
+ */
+function FilterSheet({
+  open,
+  selected,
+  onSelect,
+  onClose,
+}: {
+  readonly open: boolean;
+  readonly selected: DuaLibraryFilter;
+  readonly onSelect: (filter: DuaLibraryFilter) => void;
+  readonly onClose: () => void;
 }) {
   const { dp } = useModuleMetrics();
 
   return (
-    <ModuleCard testID={testID}>
-      <View style={{ rowGap: dp(10) }}>
-        <View>
-          <ModuleText token="cardTitle" numberOfLines={2} accessibilityRole="header">
-            {title}
+    <Modal
+      visible={open}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      testID="faith-duas-filter-sheet"
+    >
+      {/* The scrim dismisses, and is labelled, so it is not a silent trap for a screen reader. */}
+      <Pressable
+        style={styles.scrim}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel="Close the filter"
+        testID="faith-duas-filter-scrim"
+      >
+        <View
+          style={[
+            styles.sheet,
+            {
+              borderTopLeftRadius: dp(moduleLayout.cardRadius),
+              borderTopRightRadius: dp(moduleLayout.cardRadius),
+              padding: dp(moduleLayout.cardPadding),
+              rowGap: dp(6),
+            },
+          ]}
+        >
+          <ModuleText token="cardTitle" numberOfLines={1} accessibilityRole="header">
+            Show
           </ModuleText>
-          <ModuleText token="caption" numberOfLines={3}>
-            {summary}
+          {DUA_LIBRARY_FILTERS.map((item) => {
+            const active = item.id === selected;
+            return (
+              <PressableScale
+                key={item.id}
+                onPress={() => onSelect(item.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={item.label}
+                style={[
+                  styles.filterRow,
+                  {
+                    minHeight: dp(moduleLayout.minTouchTarget),
+                    borderRadius: dp(moduleLayout.radiusSmall),
+                    paddingHorizontal: dp(12),
+                    columnGap: dp(8),
+                    backgroundColor: active ? MINT : moduleNeutrals.surface,
+                    borderColor: active ? EMERALD : moduleNeutrals.border,
+                    borderWidth: active ? 2 : 1,
+                  },
+                ]}
+                testID={`faith-duas-filter-${item.id}`}
+              >
+                <ModuleText
+                  token="body"
+                  color={moduleNeutrals.textPrimary}
+                  numberOfLines={2}
+                  style={styles.flex}
+                >
+                  {item.label}
+                </ModuleText>
+                {/* A tick as well as the fill: the selected row must not depend on colour alone. */}
+                {active ? <AppIcon name="check" size={dp(18)} color={EMERALD_DEEP} /> : null}
+              </PressableScale>
+            );
+          })}
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function SearchResults({
+  results,
+  filter,
+  selections,
+  tasbih,
+  onRead,
+}: {
+  readonly results: readonly DuaSearchResult[];
+  readonly filter: DuaLibraryFilter;
+  readonly selections: ReturnType<typeof useQuranSelections>;
+  readonly tasbih: ReturnType<typeof useTasbih>;
+  readonly onRead: (surah: number, ayah: number) => void;
+}) {
+  const { dp } = useModuleMetrics();
+
+  if (results.length === 0) {
+    return (
+      <ModuleCard testID="faith-duas-search-empty">
+        <View style={{ rowGap: dp(4) }}>
+          <ModuleText token="cardTitle" numberOfLines={2}>
+            {filter === 'reviewed' ? 'No reviewed duas yet' : 'Nothing matched that'}
+          </ModuleText>
+          <ModuleText token="caption" numberOfLines={4}>
+            {filter === 'reviewed'
+              ? 'NoorLife does not publish supplications that a qualified reviewer has not approved. Your own Qur’an selections are unaffected.'
+              : 'Try a surah name, a reference like 2:255, or a word from a note you wrote.'}
           </ModuleText>
         </View>
-        {children}
-      </View>
-    </ModuleCard>
-  );
-}
-
-/**
- * One of the user's own selections.
- *
- * ── Every item states what it is, on the item ──────────────────────────────
- * The badge is on the row and not only on the section heading, because a row is what somebody
- * screenshots, scrolls to and remembers, and because these rows appear under three different
- * headings. A user who cannot tell a personal selection from a reviewed one will reasonably assume
- * NoorLife vouched for both.
- */
-function SelectionItem({
-  selection,
-  resolution,
-  activeCounterId,
-  onUse,
-  onRead,
-  onToggleFavourite,
-  onRemove,
-  testIDPrefix = 'faith-duas-selection',
-}: {
-  readonly selection: QuranSelection;
-  readonly resolution: SelectionResolution;
-  readonly activeCounterId: string | null;
-  readonly onUse: () => void;
-  readonly onRead: () => void;
-  readonly onToggleFavourite: () => void;
-  readonly onRemove: () => void;
-  readonly testIDPrefix?: string;
-}) {
-  const { dp } = useModuleMetrics();
-  const reference = selectionReferenceLabel(selection);
-  const counting = activeCounterId === selection.id;
+      </ModuleCard>
+    );
+  }
 
   return (
-    <View
-      style={[
-        styles.item,
-        { borderRadius: dp(moduleLayout.radiusSmall), padding: dp(12), rowGap: dp(8) },
-      ]}
-      testID={`${testIDPrefix}-${selection.id}`}
-    >
-      <View style={[styles.row, { columnGap: dp(8) }]}>
-        <SelectionOriginBadge origin="personal" />
-        <View style={styles.flex} />
-        {counting ? (
-          <ModuleText token="caption" color={EMERALD_DEEP} numberOfLines={1}>
-            Counting now
-          </ModuleText>
-        ) : null}
-      </View>
-
-      {selection.label === null ? null : (
-        <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
-          {selection.label}
-        </ModuleText>
+    <View style={{ rowGap: dp(moduleLayout.cardGap) }} testID="faith-duas-search-results">
+      {results.map((result) =>
+        result.kind === 'personal' ? (
+          <SelectionItem
+            key={result.selection.id}
+            selection={result.selection}
+            resolution={selections.resolve(result.selection)}
+            activeCounterId={tasbih.session?.counterId ?? null}
+            /* Sequenced for the same reason the category list sequences it: the counter must be
+               switched before anything reads it back. This path does not navigate, so the race is
+               invisible rather than absent — which is a worse kind of wrong, not a lesser one. */
+            onUse={() => {
+              void (async () => {
+                await selections.markUsed(result.selection.id);
+                await tasbih.chooseCounter(result.selection.id);
+              })();
+            }}
+            onRead={() => onRead(result.selection.surah, result.selection.startAyah)}
+            onToggleFavourite={() => void selections.toggleFavourite(result.selection.id)}
+            onRemove={() => {
+              void selections.remove(result.selection.id);
+              void tasbih.forgetCounter(result.selection.id);
+            }}
+            testIDPrefix="faith-duas-result"
+          />
+        ) : (
+          <ModuleCard
+            key={result.entry.id}
+            testID={`faith-duas-result-reviewed-${result.entry.id}`}
+          >
+            <View style={{ rowGap: dp(4) }}>
+              <SelectionOriginBadge origin="reviewed" />
+              <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
+                {result.entry.title}
+              </ModuleText>
+              <ModuleText token="caption" color={EMERALD_DEEP} numberOfLines={1}>
+                {`Qur’an ${result.reference}`}
+              </ModuleText>
+            </View>
+          </ModuleCard>
+        ),
       )}
-
-      <QuranSelectionView
-        resolution={resolution}
-        reference={reference}
-        arabicLines={3}
-        translationLines={5}
-        testID={`${testIDPrefix}-body-${selection.id}`}
-      />
-
-      <View style={[styles.actions, { columnGap: dp(8), rowGap: dp(8) }]}>
-        <Action
-          icon="quran"
-          label={`Read Qur’an ${reference} in the reader`}
-          onPress={onRead}
-          testID={`${testIDPrefix}-read-${selection.id}`}
-        />
-        <Action
-          icon="tasbih"
-          label={`Count Qur’an ${reference} in Tasbih`}
-          onPress={onUse}
-          testID={`${testIDPrefix}-use-${selection.id}`}
-        />
-        <Action
-          icon={selection.favourite ? 'star' : 'bookmark'}
-          label={
-            selection.favourite
-              ? `Remove Qur’an ${reference} from favourites`
-              : `Add Qur’an ${reference} to favourites`
-          }
-          onPress={onToggleFavourite}
-          testID={`${testIDPrefix}-favourite-${selection.id}`}
-        />
-        <Action
-          icon="close"
-          label={`Remove Qur’an ${reference} from your selections`}
-          onPress={onRemove}
-          testID={`${testIDPrefix}-remove-${selection.id}`}
-        />
-      </View>
     </View>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The grid
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * A reviewed entry, which is a different claim and carries its review with it.
+ * One category card.
  *
- * Unreachable while the manifest is empty, and written now so that populating the manifest is a
- * data change rather than a screen change. It has **no remove control**: it is not the user's
- * record to delete, and no favourite control either — favouriting a reviewed entry is state the
- * reviewed catalogue's own store owns, and adding a second place to keep it here would be two
- * answers to one question.
+ * ── Where the width comes from ─────────────────────────────────────────────
+ * `useModuleMetrics` already measures the half-column and already decides when a pair must stack —
+ * `shouldStackTwoColumn`, whose threshold was measured on device across six widths and four text
+ * sizes. Reusing it means this grid collapses at exactly the same point every other two-column pair
+ * in the app collapses, rather than at a number chosen here.
+ *
+ * ── Why it is a flex basis and not a fixed width ───────────────────────────
+ * A fixed `width` of exactly half the column is a layout that fits with nothing to spare, and on
+ * device it did not fit: two 174 dp cards plus the 10 dp gap came to within a few pixels of the
+ * container, and rounding pushed the second card onto its own line — ten stacked cards where the
+ * design has five rows of two. Measured on the emulator at 411 dp, which is the reference width, so
+ * every device would have shown it.
+ *
+ * A basis one dp under the half-column can never exceed half, and `flexGrow` lets the pair take back
+ * the rounding slack so the two cards still meet the gap exactly.
  */
-function ReviewedItem({
-  entry,
-  resolution,
-  onUse,
-  onRead,
+function CategoryCard({
+  category,
+  halfWidth,
+  personalCount,
+  reviewedCount,
+  onPress,
 }: {
-  readonly entry: CuratedDhikrReference;
-  readonly resolution: SelectionResolution;
-  readonly onUse: () => void;
-  readonly onRead: () => void;
+  readonly category: DuaCategory;
+  /** The measured half-column, or `null` when the pair must stack and each card takes the row. */
+  readonly halfWidth: number | null;
+  readonly personalCount: number;
+  readonly reviewedCount: number;
+  readonly onPress: () => void;
 }) {
   const { dp } = useModuleMetrics();
-  const reference = referenceLabel(entry);
-
-  return (
-    <View
-      style={[
-        styles.item,
-        { borderRadius: dp(moduleLayout.radiusSmall), padding: dp(12), rowGap: dp(8) },
-      ]}
-      testID={`faith-duas-reviewed-${entry.id}`}
-    >
-      <SelectionOriginBadge origin="reviewed" />
-
-      <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
-        {entry.title}
-      </ModuleText>
-
-      <QuranSelectionView
-        resolution={resolution}
-        reference={reference}
-        arabicLines={3}
-        translationLines={5}
-        testID={`faith-duas-reviewed-body-${entry.id}`}
-      />
-
-      {/* The context the review supplied. Required for approval — see the catalogue's gate. */}
-      {entry.contextNote === null ? null : (
-        <ModuleText token="caption" numberOfLines={5}>
-          {entry.contextNote}
-        </ModuleText>
-      )}
-
-      {entry.review === null ? null : (
-        <ModuleText token="caption" numberOfLines={3} testID={`faith-duas-review-${entry.id}`}>
-          {`Reviewed by ${entry.review.reviewer} on ${entry.review.reviewedOn} — ${entry.review.source}`}
-        </ModuleText>
-      )}
-
-      <View style={[styles.actions, { columnGap: dp(8), rowGap: dp(8) }]}>
-        <Action
-          icon="quran"
-          label={`Read Qur’an ${reference} in the reader`}
-          onPress={onRead}
-          testID={`faith-duas-reviewed-read-${entry.id}`}
-        />
-        <Action
-          icon="tasbih"
-          label={`Count ${entry.title} in Tasbih`}
-          onPress={onUse}
-          testID={`faith-duas-reviewed-use-${entry.id}`}
-        />
-      </View>
-    </View>
-  );
-}
-
-function AddSelection({ onPress }: { readonly onPress: () => void }) {
-  const { dp } = useModuleMetrics();
+  const [pressed, setPressed] = useState(false);
+  const count = categoryCountLabel(category, personalCount, reviewedCount);
+  const icon = duaCategoryIcon(category.id);
 
   return (
     <PressableScale
       onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       accessibilityRole="button"
-      accessibilityLabel="Choose a verse from the Qur’an"
+      /*
+        The label says what the card is and what opening it would show. The count is spoken in words
+        rather than as a dash, which is a typographic mark a screen reader would read as "en dash" or
+        skip entirely.
+      */
+      accessibilityLabel={`${category.label}. ${category.description}. ${
+        category.kind === 'personal'
+          ? `${personalCount} ${personalCount === 1 ? 'selection' : 'selections'}.`
+          : reviewedCount === 0
+            ? 'No reviewed content available yet.'
+            : `${reviewedCount} reviewed.`
+      }`}
       style={[
-        styles.add,
+        styles.card,
+        halfWidth === null
+          ? styles.fullRow
+          : { flexBasis: halfWidth - 1, flexGrow: 1, flexShrink: 1 },
         {
-          minHeight: dp(moduleLayout.minTouchTarget),
-          borderRadius: dp(moduleLayout.radiusSmall),
-          paddingHorizontal: dp(12),
+          borderRadius: dp(moduleLayout.cardRadius),
+          padding: dp(moduleLayout.cardPadding),
+          /* 8, not 10: the label needs the difference to keep its longest word whole. */
           columnGap: dp(8),
+          minHeight: dp(88),
+          /* Pressed, not selected: nothing on this screen is permanently highlighted. */
+          backgroundColor: pressed ? MINT : moduleNeutrals.surface,
+          borderColor: pressed ? EMERALD : moduleNeutrals.border,
+          borderWidth: pressed ? 2 : 1,
         },
       ]}
-      testID="faith-duas-add-selection"
+      testID={`faith-duas-category-${category.id}`}
     >
-      <AppIcon name="add" size={dp(18)} color={moduleNeutrals.surface} />
-      <ModuleText token="button" color={moduleNeutrals.surface} numberOfLines={2}>
-        Choose a verse from the Qur’an
-      </ModuleText>
+      {/*
+        Decorative. `FaithPictogram` marks it inaccessible, so the icon is never announced beside a
+        label that already says what the card is.
+      */}
+      <FaithPictogram
+        slot={duaCategoryIconSlot(category.id)}
+        size={dp(icon.renderedAtDp)}
+        testID={`faith-duas-category-${category.id}-icon`}
+      />
+
+      <View style={[styles.flex, { rowGap: dp(4) }]}>
+        <ModuleText
+          token="body"
+          color={moduleNeutrals.textPrimary}
+          /* Two lines, so "Daily Remembrances" wraps rather than truncating at any text size. */
+          numberOfLines={2}
+        >
+          {category.label}
+        </ModuleText>
+        <View style={[styles.row, { columnGap: dp(6) }]}>
+          <ModuleText
+            token="caption"
+            color={moduleNeutrals.textSecondary}
+            numberOfLines={1}
+            style={styles.flex}
+            testID={`faith-duas-category-${category.id}-count`}
+          >
+            {count}
+          </ModuleText>
+          <AppIcon name="chevron-forward" size={dp(18)} color={EMERALD_DEEP} />
+        </View>
+      </View>
     </PressableScale>
   );
 }
 
-/**
- * One item action.
- *
- * ── There is no share control, and there will not be one ───────────────────
- * The permission prohibits emitting retained Quran text as a file or a standalone distribution. A
- * share control that refused at the point of use would be a control that lies about what it does, so
- * the honest arrangement is that the affordance does not exist.
- */
-function Action({
-  icon,
+function ContinueCard({
   label,
+  reference,
   onPress,
-  testID,
 }: {
-  readonly icon: 'quran' | 'tasbih' | 'star' | 'bookmark' | 'close';
-  readonly label: string;
+  readonly label: string | null;
+  readonly reference: string;
   readonly onPress: () => void;
-  readonly testID: string;
 }) {
   const { dp } = useModuleMetrics();
-  const size = dp(moduleLayout.minTouchTarget);
+  const title = label ?? 'Your Quran selection';
 
   return (
     <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={label}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: dp(moduleLayout.radiusSmall),
-        borderWidth: 1,
-        borderColor: moduleNeutrals.border,
-        backgroundColor: moduleNeutrals.surface,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      testID={testID}
+      accessibilityLabel={`Continue. ${title}. Qur’an ${reference}. Opens in the reader.`}
+      style={[
+        styles.card,
+        {
+          borderRadius: dp(moduleLayout.cardRadius),
+          padding: dp(moduleLayout.cardPadding),
+          columnGap: dp(10),
+          minHeight: dp(moduleLayout.minTouchTarget),
+          backgroundColor: moduleNeutrals.surface,
+          borderColor: moduleNeutrals.border,
+          borderWidth: 1,
+        },
+      ]}
+      testID="faith-duas-continue"
     >
-      <AppIcon name={icon} size={dp(18)} color={EMERALD_DEEP} />
+      <FaithPictogram
+        slot={duaCategoryIconSlot('continue')}
+        size={dp(duaCategoryIcon('continue').renderedAtDp)}
+        testID="faith-duas-continue-icon"
+      />
+      <View style={[styles.flex, { rowGap: dp(2) }]}>
+        <ModuleText token="caption" color={EMERALD_DEEP} numberOfLines={1}>
+          Continue
+        </ModuleText>
+        <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
+          {title}
+        </ModuleText>
+        <ModuleText token="caption" color={EMERALD_DEEP} numberOfLines={1}>
+          {`Qur’an ${reference}`}
+        </ModuleText>
+      </View>
+      <AppIcon name="chevron-forward" size={dp(20)} color={EMERALD_DEEP} />
     </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
   row: { alignItems: 'center', flexDirection: 'row' },
-  /*
-    Wrapping rather than a fixed row of four. At 320 dp with a 1.5x text setting four 44 dp targets
-    and their gaps exceed the card's content width, and wrapping keeps every target at its full size
-    instead of shrinking them below the minimum.
-  */
-  actions: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap' },
-  item: {
+  searchRow: { alignItems: 'center', flexDirection: 'row' },
+  search: {
+    alignItems: 'center',
     backgroundColor: moduleNeutrals.surface,
     borderColor: moduleNeutrals.border,
     borderWidth: 1,
-  },
-  add: {
-    alignItems: 'center',
-    backgroundColor: EMERALD_DEEP,
-    borderColor: EMERALD,
-    borderWidth: 1,
+    flex: 1,
     flexDirection: 'row',
-    justifyContent: 'center',
   },
+  filterButton: { alignItems: 'center', justifyContent: 'center' },
+  /*
+    Wrapping rather than two fixed columns. A card given the full width because the pair had to stack
+    simply fills the row, so one rule covers both shapes.
+  */
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  card: { alignItems: 'center', flexDirection: 'row' },
+  /* Stacked: one card per line, filling it, so the wrap rule needs no second branch. */
+  fullRow: { flexBasis: '100%' },
+  scrim: { backgroundColor: '#14265F55', flex: 1, justifyContent: 'flex-end' },
+  sheet: { backgroundColor: moduleNeutrals.surface },
+  filterRow: { alignItems: 'center', flexDirection: 'row' },
 });
