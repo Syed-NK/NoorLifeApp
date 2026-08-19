@@ -34,7 +34,16 @@ export type UseTasbih = {
   readonly increment: () => Promise<TasbihSession | null>;
   readonly decrement: () => Promise<void>;
   readonly reset: () => Promise<void>;
-  readonly chooseCounter: (counterId: string) => Promise<void>;
+  /**
+   * Makes a counter active, resuming whatever it was left at.
+   *
+   * `target` is a *starting* value, used only when this counter has never been counted and has no
+   * label to take one from — a Quran selection sent here from the selector. It never overwrites the
+   * target of a counter that already exists; see `TasbihRepository.startSession`.
+   */
+  readonly chooseCounter: (counterId: string, target?: number) => Promise<void>;
+  /** Discards one counter's counting state. Used when the thing it counts is deleted. */
+  readonly forgetCounter: (counterId: string) => Promise<void>;
   /** Creates a private label from the user's own text. Returns false when the write failed. */
   readonly createLabel: (name: string) => Promise<boolean>;
   readonly renameLabel: (id: string, name: string) => Promise<boolean>;
@@ -132,10 +141,25 @@ export function useTasbih(): UseTasbih {
       await run(() => tasbih.reset());
     }, [run, tasbih]),
     chooseCounter: useCallback(
-      async (counterId: string) => {
-        await run(() => tasbih.startSession(counterId));
+      async (counterId: string, target?: number) => {
+        await run(() =>
+          tasbih.startSession(counterId, target === undefined ? undefined : { target }),
+        );
       },
       [run, tasbih],
+    ),
+    forgetCounter: useCallback(
+      async (counterId: string) => {
+        await tasbih.forgetCounter(counterId);
+        /*
+          Re-read rather than cleared locally. Forgetting the active counter moves the active pointer
+          to the default, and the screen has to render whatever that counter was left at — inferring
+          it here would be a second implementation of the fallback rule.
+        */
+        const session = await tasbih.getSession();
+        setSession(session.kind === 'ok' ? session.data : null);
+      },
+      [tasbih],
     ),
     createLabel: useCallback(
       async (name: string) => {

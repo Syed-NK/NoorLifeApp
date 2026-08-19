@@ -177,3 +177,29 @@ export function createRetainedQuranSource(): RetainedQuranSource {
     },
   };
 }
+
+/**
+ * The process-wide retained source.
+ *
+ * ── Why a singleton, and why it is safe to be one ─────────────────────────
+ * Reading a generation opens every dataset file, re-checksums it and re-validates 6,236 rows. That
+ * cost is paid once per publication by design — see the note above — and a second instance would pay
+ * it a second time and hold a second copy of the whole mushaf in memory. The Duas screen, the
+ * selector, the Tasbih card and the reader all want the same index, so they share one.
+ *
+ * Safe because retained content is **device-wide, not account-scoped**: the generation pointer is a
+ * device key, and the Arabic is the publisher's, identical for everybody. There is nothing here that
+ * a switch of account could make stale, which is exactly why the caches that *are* account-sensitive
+ * subscribe to `subscribeToFaithScope` and this one does not.
+ */
+let sharedSource: RetainedQuranSource | null = null;
+
+export function sharedRetainedQuranSource(): RetainedQuranSource {
+  sharedSource ??= createRetainedQuranSource();
+  return sharedSource;
+}
+
+/** Drops the shared instance so the next read re-opens the generation. Test-only, and named so. */
+export function resetRetainedQuranSourceForTest(): void {
+  sharedSource = null;
+}

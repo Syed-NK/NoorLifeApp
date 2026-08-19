@@ -30,6 +30,23 @@ const NAMESPACE = 'noorlife.faith';
 /** Every key this module owns, in one place so the set is auditable and clearable. */
 export const faithStorageKeys = {
   tasbihSession: `${NAMESPACE}.tasbih.session`,
+  /**
+   * Every counter's own count, round and target, plus which one is active.
+   *
+   * ── Why this replaced a single session, and what breaks without it ────────
+   * `tasbihSession` held exactly one session. Switching counters therefore *ended* the one in
+   * progress: the count was archived to history and the counter it belonged to went back to zero.
+   * That was defensible while every counter was a private label, and it stops being defensible the
+   * moment a counter is a Quran selection somebody is part-way through — choosing a different
+   * selection to look at it would silently discard the count on the first.
+   *
+   * So counting state is now per counter and switching is a *suspend and resume*. Nothing is
+   * archived by a switch; `reset` is the only thing that ends a count, and it ends exactly one.
+   *
+   * `tasbihSession` is still read once, to migrate whatever a previous build left there. It is never
+   * written again.
+   */
+  tasbihSessions: `${NAMESPACE}.tasbih.sessions`,
   tasbihHistory: `${NAMESPACE}.tasbih.history`,
   /** The user's own counter labels. Private, on-device, never sent anywhere. */
   tasbihLabels: `${NAMESPACE}.tasbih.labels`,
@@ -73,6 +90,19 @@ export const faithStorageKeys = {
    * offline manifest at the moment it is played.
    */
   quranPlaylists: `${NAMESPACE}.quran.playlists`,
+  /**
+   * The user's own Quran selections — one ayah or a contiguous range they chose to keep.
+   *
+   * References and decisions: surah, first and last ayah, their own note, whether it is a favourite,
+   * when they saved it and when they last used it. **No Arabic and no translation**, guaranteed by
+   * construction rather than by convention — `sanitiseSelection` rebuilds every record from an
+   * eight-field allow-list on the way in *and* on the way out. See `faith-quran-selections.ts`.
+   *
+   * Separate from `dhikrUserState`, which holds the user's state about the *reviewed* catalogue. A
+   * selection is a private choice NoorLife makes no claim about; a catalogue id points at something
+   * a qualified reviewer approved. One key holding both would make them the same kind of thing.
+   */
+  quranSelections: `${NAMESPACE}.quran.selections`,
   /**
    * Cached Arabic and translations for the Quran-derived Dhikr selector.
    *
@@ -222,6 +252,8 @@ export const USER_SCOPED_KEY_NAMES = [
   'preferences',
   'quranNotes',
   'quranPlaylists',
+  'quranSelections',
+  'tasbihSessions',
   'dhikrUserState',
   'legacyDecision',
 ] as const satisfies readonly FaithStorageKeyName[];

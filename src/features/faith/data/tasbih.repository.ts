@@ -86,8 +86,41 @@ export type TasbihRepository = {
   /** The in-progress session, or an `empty` result when there is none. */
   getSession(): Promise<FaithResult<TasbihSession>>;
 
-  /** Starts or switches the active counter, archiving any in-progress count. */
-  startSession(counterId: string): Promise<FaithResult<TasbihSession>>;
+  /**
+   * Makes a counter the active one, **resuming** whatever it was left at.
+   *
+   * ── Why this suspends rather than archives ──────────────────────────────────
+   * It used to archive the in-progress count and start the new counter from zero, which meant
+   * switching counters *ended* the one you were on. That was defensible while every counter was a
+   * private label and stops being defensible the moment a counter is a Quran selection: somebody a
+   * hundred repetitions into one selection, tapping another to see what it says, would have silently
+   * discarded the hundred.
+   *
+   * So each counter keeps its own count, round and target, and switching moves between them.
+   * `reset` is the only thing that ends a count, and it ends exactly one.
+   *
+   * `target` is used only when this counter has neither a stored session nor a label to take one
+   * from — which is the case for a Quran selection the user has just sent to Tasbih. A counter that
+   * already exists keeps its own target, because the target is the user's stated intention and not
+   * something a caller should be able to overwrite by re-selecting.
+   */
+  startSession(
+    counterId: string,
+    options?: { readonly target?: number },
+  ): Promise<FaithResult<TasbihSession>>;
+
+  /**
+   * Discards one counter's counting state, without touching any other.
+   *
+   * Called when the thing being counted is deleted — a personal label, or a saved Quran selection
+   * the user removed. Deliberately narrow: it takes an id, it affects that id, and there is no
+   * variant that clears everything, because "remove this selection" must never be able to become
+   * "reset the counter you were part-way through".
+   *
+   * The archived history is not touched. What somebody counted, they counted, and the record of it
+   * outlives the label that was attached at the time.
+   */
+  forgetCounter(counterId: string): Promise<void>;
 
   /**
    * Adds one.
@@ -103,14 +136,18 @@ export type TasbihRepository = {
   /**
    * Changes the round length for the active session.
    *
-   * ── Why the target is a session value and not only a preset value ───────────
-   * Each dhikr carries a traditional target — 33 after prayer, 100 for others — and those are the
-   * defaults. But a target is also a personal intention: somebody may set out to say a phrase five
-   * hundred times, and a counter that could only ever count to its preset's number would be
-   * counting the tradition rather than what the user actually resolved to do.
+   * ── Why the target belongs to the session and not to the counter ────────────
+   * A target is a personal intention. Somebody may set out to repeat something five hundred times,
+   * and a counter that could only ever count to the number its label was created with would be
+   * counting NoorLife's default rather than what the user actually resolved to do.
    *
-   * Choosing a preset resets the target to that preset's traditional value, which is the behaviour
-   * somebody switching dhikr expects. Changing it afterwards is theirs.
+   * This paragraph used to say each dhikr "carries a traditional target — 33 after prayer, 100 for
+   * others". NoorLife has no source for that and states no such thing anywhere a user can see it;
+   * a repetition count is a religious instruction and is not one this app authors. A counter's
+   * starting target is a round number it happens to begin at, and the user changes it.
+   *
+   * Once set, the target survives a switch away and back — see `startSession`, which resumes rather
+   * than restarts.
    *
    * The count is **not** reset by a change of target: the taps already made were real. A target
    * lowered below the current count completes the round on the next tap rather than discarding it.
