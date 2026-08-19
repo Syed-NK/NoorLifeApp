@@ -75,7 +75,7 @@ Files carry a `-locked` suffix to make the transformation visible in the file li
 | Screen | Visible native text |
 |---|---|
 | Hadith | Verified Hadith content is not configured yet. |
-| Duas | Verified Dua content is not configured yet. |
+| Duas | No supplication provider yet. Your Qur’an selections are below. |
 | Mosques | Nearby mosque information requires an approved directory provider. |
 
 Positioned by **fraction, not by padding token** — the baked headings begin at 5.26%–6.65% of the image

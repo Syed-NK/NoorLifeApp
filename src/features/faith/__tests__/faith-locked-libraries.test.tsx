@@ -1,10 +1,20 @@
 import { render, screen } from '@testing-library/react-native';
 
-import { DuasScreen } from '../screens/duas-screen';
 import { HadithScreen } from '../screens/hadith-screen';
 
 /**
- * The approved Hadith and Duas locked designs, asserted as copy and as semantics.
+ * The approved Hadith locked design, asserted as copy and as semantics.
+ *
+ * ── Duas used to be here, and is not locked any more ───────────────────────
+ * It carried the same three disabled preview rows and the same status card, for the same reason:
+ * NoorLife had no approved supplication provider. It still has none, and it now has something else —
+ * the user's own Quran selections, resolved from the copy of the Arabic this device retained. A
+ * screen with working content is not a locked library, and asserting locked-library copy on it
+ * would pin a claim that is no longer true.
+ *
+ * The Duas screen's own assertions — including the ones that matter most here, that no Hadith
+ * grading vocabulary or collection citation appears, and that no Arabic appears until the user has
+ * chosen a verse — live in `faith-duas-screen.test.tsx`.
  *
  * ── Why the copy is asserted verbatim ───────────────────────────────────────
  * Every string on these two screens was approved word for word, and each one is a claim about what
@@ -23,12 +33,6 @@ const HADITH_ROWS = [
   ['faith-hadith-row-collections', 'Collections', 'Browse authenticated sources'],
   ['faith-hadith-row-bookmarks', 'Bookmarks', 'Your saved narrations'],
   ['faith-hadith-row-history', 'Reading history', 'Continue where you stopped'],
-] as const;
-
-const DUA_ROWS = [
-  ['faith-duas-row-morning-evening', 'Morning & evening', 'Daily remembrance and protection'],
-  ['faith-duas-row-everyday', 'Everyday moments', 'Home, travel, meals and sleep'],
-  ['faith-duas-row-bookmarks', 'Bookmarks', 'Your saved supplications'],
 ] as const;
 
 describe('the Hadith locked library', () => {
@@ -57,37 +61,11 @@ describe('the Hadith locked library', () => {
   });
 });
 
-describe('the Duas locked library', () => {
-  it('renders the approved status card copy', async () => {
-    await render(<DuasScreen />);
-
-    expect(screen.getByText('Dua library')).toBeTruthy();
-    expect(
-      screen.getByText(
-        'Verified supplications will appear here when a trusted source is connected.',
-      ),
-    ).toBeTruthy();
-  });
-
-  it.each(DUA_ROWS)('renders %s with its approved label and description', (id, label, desc) => {
-    return render(<DuasScreen />).then(() => {
-      expect(screen.getByTestId(id)).toBeTruthy();
-      expect(screen.getByText(label)).toBeTruthy();
-      expect(screen.getByText(desc)).toBeTruthy();
-    });
-  });
-
-  it('renders the approved trust notice', async () => {
-    await render(<DuasScreen />);
-    expect(screen.getByText('No unverified supplications are shown.')).toBeTruthy();
-  });
-});
-
 describe('the preview rows are informational, not controls', () => {
-  it.each([...HADITH_ROWS.map((r) => r[0]), ...DUA_ROWS.map((r) => r[0])])(
+  it.each(HADITH_ROWS.map((r) => r[0]))(
     '%s does not navigate and is announced as unavailable',
     async (testID) => {
-      await render(testID.includes('hadith') ? <HadithScreen /> : <DuasScreen />);
+      await render(<HadithScreen />);
       const row = screen.getByTestId(testID);
 
       // Not a control: no handler to fire, and no role that would advertise one.
@@ -108,24 +86,21 @@ describe('the preview rows are informational, not controls', () => {
   });
 });
 
-describe('no religious content is reachable on either screen', () => {
+describe('no religious content is reachable on the Hadith screen', () => {
   /**
-   * A deliberately blunt scan of everything the two screens render.
+   * A deliberately blunt scan of everything the screen renders.
    *
    * It is not looking for a specific removed fixture; it is looking for the *shape* of religious
    * content — an Arabic character, a grading vocabulary word, a chapter-and-number citation. Those
-   * are the things that must not reappear while these screens are locked, whatever route they
-   * arrive by, and a substring scan catches a reintroduction that a testID assertion would miss.
+   * are the things that must not reappear while this screen is locked, whatever route they arrive
+   * by, and a substring scan catches a reintroduction that a testID assertion would miss.
    */
   const ARABIC = /[؀-ۿ]/;
-  const GRADING = /\b(sahih|hasan|da'?if|mutawatir|authentic(ated)? narration)\b/i;
-  const CITATION = /\b(bukhari|muslim|tirmidhi|nawawi|abu dawud|ibn majah)\b/i;
+  const GRADING = /(sahih|hasan|da'?if|mutawatir|authentic(ated)? narration)/i;
+  const CITATION = /(bukhari|muslim|tirmidhi|nawawi|abu dawud|ibn majah)/i;
 
-  it.each([
-    ['Hadith', <HadithScreen key="h" />],
-    ['Duas', <DuasScreen key="d" />],
-  ])('%s renders no Arabic, grade or collection citation', async (_name, element) => {
-    await render(element);
+  it('renders no Arabic, grade or collection citation', async () => {
+    await render(<HadithScreen />);
     const text = JSON.stringify(screen.toJSON());
 
     expect(ARABIC.test(text)).toBe(false);

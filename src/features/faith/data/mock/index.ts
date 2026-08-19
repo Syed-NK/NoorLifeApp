@@ -11,6 +11,7 @@ import {
   createUnconfiguredMosqueRepository,
 } from '../unconfigured-content.repository';
 import { createMockQuranRepository } from './mock-quran.repository';
+import { sharedRetainedQuranSource } from '../offline/retained-quran.source';
 import { createLocalTasbihRepository } from '../tasbih/local-tasbih.repository';
 import { createMockWorshipRepository } from './mock-worship.repository';
 
@@ -47,6 +48,15 @@ export function createMockFaithRepositories(): FaithRepositories {
     */
     notifications: createFakeNotificationPort(),
     quran: createMockQuranRepository(),
+    /**
+     * The real retained source, even in the development set — and it is not a fixture.
+     *
+     * It reads the published generation and answers `null` when there is none, which on a machine
+     * that has never synchronised is every time. A mock here would have to invent verses to be
+     * useful, and inventing scripture for a development convenience is the one thing this module
+     * does not do. Tests that need retained content supply their own through the provider.
+     */
+    retainedQuran: sharedRetainedQuranSource(),
     /**
      * Not mocks, and for the same reason as the calendar and the prayer times below.
      *

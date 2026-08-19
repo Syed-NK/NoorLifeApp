@@ -242,7 +242,12 @@ describe('tasbih', () => {
     const change = await view.findByTestId('faith-tasbih-change');
 
     expect(change.props.accessibilityRole).toBe('button');
-    expect(String(change.props.accessibilityLabel)).toMatch(/change dhikr/i);
+    /*
+      "Change dhikr" until this feature landed. What the control changes may be a private counter or
+      a Quran selection somebody chose, and calling either a dhikr is a claim NoorLife does not make —
+      so the label states the action instead.
+    */
+    expect(String(change.props.accessibilityLabel)).toMatch(/choose what to count/i);
     fireEvent.press(change);
 
     // The counting screen itself never grows a counter list; the selector owns that.

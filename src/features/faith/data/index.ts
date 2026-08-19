@@ -7,6 +7,7 @@ import type { HadithRepository } from './hadith.repository';
 import type { MosqueRepository } from './mosque.repository';
 import type { PrayerTimesRepository } from './prayer-times.repository';
 import type { QuranContentRepository } from './quran-content.repository';
+import type { RetainedQuranSource } from './offline/retained-quran.source';
 import type { TasbihRepository } from './tasbih.repository';
 import type { WorshipRepository } from './worship.repository';
 
@@ -19,6 +20,20 @@ import type { WorshipRepository } from './worship.repository';
  */
 export type FaithRepositories = {
   readonly quran: QuranContentRepository;
+  /**
+   * What the device has already retained, read directly rather than through the repository.
+   *
+   * ── Why a second Qur'an seam, when `quran` already reads retained content first ──
+   * Because "reads retained content first" still means "reaches the network when it has none", and
+   * some surfaces must not. Quran selections are rendered on the Tasbih control card, in three
+   * sections of Duas and in the selector preview — surfaces drawn on entry, on scroll and beside a
+   * counter. Resolving those through `quran` would put a request behind ordinary rendering.
+   *
+   * This seam cannot: it exposes only `read()`, over the published generation, with nothing that
+   * could issue a request. A screen that wants offline-only resolution names this one and thereby
+   * says so in its imports. See `data/quran-selection/retained-selection.resolver.ts`.
+   */
+  readonly retainedQuran: RetainedQuranSource;
   readonly hadith: HadithRepository;
   readonly dua: DuaRepository;
   readonly prayerTimes: PrayerTimesRepository;

@@ -237,7 +237,12 @@ describe('the catalogue model', () => {
 
   it('maps every Hadith-derived category onto the locked verified section', () => {
     for (const category of DHIKR_CATEGORIES) {
-      if (category.id === 'quranic' || category.id === 'personal') {
+      /*
+        `selections` joins these two: it is the user's own Quran selections, which are neither
+        Hadith-derived nor locked. It maps to its own section for the same reason `personal` does —
+        it holds something that actually works.
+      */
+      if (category.id === 'quranic' || category.id === 'personal' || category.id === 'selections') {
         continue;
       }
       /*

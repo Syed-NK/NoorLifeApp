@@ -105,7 +105,18 @@ describe('tasbih counter', () => {
     }
   });
 
-  it('archives the previous count when switching counter', async () => {
+  /*
+    ── This assertion used to say the opposite, and the opposite was wrong ────
+    It read "archives the previous count when switching counter", and it passed, because switching
+    ended the count you were on: it was archived to history and the counter went back to zero.
+
+    That was survivable while every counter was a private label. It stopped being survivable when a
+    counter became a saved Quran selection — tapping a different selection to read it would have
+    discarded the count on the first. So switching now suspends and resumes, nothing is archived by
+    a switch, and `reset` is the only operation that ends a count. See
+    `tasbih-selection-isolation.test.ts` for the full behaviour.
+  */
+  it('suspends the previous count when switching counter, and archives nothing', async () => {
     const repository = createLocalTasbihRepository();
     // Synthetic ids: no test may keep an unverified religious label alive as a fixture.
     const a = await repository.createLabel('Counter A');
@@ -118,11 +129,16 @@ describe('tasbih counter', () => {
     await repository.increment();
     await repository.startSession(b.data.id);
 
-    const history = await repository.getHistory();
-    expect(history.kind).toBe('ok');
-    if (history.kind === 'ok') {
-      expect(history.data[0]?.counterId).toBe(a.data.id);
-      expect(history.data[0]?.count).toBe(1);
+    // Nothing was completed, so nothing belongs in history.
+    expect((await repository.getHistory()).kind).toBe('empty');
+
+    // And A is exactly where it was left.
+    await repository.startSession(a.data.id);
+    const resumed = await repository.getSession();
+    expect(resumed.kind).toBe('ok');
+    if (resumed.kind === 'ok') {
+      expect(resumed.data.counterId).toBe(a.data.id);
+      expect(resumed.data.count).toBe(1);
     }
   });
 });

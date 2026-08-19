@@ -14,7 +14,7 @@ import {
 import { createAdhanPrayerTimesRepository } from '../data/prayer/adhan-prayer-times.repository';
 import { createProductionQuranRepository } from '../data/quran-foundation';
 import { createOfflineQuranRepository } from '../data/offline/offline-quran.repository';
-import { createRetainedQuranSource } from '../data/offline/retained-quran.source';
+import { sharedRetainedQuranSource } from '../data/offline/retained-quran.source';
 import { createLocalTasbihRepository } from '../data/tasbih/local-tasbih.repository';
 import { readFaithPreferences } from '../storage/faith-preferences';
 
@@ -137,10 +137,14 @@ function createFaithRepositories(): FaithRepositories {
    * a pass-through, so a build that has never synchronised behaves precisely as before.
    */
   const approvedQuran = createProductionQuranRepository();
+  /*
+    One retained source for the whole process. The wrapper below and every screen that resolves a
+    Quran selection read the same index, so the generation is opened and validated once rather than
+    once per consumer — see `sharedRetainedQuranSource`.
+  */
+  const retainedQuran = sharedRetainedQuranSource();
   const quran =
-    approvedQuran === null
-      ? null
-      : createOfflineQuranRepository(approvedQuran, createRetainedQuranSource());
+    approvedQuran === null ? null : createOfflineQuranRepository(approvedQuran, retainedQuran);
 
   /**
    * The worship checklist's prayer times come from the same calculation the hero uses.
@@ -201,6 +205,7 @@ function createFaithRepositories(): FaithRepositories {
      * the real implementation and lives at a production path.
      */
     tasbih: createLocalTasbihRepository(),
+    retainedQuran,
     worship: createMockWorshipRepository(worshipTimes),
   };
   return quran === null ? base : { ...base, quran };

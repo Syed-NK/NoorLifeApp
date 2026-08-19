@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import {
-  productionDhikrEntries,
-  type CuratedDhikrReference,
-} from '../data/dhikr/quran-dhikr-catalogue';
+import type { CuratedDhikrReference } from '../data/dhikr/quran-dhikr-catalogue';
+import { reviewedQuranDuas } from '../data/dhikr/reviewed-dua-manifest';
 import {
   resolveDhikrReference,
   type DhikrResolutionFailure,
@@ -30,8 +28,8 @@ import { useTranslationPreference } from './use-translation-preference';
  * The Quran-derived Dhikr section's state, assembled from the catalogue, the cache and the source.
  *
  * ── The order of authority, which is what this hook encodes ─────────────────
- * 1. **The catalogue decides what may exist.** `productionDhikrEntries` applies the scholarly-review
- *    gate. Nothing below can widen that set — the cache is pruned to it, and the user's own
+ * 1. **The manifest decides what may exist.** `reviewedQuranDuas` parses it and applies the
+ *    scholarly-review gate. Nothing below can widen that set — the cache is pruned to it, and the user's own
  *    favourites and recents are pruned to it too, so a withdrawn reference disappears everywhere
  *    rather than lingering wherever it was mentioned.
  * 2. **The source decides what is shown.** An approved entry whose text does not resolve, or whose
@@ -77,8 +75,17 @@ export function useQuranDhikr(): UseQuranDhikr {
   });
   const [attempt, setAttempt] = useState(0);
 
-  /** The approved set, recomputed from the catalogue rather than cached anywhere durable. */
-  const approved = useMemo<readonly CuratedDhikrReference[]>(() => productionDhikrEntries(), []);
+  /**
+   * The approved set, recomputed from the reviewed manifest rather than cached anywhere durable.
+   *
+   * ── Why the manifest and not `productionDhikrEntries()` ────────────────────
+   * They were two sources for one question, both empty, and two empty sources is one more than
+   * anybody can keep true. The manifest is the one a real reviewed catalogue would arrive through —
+   * it parses data, fails closed on a malformed row and names every rejection — and
+   * `reviewedQuranDuas` puts whatever survives through `approvedForProduction` as well, so the
+   * policy gate is unchanged and is now applied on the only path in.
+   */
+  const approved = useMemo<readonly CuratedDhikrReference[]>(() => reviewedQuranDuas(), []);
   const approvedIds = useMemo(() => new Set(approved.map((entry) => entry.id)), [approved]);
 
   const translationId = translation?.id ?? null;
@@ -188,41 +195,16 @@ export function useQuranDhikr(): UseQuranDhikr {
   };
 }
 
-/**
- * The title of the currently selected Quran-derived reference, or `null`.
- *
- * ── Why the Tasbih screen gets its own tiny hook rather than `useQuranDhikr` ─
- * Because the Tasbih screen must not fetch. `useQuranDhikr` resolves content through the network
- * boundary, and mounting it on the counter would put a Quran Foundation request behind a screen
- * whose job is to count — on every open, for a row that displays one word. This reads the stored id
- * and resolves it against the in-memory catalogue, which costs nothing and cannot fail.
- *
- * Returns `null` for an id the gate no longer approves, so a withdrawn reference stops being named
- * immediately rather than at the next prune. It never falls back to another entry: a silent
- * substitution here would attach the user's count to scripture they did not choose.
- */
-export function useSelectedQuranDhikrTitle(): string | null {
-  const [entryId, setEntryId] = useState<string | null>(null);
+/*
+  ── `useSelectedQuranDhikrTitle` was here, and is gone ──────────────────────
+  It answered "what is the Tasbih row's current dhikr called?" by reading the stored dhikr id and
+  resolving it against the reviewed catalogue. That question now has three possible answers — a
+  private label, a Quran selection, or a reviewed entry — and answering only the third would have
+  left the row reading "Not selected" for somebody counting a verse they had chosen themselves.
 
-  useEffect(() => {
-    let active = true;
-    void readDhikrUserState().then((stored) => {
-      if (active) {
-        setEntryId(stored.selectedEntryId);
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  return useMemo(() => {
-    if (entryId === null) {
-      return null;
-    }
-    return productionDhikrEntries().find((entry) => entry.id === entryId)?.title ?? null;
-  }, [entryId]);
-}
+  `useActiveCounter` answers all three, resolves the scripture offline, and keeps the distinction
+  between them, which is the part that carries a claim. See `hooks/use-active-counter.ts`.
+*/
 
 /**
  * A cached entry, in the shape the UI reads.

@@ -188,24 +188,35 @@ describe('repository swapping', () => {
   /**
    * The locked screens read no repository, and say why rather than showing a skeleton.
    *
-   * Mosques still uses the generic `FaithProviderLockedState`; Hadith and Duas now render the
-   * approved locked *library* composition instead — a status card, three disabled preview rows and
-   * a trust notice — so they are asserted against that structure rather than the generic testID.
-   * Their copy and disabled semantics are covered in `faith-locked-libraries.test.tsx`.
+   * Mosques still uses the generic `FaithProviderLockedState`; Hadith renders the approved locked
+   * *library* composition — a status card, three disabled preview rows and a trust notice — so it is
+   * asserted against that structure rather than the generic testID. Its copy and disabled semantics
+   * are covered in `faith-locked-libraries.test.tsx`.
+   *
+   * ── Duas is no longer one of them ─────────────────────────────────────────
+   * It still has no approved supplication provider, and it is no longer locked: it lists the user's
+   * own Quran selections, resolved from the copy of the Arabic this device retained. Asserting the
+   * locked-library structure on it would pin a claim that has stopped being true. Its own suite is
+   * `faith-duas-screen.test.tsx`, which asserts both halves — that the working part works, and that
+   * the reviewed catalogue is neither faked nor described as breakage.
    */
   it('Mosques renders the generic locked state with no provider configured', async () => {
     const view = await withRepositories(<MosquesScreen />);
     expect(await view.findByTestId('faith-mosques-locked')).toBeTruthy();
   });
 
-  it.each([
-    ['Hadith', <HadithScreen key="hadith" />, 'faith-hadith'],
-    ['Duas', <DuasScreen key="duas" />, 'faith-duas'],
-  ])('%s renders the approved locked library with no provider configured', async (_n, el, id) => {
-    const view = await withRepositories(el);
-    expect(await view.findByTestId(`${id}-status`)).toBeTruthy();
-    expect(await view.findByTestId(`${id}-preview`)).toBeTruthy();
-    expect(await view.findByTestId(`${id}-trust`)).toBeTruthy();
+  it('Hadith renders the approved locked library with no provider configured', async () => {
+    const view = await withRepositories(<HadithScreen key="hadith" />);
+    expect(await view.findByTestId('faith-hadith-status')).toBeTruthy();
+    expect(await view.findByTestId('faith-hadith-preview')).toBeTruthy();
+    expect(await view.findByTestId('faith-hadith-trust')).toBeTruthy();
+  });
+
+  it('Duas renders its own sections rather than a locked library', async () => {
+    const view = await withRepositories(<DuasScreen key="duas" />);
+    expect(await view.findByTestId('faith-duas-selections')).toBeTruthy();
+    expect(view.queryByTestId('faith-duas-status')).toBeNull();
+    expect(view.queryByTestId('faith-duas-preview')).toBeNull();
   });
 
   it('renders the error state with a retry when a repository fails', async () => {

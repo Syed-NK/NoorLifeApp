@@ -162,10 +162,18 @@ describe('migrating a build that shipped built-in dhikr', () => {
     expect(session.data.rounds).toBe(4);
     expect(session.data.counterId).toBe(DEFAULT_COUNTER.id);
 
-    // And the rewrite landed, stamped, so the next launch takes the `current` branch.
-    const stored = JSON.parse((await AsyncStorage.getItem(faithAddress('tasbihSession'))) ?? '{}');
-    expect(stored.version).toBe(TASBIH_SCHEMA_VERSION);
-    expect(stored.presetId).toBeUndefined();
+    /*
+      ── Where the migrated record went, and why it is not here any more ───────
+      This used to assert the v1 blob had been rewritten in place, stamped `version: 2`. It is now
+      moved into the per-counter store and the old key is removed, because counting state is per
+      counter — see `tasbih-selection-isolation.test.ts`. Leaving the old key behind would leave a
+      second copy of a count that is never updated again.
+    */
+    expect(await AsyncStorage.getItem(faithAddress('tasbihSession'))).toBeNull();
+    const stored = JSON.parse((await AsyncStorage.getItem(faithAddress('tasbihSessions'))) ?? '{}');
+    expect(stored.activeCounterId).toBe(DEFAULT_COUNTER.id);
+    expect(stored.sessions[DEFAULT_COUNTER.id].count).toBe(87);
+    expect(stored.sessions[DEFAULT_COUNTER.id].presetId).toBeUndefined();
   });
 
   it('leaves an unreadable record alone rather than overwriting it', async () => {
