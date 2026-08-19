@@ -39,7 +39,6 @@ import { Platform } from 'react-native';
 
 type NativeBackupExclusion = {
   readonly excludeFromBackup: (path: string) => boolean;
-  readonly isExcludedFromBackup: (path: string) => boolean;
 };
 
 /**
@@ -87,20 +86,5 @@ export function ensureExcludedFromBackup(rootUri: string): BackupExclusionOutcom
     return native.excludeFromBackup(rootUri) ? 'excluded' : 'failed';
   } catch {
     return 'failed';
-  }
-}
-
-/** Reads the current state back, for verification rather than for the write path. */
-export function isExcludedFromBackup(rootUri: string): boolean {
-  if (Platform.OS !== 'ios') {
-    return true;
-  }
-  if (native === null) {
-    return false;
-  }
-  try {
-    return native.isExcludedFromBackup(rootUri);
-  } catch {
-    return false;
   }
 }

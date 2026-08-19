@@ -43,7 +43,7 @@ import type { RecordKey } from './faith-sync-rows';
 /** The complete ayah count of the Qur'an. A dataset claiming completeness must produce exactly this. */
 export const TOTAL_AYAH_COUNT = 6236;
 
-export const MIN_SURAH = 1;
+const MIN_SURAH = 1;
 export const MAX_SURAH = 114;
 
 /**

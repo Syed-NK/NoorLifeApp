@@ -8,7 +8,7 @@ import {
   TOTAL_AYAH_COUNT,
   validateArabicDataset,
 } from './faith-arabic-rows';
-import { arabicStagingDirectory, checksumOf } from './faith-sync-generation';
+import { arabicStagingDirectory } from './faith-sync-generation';
 import { isRecord } from './faith-storage';
 
 /**
@@ -42,7 +42,7 @@ import { isRecord } from './faith-storage';
  */
 
 /** Bumped when the on-disk shape changes. A plan at another version is discarded, never migrated. */
-export const ARABIC_STAGING_VERSION = 1;
+const ARABIC_STAGING_VERSION = 1;
 
 const PLAN_FILE = 'plan.json';
 const PART_SUFFIX = '.part';
@@ -59,13 +59,6 @@ export type ArabicStagingPlan = {
   readonly startedAt: number;
   /** Surahs whose complete verse set is on disk, validated at the moment it was written. */
   readonly completed: readonly number[];
-};
-
-export type ArabicStagingProgress = {
-  readonly completedSurahs: number;
-  readonly totalSurahs: number;
-  readonly verses: number;
-  readonly totalVerses: number;
 };
 
 /**
@@ -91,7 +84,7 @@ export function areAyahCountsUsable(counts: readonly number[]): boolean {
 }
 
 /** The verse keys one surah must produce, in order. Built from the publisher's count for it. */
-export function surahVerseKeys(surah: number, ayahCount: number): readonly string[] {
+function surahVerseKeys(surah: number, ayahCount: number): readonly string[] {
   const keys: string[] = [];
   for (let ayah = 1; ayah <= ayahCount; ayah += 1) {
     keys.push(`${surah}:${ayah}`);
@@ -238,20 +231,6 @@ export function pendingSurahs(plan: ArabicStagingPlan): readonly number[] {
   return pending;
 }
 
-export function arabicStagingProgress(plan: ArabicStagingPlan): ArabicStagingProgress {
-  const done = new Set(plan.completed);
-  let verses = 0;
-  for (const surah of done) {
-    verses += plan.ayahCounts[surah - 1] ?? 0;
-  }
-  return {
-    completedSurahs: done.size,
-    totalSurahs: plan.ayahCounts.length,
-    verses,
-    totalVerses: TOTAL_AYAH_COUNT,
-  };
-}
-
 /**
  * Records one complete surah, or says which way it failed.
  *
@@ -359,14 +338,4 @@ export function collectArabicBaseline(plan: ArabicStagingPlan): readonly ArabicR
 
   const validation = validateArabicDataset(rows, expected);
   return validation.ok ? validation.rows : null;
-}
-
-/**
- * A stable fingerprint of the counts a plan was built against.
- *
- * Used to report, without printing scripture, whether two runs were building the same dataset. The
- * counts themselves are the publisher's metadata and this is only ever a diagnostic.
- */
-export function ayahCountsFingerprint(counts: readonly number[]): string {
-  return checksumOf(counts.join(','));
 }

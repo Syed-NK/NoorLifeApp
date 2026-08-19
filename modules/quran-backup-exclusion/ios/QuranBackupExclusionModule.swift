@@ -47,15 +47,6 @@ public class QuranBackupExclusionModule: Module {
         return false
       }
     }
-
-    /** Whether the exclusion is currently set. Used by verification rather than by the write path. */
-    Function("isExcludedFromBackup") { (path: String) -> Bool in
-      guard let url = Self.resolveAllowed(path) else {
-        return false
-      }
-      let values = try? url.resourceValues(forKeys: [.isExcludedFromBackupKey])
-      return values?.isExcludedFromBackup == true
-    }
   }
 
   /**

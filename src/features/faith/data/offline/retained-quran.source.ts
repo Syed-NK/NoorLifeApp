@@ -70,8 +70,6 @@ export type RetainedQuran = {
 export type RetainedQuranSource = {
   /** The retained content of the currently published generation, or `null` when there is none. */
   read(): Promise<RetainedQuran | null>;
-  /** Drops the memoised generation. For tests and for the Faith data reset. */
-  forget(): void;
 };
 
 function indexRows(
@@ -176,10 +174,6 @@ export function createRetainedQuranSource(): RetainedQuranSource {
 
       cached = { generationId: pointer.generationId, arabic, translations };
       return cached;
-    },
-
-    forget(): void {
-      cached = null;
     },
   };
 }

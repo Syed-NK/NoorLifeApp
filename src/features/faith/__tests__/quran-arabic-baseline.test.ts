@@ -211,7 +211,6 @@ let mockExclusionOutcome: 'excluded' | 'not-required' | 'unavailable' | 'failed'
 
 jest.mock('@features/faith/storage/faith-backup-exclusion', () => ({
   ensureExcludedFromBackup: () => mockExclusionOutcome,
-  isExcludedFromBackup: () => mockExclusionOutcome === 'excluded',
   isBackupSafe: (outcome: string) => outcome === 'excluded' || outcome === 'not-required',
 }));
 

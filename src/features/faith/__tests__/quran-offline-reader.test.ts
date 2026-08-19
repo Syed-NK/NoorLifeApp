@@ -55,7 +55,6 @@ import { mockFileSystem } from '@/../jest.setup';
  */
 jest.mock('@features/faith/storage/faith-backup-exclusion', () => ({
   ensureExcludedFromBackup: () => 'excluded',
-  isExcludedFromBackup: () => true,
   isBackupSafe: (outcome: string) => outcome === 'excluded' || outcome === 'not-required',
 }));
 
