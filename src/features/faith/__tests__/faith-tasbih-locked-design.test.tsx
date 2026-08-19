@@ -64,7 +64,20 @@ async function renderTasbih(): Promise<typeof screen> {
       <TasbihScreen />
     </FaithRepositoryProvider>,
   );
-  await settle(900);
+  /*
+    ── Why this is 1400 and was 900 ──────────────────────────────────────────
+    The screen settles after two storage reads, not one: the session, and what is being counted. The
+    second arrived with the Quran-selection feature — the control card now names the selection and
+    draws its Arabic — and 900 ms was comfortable for one read and marginal for two. Under a
+    full-suite run this file is the slowest in the repository, and it would occasionally reach its
+    first assertion before the count had rendered, which reads as a counting bug and is not one.
+
+    A `findByTestId` would be the better tool and is not available here: this project has no React
+    act environment, and one `findBy*` corrupts every later render in the same file — the failure is
+    recorded in `jest-overlapping-act`. So the wait stays a sleep, and the number is raised to cover
+    what the screen actually does now.
+  */
+  await settle(1400);
   return screen;
 }
 

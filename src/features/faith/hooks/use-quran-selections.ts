@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { RetainedQuran } from '../data/offline/retained-quran.source';
+import type { RetainedQuran, RetainedQuranSource } from '../data/offline/retained-quran.source';
 import {
   checkSelectionRange,
   selectionIdFor,
@@ -25,6 +25,33 @@ import {
   type SaveSelectionOutcome,
 } from '../storage/faith-quran-selections';
 import { subscribeToFaithScope } from '../storage/faith-user-scope';
+
+/**
+ * The retained generation, remembered per source, across every consumer of this hook.
+ *
+ * ── Why a cache on top of the source's own ─────────────────────────────────
+ * `sharedRetainedQuranSource` already reads the generation once per publication and serves an
+ * in-memory index afterwards. What it cannot remove is the *promise hop*: every mount of every
+ * consumer still awaits `read()`, resolves in an effect, and commits a second render. Three surfaces
+ * mount this hook — the Tasbih control card, the Duas screen and the selector — and on the counter
+ * that hop lands between the session arriving and the screen settling, on a screen whose whole job is
+ * to be usable the instant it opens.
+ *
+ * So the resolved value is remembered and seeded into state **during render**, which is the only
+ * place that removes the extra commit. Consumers after the first pay nothing.
+ *
+ * ── Keyed on the source object, not global ─────────────────────────────────
+ * A bare module variable would make the *first* source answered for every later one — which in
+ * production is harmless (there is one shared source) and in a test is a component rendering
+ * another test's content. A `WeakMap` makes "which generation?" mean "which source?", which is what
+ * it always meant, and lets an injected double be its own answer with no reset hook to remember.
+ *
+ * Safe across a change of account: retained content is publisher content under a device-wide key,
+ * identical for everybody. The user's *selections* are account-scoped and are deliberately not
+ * cached — see the scope subscription below.
+ */
+const retainedCache = new WeakMap<RetainedQuranSource, RetainedQuran | null>();
+const retainedInFlight = new WeakMap<RetainedQuranSource, Promise<RetainedQuran | null>>();
 
 /**
  * The user's Quran selections, and the retained scripture they resolve against.
@@ -79,9 +106,16 @@ export type UseQuranSelections = {
 export function useQuranSelections(): UseQuranSelections {
   const { retainedQuran } = useFaithRepositories();
   const [selections, setSelections] = useState<readonly QuranSelection[]>([]);
-  const [retained, setRetained] = useState<RetainedQuran | null>(null);
+  /*
+    Seeded during render when the generation has already been read by any consumer in this process.
+    An effect would work and would cost one extra commit on every mount — the one the counter cannot
+    afford.
+  */
+  const [retained, setRetained] = useState<RetainedQuran | null>(
+    () => retainedCache.get(retainedQuran) ?? null,
+  );
   const [loadedSelections, setLoadedSelections] = useState(false);
-  const [loadedRetained, setLoadedRetained] = useState(false);
+  const [loadedRetained, setLoadedRetained] = useState(() => retainedCache.has(retainedQuran));
 
   useEffect(() => {
     let active = true;
@@ -105,8 +139,20 @@ export function useQuranSelections(): UseQuranSelections {
   }, []);
 
   useEffect(() => {
+    if (retainedCache.has(retainedQuran)) {
+      /* Already known and already seeded above. Nothing to read and nothing to commit. */
+      return;
+    }
     let active = true;
-    void retainedQuran.read().then((content) => {
+    /*
+      One read in flight per source, whatever mounts. Three surfaces opening at once otherwise issue
+      three pointer reads and three validations of the same generation.
+    */
+    const pending = retainedInFlight.get(retainedQuran) ?? retainedQuran.read();
+    retainedInFlight.set(retainedQuran, pending);
+    void pending.then((content) => {
+      retainedCache.set(retainedQuran, content);
+      retainedInFlight.delete(retainedQuran);
       if (active) {
         setRetained(content);
         setLoadedRetained(true);
