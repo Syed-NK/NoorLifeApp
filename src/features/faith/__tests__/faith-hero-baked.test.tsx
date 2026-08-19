@@ -8,7 +8,6 @@ import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { faithHeroImages, type FaithHeroImageKey } from '../faith-hero-images';
 import { CalendarScreen } from '../screens/calendar-screens';
-import { DuasScreen } from '../screens/duas-screen';
 import { HadithScreen } from '../screens/hadith-screen';
 import { MosquesScreen } from '../screens/mosques-screen';
 import { PrayerTimesScreen } from '../screens/prayer-times-screen';
@@ -51,7 +50,14 @@ function imageStyle(node: { props: { style?: unknown } }): ImageStyle {
 const BAKED: readonly (readonly [string, ReactElement, FaithHeroImageKey, string])[] = [
   ['Quran', <QuranScreen key="q" />, 'quran', 'faith-hero-quran'],
   ['Hadith', <HadithScreen key="h" />, 'hadith', 'faith-hero-hadith'],
-  ['Duas', <DuasScreen key="d" />, 'duas', 'faith-hero-duas'],
+  /*
+    Duas is deliberately absent, for the same reason Qibla and Tasbih are.
+
+    The approved category-library design has **no hero**: the header is followed directly by the
+    search row and the two-column grid, because a 144 dp artwork above them pushed the first grid row
+    below the fold. The `duas` entry stays in `faithHeroImages` — its wording is still asserted below
+    as data, and nothing else claims the image is on screen.
+  */
   ['Prayer', <PrayerTimesScreen key="p" />, 'prayer', 'faith-hero-prayer'],
   /*
     Qibla is deliberately absent from this table, for the same reason as Tasbih.
@@ -70,9 +76,14 @@ const BAKED: readonly (readonly [string, ReactElement, FaithHeroImageKey, string
   ['Calendar', <CalendarScreen key="c" />, 'calendar', 'faith-hero-calendar'],
 ];
 
-/** The three with no approved provider, and the wording each must show. */
+/**
+ * The two rendered heroes with no approved provider, and the wording each must show.
+ *
+ * `duas` is not here because its screen no longer draws a hero — see the note in `BAKED`. Its
+ * subtitle wording is still pinned, as data, in "no hero states something untrue" below.
+ */
 const LOCKED: readonly (readonly [string, ReactElement, FaithHeroImageKey, string])[] =
-  BAKED.filter(([, , key]) => key === 'hadith' || key === 'duas' || key === 'mosques');
+  BAKED.filter(([, , key]) => key === 'hadith' || key === 'mosques');
 
 describe('the shared 144 dp geometry survives the baked image', () => {
   it.each(BAKED)('%s keeps the authoritative height and radius', async (_n, el, _k, testID) => {

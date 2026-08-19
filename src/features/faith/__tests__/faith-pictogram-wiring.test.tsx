@@ -8,7 +8,6 @@ import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 import { createMockFaithRepositories } from '../data/mock';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { faithPictogramSlot, getFaithPictogram } from '../faith-pictogram-assets';
-import { DuasScreen } from '../screens/duas-screen';
 import { HadithScreen } from '../screens/hadith-screen';
 import { PrayerRemindersScreen } from '../screens/prayer-reminders-screen';
 import { PrayerTimesScreen } from '../screens/prayer-times-screen';
@@ -112,15 +111,16 @@ describe('Hadith draws H1, H2, H3 and S1', () => {
   `faith-pictogram-registry.test.ts`; the shield on the Duas trust notice is S1 and is asserted
   below with the other S1 usages. The Duas screen's own behaviour is in `faith-duas-screen.test.tsx`.
 */
-describe('Duas keeps the S1 shield on its trust notice', () => {
-  it('draws the approved shield rather than a second drawing of the same idea', async () => {
-    await renderScreen(<DuasScreen />);
-    await screen.findByTestId('faith-duas');
+/*
+  ── Duas draws no pictogram of its own any more ─────────────────────────────
+  It kept an S1 shield on a trust notice while it was a list screen. The approved category-library
+  design has no trust notice: the header is followed by the search row and the grid, and the honest
+  statements it used to carry now sit where they are actually needed — on each empty reviewed
+  category, which says what is missing and why, and on the attribution card.
 
-    expect(sourceOf('faith-duas-trust-shield')).toBe(expected('s1'));
-    expect(await screen.findByText('No unverified supplications are shown.')).toBeTruthy();
-  });
-});
+  The grid's own icons are a separate registry with its own suite; S1 itself is still asserted on
+  Hadith, and `D3 === H2` remains a registry fact in `faith-pictogram-registry.test.ts`.
+*/
 
 describe('Prayer draws P1, the six P2 markers and P4', () => {
   it('renders the mosque map-pin on the location card', async () => {

@@ -8,7 +8,6 @@ import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { CalendarScreen } from '../screens/calendar-screens';
-import { DuasScreen } from '../screens/duas-screen';
 import { FaithAiScreen } from '../screens/faith-ai-screen';
 import { HadithScreen } from '../screens/hadith-screen';
 import { MosquesScreen } from '../screens/mosques-screen';
@@ -57,7 +56,6 @@ const HEROES: readonly (readonly [string, ReactElement, string])[] = [
   ['Faith Home', <ModuleHomeScreen key="home" moduleId="faith" />, 'faith-hero'],
   ['Quran', <QuranScreen key="q" />, 'faith-hero-quran'],
   ['Hadith', <HadithScreen key="h" />, 'faith-hero-hadith'],
-  ['Duas', <DuasScreen key="d" />, 'faith-hero-duas'],
   ['Prayer', <PrayerTimesScreen key="p" />, 'faith-hero-prayer'],
   /*
     Qibla is deliberately absent from this table, for the same reason as Tasbih.

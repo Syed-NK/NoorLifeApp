@@ -18,11 +18,28 @@ import { faithNavKeys, faithRoutes } from '../faith-routes';
 
 const APP_FAITH_DIR = path.join(process.cwd(), 'src', 'app', 'faith');
 
+/**
+ * Every top-level Faith route, as a segment.
+ *
+ * ── A route may be a file or a directory with an index ─────────────────────
+ * `duas.tsx` became `duas/index.tsx` when Duas gained a per-category child route, and the segment a
+ * user navigates to is `duas` either way. Enumerating only `.tsx` files would have reported the
+ * route as missing while it worked perfectly, which is the kind of failure that teaches people to
+ * distrust the test rather than the code.
+ *
+ * A directory without an `index.tsx` is deliberately not a segment: `reader/` holds only
+ * `[surah].tsx`, which is reached through `readerHref` and is not in the route map.
+ */
 function routeFiles(): readonly string[] {
   return fs
-    .readdirSync(APP_FAITH_DIR)
-    .filter((name) => name.endsWith('.tsx') && !name.startsWith('_'))
-    .map((name) => name.replace(/\.tsx$/, ''));
+    .readdirSync(APP_FAITH_DIR, { withFileTypes: true })
+    .filter((entry) => !entry.name.startsWith('_'))
+    .flatMap((entry) => {
+      if (entry.isDirectory()) {
+        return fs.existsSync(path.join(APP_FAITH_DIR, entry.name, 'index.tsx')) ? [entry.name] : [];
+      }
+      return entry.name.endsWith('.tsx') ? [entry.name.replace(/\.tsx$/, '')] : [];
+    });
 }
 
 /** `/faith/quran` → `quran`; `/faith` → `index`. */

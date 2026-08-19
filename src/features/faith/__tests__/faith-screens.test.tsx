@@ -212,9 +212,9 @@ describe('repository swapping', () => {
     expect(await view.findByTestId('faith-hadith-trust')).toBeTruthy();
   });
 
-  it('Duas renders its own sections rather than a locked library', async () => {
+  it('Duas renders its own category grid rather than a locked library', async () => {
     const view = await withRepositories(<DuasScreen key="duas" />);
-    expect(await view.findByTestId('faith-duas-selections')).toBeTruthy();
+    expect(await view.findByTestId('faith-duas-grid')).toBeTruthy();
     expect(view.queryByTestId('faith-duas-status')).toBeNull();
     expect(view.queryByTestId('faith-duas-preview')).toBeNull();
   });
