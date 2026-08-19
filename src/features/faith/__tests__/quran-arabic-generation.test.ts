@@ -16,6 +16,22 @@ import { ARABIC_SCRIPT, type ArabicRow } from '@features/faith/storage/faith-ara
 import { mockFileSystem } from '@/../jest.setup';
 
 /**
+ * The backup boundary is controlled here rather than left to the platform.
+ *
+ * Under Jest `Platform.OS` is `ios` and no native module is built, so the real boundary answers
+ * `unavailable` and — correctly — drops Arabic from every publication. That is the fail-closed
+ * behaviour, and it is asserted explicitly in its own case below; for the rest of this file it would
+ * simply mean nothing under test ever holds Arabic.
+ */
+let mockExclusionOutcome: 'excluded' | 'not-required' | 'unavailable' | 'failed' = 'excluded';
+
+jest.mock('@features/faith/storage/faith-backup-exclusion', () => ({
+  ensureExcludedFromBackup: () => mockExclusionOutcome,
+  isExcludedFromBackup: () => mockExclusionOutcome === 'excluded',
+  isBackupSafe: (outcome: string) => outcome === 'excluded' || outcome === 'not-required',
+}));
+
+/**
  * Arabic inside the immutable generation — schema v2, and what v1 still means.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -100,6 +116,7 @@ function withArabic(rows: ArabicRow[], lastCheckedAt = NOW): GenerationDraft {
 beforeEach(async () => {
   mockFileSystem.reset();
   await AsyncStorage.clear();
+  mockExclusionOutcome = 'excluded';
 });
 
 describe('schema versions', () => {
@@ -121,6 +138,14 @@ describe('publishing Arabic', () => {
     /* And the other datasets came with it, from the same directory. */
     expect(active?.translations.rows).toHaveLength(1);
     expect(active?.recitations.rows).toHaveLength(1);
+
+    /*
+      One pointer write, not three. Every dataset became visible because this single key changed, so
+      there is no window in which a reader could see new Arabic beside old translations.
+    */
+    const keys = await AsyncStorage.getAllKeys();
+    expect(keys).toEqual([faithStorageKeys.quranGenerationPointer]);
+    expect(await AsyncStorage.getItem(faithStorageKeys.quranGenerationPointer)).toContain('gen-a');
   });
 
   it('records the Arabic check clock inside the generation and nowhere else', async () => {
@@ -267,6 +292,45 @@ describe('atomicity', () => {
     const active = await readActiveGeneration();
     expect(active?.manifest.generationId).toBe('gen-a');
     expect(active?.arabic?.rows).toHaveLength(2);
+  });
+});
+
+describe('failing closed when backup exclusion cannot be confirmed', () => {
+  it.each(['unavailable', 'failed'] as const)(
+    'drops Arabic from the publication when the boundary answers %s',
+    async (outcome) => {
+      mockExclusionOutcome = outcome;
+
+      const result = await publishGeneration(withArabic(arabicRows(5)));
+      expect(result.kind).toBe('published');
+      expect(result.kind === 'published' && result.arabicRefusedForBackup).toBe(true);
+
+      /*
+        Retaining the Qur'an where it might be copied to iCloud is what the licence forbids, so the
+        honest outcome is to hold no Arabic and let the reader say it is unavailable.
+      */
+      const active = await readActiveGeneration();
+      expect(active?.arabic).toBeNull();
+      expect(new File(`${GEN_ROOT}/gen-a/arabic.json`).exists).toBe(false);
+    },
+  );
+
+  it('still publishes translations and recitations, which have their own terms', async () => {
+    mockExclusionOutcome = 'unavailable';
+    await publishGeneration(withArabic(arabicRows(5)));
+
+    const active = await readActiveGeneration();
+    expect(active?.translations.rows).toHaveLength(1);
+    expect(active?.recitations.rows).toHaveLength(1);
+  });
+
+  it('publishes Arabic when Android reports the platform already excludes it', async () => {
+    mockExclusionOutcome = 'not-required';
+    const result = await publishGeneration(withArabic(arabicRows(5)));
+
+    expect(result.kind === 'published' && result.arabicRefusedForBackup).toBe(false);
+    const active = await readActiveGeneration();
+    expect(active?.arabic?.rows).toHaveLength(5);
   });
 });
 

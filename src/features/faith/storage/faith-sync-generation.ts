@@ -3,6 +3,11 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { faithStorageKeys, isRecord, readJson, removeKey, writeChecked } from './faith-storage';
 import type { RecitationRow, TranslationAttribution, TranslationRow } from './faith-sync-rows';
 import type { ArabicRow } from './faith-arabic-rows';
+import {
+  type BackupExclusionOutcome,
+  ensureExcludedFromBackup,
+  isBackupSafe,
+} from './faith-backup-exclusion';
 
 /**
  * Synchronised Qur'an content, published as immutable file-backed generations.
@@ -237,7 +242,19 @@ export type PublishOptions = {
 };
 
 export type PublishOutcome =
-  | { readonly kind: 'published'; readonly generationId: string; readonly bytes: number }
+  | {
+      readonly kind: 'published';
+      readonly generationId: string;
+      readonly bytes: number;
+      /**
+       * Set when Arabic was offered and dropped because backup exclusion could not be confirmed.
+       *
+       * Reported rather than logged, and carries no path, URI or content — only the fact. A caller
+       * that asked to publish Arabic and did not is entitled to know why, so the reader's "Arabic
+       * unavailable" state is explainable instead of mysterious.
+       */
+      readonly arabicRefusedForBackup?: boolean;
+    }
   | { readonly kind: 'failed'; readonly reason: PublishFailure };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -291,6 +308,27 @@ function ensureRoot(): void {
   if (!root.exists) {
     root.create();
   }
+  /*
+    Applied on creation as well as before publication. A directory created here and marked now is the
+    common case; the publish-time check exists because a root recreated in between would otherwise
+    carry no flag, and that is the moment the licence actually rests on.
+  */
+  ensureExcludedFromBackup(root.uri);
+}
+
+/**
+ * Whether this device can hold retained Arabic within the terms of the permission.
+ *
+ * iOS must confirm the backup exclusion; Android's rules already exclude the file domain. Anything
+ * else is a refusal rather than a warning — see `faith-backup-exclusion.ts` for why the honest
+ * failure is to hold no Arabic at all.
+ */
+export function arabicRetentionAllowed(): {
+  readonly allowed: boolean;
+  readonly outcome: BackupExclusionOutcome;
+} {
+  const outcome = ensureExcludedFromBackup(rootDirectory().uri);
+  return { allowed: isBackupSafe(outcome), outcome };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -678,7 +716,18 @@ export async function publishGeneration(
 ): Promise<PublishOutcome> {
   const translationsText = serialiseTranslations(draft);
   const recitationsText = serialiseRecitations(draft);
-  const arabic = draft.arabic ?? null;
+  let arabic = draft.arabic ?? null;
+  /*
+    Fail closed. If the platform cannot confirm that the generation root is outside backup, the
+    Arabic is dropped from this publication rather than written somewhere it might be copied to
+    iCloud. The rest of the generation still publishes: translations and recitations have their own
+    terms, and refusing them would be a second wrong.
+  */
+  let arabicRefusedForBackup = false;
+  if (arabic !== null && !arabicRetentionAllowed().allowed) {
+    arabic = null;
+    arabicRefusedForBackup = true;
+  }
   /*
     Serialised in the same shape as the other datasets so one validator covers all three. Absent
     Arabic stages no file at all, rather than an empty one — an empty Arabic file would be a dataset
@@ -779,6 +828,11 @@ export async function publishGeneration(
     return { kind: 'failed', reason: 'cancelled' };
   }
 
+  /*
+    Recorded on the outcome rather than logged. A caller that asked to publish Arabic and did not is
+    entitled to know why, and the reader's "Arabic unavailable" state is then explainable rather than
+    mysterious. No path, no URI and no content is carried — only the fact.
+  */
   const published = await writeChecked(faithStorageKeys.quranGenerationPointer, {
     version: GENERATION_POINTER_VERSION,
     generationId: draft.generationId,
@@ -789,7 +843,7 @@ export async function publishGeneration(
     return { kind: 'failed', reason: 'pointer-failed' };
   }
 
-  return { kind: 'published', generationId: draft.generationId, bytes };
+  return { kind: 'published', generationId: draft.generationId, bytes, arabicRefusedForBackup };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
