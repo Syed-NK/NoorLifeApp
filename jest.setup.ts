@@ -978,10 +978,23 @@ jest.mock('expo-file-system', () => {
         close: () => undefined,
       };
     }
-    moveSync(destination: MockFile): void {
+    /**
+     * Moves a file, refusing to clobber an existing destination unless told to.
+     *
+     * ── Why the refusal is modelled rather than waved through ────────────────
+     * `RelocationOptions.overwrite` defaults to **false** in `expo-file-system`, and a move onto an
+     * existing path throws. This double used to overwrite silently, which made the staging writers
+     * look correct in every suite and fail on the first real device: a `.part` renamed over a file
+     * that was already there threw, the caller reported a write failure, and the work restarted for
+     * ever. Modelling the default is what makes that a failing test rather than a device finding.
+     */
+    moveSync(destination: MockFile, options?: { overwrite?: boolean }): void {
       const entry = mockFsFiles.get(this.uri);
       if (entry === undefined) {
         throw new Error('ENOENT');
+      }
+      if (mockFsFiles.has(destination.uri) && options?.overwrite !== true) {
+        throw new Error('EEXIST: destination already exists');
       }
       mockFsFiles.delete(this.uri);
       mockFsFiles.set(destination.uri, entry);

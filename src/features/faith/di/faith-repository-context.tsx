@@ -13,6 +13,8 @@ import {
 } from '../data/mock/mock-worship.repository';
 import { createAdhanPrayerTimesRepository } from '../data/prayer/adhan-prayer-times.repository';
 import { createProductionQuranRepository } from '../data/quran-foundation';
+import { createOfflineQuranRepository } from '../data/offline/offline-quran.repository';
+import { createRetainedQuranSource } from '../data/offline/retained-quran.source';
 import { createLocalTasbihRepository } from '../data/tasbih/local-tasbih.repository';
 import { readFaithPreferences } from '../storage/faith-preferences';
 
@@ -122,7 +124,23 @@ function createFaithRepositories(): FaithRepositories {
    */
   const calendar = createHijriCalendarRepository();
 
-  const quran = createProductionQuranRepository();
+  /**
+   * The approved adapter, wrapped so it reads what the device has already retained first.
+   *
+   * ── Why a wrapper and not a change to the adapter ─────────────────────────
+   * The adapter is the approved Content API client and its shape is what the Quran Foundation
+   * approval was granted against. Retention is a different permission, granted later, with its own
+   * conditions — so it is a separate layer with its own file and its own tests, and removing it
+   * leaves the approved adapter exactly as it was.
+   *
+   * The wrapper is applied whenever the approved adapter exists. With no published generation it is
+   * a pass-through, so a build that has never synchronised behaves precisely as before.
+   */
+  const approvedQuran = createProductionQuranRepository();
+  const quran =
+    approvedQuran === null
+      ? null
+      : createOfflineQuranRepository(approvedQuran, createRetainedQuranSource());
 
   /**
    * The worship checklist's prayer times come from the same calculation the hero uses.

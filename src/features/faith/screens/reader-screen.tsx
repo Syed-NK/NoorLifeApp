@@ -33,6 +33,7 @@ import type {
   AyahTranslation,
   SurahSummary,
 } from '../data/quran-content.repository';
+import { QURAN_CONTENT_ATTRIBUTION } from '../data/dhikr/quran-content-attribution';
 import { surahNumber } from '../data/quran-content.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
 import { faithAiHref, faithNavKeys, faithRoutes, readerHref } from '../faith-routes';
@@ -1312,6 +1313,8 @@ function ReaderBody({
       */}
       {translation === null ? null : <TranslationCredit translation={translation} />}
 
+      <SourceAttribution />
+
       <SurahOpening surah={page.surah} />
 
       {items.map((item) => (
@@ -1360,6 +1363,44 @@ function ReaderBody({
           />
         </View>
       )}
+    </View>
+  );
+}
+
+/**
+ * Who the Qur'an text and the translation came from.
+ *
+ * ── Why it is on the reader now, when it deliberately was not before ───────
+ * The "Source: Quran Foundation Content API" badge was removed from the reading surfaces on purpose
+ * and moved to the content-info screen: a provenance badge repeated above every verse becomes
+ * furniture. This is a different obligation. The 2026-08-18 permission that lets this app retain the
+ * complete Arabic text requires the sentence below to be **displayed**, and a sentence reachable
+ * only by opening a secondary screen is not displayed where the content is.
+ *
+ * ── Where it sits, and the placement that was wrong ───────────────────────
+ * At the top of the reading column, beside the translator credit. It was at the **foot** first,
+ * which reads well and fails the condition: a release build on a device showed it present on a
+ * four-verse surah and unreachable on a hundred-and-ten-verse one, because the reader pages twenty
+ * verses at a time and the foot of the column is behind however many presses of "Continue reading"
+ * the surah is long. A credit a user has to page fifteen screens to reach is not displayed.
+ *
+ * The reader's own reasoning for the translator credit already said this — "once, where the reading
+ * starts, is the only placement that is both honest and legible" — and it is just as true of the
+ * source. The two are separate requirements and neither substitutes for the other: this names where
+ * the text came from, that names the person whose reading of the meaning is on screen.
+ *
+ * It renders unconditionally, where the translator credit renders only with a translation. The
+ * Arabic is Quran Foundation's whether or not a meaning is shown beside it.
+ *
+ * The sentence is imported, never retyped. It is specified exactly — a full stop lost to a layout
+ * squeeze is a licence condition broken — and it has one home, pinned byte for byte by its own test.
+ */
+function SourceAttribution() {
+  const { dp } = useModuleMetrics();
+
+  return (
+    <View style={{ marginTop: dp(20), paddingVertical: dp(8) }} testID="faith-reader-attribution">
+      <ModuleText token="caption">{QURAN_CONTENT_ATTRIBUTION}</ModuleText>
     </View>
   );
 }
