@@ -233,6 +233,21 @@ describe('the invariants an implementation must satisfy', () => {
       .filter((file) => /verified:\s*true/.test(stripComments(fs.readFileSync(file, 'utf8'))))
       .map((file) => path.relative(REPO_ROOT, file).replace(/\\/g, '/'));
     expect(setters).toEqual([
+      /**
+       * Retained content, and the one addition to this list since it was written.
+       *
+       * It sets the flag for text that **already carried it**: every row it serves arrived through
+       * the endpoint below, which refuses a payload that does not claim verification, and was
+       * validated in full before it was published into an immutable generation. Retaining that text
+       * did not make it less checked, and marking it unverified would put a warning on screen that
+       * says nothing true.
+       *
+       * What earns it a place here rather than a wider rule: it can only ever return strings copied
+       * out of a validated generation. There is no fetch on that path, no fallback, and no way for
+       * it to construct content the publisher did not send — so it cannot mark anything verified
+       * that this list's other entries had not already verified.
+       */
+      'src/features/faith/data/offline/retained-quran.source.ts',
       // Validates the flag on the way in, and refuses a payload that does not carry it.
       'src/features/faith/data/quran-foundation/quran-content.endpoint.ts',
       // Declares the approved source's own descriptor.
