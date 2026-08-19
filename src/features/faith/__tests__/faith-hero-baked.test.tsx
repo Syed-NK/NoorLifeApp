@@ -207,7 +207,12 @@ describe('no hero states something untrue', () => {
   it.each(LOCKED)('%s states the required wording exactly', async (_n, _el, key) => {
     const required: Readonly<Record<string, string>> = {
       hadith: 'Verified Hadith content is not configured yet.',
-      duas: 'Verified Dua content is not configured yet.',
+      /*
+        Reworded when Duas stopped being a locked library. The provider is still not connected and
+        the subtitle still says so; what it no longer does is imply the screen has nothing on it,
+        which it did while sitting directly above the user's own selections.
+      */
+      duas: 'No supplication provider yet. Your Qur’an selections are below.',
       mosques: 'Nearby mosque information requires an approved directory provider.',
     };
     expect(faithHeroImages[key].lockedSubtitle).toBe(required[key]);
@@ -223,8 +228,8 @@ describe('no hero states something untrue', () => {
       expect(spoken).not.toMatch(/clearly sourced/i);
       expect(spoken).not.toMatch(/for every part of your day/i);
       expect(spoken).not.toMatch(/find masjids/i);
-      // And it says, in words, that nothing is configured.
-      expect(spoken).toMatch(/not configured|requires an approved/i);
+      // And it says, in words, that no provider is configured.
+      expect(spoken).toMatch(/not configured|requires an approved|no supplication provider/i);
     }
   });
 

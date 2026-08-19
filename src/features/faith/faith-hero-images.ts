@@ -87,11 +87,22 @@ export const faithHeroImages: Readonly<Record<FaithHeroImageKey, FaithHeroImage>
     accessibleName: 'Faith library. Hadith. Verified Hadith content is not configured yet.',
     lockedSubtitle: 'Verified Hadith content is not configured yet.',
   },
+  /**
+   * ── The Duas subtitle names what is missing, not the screen ────────────────
+   * It read "Verified Dua content is not configured yet." while the whole screen was locked, and
+   * that was exact. It stopped being exact when the screen gained working content: a user now reads
+   * "not configured yet" directly above their own Qur'an selections, with the Arabic on screen.
+   *
+   * The provider is still not connected, so the sentence keeps saying that — and adds the half that
+   * is now also true, so the hero and the list underneath it agree.
+   */
   duas: {
     source:
       require('@assets/images/modules/faith/hero/duas-hero-locked.png') as ImageSourcePropType,
-    accessibleName: 'Daily remembrance. Duas. Verified Dua content is not configured yet.',
-    lockedSubtitle: 'Verified Dua content is not configured yet.',
+    /* Contains the visible subtitle verbatim — a spoken name that paraphrases it is a second copy. */
+    accessibleName:
+      'Daily remembrance. Duas. No supplication provider yet. Your Qur’an selections are below.',
+    lockedSubtitle: 'No supplication provider yet. Your Qur’an selections are below.',
   },
   /**
    * "Next prayer" is baked, and stays because it is generic.
