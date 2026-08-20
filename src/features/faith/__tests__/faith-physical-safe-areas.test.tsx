@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
@@ -249,8 +252,6 @@ describe('defect 1 — the filter sheet must clear the system navigation region'
       Both consumers render the one `DuaFilterSheet`, so the fix cannot be half-applied — but that is
       only true while neither screen keeps a sheet of its own. This is the assertion that says so.
     */
-    const { readFileSync } = require('node:fs') as typeof import('node:fs');
-    const { join } = require('node:path') as typeof import('node:path');
     for (const file of ['duas-screen.tsx', 'dua-category-screen.tsx']) {
       const source = readFileSync(join(__dirname, '..', 'screens', file), 'utf8');
       expect(source).toContain('DuaFilterSheet');
