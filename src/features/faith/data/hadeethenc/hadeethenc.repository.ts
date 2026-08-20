@@ -99,7 +99,8 @@ export function createHadeethEncRepository(
           name: HADEETHENC_SOURCE_NAME,
           edition: `${HADEETHENC_LANGUAGE}:${permission.translationVersion}`,
           attribution: detail.attribution,
-          verified: true,
+          /* Derived from the dated permission object; this adapter never mints approval itself. */
+          verified: permission.status === 'approved',
         },
       },
     };
