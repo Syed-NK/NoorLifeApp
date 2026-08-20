@@ -14,6 +14,7 @@ import {
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
+import { BROWSE_ACTION_LABEL } from '../components/dua-library-items';
 import { FaithScreen } from '../components/faith-screen';
 import { QuranSelectionView } from '../components/quran-selection-view';
 import {
@@ -25,6 +26,10 @@ import {
   selectionReferenceLabel,
   type QuranSelectionRef,
 } from '../data/quran-selection/quran-selection';
+import {
+  searchRetainedTranslation,
+  type TranslationSearchResult,
+} from '../data/quran-selection/translation-search';
 import { faithNavKeys, faithRoutes, readerHref } from '../faith-routes';
 import { useCachedSurahNames, type BrowsableSurah } from '../hooks/use-cached-surah-names';
 import { useQuranSelections } from '../hooks/use-quran-selections';
@@ -70,7 +75,8 @@ export function QuranSelectionScreen() {
 
   return (
     <FaithScreen
-      title={open === null ? 'Choose a verse' : 'Your selection'}
+      /* Names the task, not the outcome — see `BROWSE_ACTION_LABEL`. */
+      title={open === null ? BROWSE_ACTION_LABEL : 'Your selection'}
       activeKey={faithNavKeys.more}
       background={readerPageBackground}
       scrollable={open !== null}
@@ -112,12 +118,196 @@ export function parseReferenceQuery(query: string): QuranSelectionRef | null {
   return { surah, startAyah: ordered.start, endAyah: ordered.end };
 }
 
+/**
+ * Verses found by their words, above the surah list.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Why the translator is named on the section and not only on the preview ──
+ * A snippet **is** translation text on screen, and the licence requires the translator credited
+ * wherever a translation appears — not only where the whole verse does. So the credit is drawn by the
+ * same block that draws the snippets, from the identity the search carried out of the generation, and
+ * there is no arrangement of props that renders one without the other. The full verse, opened from a
+ * row, then carries its own per-verse credit through `QuranSelectionView`.
+ *
+ * ── Four different kinds of nothing, and none of them says "no results" ────
+ * A query below the floor has not been searched yet; a device with no generation cannot search at all;
+ * a generation with Arabic but no translation is a different absence again; and a real search that
+ * matched nothing is the only one of the four where "nothing matched" is true. Collapsing them would
+ * tell somebody their words were not in the Qur'an when the truth is that the translation is not on
+ * their phone.
+ *
+ * ── A match is one ayah, and choosing is still the user's ──────────────────
+ * Opening a row lands on that verse as a single-ayah selection, which is the default the range picker
+ * starts from. Nothing here pre-selects a range: where a passage runs on, only the reader knows where
+ * it should end, and guessing would put NoorLife's judgement into somebody's saved reference.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+function VerseMatches({
+  result,
+  onOpen,
+}: {
+  readonly result: TranslationSearchResult;
+  readonly onOpen: (ref: QuranSelectionRef) => void;
+}) {
+  const { dp } = useModuleMetrics();
+
+  /*
+    Silent until the query is worth scanning for. A "type three characters" hint under every empty
+    search box is noise on the screen that is otherwise just a surah list.
+  */
+  if (result.state === 'too-short') {
+    return null;
+  }
+
+  if (result.state !== 'ok') {
+    return (
+      <ModuleCard testID="faith-quran-selection-verse-unavailable">
+        <View style={{ rowGap: dp(4) }}>
+          <ModuleText token="cardTitle" numberOfLines={2}>
+            {result.state === 'no-generation'
+              ? 'The Qur’an is not on this device yet'
+              : 'The meaning is not on this device yet'}
+          </ModuleText>
+          <ModuleText token="caption" numberOfLines={4}>
+            {result.state === 'no-generation'
+              ? 'Searching by words reads the copy NoorLife keeps on your phone. Open the Qur’an once with a connection and it is kept for searching offline afterwards.'
+              : 'The Arabic is here but the translation is not, so there are no words to search yet. It arrives with the next content update.'}
+          </ModuleText>
+          <ModuleText token="caption" numberOfLines={3}>
+            You can still browse by surah below, or type a reference like 2:255.
+          </ModuleText>
+        </View>
+      </ModuleCard>
+    );
+  }
+
+  if (result.matches.length === 0) {
+    return (
+      <ModuleCard testID="faith-quran-selection-verse-empty">
+        <View style={{ rowGap: dp(4) }}>
+          <ModuleText token="cardTitle" numberOfLines={2}>
+            No verse on this device uses those words
+          </ModuleText>
+          <ModuleText token="caption" numberOfLines={4}>
+            {/*
+              Says which rendering was searched. Another translation words the same passage
+              differently, and a flat "not found" would imply the Qur’an does not say it.
+            */}
+            {result.translator === null
+              ? 'Try fewer words, or a different wording.'
+              : `Try fewer words, or a different wording — this searched the rendering by ${result.translator}.`}
+          </ModuleText>
+        </View>
+      </ModuleCard>
+    );
+  }
+
+  return (
+    <View style={{ rowGap: dp(6) }} testID="faith-quran-selection-verse-matches">
+      <ModuleText token="cardTitle" numberOfLines={2} accessibilityRole="header">
+        {result.matches.length === 1
+          ? 'One verse matched'
+          : `${result.matches.length} verses matched`}
+      </ModuleText>
+
+      {result.matches.map((match) => (
+        <PressableScale
+          key={match.reference}
+          onPress={() => onOpen({ surah: match.surah, startAyah: match.ayah, endAyah: match.ayah })}
+          accessibilityRole="button"
+          /* The reference, the surah where one is known, and the words that matched. */
+          accessibilityLabel={
+            match.surahName === null
+              ? `Qur’an ${match.reference}. ${match.snippet}`
+              : `Qur’an ${match.reference}, ${match.surahName}. ${match.snippet}`
+          }
+          accessibilityHint="Opens this verse so you can choose it"
+          style={[
+            styles.action,
+            {
+              minHeight: dp(moduleLayout.minTouchTarget),
+              borderRadius: dp(moduleLayout.radiusSmall),
+              borderColor: moduleNeutrals.border,
+              paddingHorizontal: dp(12),
+              paddingVertical: dp(8),
+              columnGap: dp(10),
+            },
+          ]}
+          testID={`faith-quran-selection-verse-${match.reference}`}
+        >
+          <View style={[styles.flex, { rowGap: dp(2) }]}>
+            <ModuleText token="caption" color={EMERALD_DEEP} numberOfLines={1}>
+              {match.surahName === null
+                ? `Qur’an ${match.reference}`
+                : `Qur’an ${match.reference} · ${match.surahName}`}
+            </ModuleText>
+            <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={3}>
+              {match.snippet}
+            </ModuleText>
+          </View>
+          <AppIcon name="chevron-forward" size={dp(18)} color={EMERALD_DEEP} />
+        </PressableScale>
+      ))}
+
+      {/*
+        The cap, said rather than hidden. A truncated list that looks complete is the same class of
+        untruth as an empty state that names the wrong cause.
+      */}
+      {result.overflow === 0 ? null : (
+        <ModuleText token="caption" numberOfLines={2} testID="faith-quran-selection-verse-overflow">
+          {`${result.overflow} more ${
+            result.overflow === 1 ? 'verse uses' : 'verses use'
+          } those words. Add a word to narrow it.`}
+        </ModuleText>
+      )}
+
+      {/*
+        The translator, drawn by the block that drew the snippets — see this component's note. Never
+        optional, never a separate prop.
+      */}
+      <ModuleText token="caption" numberOfLines={2} testID="faith-quran-selection-verse-translator">
+        {result.translationEdition === null
+          ? `Searched the translation by ${result.translator ?? 'an unnamed translator'}`
+          : `Searched ${result.translationEdition} — translation by ${result.translator ?? 'an unnamed translator'}`}
+      </ModuleText>
+    </View>
+  );
+}
+
 function SurahBrowser({ onOpen }: { readonly onOpen: (ref: QuranSelectionRef) => void }) {
   const { dp } = useModuleMetrics();
   const { surahs, loading, source } = useCachedSurahNames();
+  const { retained } = useQuranSelections();
   const [query, setQuery] = useState('');
 
   const reference = useMemo(() => parseReferenceQuery(query), [query]);
+
+  const surahNames = useMemo(() => {
+    const names = new Map<number, string>();
+    for (const surah of surahs) {
+      if (surah.name !== null) {
+        names.set(surah.number, surah.name);
+      }
+    }
+    return names;
+  }, [surahs]);
+
+  /**
+   * Verses whose retained translation contains the words the user typed.
+   *
+   * ── The capability this screen was missing ─────────────────────────────────
+   * It could find a surah by name and a verse by an exact reference, which between them require you to
+   * already know where you are going. Somebody who remembers the words and not the coordinates had no
+   * way in — the empty state said as much.
+   *
+   * The scan is over the map `useQuranSelections` is already holding, per keystroke, keeping nothing.
+   * See `searchRetainedTranslation` for why that is not the second copy of scripture the library search
+   * refuses to build.
+   */
+  const verseMatches = useMemo(
+    () => searchRetainedTranslation({ query, retained, surahNames }),
+    [query, retained, surahNames],
+  );
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -135,7 +325,7 @@ function SurahBrowser({ onOpen }: { readonly onOpen: (ref: QuranSelectionRef) =>
   const header = useMemo(
     () => (
       <View style={{ rowGap: dp(12), paddingBottom: dp(moduleLayout.cardGap) }}>
-        <SearchField value={query} onChange={setQuery} placeholder="Surah name, number, or 2:255" />
+        <SearchField value={query} onChange={setQuery} placeholder="Surah, reference, or words" />
 
         {/*
           A typed reference is offered as its own row rather than filtering the list. "2:255" is not a
@@ -157,12 +347,14 @@ function SurahBrowser({ onOpen }: { readonly onOpen: (ref: QuranSelectionRef) =>
           </ModuleCard>
         )}
 
+        <VerseMatches result={verseMatches} onOpen={onOpen} />
+
         <ModuleText token="cardTitle" numberOfLines={1} accessibilityRole="header">
           All surahs
         </ModuleText>
       </View>
     ),
-    [dp, query, reference, onOpen],
+    [dp, query, reference, verseMatches, onOpen],
   );
 
   const renderRow = useCallback(
@@ -212,7 +404,7 @@ function SurahBrowser({ onOpen }: { readonly onOpen: (ref: QuranSelectionRef) =>
             <ModuleText token="caption" numberOfLines={4}>
               {source === 'none'
                 ? 'Open the Qur’an once with a connection and the list is kept for browsing offline afterwards.'
-                : 'Try a surah name, a number from 1 to 114, or a reference like 2:255.'}
+                : 'Try a surah name, a number from 1 to 114, a reference like 2:255, or words you remember.'}
             </ModuleText>
           </ModuleCard>
         )
@@ -657,7 +849,8 @@ function SearchField({
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={moduleNeutrals.textTertiary}
-        accessibilityLabel="Search surahs, or type a reference"
+        /* Says all three ways in, including the one that used not to exist. */
+        accessibilityLabel="Search by surah, reference, or words you remember"
         style={[styles.flex, { color: moduleNeutrals.textPrimary, paddingVertical: dp(10) }]}
         testID="faith-quran-selection-search"
       />

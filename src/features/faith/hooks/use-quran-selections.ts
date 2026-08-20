@@ -87,6 +87,18 @@ export type UseQuranSelections = {
   readonly selections: readonly QuranSelection[];
   /** Whether this device holds Arabic at all. `false` means selections cannot be previewed. */
   readonly hasRetainedQuran: boolean;
+  /**
+   * The retained generation itself, or `null` when this device holds none.
+   *
+   * ── Why the object and not another derived flag ────────────────────────────
+   * The browser's translation search scans `translations.bySurah`, which is already in memory here —
+   * the source read it once for the published generation and every consumer shares the same map. Adding
+   * a third read, or copying rows into a searchable shape, would be the "second copy of scripture" that
+   * `searchDuaLibrary` refuses on principle. Handing over the map that already exists creates nothing.
+   *
+   * Read-only by type all the way down, so a consumer can scan it and cannot alter it.
+   */
+  readonly retained: RetainedQuran | null;
   /** Surah number → its ayah count, from the generation. Empty when nothing is retained. */
   readonly surahIndex: RetainedSurahIndex;
   /** Resolves a reference against retained content. Pure, synchronous, never a request. */
@@ -189,6 +201,7 @@ export function useQuranSelections(): UseQuranSelections {
     loading: !loadedSelections || !loadedRetained,
     selections,
     hasRetainedQuran: retained?.arabic != null,
+    retained,
     surahIndex,
     resolve,
     check,
