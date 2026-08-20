@@ -16,6 +16,7 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { ArabicText } from '../components/faith-list';
+import { BROWSE_ACTION_HINT, BROWSE_ACTION_LABEL } from '../components/dua-library-items';
 import { FaithScreen } from '../components/faith-screen';
 import { QuranSelectionView, SelectionOriginBadge } from '../components/quran-selection-view';
 import { QURAN_CONTENT_ATTRIBUTION } from '../data/dhikr/quran-content-attribution';
@@ -1097,12 +1098,12 @@ function AddSelectionCard({ onPress }: { readonly onPress: () => void }) {
   return (
     <ModuleCard
       onPress={onPress}
-      accessibilityLabel="Choose a verse from the Qur'an"
+      accessibilityLabel={`${BROWSE_ACTION_LABEL}. ${BROWSE_ACTION_HINT}`}
       testID="faith-dhikr-add-selection"
     >
       <View style={{ rowGap: dp(4) }}>
         <ModuleText token="cardTitle" numberOfLines={2}>
-          Choose a verse from the Qur’an
+          {BROWSE_ACTION_LABEL}
         </ModuleText>
         <ModuleText token="caption" numberOfLines={3}>
           Browse all 114 surahs and keep one verse, or a run of verses next to each other. It stays

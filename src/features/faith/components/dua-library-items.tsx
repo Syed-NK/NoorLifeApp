@@ -31,6 +31,16 @@ import { QuranSelectionView, SelectionOriginBadge } from './quran-selection-view
 const EMERALD_DEEP = modulePalettes.faith.dark;
 
 /**
+ * The words the "way in to the Qur'an" control uses, in one place.
+ *
+ * Exported because the same action appears on the Duas category page, in the Dhikr selector and in the
+ * category empty state, and three hand-typed copies is how one of them keeps saying "Choose a verse"
+ * after the product decided it should not. A test asserts the phrase is not reintroduced anywhere.
+ */
+export const BROWSE_ACTION_LABEL = 'Browse the Qur’an';
+export const BROWSE_ACTION_HINT = 'Search by surah, reference, or words you remember.';
+
+/**
  * One of the user's own selections.
  *
  * ── Every item states what it is, on the item ──────────────────────────────
@@ -234,6 +244,26 @@ export function ReviewedItem({
   );
 }
 
+/**
+ * The way in to choosing a verse.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── The label this replaced, and why it was the wrong promise ──────────────
+ * It read *Choose a verse from the Qur'an*. Accurate, and it quietly assumed the hard part was
+ * already done: a user who does not know that the verse they are thinking of is 2:255 has not been
+ * told how to find it, only asked to produce it. The action named the outcome and hid the task.
+ *
+ * *Browse the Qur'an* names the task, and the supporting line says what the search actually accepts —
+ * including the case that was missing until now, **words you remember**. The exact-reference entry is
+ * still there and still first-class for somebody who does know; it is simply no longer the only door.
+ *
+ * ── Two lines, and the second one is not decoration ────────────────────────
+ * The supporting copy is the part that changes behaviour. Without it "Browse" is vaguer than what it
+ * replaced; with it the control tells you that a surah name, a reference and a half-remembered phrase
+ * are all valid ways in. The accessible name carries both, because a screen reader user gets one
+ * announcement and it has to contain the useful half.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 export function AddSelection({
   onPress,
   testID = 'faith-duas-add-selection',
@@ -247,22 +277,28 @@ export function AddSelection({
     <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel="Choose a verse from the Qur’an"
+      accessibilityLabel={`${BROWSE_ACTION_LABEL}. ${BROWSE_ACTION_HINT}`}
       style={[
         styles.add,
         {
           minHeight: dp(moduleLayout.minTouchTarget),
           borderRadius: dp(moduleLayout.radiusSmall),
           paddingHorizontal: dp(12),
+          paddingVertical: dp(8),
           columnGap: dp(8),
         },
       ]}
       testID={testID}
     >
-      <AppIcon name="add" size={dp(18)} color={moduleNeutrals.surface} />
-      <ModuleText token="button" color={moduleNeutrals.surface} numberOfLines={2}>
-        Choose a verse from the Qur’an
-      </ModuleText>
+      <AppIcon name="quran" size={dp(18)} color={moduleNeutrals.surface} />
+      <View style={[styles.flex, { rowGap: dp(2) }]}>
+        <ModuleText token="button" color={moduleNeutrals.surface} numberOfLines={2}>
+          {BROWSE_ACTION_LABEL}
+        </ModuleText>
+        <ModuleText token="caption" color={moduleNeutrals.surface} numberOfLines={2}>
+          {BROWSE_ACTION_HINT}
+        </ModuleText>
+      </View>
     </PressableScale>
   );
 }
