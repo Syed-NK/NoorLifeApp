@@ -706,7 +706,8 @@ describe('accessibility of the page’s own controls', () => {
     const named: readonly [string, RegExp][] = [
       ['faith-dua-category-filter', /^Filter\./],
       ['faith-dua-category-back', /Back to all categories/],
-      ['faith-dua-category-add-selection', /Choose a verse/],
+      /* Reworded with the product direction: the action names the task, not the outcome. */
+      ['faith-dua-category-add-selection', /Browse the Qur’an/],
       ['faith-dua-category-selection-favourite-q.2.255.255', /favourites/i],
       ['faith-dua-category-selection-read-q.2.255.255', /reader/i],
       ['faith-dua-category-selection-use-q.2.255.255', /Tasbih/],

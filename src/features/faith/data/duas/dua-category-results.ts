@@ -296,7 +296,7 @@ export function duaCategoryEmptyCopy(
     case 'no-personal-selections':
       return {
         title: 'No selections yet',
-        body: 'Choose a verse from the Qur’an and it appears here, with its Arabic and its translation.',
+        body: 'Browse the Qur’an — by surah, by reference, or by words you remember — and what you keep appears here with its Arabic and its translation.',
         note: null,
       };
     case 'no-favourites':
