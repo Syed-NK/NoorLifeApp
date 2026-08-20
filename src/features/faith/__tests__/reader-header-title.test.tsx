@@ -130,7 +130,20 @@ describe('the reader opened through a deep link', () => {
       half the difference. Equal insets are what make the band's centre the screen's centre.
     */
     expect(style.left).toBe(style.right);
-    expect(style.left).toBe(headerControlReserve((value: number) => Math.round(value)));
+
+    /*
+      ── The page padding belongs in the inset, and this value is why ──────────
+      This expected `headerControlReserve` alone, which is what the component applied — and it was
+      wrong in a way only a device showed. An absolutely-positioned child resolves `left`/`right`
+      against its parent's border box, so the layer ignored the row's `paddingHorizontal` and reached
+      one `pagePadding` further toward each edge than `headerTitleBandWidth` claimed. On a Samsung
+      SM-G556B at 384 dp the band ran 16 dp under the Help control and drew the title beneath it.
+
+      With the padding included, the rendered band is exactly `headerTitleBandWidth(screenWidth)`,
+      so the arithmetic and the layout can no longer disagree.
+    */
+    const scaled = (value: number): number => Math.round(value);
+    expect(style.left).toBe(scaled(moduleLayout.pagePadding) + headerControlReserve(scaled));
   });
 });
 
@@ -172,5 +185,25 @@ describe('the band is wide enough at every supported width', () => {
   it('never upscales the reserve above the reference width', () => {
     // `moduleScale` caps at 1, so a wider screen gets a wider band rather than bigger controls.
     expect(headerTitleBandWidth(WIDE) - headerTitleBandWidth(REFERENCE)).toBe(WIDE - REFERENCE);
+  });
+
+  it('leaves the band clear of the control clusters at every supported width', () => {
+    /*
+      The property the Samsung caught, asserted as arithmetic over the real geometry: whatever the
+      width, the inset the band leaves on each side is at least as wide as the cluster that has to
+      fit inside it — page padding included, which is the half that was missing.
+    */
+    for (const width of [320, 360, 384, 393, 411, 430, 600]) {
+      const scale = moduleScale(width);
+      const scaled = (value: number): number => Math.round(value * scale);
+      const inset = scaled(moduleLayout.pagePadding) + headerControlReserve(scaled);
+      const rightCluster =
+        scaled(moduleLayout.pagePadding) +
+        scaled(moduleLayout.minTouchTarget) * 2 +
+        scaled(moduleLayout.headerControlGap);
+
+      expect(inset).toBeGreaterThanOrEqual(rightCluster);
+      expect(width - 2 * inset).toBe(headerTitleBandWidth(width));
+    }
   });
 });

@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { PressableScale } from '@ds/components';
+import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { useModuleTheme } from '../module-context';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
@@ -34,6 +35,19 @@ export type ModuleCardProps = {
  * Deliberately does **not** take a height. A card that sizes to its content cannot
  * stretch; the references' compact density comes from the content, not from fixed
  * heights fighting their contents.
+ *
+ * ── A pressable card measures itself, so its hit area can reach the minimum ──
+ * A card sizes to its content — deliberately, see above — so how tall any given one is depends on
+ * what is inside it and on the OS text scale, and nothing in the props can say. The Duas attribution
+ * card is one caption line inside two `cardPadding`s, which came to **37 dp** on a Samsung SM-G556B:
+ * a real control, below the 44 dp minimum, in the app's own shared card.
+ *
+ * `minimumHitSlop` is the project's existing answer to exactly this shape of problem — expand the
+ * touchable rectangle, leave the drawn card alone — and it needs a visual size to work from. One
+ * `onLayout` supplies it, and the state changes only when the height actually changes, so a card with
+ * stable content settles after its first layout and re-renders no further.
+ *
+ * Only a card with `onPress` measures anything. A decorative card has no hit area to correct.
  */
 export function ModuleCard({
   tinted = false,
@@ -47,6 +61,7 @@ export function ModuleCard({
 }: ModuleCardProps) {
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
+  const [measuredHeight, setMeasuredHeight] = useState(0);
 
   const base: ViewStyle = {
     backgroundColor: tinted ? theme.lightSurface : moduleNeutrals.surface,
@@ -70,6 +85,16 @@ export function ModuleCard({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       style={[base, style]}
+      /*
+        Zero until the first layout lands, which yields an empty slop rather than a wrong one — the
+        card is still fully tappable over its drawn area in that first frame, it simply has not been
+        widened yet.
+      */
+      hitSlop={minimumHitSlop(measuredHeight)}
+      onLayout={(event) => {
+        const next = event.nativeEvent.layout.height;
+        setMeasuredHeight((current) => (current === next ? current : next));
+      }}
       testID={testID}
     >
       {children}

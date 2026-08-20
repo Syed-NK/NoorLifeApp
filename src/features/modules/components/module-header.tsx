@@ -138,14 +138,27 @@ export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: Mod
       testID={testID}
     >
       {/*
-        The title band: inset from both edges by the wider control cluster, so it is centred on the
-        screen and can never reach under a control. `alignItems: 'stretch'` is the load-bearing
-        part — the `Text` fills the band rather than shrinking to its own measured string, which is
-        what makes the title independent of when the font finished loading. See
-        `headerTitleBandWidth`.
+        The title band: inset from both screen edges by the page padding **and** the wider control
+        cluster, so it is centred on the screen and can never reach under a control.
+
+        ── Why the page padding is part of the inset ──────────────────────────
+        It was not, and that was the defect. An absolutely-positioned child resolves `left`/`right`
+        against its parent's border box, not its content box, so this layer ignored the
+        `paddingHorizontal` on the row and extended one `pagePadding` further toward each edge than
+        `headerTitleBandWidth` said it did. Measured on a Samsung SM-G556B at 384 dp: the band ran to
+        dp 291.9 while the Help control began at dp 275.9 — a 16 dp overlap, exactly the page padding
+        — and "Daily Remembrances" was drawn underneath the Help button.
+
+        With the padding included, the rendered band is exactly `headerTitleBandWidth(screenWidth)`.
+        The arithmetic and the layout finally describe the same rectangle, which is what lets the
+        band-width test mean something about what a user sees.
+
+        `alignItems: 'stretch'` is the other load-bearing part — the `Text` fills the band rather
+        than shrinking to its own measured string, which is what makes the title independent of when
+        the font finished loading. See `headerTitleBandWidth`.
       */}
       <View
-        style={[styles.titleLayer, { left: reserve, right: reserve }]}
+        style={[styles.titleLayer, { left: pagePadding + reserve, right: pagePadding + reserve }]}
         pointerEvents="none"
         testID={`${prefix}-title-band`}
       >
@@ -157,12 +170,19 @@ export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: Mod
             height, so a title allowed to run to two lines would grow past it and push the screen
             down. With the band above, a short fixed title like `Reader` has more than twice the
             width it needs — so the only strings this can ever shorten are long descriptive ones on
-            the narrowest devices, which previously ran under the controls instead.
+            the narrowest devices, which previously ran *underneath* the controls instead.
           */
           numberOfLines={1}
           // Caps growth so a large OS text size cannot outgrow the band.
           maxFontSizeMultiplier={1.3}
           accessibilityRole="header"
+          /*
+            The complete title, always, whatever the visible string had to give up to the band's
+            width. Stated explicitly rather than relying on the ellipsised `Text` child: a screen
+            reader must never be handed "Daily Remembra…", and on the screens where a long title can
+            truncate there is also a summary card immediately below carrying the full name visually.
+          */
+          accessibilityLabel={title ?? module.name}
           testID={`${prefix}-title`}
         >
           {title ?? module.name}
