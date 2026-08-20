@@ -1,4 +1,5 @@
-import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { modulePalettes } from '@ds/tokens';
@@ -162,6 +163,55 @@ export function DuaSearchRow({
   );
 }
 
+/**
+ * How much room the sheet keeps clear at the bottom, and how tall it may grow.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── The defect this exists to make impossible ──────────────────────────────
+ * Measured on a Samsung SM-G556B (384 × 856 dp, three-button navigation): the system navigation bar
+ * occupied dp 808.2–856.2, and the sheet's **last option** spanned dp 803.2–844.1. About 88% of that
+ * row sat underneath the navigation bar. A tap at the row's centre hit the system Home button and
+ * sent the app to the launcher; a tap 9 dp higher did nothing at all; only the row's top few dp
+ * selected the filter. The option was visible and, in practice, unreachable.
+ *
+ * The cause was that the sheet applied a uniform `cardPadding` and no bottom inset, while its sibling
+ * `AyahActionSheet` — same feature, same `Modal`-over-scrim shape — had always added `insets.bottom`.
+ * This is that omission closed, in the one component both Duas surfaces share.
+ *
+ * ── Why the inset comes from the window and not from a number ──────────────
+ * `insets.bottom` is what the OS reports for *this* device in *its current* navigation mode: ~48 dp
+ * with a three-button bar, a few dp with gesture navigation, zero on a device with neither. A
+ * constant tuned to the Samsung would over-pad every gesture-navigation phone and still be wrong on
+ * the next one. Nothing here knows or asks which device it is on.
+ *
+ * ── Why there is a height cap as well ──────────────────────────────────────
+ * Padding alone protects the bottom edge; it does nothing about a sheet taller than the screen. At a
+ * 1.5 text scale four 44 dp options, their gaps, the heading and the padding can exceed the space a
+ * bottom sheet may reasonably take, and the overflow goes off the *top*, where there is no inset to
+ * catch it. So the sheet is capped and its option list scrolls — every option stays reachable, which
+ * is the property that matters, rather than every option staying simultaneously visible.
+ *
+ * 0.7 of the window leaves the scrim clearly visible above the sheet, so it still reads as a sheet
+ * over the page rather than as a new screen, and the scrim stays available to dismiss with.
+ */
+export function filterSheetLayout(input: {
+  /** The OS-reported bottom inset in dp — navigation bar or gesture area, whichever this device has. */
+  readonly bottomInset: number;
+  /** The window height in dp, from the same hook the rest of the layout reads. */
+  readonly windowHeight: number;
+  /** The module scaler, so the breathing room scales like every other spacing token. */
+  readonly dp: (value: number) => number;
+}): { readonly paddingBottom: number; readonly maxHeight: number } {
+  return {
+    /*
+      The inset plus the ordinary card padding — never one or the other. Without the inset the last
+      option lands under the navigation bar; without the padding it sits flush against it.
+    */
+    paddingBottom: input.bottomInset + input.dp(moduleLayout.cardPadding),
+    maxHeight: Math.round(input.windowHeight * 0.7),
+  };
+}
+
 export type DuaFilterSheetProps<T extends string> = {
   readonly open: boolean;
   readonly options: readonly { readonly id: T; readonly label: string }[];
@@ -185,7 +235,9 @@ export function DuaFilterSheet<T extends string>({
   onClose,
   testIDPrefix,
 }: DuaFilterSheetProps<T>) {
-  const { dp } = useModuleMetrics();
+  const { dp, screenHeight } = useModuleMetrics();
+  const insets = useSafeAreaInsets();
+  const sheet = filterSheetLayout({ bottomInset: insets.bottom, windowHeight: screenHeight, dp });
 
   return (
     <Modal
@@ -209,50 +261,67 @@ export function DuaFilterSheet<T extends string>({
             {
               borderTopLeftRadius: dp(moduleLayout.cardRadius),
               borderTopRightRadius: dp(moduleLayout.cardRadius),
-              padding: dp(moduleLayout.cardPadding),
+              paddingHorizontal: dp(moduleLayout.cardPadding),
+              paddingTop: dp(moduleLayout.cardPadding),
+              /* The device's own navigation region, so the last option is never under it. */
+              paddingBottom: sheet.paddingBottom,
+              maxHeight: sheet.maxHeight,
               rowGap: dp(6),
             },
           ]}
+          testID={`${testIDPrefix}-filter-panel`}
         >
           <ModuleText token="cardTitle" numberOfLines={1} accessibilityRole="header">
             Show
           </ModuleText>
-          {options.map((item) => {
-            const active = item.id === selected;
-            return (
-              <PressableScale
-                key={item.id}
-                onPress={() => onSelect(item.id)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                accessibilityLabel={item.label}
-                style={[
-                  styles.filterRow,
-                  {
-                    minHeight: dp(moduleLayout.minTouchTarget),
-                    borderRadius: dp(moduleLayout.radiusSmall),
-                    paddingHorizontal: dp(12),
-                    columnGap: dp(8),
-                    backgroundColor: active ? MINT : moduleNeutrals.surface,
-                    borderColor: active ? EMERALD : moduleNeutrals.border,
-                    borderWidth: active ? 2 : 1,
-                  },
-                ]}
-                testID={`${testIDPrefix}-filter-${item.id}`}
-              >
-                <ModuleText
-                  token="body"
-                  color={moduleNeutrals.textPrimary}
-                  numberOfLines={2}
-                  style={styles.flex}
+          {/*
+            The options scroll rather than overflow. `flexGrow: 0` keeps the list at its content's
+            height whenever it fits, so a two-option sheet is not stretched to the cap — the scroll
+            only ever engages when the content genuinely exceeds the space.
+          */}
+          <ScrollView
+            style={styles.optionList}
+            contentContainerStyle={{ rowGap: dp(6) }}
+            showsVerticalScrollIndicator={false}
+            testID={`${testIDPrefix}-filter-options`}
+          >
+            {options.map((item) => {
+              const active = item.id === selected;
+              return (
+                <PressableScale
+                  key={item.id}
+                  onPress={() => onSelect(item.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={item.label}
+                  style={[
+                    styles.filterRow,
+                    {
+                      minHeight: dp(moduleLayout.minTouchTarget),
+                      borderRadius: dp(moduleLayout.radiusSmall),
+                      paddingHorizontal: dp(12),
+                      columnGap: dp(8),
+                      backgroundColor: active ? MINT : moduleNeutrals.surface,
+                      borderColor: active ? EMERALD : moduleNeutrals.border,
+                      borderWidth: active ? 2 : 1,
+                    },
+                  ]}
+                  testID={`${testIDPrefix}-filter-${item.id}`}
                 >
-                  {item.label}
-                </ModuleText>
-                {/* A tick as well as the fill: the selected row must not depend on colour alone. */}
-                {active ? <AppIcon name="check" size={dp(18)} color={EMERALD_DEEP} /> : null}
-              </PressableScale>
-            );
-          })}
+                  <ModuleText
+                    token="body"
+                    color={moduleNeutrals.textPrimary}
+                    numberOfLines={2}
+                    style={styles.flex}
+                  >
+                    {item.label}
+                  </ModuleText>
+                  {/* A tick as well as the fill: the selected row must not depend on colour alone. */}
+                  {active ? <AppIcon name="check" size={dp(18)} color={EMERALD_DEEP} /> : null}
+                </PressableScale>
+              );
+            })}
+          </ScrollView>
         </View>
       </Pressable>
     </Modal>
@@ -274,4 +343,6 @@ const styles = StyleSheet.create({
   scrim: { backgroundColor: '#14265F55', flex: 1, justifyContent: 'flex-end' },
   sheet: { backgroundColor: moduleNeutrals.surface },
   filterRow: { alignItems: 'center', flexDirection: 'row' },
+  /* Content-height while the options fit; scrolls only once they exceed the capped sheet. */
+  optionList: { flexGrow: 0 },
 });
