@@ -10,6 +10,7 @@ import {
   AUTH_CALLBACK_ROUTE,
   SET_NEW_PASSWORD_ROUTE,
 } from '@features/auth-callback/auth-callback-routes';
+import { StartupResolvingNotice } from '@features/entry-auth/components/startup-resolving-notice';
 import { SplashScreen } from '@features/entry-auth/screens/splash-screen';
 
 /**
@@ -30,7 +31,7 @@ import { SplashScreen } from '@features/entry-auth/screens/splash-screen';
  * Main Home, from onboarding or from authentication can never return to it.
  */
 export default function Index() {
-  const { destination } = useStartupRouting();
+  const { destination, state } = useStartupRouting();
   // The native layer is dismissed on its own schedule — as soon as the branded splash can paint,
   // never waiting for session, onboarding or the 1800 ms brand minimum. See the hook for why that
   // separation is the fix rather than a tidy-up.
@@ -69,6 +70,16 @@ export default function Index() {
     return (
       <View style={{ flex: 1 }} onLayout={onBrandedSplashLayout} testID="startup-branded-splash">
         <SplashScreen />
+        {/*
+          Only past the presentation ceiling, and additive to the locked splash rather than instead of
+          it — see `startup-resolving-notice.tsx`. An ordinary launch never reaches this state, so the
+          common path renders exactly what it rendered before.
+
+          `still_resolving` is not a destination, so `destination` is still null here and this is the
+          same branch it always was: the machine has no answer yet. What changed is that it no longer
+          *pretends* to have one once ten seconds have passed.
+        */}
+        {state === 'still_resolving' ? <StartupResolvingNotice /> : null}
       </View>
     );
   }
@@ -79,10 +90,21 @@ export default function Index() {
 /**
  * Maps a terminal startup state to its route.
  *
- * `startup_error` deliberately resolves to Authentication Options rather than an error screen:
- * every dependency here has a safe fallback, so an unresolved startup means "we do not know who
- * you are", and the honest response to that is the signed-out entry point. It never resolves to
- * Main Home — the app does not invent a session it could not confirm.
+ * Only terminal states reach here. `still_resolving` is not one, so a launch that is merely slow is
+ * never mapped to a route at all — see `startup-machine.ts` for why that distinction is the substance
+ * of issue #31.
+ *
+ * `startup_error` resolves to Authentication Options rather than an error screen, and the reasoning
+ * has been narrowed: it applies to a *hard dependency failure*, where every dependency has a safe
+ * fallback and there is genuinely nothing left to ask. It used to be justified as "an unresolved
+ * startup means 'we do not know who you are', and the honest response is the signed-out entry point",
+ * which was then also the justification for routing there when a performance ceiling elapsed. That
+ * second use was wrong: not having finished asking is not a verdict, and the ceiling no longer
+ * produces one. `failed` is hard-coded false in `use-startup-routing.ts` today, so this branch is
+ * reachable only by a future dependency that truly cannot fall back.
+ *
+ * Nothing here resolves to Main Home on a guess — the app does not invent a session it could not
+ * confirm.
  */
 function hrefFor(destination: string): Parameters<typeof Redirect>[0]['href'] {
   switch (destination) {

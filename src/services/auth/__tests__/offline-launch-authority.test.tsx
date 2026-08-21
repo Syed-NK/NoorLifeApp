@@ -2,7 +2,7 @@ import { act, render, waitFor } from '@testing-library/react-native';
 import { AppState, Text } from 'react-native';
 
 import { AuthProvider, useAuth } from '@application/providers/auth-provider';
-import { STARTUP_TIMEOUT_MS } from '@application/startup/startup-machine';
+import { STARTUP_PRESENTATION_CEILING_MS } from '@application/startup/startup-machine';
 import { OFFLINE_RECEIPT_KEY_FOR_TESTS } from '@services/auth/offline-receipt';
 import { isServerValidatedAuthEvent } from '@services/auth/session-resolution';
 import {
@@ -321,7 +321,7 @@ describe('the startup ceiling', () => {
       Asserted as a number rather than a comment so that lowering it back under the measurement is a
       test failure rather than a regression somebody discovers on a plane.
     */
-    expect(STARTUP_TIMEOUT_MS).toBeGreaterThanOrEqual(8000);
+    expect(STARTUP_PRESENTATION_CEILING_MS).toBeGreaterThanOrEqual(8000);
   });
 });
 

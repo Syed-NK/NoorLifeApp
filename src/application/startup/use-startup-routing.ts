@@ -7,7 +7,12 @@ import { readAccountJourney } from '@services/account/account-journey';
 
 import { useRecoveryContainmentState } from '@application/providers/recovery-containment-provider';
 
-import { STARTUP_TIMEOUT_MS, nextStartupState, type StartupState } from './startup-machine';
+import {
+  STARTUP_PRESENTATION_CEILING_MS,
+  isDestination,
+  nextStartupState,
+  type StartupState,
+} from './startup-machine';
 
 /**
  * Drives the startup sequence and produces exactly one routing decision.
@@ -87,13 +92,20 @@ export function useStartupRouting(): StartupRouting {
     };
   }, []);
 
-  // The clock. Stops as soon as the ceiling is reached, so a stuck startup does not tick forever.
+  /*
+    The clock. Stops as soon as the ceiling is reached, so a stuck startup does not tick forever.
+
+    Stopping is still correct now that the ceiling no longer decides anything: past it the machine
+    reports `still_resolving` whatever the elapsed value is, and when authority finally lands the
+    re-render recomputes with the frozen elapsed time — which is already beyond both the ceiling and
+    the brand minimum, so the real destination is named immediately rather than after another tick.
+  */
   useEffect(() => {
     const started = mountedAt.current ?? Date.now();
     const timer = setInterval(() => {
       const next = Date.now() - started;
       setElapsedMs(next);
-      if (next >= STARTUP_TIMEOUT_MS) {
+      if (next >= STARTUP_PRESENTATION_CEILING_MS) {
         clearInterval(timer);
       }
     }, TICK_MS);
@@ -222,18 +234,34 @@ export function useStartupRouting(): StartupRouting {
    * not be recomputed. Once the machine has named a destination, later inputs cannot change it.
    */
   const [destination, setDestination] = useState<StartupState | null>(null);
-  if (destination === null && state !== 'branded_splash' && state !== 'resolving') {
+  /*
+    `isDestination`, rather than a list of the states that are not one.
+
+    The exclusion list was `branded_splash` and `resolving`, so adding a third non-destination state
+    for issue #31 would have frozen `destination` at `still_resolving` — the launch would have
+    stopped on a presentation state and never reached its real destination, which is a worse version
+    of the defect being fixed. Asking the machine which of its states are terminal keeps the two
+    answers from drifting, here and for anything added later.
+  */
+  if (destination === null && isDestination(state)) {
     setDestination(state);
   }
 
-  // The timeout path is the one that actually fires in practice; say so where it happens.
+  /*
+    The slow path is the one that actually fires in practice; say so where it happens.
+
+    Retargeted for issue #31: it used to fire on `state === 'authentication'`, which after that change
+    no longer means "resolution ran out of time" — it means a real signed-out verdict, which is not
+    noteworthy. It now reports the state that does mean it, and says what is true of it: still waiting,
+    nothing concluded.
+  */
   useEffect(() => {
-    if (state === 'authentication' && !fonts.ready && __DEV__) {
+    if (state === 'still_resolving' && __DEV__) {
       console.warn(
-        '[startup] resolution timed out; routing to authentication, session assumed signed out',
+        '[startup] resolution has passed the presentation ceiling; still waiting, no verdict taken',
       );
     }
-  }, [state, fonts.ready]);
+  }, [state]);
 
   // Native-splash dismissal is deliberately *not* returned here. It belongs to
   // `useNativeSplashHandoff`, which must not wait on anything this hook resolves — coupling the two
