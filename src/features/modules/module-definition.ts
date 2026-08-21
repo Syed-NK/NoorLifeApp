@@ -89,7 +89,12 @@ export type ModuleHeroContent = {
   /** Small line above the headline, e.g. "Today’s Wellness". */
   readonly eyebrow: string;
   /**
-   * The hero’s headline figure or phrase, e.g. "86", "12 days", "$2,450".
+   * The hero’s headline figure or phrase.
+   *
+   * A *figure* only where a real source supplies one — Faith renders the next prayer time, Health
+   * its wellness score. Modules with no data layer yet carry an invitation instead ("Know where it
+   * goes"), because a headline is the largest type on the screen and a number there reads as the
+   * user’s own record. See issue #23.
    *
    * Rendered at display size. Kept separate from `eyebrow` and `support` so each module can
    * emphasise the right thing without a per-module layout.
@@ -106,8 +111,11 @@ export type ModuleHeroContent = {
   /**
    * A live progress value, 0–1, where the reference draws a bar in the hero.
    *
-   * Only Finance has one. It is a value rather than a flag so the bar and the "62% spent"
-   * text cannot disagree.
+   * A value rather than a flag, so a bar and the percentage beside it cannot disagree.
+   *
+   * **Set this only from a real, current measurement.** Finance used to hard-code 0.62 with a
+   * "62% spent" label and no store behind either, which drew a part-filled bar about a budget the
+   * user had never set. No module sets it today; the first to do so should be reading its own data.
    */
   readonly progress?: number;
   /**

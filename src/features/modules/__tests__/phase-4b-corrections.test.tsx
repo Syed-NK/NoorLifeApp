@@ -302,9 +302,18 @@ describe('8 — hero copy is approved, concise, and never elided', () => {
     }
   });
 
-  it('keeps Finance’s progress bar and its "62% spent" label on one value', () => {
-    const hero = moduleRegistry.finance.hero;
-    expect(hero.progress).toBe(0.62);
-    expect(hero.support).toBe('62% spent');
+  /*
+    Was: "keeps Finance’s progress bar and its '62% spent' label on one value". Both halves were
+    hard-coded — 0.62 and "62% spent" agreed with each other and with nothing else, drawing a
+    part-filled bar about a budget the user had never set (issue #23). The invariant that replaced it
+    is the one worth asserting: a module with no data layer behind it states no figure at all.
+  */
+  it('states no figure in a hero that has no source behind it', () => {
+    for (const id of ['finance', 'learning', 'family', 'goals'] as const) {
+      const hero = moduleRegistry[id].hero;
+      expect(hero.progress).toBeUndefined();
+      expect(hero.headlineSuffix).toBeUndefined();
+      expect(`${hero.headline} ${hero.support ?? ''}`).not.toMatch(/[0-9]/);
+    }
   });
 });

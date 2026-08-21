@@ -248,17 +248,26 @@ describe('no Faith source states a date, a time or a countdown as a literal', ()
     const file = 'src/features/modules/services/mock-module-repository.ts';
     const source = stripComments(fs.readFileSync(path.join(REPO_ROOT, file), 'utf8'));
 
-    // The Faith slice, from its key to the start of the next module's.
-    const faith = /faith:\s*\{[\s\S]*?\n {2}\},/.exec(source)?.[0] ?? '';
-    expect(faith).not.toBe('');
+    /*
+      This used to slice out the `faith:` entry of a `FIXTURES` table and check that entry alone,
+      with a `not.toBe('')` sentinel so the check could not pass vacuously if the key ever moved.
+      Issue #23 deleted the table outright — no module has a fixture in this file any more — so
+      there is no slice left to find, and the sentinel began failing on the fix rather than on a
+      fabrication.
+
+      Asserted against the whole file instead, which is strictly stronger: it survives any
+      reorganisation of the file, and it fails the moment a worship claim reappears anywhere in it
+      rather than only under a `faith:` key.
+    */
+    expect(source).not.toMatch(/\bFIXTURES\b/);
 
     // No clock time, in either 12-hour form.
-    expect(faith).not.toMatch(/\d{1,2}:\d{2}\s*(am|pm)/i);
+    expect(source).not.toMatch(/\d{1,2}:\d{2}\s*(am|pm)/i);
     // No prayer named beside a completion state.
-    expect(faith).not.toMatch(/(Fajr|Dhuhr|Asr|Maghrib|Isha)/i);
-    expect(faith).not.toMatch(/status:\s*'(done|due|missed)'/);
+    expect(source).not.toMatch(/(Fajr|Dhuhr|Asr|Maghrib|Isha)/i);
+    expect(source).not.toMatch(/status:\s*'(done|due|missed)'/);
     // No claim about a period of the user's practice.
-    expect(faith).not.toMatch(/(this week|last week|every day|streak)/i);
+    expect(source).not.toMatch(/(this week|last week|every day|streak)/i);
   });
 });
 

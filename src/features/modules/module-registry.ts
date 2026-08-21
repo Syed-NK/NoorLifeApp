@@ -436,11 +436,9 @@ const finance: ModuleDefinition = {
   navigation: moduleThemes.finance.navigation,
   hero: {
     eyebrow: 'My Budget',
-    headline: '$2,450',
-    headlineSuffix: 'left',
-    support: '62% spent',
-    progress: 0.62,
-    actionLabel: 'View Budget',
+    headline: 'Know where it goes',
+    support: 'Nothing is counted until you record it.',
+    actionLabel: 'Add a transaction',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -530,10 +528,10 @@ const learning: ModuleDefinition = {
   routes: { home: '/learning', ai: '/learning/ai', help: '/settings/help' },
   navigation: moduleThemes.learning.navigation,
   hero: {
-    eyebrow: 'Learning Streak',
-    headline: '12 days',
-    support: 'Keep it up! ★',
-    actionLabel: 'Continue Learning',
+    eyebrow: 'My Learning',
+    headline: 'Begin where you like',
+    support: 'Your progress appears once you start.',
+    actionLabel: 'Browse the library',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -609,10 +607,10 @@ const family: ModuleDefinition = {
   routes: { home: '/family', ai: '/family/ai', help: '/settings/help' },
   navigation: moduleThemes.family.navigation,
   hero: {
-    eyebrow: 'Family Connection',
-    headline: 'Strong ❤️',
-    support: '+18 points from last week',
-    actionLabel: 'Family Check-in',
+    eyebrow: 'My Family',
+    headline: 'Bring your family in',
+    support: 'NoorLife adds nobody for you.',
+    actionLabel: 'Invite family',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -700,10 +698,10 @@ const goals: ModuleDefinition = {
   routes: { home: '/goals', ai: '/goals/ai', help: '/settings/help' },
   navigation: moduleThemes.goals.navigation,
   hero: {
-    eyebrow: 'Overall Progress',
-    headline: '68%',
-    support: 'You’re on track! 🎯',
-    actionLabel: 'View Weekly Steps',
+    eyebrow: 'My Goals',
+    headline: 'Name one thing to change',
+    support: 'Progress appears once you set a goal.',
+    actionLabel: 'Add your first goal',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
@@ -747,7 +745,7 @@ const goals: ModuleDefinition = {
     },
     error: {
       title: 'Couldn’t load your Goals',
-      body: 'A request failed on our side. Your streaks are intact.',
+      body: 'A request failed on our side. Your goals are unaffected.',
       action: 'Try again',
     },
     offline: {

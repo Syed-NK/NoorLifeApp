@@ -1,291 +1,57 @@
-import type { ModuleActivityItem } from '../components/module-activity-card';
-import type { ModuleSummaryMetric } from '../components/module-summary-card';
 import type { FrameworkModuleId } from '../module-tokens';
 import type {
   ModuleDataResult,
-  ModuleOverview,
   ModuleRepository,
   ModuleRepositoryProvider,
 } from './module-data.contract';
 
 /**
- * In-memory module repositories.
+ * In-memory module repositories — **carrying no user data, because there is none.**
  *
- * ── What this is and is not ────────────────────────────────────────────────
- * It is the framework's data source until each module's schema has been reviewed and
- * approved, which the phase brief requires before any production table exists. It is
- * *not* a fake that pretends a backend is present: nothing here writes, syncs, or
- * claims to have come from a server, and `generatedAt` is null because no sync has
- * happened.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── What was here, and why it had to go (issue #23) ────────────────────────
+ * A `FIXTURES` table gave every module a populated overview, and the generic module homes
+ * rendered it as the signed-in user's own record. Finance showed *"Spent £412 this month"*,
+ * *"Budget used 68%"* and a `Groceries · Today · £38.40` row. Health showed *"Steps 6,240"* and
+ * *"Sleep 6h 20m — 40 minutes less than your average"*. Family showed *"Family dinner, Friday 7:00
+ * pm"* and *"Eid photos added — By Fatima · yesterday"*, naming a person who does not exist. Goals
+ * and Learning showed streaks. Each module also carried an "insight" that was a causal claim about
+ * the user's life — *"Groceries are your largest category and rose 14% this month"*, *"Your sleep is
+ * shorter on the nights you log an evening walk after 9 pm"*.
  *
- * The fixtures are realistic enough to prove the layout — a summary card with a real
- * trend sentence, activity rows in every status, an insight of a plausible length —
- * because a framework validated only against empty data hides exactly the defects
- * that matter: overflow, truncation and misalignment.
+ * None of it was the user's. Nobody could correct, complete or delete any of it, and no store
+ * existed behind any of it — `finance`, `learning`, `family` and `goals` have no data layer at all.
+ * Presented in the same cards and the same type as a real record, it was indistinguishable from one.
  *
- * `scenario` is what makes the Module Gallery possible. The same seven modules can be
- * rendered as populated, empty, offline or failed without a network, so all four
- * outcomes are reviewable on a device.
+ * The old docblock argued the fixtures were "realistic enough to prove the layout", and that a
+ * framework validated only against empty data hides overflow and truncation defects. That argument
+ * is sound — and it is an argument for a **development** tool, not for what a signed-in user sees.
+ * The Module Gallery still reviews every component in every state; it now builds its own
+ * self-evidently sample content, in a `__DEV__`-only screen, instead of borrowing the product's.
+ *
+ * ── Why there is no `populated` scenario any more ──────────────────────────
+ * Not because nothing needs one, but because a `populated` path in production source is a
+ * hard-coded dataset waiting to be filled in again. A module gets real data when it gets a real
+ * repository; until then the honest answer is `empty`, and the module homes already render each
+ * module's own onboarding copy for it — *"No transactions yet — Add what you spent today"* — which
+ * is both true and more useful than an invented total.
+ *
+ * A test asserts no dataset returns here, so the next person to reach for one has to argue with a
+ * failing test rather than with a comment.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 
-/** Which outcome a mock repository should produce. */
-export type MockScenario = 'populated' | 'empty' | 'offline' | 'error';
+/**
+ * Which outcome a mock repository should produce.
+ *
+ * `populated` is deliberately absent. Every remaining value is a *state*, not content: they let the
+ * Module Gallery and the framework suite reach the loading, empty, offline and failed branches
+ * without a network, which is what `scenario` existed for.
+ */
+export type MockScenario = 'empty' | 'offline' | 'error';
 
 /** Time the mock takes to resolve, so loading states are observable. */
 const MOCK_LATENCY_MS = 350;
-
-type Fixture = {
-  readonly metrics: readonly ModuleSummaryMetric[];
-  readonly activity: readonly ModuleActivityItem[];
-  readonly insight: string;
-};
-
-const FIXTURES: Readonly<Record<FrameworkModuleId, Fixture>> = {
-  // Noor AI's home is its own composition rather than the generic metric/activity layout, so
-  // these are unused by its screen; they exist because every module must satisfy the contract.
-  'noor-ai': {
-    metrics: [],
-    activity: [],
-    insight: 'Ask me about a feature, your progress, or how to plan your week.',
-  },
-  /**
-   * Faith presents as empty here, deliberately, and it is the only module that does.
-   *
-   * ── What was here ───────────────────────────────────────────────────────────
-   * Two metrics — "4 of 5" prayers and "12 pages" of Qur'an with "3 more than last week" — four
-   * prayer rows carrying `5:12 am`, `1:04 pm`, `4:12 pm` and `7:38 pm` with `done`, `done`, `due` and
-   * `upcoming` completion states, and the insight "You have kept every Fajr this week. Asr is the one
-   * you most often miss."
-   *
-   * Every one of those is a statement about a specific user's worship, rendered to whoever opened the
-   * screen. The times were fabricated, and so were the *completions*: `done` on Fajr and Dhuhr told a
-   * user they had prayed. That is a worse class of claim than a wrong clock — a fabricated prayer time
-   * is checkable, a fabricated record of worship is not, and it is the user's own record being
-   * asserted back at them. `You have kept every Fajr this week` is the same fabrication in prose.
-   *
-   * ── Why empty rather than corrected ─────────────────────────────────────────
-   * This repository has no access to the worship log or to the prayer-times calculation — it is a
-   * fixture set for the module gallery, reachable from `/module-gallery` and `/hero-audit`. There is
-   * no honest value it can put here, because the honest values live in Faith's own repositories and
-   * are already rendered by Faith's own screens. An empty overview is true, and it exercises the
-   * gallery's empty path, which nothing else did.
-   *
-   * The insight describes what the module does rather than what the reader has done. The other seven
-   * modules are untouched: their fixtures are outside this brief, and their remaining clock literals
-   * are recorded against `DATE_ALLOWED` in `faith-no-fabrication-scan.test.ts` as a later pass.
-   */
-  faith: {
-    metrics: [],
-    activity: [],
-    insight:
-      'Faith tracks the prayers you mark yourself and the reading you record. Nothing is counted ' +
-      'until you mark it.',
-  },
-  health: {
-    metrics: [
-      { key: 'steps', label: 'Steps', value: '6,240', unit: 'today', icon: 'steps' },
-      {
-        key: 'sleep',
-        label: 'Sleep',
-        value: '6h 20m',
-        icon: 'sleep',
-        trend: 'down',
-        trendLabel: '40 minutes less than your average',
-      },
-    ],
-    activity: [
-      { key: 'walk', title: 'Morning walk', meta: '25 minutes', icon: 'steps', status: 'done' },
-      { key: 'water', title: 'Water', meta: '5 of 8 glasses', icon: 'water', status: 'due' },
-      {
-        key: 'stretch',
-        title: 'Evening stretch',
-        meta: '8:30 pm',
-        icon: 'wellness',
-        status: 'upcoming',
-      },
-      {
-        key: 'weigh-in',
-        title: 'Weekly weigh-in',
-        meta: 'Yesterday',
-        icon: 'records',
-        status: 'missed',
-      },
-    ],
-    insight:
-      'Your sleep is shorter on the nights you log an evening walk after 9 pm. Worth trying it earlier for a week.',
-  },
-  planner: {
-    metrics: [
-      { key: 'tasks', label: 'Tasks left', value: '3', unit: 'today', icon: 'tasks' },
-      {
-        key: 'done',
-        label: 'Completed',
-        value: '11',
-        unit: 'this week',
-        icon: 'check-circle',
-        trend: 'up',
-        trendLabel: '2 more than last week',
-      },
-    ],
-    activity: [
-      { key: 'standup', title: 'Team stand-up', meta: '9:30 am', icon: 'work', status: 'done' },
-      {
-        key: 'report',
-        title: 'Send the report',
-        meta: 'Due 4:00 pm',
-        icon: 'document',
-        status: 'due',
-      },
-      {
-        key: 'school',
-        title: 'School pick-up',
-        meta: '3:15 pm',
-        icon: 'school-bag',
-        status: 'upcoming',
-      },
-      {
-        key: 'invoice',
-        title: 'File the invoice',
-        meta: 'Yesterday',
-        icon: 'tasks',
-        status: 'missed',
-      },
-    ],
-    insight:
-      'Your afternoons carry twice as many tasks as your mornings. Moving one to before 11 am tends to be what clears the day.',
-  },
-  finance: {
-    metrics: [
-      { key: 'spent', label: 'Spent', value: '£412', unit: 'this month', icon: 'money' },
-      {
-        key: 'budget',
-        label: 'Budget used',
-        value: '68%',
-        icon: 'budgets',
-        trend: 'down',
-        trendLabel: '9% more than the same point last month',
-      },
-    ],
-    activity: [
-      {
-        key: 'groceries',
-        title: 'Groceries',
-        meta: 'Today · £38.40',
-        icon: 'meal',
-        status: 'done',
-      },
-      {
-        key: 'transport',
-        title: 'Transport',
-        meta: 'Yesterday · £6.20',
-        icon: 'transactions',
-        status: 'done',
-      },
-      {
-        key: 'subscription',
-        title: 'Subscription renews',
-        meta: 'In 3 days · £9.99',
-        icon: 'clock',
-        status: 'upcoming',
-      },
-      {
-        key: 'savings',
-        title: 'Savings transfer',
-        meta: 'Missed on the 1st',
-        icon: 'target',
-        status: 'missed',
-      },
-    ],
-    insight:
-      'Groceries are your largest category and rose 14% this month. This is a description of your own spending, not advice.',
-  },
-  learning: {
-    metrics: [
-      { key: 'lessons', label: 'In progress', value: '2', unit: 'lessons', icon: 'learn' },
-      {
-        key: 'streak',
-        label: 'Study streak',
-        value: '6',
-        unit: 'days',
-        icon: 'progress',
-        trend: 'up',
-        trendLabel: 'Your longest so far',
-      },
-    ],
-    activity: [
-      {
-        key: 'tajweed',
-        title: 'Tajweed basics',
-        meta: 'Lesson 4 of 9',
-        icon: 'learn',
-        status: 'due',
-      },
-      {
-        key: 'article',
-        title: 'Saved: focus habits',
-        meta: '8 min read',
-        icon: 'bookmark',
-        status: 'upcoming',
-      },
-      {
-        key: 'arabic',
-        title: 'Arabic vocabulary',
-        meta: 'Completed today',
-        icon: 'school-bag',
-        status: 'done',
-      },
-    ],
-    insight:
-      'You finish lessons you start before noon and abandon the ones you start after 9 pm. Your mornings are working.',
-  },
-  family: {
-    metrics: [
-      { key: 'events', label: 'This week', value: '2', unit: 'events', icon: 'calendar' },
-      { key: 'members', label: 'Members', value: '4', icon: 'family' },
-    ],
-    activity: [
-      {
-        key: 'dinner',
-        title: 'Family dinner',
-        meta: 'Friday, 7:00 pm',
-        icon: 'meal',
-        status: 'upcoming',
-      },
-      { key: 'trip', title: 'Weekend trip', meta: 'Saturday', icon: 'today', status: 'upcoming' },
-      {
-        key: 'photos',
-        title: 'Eid photos added',
-        meta: 'By Fatima · yesterday',
-        icon: 'memories',
-        status: 'done',
-      },
-    ],
-    insight:
-      'Two plans this week have no one assigned to them yet. Naming someone is usually what makes them happen.',
-  },
-  goals: {
-    metrics: [
-      { key: 'active', label: 'Active goals', value: '3', icon: 'target' },
-      {
-        key: 'streak',
-        label: 'Best streak',
-        value: '4',
-        unit: 'days',
-        icon: 'habits',
-        trend: 'up',
-        trendLabel: 'Up from 2 last week',
-      },
-    ],
-    activity: [
-      { key: 'read', title: 'Read 10 pages', meta: 'Today', icon: 'habits', status: 'done' },
-      { key: 'walk', title: 'Walk 8,000 steps', meta: 'Today', icon: 'steps', status: 'due' },
-      { key: 'arabic', title: 'Practise Arabic', meta: 'Today', icon: 'learn', status: 'upcoming' },
-      { key: 'sleep', title: 'Sleep by 11 pm', meta: 'Yesterday', icon: 'sleep', status: 'missed' },
-    ],
-    insight:
-      'Two of your three goals depend on the evening. Spreading them across the day is usually what protects a streak.',
-  },
-};
 
 function delay<T>(value: T): Promise<T> {
   return new Promise((resolve) => {
@@ -293,17 +59,22 @@ function delay<T>(value: T): Promise<T> {
   });
 }
 
-/** Builds a mock repository for one module in a chosen scenario. */
+/**
+ * A repository that reports a state and never invents a record.
+ *
+ * `empty` is the default because it is the truth for every module that has no store yet: nothing
+ * has been entered, so there is nothing to show. It is distinct from `ok` with no rows — the screen
+ * renders the module's onboarding copy for the first and an unpopulated working surface for the
+ * second — and this returns the former, because these modules are not working surfaces yet.
+ */
 export function createMockModuleRepository(
   moduleId: FrameworkModuleId,
-  scenario: MockScenario = 'populated',
+  scenario: MockScenario = 'empty',
 ): ModuleRepository {
   return {
     moduleId,
-    async getOverview(): Promise<ModuleDataResult<ModuleOverview>> {
+    async getOverview(): Promise<ModuleDataResult<never>> {
       switch (scenario) {
-        case 'empty':
-          return delay({ kind: 'empty' as const });
         case 'offline':
           return delay({ kind: 'offline' as const });
         case 'error':
@@ -312,29 +83,12 @@ export function createMockModuleRepository(
             code: 'unavailable' as const,
             detail: 'mock scenario: error',
           });
-        case 'populated': {
-          const fixture = FIXTURES[moduleId];
-          const overview: ModuleOverview = {
-            moduleId,
-            metrics: fixture.metrics,
-            activity: fixture.activity,
-            insight: fixture.insight,
-            // Null on purpose: nothing has synced, and claiming a timestamp would be
-            // the kind of invented success this project has ruled out.
-            generatedAt: null,
-          };
-          return delay({ kind: 'ok' as const, data: overview });
-        }
+        case 'empty':
+          return delay({ kind: 'empty' as const });
       }
     },
   };
 }
 
-/**
- * The provider the framework uses today.
- *
- * Replacing this one function with a Supabase-backed provider is the whole of the
- * integration work — no screen imports a repository directly.
- */
 export const mockModuleRepositoryProvider: ModuleRepositoryProvider = (moduleId) =>
-  createMockModuleRepository(moduleId, 'populated');
+  createMockModuleRepository(moduleId, 'empty');
