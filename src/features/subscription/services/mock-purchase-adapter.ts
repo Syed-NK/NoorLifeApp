@@ -5,6 +5,7 @@ import {
   type FamilySeatUsage,
 } from '../domain/entitlement';
 import { fallbackPrice } from '../domain/pricing';
+import { TRIAL_DAYS } from '../domain/trial-period';
 import { PLAN_OFFERS, findOfferByProductId, type ProductId } from '../domain/products';
 import type {
   PricedOffer,
@@ -33,7 +34,7 @@ import type {
 /** Days in a monthly and yearly period, for computing renewal dates the UI can display. */
 const MONTH_DAYS = 30;
 const YEAR_DAYS = 365;
-const TRIAL_DAYS = 7;
+/* TRIAL_DAYS is imported from the domain: it was one of four copies of the same number. */
 
 function isoInDays(days: number, from: Date): string {
   const date = new Date(from.getTime());
@@ -54,7 +55,15 @@ export type MockAdapterOptions = {
    */
   readonly trialEligible?: boolean;
   /**
-   * Fixed "now", so renewal dates and screenshots are reproducible.
+   * A fixed "now", for reproducible renewal dates in tests and visual references.
+   *
+   * **Optional, and no longer defaulted to a literal date.** It defaulted to `2026-08-01T09:00:00.000Z`
+   * so screenshots could be compared, and that default reached production: every purchase issued a
+   * trial ending 8 August 2026, so the success screen announced a trial end three weeks in the past
+   * while the confirmation screen, projecting from the real clock, said 28 August. A reproducibility
+   * aid must be opt-in, because the cost of forgetting it is a false statement about money.
+   *
+   * Pass it wherever a stable date matters; leave it out and the adapter uses the real clock.
    *
    * Without this the same screen renders a different date every run, which makes a visual
    * reference impossible to compare.
@@ -91,7 +100,8 @@ export class MockPurchaseAdapter implements PurchaseAdapter {
     this.entitlement = options.initialEntitlement ?? FREE_ENTITLEMENT;
     this.seatUsage = options.initialSeatUsage ?? { used: 1, limit: 6, pendingInvitations: 0 };
     this.trialEligible = options.trialEligible ?? true;
-    this.now = options.now ?? new Date('2026-08-01T09:00:00.000Z');
+    // The real clock unless a caller asks for a fixed one. See `MockAdapterOptions.now`.
+    this.now = options.now ?? new Date();
     this.storeAvailable = options.storeAvailable ?? true;
     this.online = options.online ?? true;
     this.restorable = options.restorableEntitlement ?? null;

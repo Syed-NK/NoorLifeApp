@@ -26,6 +26,7 @@ import {
   SubscriptionLoadingState,
 } from '../components/subscription-states';
 import { formatRenewalDate, yearlyPerMonth } from '../domain/pricing';
+import { projectedTrialEnd } from '../domain/trial-period';
 import { useEntitlement } from '../services/entitlement-context';
 import {
   billingCopy,
@@ -223,7 +224,11 @@ export function PlanDetailsScreen({ plan, initialPeriod }: PlanDetailsScreenProp
               <TrialDisclosure
                 eligible={offer.trialEligibleForUser}
                 priceAfterTrial={offer.price.formatted}
-                renewalDate={formatRenewalDate(trialRenewalDate(yearlyOffer !== undefined))}
+                renewalDate={
+                  yearlyOffer === undefined
+                    ? null
+                    : formatRenewalDate(projectedTrialEnd(new Date()))
+                }
                 testID="plan-details-trial"
               />
             ) : null}
@@ -289,14 +294,11 @@ export function PlanDetailsScreen({ plan, initialPeriod }: PlanDetailsScreenProp
  * Computed from today rather than read from the adapter, because no purchase exists yet — this is
  * a disclosure about what *would* happen. Returns null when there is no yearly offer to trial.
  */
-function trialRenewalDate(hasYearlyOffer: boolean): string | null {
-  if (!hasYearlyOffer) {
-    return null;
-  }
-  const date = new Date();
-  date.setDate(date.getDate() + 7);
-  return date.toISOString();
-}
+/*
+  `trialRenewalDate` was the second of three independent computations of the same date. The projection
+  is now `projectedTrialEnd`, and the "is there a yearly offer" question stayed at the call site where
+  it was already answered.
+*/
 
 type ExplainerCardProps = {
   readonly heading: string;
