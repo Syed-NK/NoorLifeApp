@@ -9,6 +9,7 @@ import { ModuleHomeScreen } from '../screens/module-home-screen';
 import { ModuleAIScreen } from '../screens/module-ai-screen';
 import { ModuleSectionScreen } from '../screens/module-section-screen';
 import { createMockModuleRepository, type MockScenario } from '../services/mock-module-repository';
+import type { ModuleRepositoryProvider } from '../services/module-data.contract';
 import {
   ModuleEmptyState,
   ModuleErrorState,
@@ -45,11 +46,44 @@ const GENERIC_MODULE_IDS = FRAMEWORK_MODULE_IDS.filter((id) => !hasApprovedCompo
 const scenarioProvider = (scenario: MockScenario) => (moduleId: FrameworkModuleId) =>
   createMockModuleRepository(moduleId, scenario);
 
+/**
+ * A populated overview, owned by this suite rather than by production.
+ *
+ * The mock repository used to ship a `populated` scenario backed by a `FIXTURES` table, and the
+ * generic module homes rendered that table as the signed-in user's own record — issue #23. The table
+ * is gone and so is the scenario, but the *rendering* of a populated overview still needs covering,
+ * so the data now lives here where it can only ever reach a test.
+ *
+ * The values are deliberately self-evidently synthetic. Anything that reads like a real record —
+ * an amount, a step count, a person's name — is what made the production fixtures dangerous.
+ */
+const populatedProvider = (): ModuleRepositoryProvider => (moduleId: FrameworkModuleId) => ({
+  moduleId,
+  getOverview: async () => ({
+    kind: 'ok' as const,
+    data: {
+      moduleId,
+      metrics: [{ key: 'sample', label: 'Sample metric', value: '1', icon: 'today' as const }],
+      activity: [
+        {
+          key: 'sample',
+          title: 'Sample activity',
+          meta: 'Sample detail',
+          icon: 'today' as const,
+          status: 'due' as const,
+        },
+      ],
+      insight: 'Sample insight text for layout review.',
+      generatedAt: null,
+    },
+  }),
+});
+
 describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   const definition = moduleRegistry[moduleId];
 
   it('renders the header, hero and five-slot navigation', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
+    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
 
     expect(screen.getByTestId(`${moduleId}-home-header`)).toBeTruthy();
     expect(screen.getByTestId(`${moduleId}-hero`)).toBeTruthy();
@@ -63,7 +97,7 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   });
 
   it('gives the header Back, profile and module Help', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
+    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
 
     expect(screen.getByTestId(`${moduleId}-home-header-back`)).toBeTruthy();
     expect(screen.getByTestId(`${moduleId}-home-header-profile`)).toBeTruthy();
@@ -79,7 +113,7 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
      * putting the small pictogram in the hero is explicitly forbidden — so the assertion is
      * inverted: the hero shows its own artwork, and never the pictogram.
      */
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
+    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
 
     const art = screen.getByTestId(`${moduleId}-hero-artwork`);
     expect(art.props.source).toBe(definition.heroArtwork);
@@ -103,7 +137,7 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   });
 
   it('names the AI centre control after this module’s assistant', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
+    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
 
     const ai = screen.getByTestId(`${moduleId}-home-nav-ai`);
     // Even with no visible caption, the control must announce which AI it opens.
@@ -111,7 +145,7 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   });
 
   it('shows the module’s content once loaded', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
+    await render(<ModuleHomeScreen moduleId={moduleId} provider={populatedProvider()} />);
 
     await waitFor(() => {
       expect(screen.getByTestId(`${moduleId}-summary`)).toBeTruthy();
@@ -121,7 +155,7 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   });
 
   it('shows a loading state before the data settles', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('populated')} />);
+    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
     // Derived from the request key, so it is present on the first render.
     expect(screen.getByTestId('module-loading-state')).toBeTruthy();
   });

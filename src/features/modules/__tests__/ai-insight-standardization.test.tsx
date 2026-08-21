@@ -11,6 +11,29 @@ import { ModuleProvider } from '../module-context';
 import { moduleColorThemes, FRAMEWORK_MODULE_IDS, type FrameworkModuleId } from '../module-tokens';
 import { ModuleAIInsightCard } from '../components/module-ai-insight-card';
 import { ModuleHomeScreen } from '../screens/module-home-screen';
+import type { ModuleRepositoryProvider } from '../services/module-data.contract';
+
+/**
+ * A populated overview, so a generic module home actually renders an insight card to measure.
+ *
+ * These screens used to get one from the mock repository's `populated` fixtures, and that table was
+ * issue #23 — invented totals and activity shown to a signed-in user as their own record. The table
+ * is gone, so this suite supplies its own self-evidently sample insight. The card's *geometry* is
+ * what is under test here, not its content.
+ */
+const insightProvider: ModuleRepositoryProvider = (moduleId) => ({
+  moduleId,
+  getOverview: async () => ({
+    kind: 'ok' as const,
+    data: {
+      moduleId,
+      metrics: [],
+      activity: [],
+      insight: 'Sample insight text for geometry review.',
+      generatedAt: null,
+    },
+  }),
+});
 
 // Two costs this removes: the simulated latency the mock data sources sleep through on every
 // mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
@@ -128,7 +151,7 @@ describe('every module home renders the shared card', () => {
   const GENERIC: readonly FrameworkModuleId[] = ['finance', 'learning', 'family', 'goals'];
 
   it.each(GENERIC)('%s home renders it at the locked height', async (moduleId) => {
-    await render(<ModuleHomeScreen moduleId={moduleId} />);
+    await render(<ModuleHomeScreen moduleId={moduleId} provider={insightProvider} />);
     await screen.findByTestId(`${moduleId}-insight`);
     const style = styleOf(`${moduleId}-insight`);
     expect(style.height).toBe(AI_INSIGHT_GEOMETRY.height);

@@ -32,7 +32,6 @@ import {
   moduleNeutrals,
   type FrameworkModuleId,
 } from '../module-tokens';
-import { createMockModuleRepository } from '../services/mock-module-repository';
 import { useModuleMetrics } from '../use-module-metrics';
 
 /**
@@ -200,6 +199,60 @@ type Fixture = {
   readonly insight: string;
 };
 
+/**
+ * Component-review content for the gallery, and nowhere else.
+ *
+ * Every string names itself a sample. That is the point: the framework needs *something* rendered to
+ * review overflow, truncation and alignment across seven themes, and the previous version used
+ * plausible records — amounts, step counts, a person's name — which is exactly what made them unsafe
+ * once the same table reached the product's own screens.
+ */
+const SAMPLE_FIXTURE: Fixture = {
+  metrics: [
+    { key: 'sample-a', label: 'Sample metric', value: '12', unit: 'units', icon: 'today' },
+    {
+      key: 'sample-b',
+      label: 'Sample metric with a trend',
+      value: '34%',
+      icon: 'progress',
+      trend: 'up',
+      trendLabel: 'Sample trend sentence, long enough to wrap on a narrow screen',
+    },
+  ],
+  activity: [
+    {
+      key: 'sample-done',
+      title: 'Sample activity, done',
+      meta: 'Sample detail',
+      icon: 'today',
+      status: 'done',
+    },
+    {
+      key: 'sample-due',
+      title: 'Sample activity, due',
+      meta: 'Sample detail',
+      icon: 'today',
+      status: 'due',
+    },
+    {
+      key: 'sample-upcoming',
+      title: 'Sample activity, upcoming',
+      meta: 'Sample detail',
+      icon: 'today',
+      status: 'upcoming',
+    },
+    {
+      key: 'sample-missed',
+      title: 'Sample activity with a long title that has to truncate somewhere sensible',
+      meta: 'Sample detail',
+      icon: 'today',
+      status: 'missed',
+    },
+  ],
+  insight:
+    'Sample insight text, written at roughly the length a real one would be so the card can be reviewed for wrapping and height.',
+};
+
 /** The gallery's content, rendered inside the provider so each component themes itself. */
 function GalleryBody({ moduleId }: { readonly moduleId: FrameworkModuleId }) {
   const { dp, pagePadding } = useModuleMetrics();
@@ -209,30 +262,27 @@ function GalleryBody({ moduleId }: { readonly moduleId: FrameworkModuleId }) {
     null,
   );
 
-  // Fixtures come from the mock repository, so the gallery shows exactly the data the
-  // real screens do rather than a second set that could drift from it.
-  //
-  // Tagged with the module id for the same reason `useModuleOverview` is: switching
-  // theme must show the new module's data, and clearing the old one with a synchronous
-  // setState inside the effect is both a cascading render and a compiler error. A key
-  // mismatch means "not loaded yet".
+  /*
+    The gallery builds its own sample content rather than borrowing the product's.
+
+    It used to read the mock repository's `populated` scenario, on the argument that the gallery
+    should show "exactly the data the real screens do". That argument inverted: the real screens were
+    showing the *gallery's* kind of data — invented totals and activity presented to a signed-in user
+    as their own record (issue #23). The product fixtures are gone, so the sample lives here, in a
+    `__DEV__`-only screen, and every value says out loud that it is a sample.
+
+    Still tagged with the module id for the same reason `useModuleOverview` is: switching theme must
+    re-render, and a key mismatch means "not loaded yet". The resolve stays asynchronous so the
+    loading state remains reviewable.
+  */
   useEffect(() => {
     let active = true;
 
-    void createMockModuleRepository(moduleId, 'populated')
-      .getOverview()
-      .then((result) => {
-        if (active && result.kind === 'ok') {
-          setLoaded({
-            key: moduleId,
-            fixture: {
-              metrics: result.data.metrics,
-              activity: result.data.activity,
-              insight: result.data.insight ?? '',
-            },
-          });
-        }
-      });
+    void Promise.resolve(SAMPLE_FIXTURE).then((sample) => {
+      if (active) {
+        setLoaded({ key: moduleId, fixture: sample });
+      }
+    });
 
     return () => {
       active = false;
