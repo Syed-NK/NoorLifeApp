@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 
+import { ProtectedRouteBoundary } from '@application/navigation/protected-route-boundary';
 import { LegacyDataPrompt } from '@features/faith/components/legacy-data-prompt';
-import { FaithRouteGuard } from '@features/faith/di/faith-route-guard';
 import { FaithRepositoryProvider } from '@features/faith/di/faith-repository-context';
 import { OfflineRecitationProvider } from '@features/faith/di/offline-recitation-context';
 import { FaithPreferencesProvider } from '@features/faith/state/faith-preferences-provider';
@@ -19,7 +19,13 @@ import { FaithPreferencesProvider } from '@features/faith/state/faith-preference
  * deep link into `/faith/*` renders its target directly and never touches it. Putting the guard here
  * means every route in this stack — including one arrived at by link — takes the decision before any
  * provider mounts, so no repository is constructed and no screen issues a read for somebody the app
- * has not established is signed in. See `faith-route-guard.tsx` for what it admits and why.
+ * has not established is signed in.
+ *
+ * It used to be Faith’s own `FaithRouteGuard`. Issue #28 found that Faith was the only stack with
+ * one — every other module had an entitlement gate and no authentication decision — so the guard
+ * was generalised rather than copied six times. `ProtectedRouteBoundary` is the same three answers
+ * from the same predicate, now serving every authenticated route; see `protected-routes.ts` for
+ * what it admits and why, including why offline authority is allowed through.
  */
 export default function Layout() {
   return (
@@ -30,7 +36,7 @@ export default function Layout() {
       `faith-preferences-store.ts` — so being a provider is about naming the hydration point, not
       about scoping the value.
     */
-    <FaithRouteGuard>
+    <ProtectedRouteBoundary>
       <FaithPreferencesProvider>
         <FaithRepositoryProvider>
           {/*
@@ -62,6 +68,6 @@ export default function Layout() {
           </OfflineRecitationProvider>
         </FaithRepositoryProvider>
       </FaithPreferencesProvider>
-    </FaithRouteGuard>
+    </ProtectedRouteBoundary>
   );
 }

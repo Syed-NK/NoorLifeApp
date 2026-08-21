@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import type { AuthState } from '@application/providers/auth-provider';
 
-import { faithRouteAccess } from '../di/faith-route-guard';
+import { protectedRouteAccess as faithRouteAccess } from '@application/navigation/protected-routes';
 import {
   faithStorageKeys,
   readJson,
@@ -128,8 +128,8 @@ describe('the route guard', () => {
       join(__dirname, '..', '..', '..', 'app', 'faith', '_layout.tsx'),
       'utf8',
     );
-    expect(layout).toContain('FaithRouteGuard');
-    expect(layout.indexOf('<FaithRouteGuard>')).toBeLessThan(
+    expect(layout).toContain('ProtectedRouteBoundary');
+    expect(layout.indexOf('<ProtectedRouteBoundary>')).toBeLessThan(
       layout.indexOf('<FaithPreferencesProvider>'),
     );
   });

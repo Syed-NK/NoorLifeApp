@@ -1,5 +1,6 @@
 import { Redirect } from 'expo-router';
 
+import { ProtectedRouteBoundary } from '@application/navigation/protected-route-boundary';
 import { globalRoutes } from '@application/navigation/routes';
 import { ModuleHeroAuditScreen } from '@features/modules/screens/module-gallery-screen';
 
@@ -15,5 +16,9 @@ export default function Screen() {
   if (!__DEV__) {
     return <Redirect href={globalRoutes.home} />;
   }
-  return <ModuleHeroAuditScreen />;
+  return (
+    <ProtectedRouteBoundary>
+      <ModuleHeroAuditScreen />
+    </ProtectedRouteBoundary>
+  );
 }
