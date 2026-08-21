@@ -1,7 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
-import { ModuleProvider } from '@features/modules/module-context';
-
 import {
   createPlannerTaskRepository,
   type PlannerTaskRepository,
@@ -37,12 +35,18 @@ function repository(): PlannerTaskRepository {
 }
 
 async function renderPlanner(repo: PlannerTaskRepository) {
+  /*
+    Exactly the tree `src/app/planner/tasks.tsx` renders — a `PlannerProvider` and nothing else.
+
+    This harness once wrapped the screen in a `ModuleProvider` of its own, and that wrapper was the
+    reason a release build crashed on this screen while all three tests passed: the screen read the
+    module context above the `ModuleScaffold` that creates it, and only the harness was supplying
+    one. A screen test that provides context the route does not is not testing the screen.
+  */
   await render(
-    <ModuleProvider moduleId="planner">
-      <PlannerProvider repository={repo}>
-        <PlannerTasksScreen />
-      </PlannerProvider>
-    </ModuleProvider>,
+    <PlannerProvider repository={repo}>
+      <PlannerTasksScreen />
+    </PlannerProvider>,
   );
   await waitFor(() => {
     expect(screen.queryByTestId('planner-open-tasks')).toBeTruthy();
@@ -51,6 +55,18 @@ async function renderPlanner(repo: PlannerTaskRepository) {
 }
 
 describe('Planner task screen', () => {
+  it('mounts from its route with no module context but its own scaffold', async () => {
+    /*
+      The regression guard for the crash. `renderPlanner` supplies no `ModuleProvider`, so mounting
+      at all proves the screen reads the module context below the scaffold that provides it. Before
+      the fix this threw "useModule must be used inside a ModuleProvider" on the first render.
+    */
+    await renderPlanner(repository());
+
+    expect(screen.getByTestId('planner-tasks')).toBeTruthy();
+    expect(screen.getByTestId('planner-task-composer')).toBeTruthy();
+  });
+
   it('starts honestly empty and never invents a schedule', async () => {
     await renderPlanner(repository());
     expect(screen.getByText('Nothing scheduled')).toBeTruthy();
