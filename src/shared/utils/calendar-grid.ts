@@ -226,7 +226,14 @@ export function spokenDate(iso: string): string {
   return `${weekday}, ${day} ${MONTH_NAMES[address.month - 1] ?? ''} ${address.year}`;
 }
 
-const WEEKDAY_FULL: readonly string[] = [
+/**
+ * Weekday names in full, Monday first, indexed by `weekdayColumn`.
+ *
+ * Exported because a control that lets somebody pick days has to speak them in full — "Mon" is fine
+ * to look at in a grid header and useless read aloud — and because a second list would be a second
+ * chance to disagree with `weekdayColumn` about which index means Monday.
+ */
+export const WEEKDAY_FULL: readonly string[] = [
   'Monday',
   'Tuesday',
   'Wednesday',
