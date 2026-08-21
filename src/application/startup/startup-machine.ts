@@ -18,6 +18,15 @@ export type StartupState =
   | 'native_boot'
   | 'branded_splash'
   | 'resolving'
+  /**
+   * Resolution has passed the presentation ceiling and still has no answer.
+   *
+   * **Not a destination.** It is a statement about what to *show* while the wait continues, not a
+   * conclusion about who the user is — which is the whole of issue #31. `isDestination` excludes it
+   * deliberately, so `useStartupRouting` does not freeze on it and the real destination is still
+   * reached when the answer lands, however late.
+   */
+  | 'still_resolving'
   | 'onboarding'
   | 'authentication'
   /** Signed in, but the account still owes its initial plan choice. */
@@ -48,41 +57,50 @@ export const FIRST_LAUNCH_SPLASH_MS = 1800;
 export const RETURNING_LAUNCH_SPLASH_MS = 900;
 
 /**
- * Hard ceiling before the app stops waiting, in ms.
+ * When the branded splash stops being the whole of what is shown, in ms.
  *
- * Past this, storage or the session provider is not going to answer. Continuing to wait would leave
- * the user on a splash forever, so the machine falls through to a recoverable route rather than
- * hanging. It never invents a session — an unresolved session is treated as signed out, which is
- * the safe direction to be wrong in.
+ * **A presentation ceiling, not a verdict deadline.** Past this the machine says "still resolving" —
+ * it does not decide anything about who the user is. Naming it `STARTUP_TIMEOUT_MS` was part of the
+ * problem: a timeout invites a fallback, and the fallback chosen was the signed-out entry point.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * ── Why this was raised from 4000, and what 4000 actually broke ────────────
- * 4000 was chosen against a warm development launch and was **narrower than a real cold start**.
- * Measured on the emulator against a release build in airplane mode, the session resolves to
- * `authority: 'offline'` at roughly **4.3 s** from splash mount — Hermes cold start, then a
- * connectivity probe bounded at 2 s, then a Keystore read. So the ceiling fired a few hundred
- * milliseconds *before* the correct answer arrived, routed to `authentication` on the explicit
- * assumption of signed-out, and `destination` froze there.
+ * ── The history, because it repeated ───────────────────────────────────────
+ * This value was **4000** first, chosen against a warm development launch and narrower than a real
+ * cold start. Measured on the emulator against a release build in airplane mode, the session resolved
+ * to `authority: 'offline'` at roughly **4.3 s** from splash mount — Hermes cold start, a connectivity
+ * probe bounded at 2 s, then a Keystore read. The ceiling fired a few hundred milliseconds before the
+ * correct answer arrived, routed to `authentication` on the explicit assumption of signed-out, and
+ * `destination` froze there. The user-visible result was Authentication Options on a device holding a
+ * valid receipt and 3,158 downloaded recitation files.
  *
- * The user-visible result was the exact failure the offline work exists to remove: Authentication
- * Options on a device holding a valid receipt and 3,158 downloaded recitation files. Nothing in the
- * auth layer was wrong: the instrumented build showed connectivity classified, the receipt read,
- * validated and adopted, and the authority settled on offline — it simply arrived after nobody was
- * listening.
+ * It was raised to **10000** as the fix. Issue #31 then measured the same failure again on both
+ * targets: after installing a current APK, a first launch takes **20–28 s** to render at all, and a
+ * valid live session and a valid offline receipt each reached Authentication Options because
+ * resolution outran the ceiling a second time.
  *
- * ── Why raising it is the fix rather than un-freezing the destination ──────
- * Correcting the destination afterwards was tried first and does not work: `Redirect` has already
- * navigated and the gate has unmounted, so a later value has nowhere to go. Freezing is also
- * *right* — a user must not be yanked between screens by a late input.
+ * ── Why raising it a third time is not the fix ─────────────────────────────
+ * Because the number was never the defect. Any finite ceiling is beatable by a cold enough device or
+ * a slow enough network, and each raise buys silence until the next machine. What was wrong is the
+ * *conclusion* drawn when the ceiling elapsed: unresolved was converted into signed out.
  *
- * So the ceiling has to be a genuine "this is stuck" bound rather than a "this is slow" one. 10000
- * is comfortably beyond the measured worst case with room for a colder device, and the cost when
- * something really is stuck is a longer splash — strictly better than ejecting a signed-in user to
- * a sign-in screen they cannot complete offline. The session input itself cannot hang: every path
- * in `resolveLaunch` settles, and its connectivity probe carries its own 2 s bound.
+ * So the ceiling keeps its value and loses its verdict. Past it the machine returns
+ * `'still_resolving'`, which `isDestination` excludes — so nothing freezes, no navigation happens, and
+ * the launch reaches its real destination whenever the answer lands, at 11 s or at 40 s.
+ *
+ * The earlier note argued that un-freezing the destination "does not work, because `Redirect` has
+ * already navigated and the gate has unmounted". That is true and it is not an objection: the fix is
+ * not to correct a navigation afterwards, it is not to navigate on a non-answer in the first place.
+ * Freezing remains right for destinations, and `'still_resolving'` is not one.
+ *
+ * ── What still bounds the wait ─────────────────────────────────────────────
+ * Every path in `resolveLaunch` settles: the connectivity probe carries its own 2 s bound, and each
+ * branch writes state. What is *not* bounded is the network — `getSession()` may refresh, and
+ * `getProfile()` follows it, and neither carries a timeout — which is where a slow launch spends its
+ * time. Bounding those is a change to session validation rather than to presentation, so it is not
+ * done here; see issue #31 for the measurement.
  * ═══════════════════════════════════════════════════════════════════════════
  */
-export const STARTUP_TIMEOUT_MS = 10_000;
+export const STARTUP_PRESENTATION_CEILING_MS = 10_000;
 
 export type StartupInput = {
   /** Milliseconds since the branded splash mounted. */
@@ -179,12 +197,25 @@ export function nextStartupState(input: StartupInput): StartupState {
     return 'startup_error';
   }
 
-  const timedOut = input.elapsedMs >= STARTUP_TIMEOUT_MS;
+  const pastCeiling = input.elapsedMs >= STARTUP_PRESENTATION_CEILING_MS;
 
   if (!isResolved(input)) {
-    // Past the ceiling with no answer: fall through to a safe route rather than hang. The session
-    // is treated as signed out, never as signed in.
-    return timedOut ? 'authentication' : 'branded_splash';
+    /*
+      Past the ceiling with no answer, the presentation changes and the *conclusion* does not.
+
+      This branch used to return 'authentication' — the signed-out entry point — on the reasoning that
+      falling through to a safe route beat hanging, and that treating the session as signed out was the
+      conservative direction. It is conservative about *exposure* and wrong about *truth*: it tells a
+      user who is signed in that they are not, and invites them to sign in again. Issue #31 measured
+      it on both targets after a fresh install, where a valid session and a valid offline receipt each
+      reached Authentication Options because resolution outran a performance ceiling.
+
+      "We have not finished asking" is not "there is nobody signed in". Only a real verdict may send
+      anyone to authentication, and this branch has no verdict by definition — `isResolved` is false.
+      So it now names a presentation state instead, which is not a destination: nothing freezes, and
+      the launch still arrives wherever the answer says once the answer exists.
+    */
+    return pastCeiling ? 'still_resolving' : 'branded_splash';
   }
 
   if (input.elapsedMs < minimumSplashMs(input.isFirstLaunch)) {

@@ -1,7 +1,7 @@
 import {
   FIRST_LAUNCH_SPLASH_MS,
   RETURNING_LAUNCH_SPLASH_MS,
-  STARTUP_TIMEOUT_MS,
+  STARTUP_PRESENTATION_CEILING_MS,
   isDestination,
   isResolved,
   minimumSplashMs,
@@ -124,18 +124,36 @@ describe('destinations', () => {
 });
 
 describe('failure and timeout', () => {
-  it('cannot hang: past the ceiling it routes even with nothing resolved', () => {
-    const stuck = input({ elapsedMs: STARTUP_TIMEOUT_MS, isSignedIn: null, fontsReady: false });
+  it('cannot hang: past the ceiling it changes what it shows, not what it concludes', () => {
+    /*
+      Reframed for issue #31. This asserted `'authentication'` — the signed-out entry point — as proof
+      that the machine "cannot hang". It does still not hang: it leaves `branded_splash` for a state
+      that says so. What it no longer does is draw a conclusion about identity from a stopwatch.
+    */
+    const stuck = input({
+      elapsedMs: STARTUP_PRESENTATION_CEILING_MS,
+      isSignedIn: null,
+      fontsReady: false,
+    });
     expect(isResolved(stuck)).toBe(false);
-    expect(nextStartupState(stuck)).toBe('authentication');
+    expect(nextStartupState(stuck)).toBe('still_resolving');
+    // And it is not a destination, so nothing navigates and nothing freezes.
+    expect(isDestination('still_resolving')).toBe(false);
   });
 
-  it('never invents a session when it gives up', () => {
-    // The safe direction to be wrong in: an unresolved session means "we do not know who you are",
-    // and the honest answer to that is the signed-out entry point, never Main Home.
+  it('invents no session, and no absence of one either', () => {
+    /*
+      The original half of this still holds and is the more important one: an unresolved launch never
+      reaches Main Home. What changed with issue #31 is the other half. "The safe direction to be wrong
+      in" was the signed-out entry point — safe about exposure, wrong about truth, and the thing that
+      told a signed-in user to sign in again. Being wrong in *neither* direction is available: say
+      nothing about identity until there is something to say.
+    */
     const stuck = input({ elapsedMs: 10000, isSignedIn: null, hasCompletedOnboarding: null });
     expect(nextStartupState(stuck)).not.toBe('authenticated_home');
-    expect(nextStartupState(stuck)).toBe('authentication');
+    expect(nextStartupState(stuck)).not.toBe('authentication');
+    expect(nextStartupState(stuck)).not.toBe('onboarding');
+    expect(nextStartupState(stuck)).toBe('still_resolving');
   });
 
   it('reports a hard failure as startup_error', () => {
@@ -159,17 +177,24 @@ describe('failure and timeout', () => {
       is a floor rather than an equality: raising it further is a judgement call, lowering it back
       under the measurement is the regression.
     */
-    expect(STARTUP_TIMEOUT_MS).toBeGreaterThanOrEqual(8000);
+    expect(STARTUP_PRESENTATION_CEILING_MS).toBeGreaterThanOrEqual(8000);
     // A cold offline launch is still waiting where the old ceiling would have given up.
     expect(nextStartupState(input({ elapsedMs: 4500, isSignedIn: null }))).toBe('branded_splash');
     // Just under the ceiling, still waiting.
-    expect(nextStartupState(input({ elapsedMs: STARTUP_TIMEOUT_MS - 1, isSignedIn: null }))).toBe(
-      'branded_splash',
-    );
-    // At the ceiling, it falls through rather than hanging.
-    expect(nextStartupState(input({ elapsedMs: STARTUP_TIMEOUT_MS, isSignedIn: null }))).toBe(
-      'authentication',
-    );
+    expect(
+      nextStartupState(input({ elapsedMs: STARTUP_PRESENTATION_CEILING_MS - 1, isSignedIn: null })),
+    ).toBe('branded_splash');
+    /*
+      At the ceiling the *presentation* changes and the conclusion does not — issue #31.
+
+      This asserted `'authentication'`, which is what the ceiling used to produce: the signed-out entry
+      point, chosen for a session nobody had established was signed out. That is the defect. The state
+      is now `'still_resolving'`, which `isDestination` excludes, so no navigation happens and the real
+      destination is still reached when the answer lands.
+    */
+    expect(
+      nextStartupState(input({ elapsedMs: STARTUP_PRESENTATION_CEILING_MS, isSignedIn: null })),
+    ).toBe('still_resolving');
   });
 });
 

@@ -90,10 +90,27 @@ describe('the recovery read is waited for rather than assumed', () => {
     ).toBe(true);
   });
 
-  it('still times out to a safe route rather than hanging', () => {
-    // Past the ceiling with the read never answering. Authentication, never Home.
-    expect(nextStartupState(input({ hasPendingRecovery: null, elapsedMs: 99_000 }))).toBe(
-      'authentication',
+  it('keeps waiting past the ceiling rather than routing on a missing answer', () => {
+    /*
+      Reframed for issue #31, and the recovery case is the one where the old behaviour was worst.
+
+      With the recovery read unanswered past the ceiling, the machine used to route to Authentication
+      Options — so a launch that could not yet tell whether a password recovery was open resolved it by
+      sending the user to sign in. Never Home, which was the point being asserted, and that part still
+      holds. But "not Home" is not the same as "signed out", and the marker may well have said the
+      session was mid-recovery.
+
+      It now reports `still_resolving`: no destination, no navigation, and containment still applies the
+      moment the read lands.
+    */
+    const stuck = input({ hasPendingRecovery: null, elapsedMs: 99_000 });
+    expect(nextStartupState(stuck)).toBe('still_resolving');
+    expect(nextStartupState(stuck)).not.toBe('authenticated_home');
+    expect(nextStartupState(stuck)).not.toBe('authentication');
+
+    // And once it answers, containment wins — unchanged.
+    expect(nextStartupState(input({ hasPendingRecovery: true, elapsedMs: 99_000 }))).toBe(
+      'password_recovery',
     );
   });
 });
