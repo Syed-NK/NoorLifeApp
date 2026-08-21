@@ -1,6 +1,7 @@
 import { FaithHomeContent } from './faith/faith-home-content';
 import { NoorAIHomeContent } from './noor-ai/noor-ai-home-content';
 import { HealthHomeContent } from './health/health-home-content';
+import type { UseModuleOverview } from './use-module-overview';
 import { PlannerProvider } from '@features/planner/di/planner-provider';
 import { PlannerRoutineProvider } from '@features/planner/di/planner-routine-provider';
 import { PlannerHomeContent } from '@features/planner/screens/planner-home-content';
@@ -25,14 +26,25 @@ import type { FrameworkModuleId } from './module-tokens';
  * whole subtree if the reference ever changes. A switch returning JSX keeps every component
  * reference static, so the risk cannot arise — and it reads more directly besides.
  */
-export function ModuleHomeComposition({ moduleId }: { readonly moduleId: FrameworkModuleId }) {
+export function ModuleHomeComposition({
+  moduleId,
+  state,
+}: {
+  readonly moduleId: FrameworkModuleId;
+  /*
+    The overview state, forwarded rather than re-read. `ModuleHomeScreen` computes it for every
+    module including the composed ones, where it used to be discarded — Health read a fixture
+    instead (issue #27). Passing it keeps one read and one state for the screen.
+  */
+  readonly state: UseModuleOverview;
+}) {
   switch (moduleId) {
     case 'noor-ai':
       return <NoorAIHomeContent />;
     case 'faith':
       return <FaithHomeContent />;
     case 'health':
-      return <HealthHomeContent />;
+      return <HealthHomeContent state={state} />;
     case 'planner':
       return (
         <PlannerProvider>

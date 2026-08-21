@@ -265,12 +265,22 @@ const health: ModuleDefinition = {
   heroCopySide: 'left',
   routes: { home: '/health', ai: '/health/ai', help: '/settings/help' },
   navigation: moduleThemes.health.navigation,
+  /*
+    Issue #27. This hero stated a wellness score of 86, over a progress ring drawn from the same
+    number, under the eyebrow "Today’s Wellness" and the line "You’re building a balanced day."
+    There is no health data layer in this codebase — no repository, no provider, no storage
+    namespace — so all four were fabricated, and a wellness score is read as an assessment of the
+    person reading it.
+
+    Now an invitation, and non-numeric: a figure here has nothing to be a figure *of*. The CTA is
+    this module's own empty-state action, so there is one honest verb rather than two that can
+    drift, and it points at a real route that states its own status.
+  */
   hero: {
-    eyebrow: 'Today’s Wellness',
-    headline: '86',
-    support: 'Wellness Score',
-    supportSecondary: 'You’re building a balanced day.',
-    actionLabel: 'View Insights',
+    eyebrow: 'My Health',
+    headline: 'Start with one entry',
+    support: 'Nothing is tracked until you log it.',
+    actionLabel: 'Log your first entry',
     artworkAccessibilityLabel: '',
   },
   quickActions: [

@@ -157,18 +157,29 @@ describe('every module home renders the shared card', () => {
     expect(style.height).toBe(AI_INSIGHT_GEOMETRY.height);
   });
 
-  it.each(['faith', 'health'] as const)(
-    '%s home renders it at the locked height',
-    async (moduleId) => {
-      await render(
-        <FaithRepositoryProvider>
-          <ModuleHomeScreen moduleId={moduleId} />
-        </FaithRepositoryProvider>,
-      );
-      await screen.findByTestId(`${moduleId}-insight`);
-      expect(styleOf(`${moduleId}-insight`).height).toBe(AI_INSIGHT_GEOMETRY.height);
-    },
-  );
+  /*
+    Faith alone among the composed modules now.
+
+    Health used to be asserted here too, and its card is gone — not resized. It read "Great job
+    staying active! A short afternoon walk can improve energy and focus.", which is an AI assessment
+    of somebody's body with no health data anywhere behind it, so issue #27 removed the card rather
+    than the sentence. The geometry rule is unchanged and still binds every module that *has* the
+    card; Health has none to measure.
+  */
+  it('faith home renders it at the locked height', async () => {
+    await render(
+      <FaithRepositoryProvider>
+        <ModuleHomeScreen moduleId="faith" />
+      </FaithRepositoryProvider>,
+    );
+    await screen.findByTestId('faith-insight');
+    expect(styleOf('faith-insight').height).toBe(AI_INSIGHT_GEOMETRY.height);
+  });
+
+  it('health home renders no AI insight card at all', async () => {
+    await render(<ModuleHomeScreen moduleId="health" />);
+    expect(screen.queryByTestId('health-insight')).toBeNull();
+  });
 
   /**
    * Faith is no longer the tall one.

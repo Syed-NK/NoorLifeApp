@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react-native';
+import { render, screen, waitFor } from '@testing-library/react-native';
 
 import { COMPOSED_MODULE_IDS, hasApprovedComposition } from '../module-compositions';
 import { moduleRegistry } from '../module-registry';
@@ -10,7 +10,6 @@ import { createMockFaithRepositories } from '@features/faith/data/mock';
 import { todayIsoDate } from '@features/faith/hooks/use-reading-log';
 import { FaithRepositoryProvider } from '@features/faith/di/faith-repository-context';
 import { faithSubmenu } from '@features/faith/faith-submenu-assets';
-import { healthHomeFixture } from '../health/health-view-model';
 import { moduleAIPolicies } from '../module-ai-policy';
 import { getModulePictogram } from '@features/home/module-pictograms';
 import { noorLifeAssets } from '@shared/assets/noorlife-assets';
@@ -341,88 +340,80 @@ describe('Faith home with no data available', () => {
   });
 });
 
-describe('Health home — 04-health.png', () => {
+describe('Health home — no fabricated health claim survives', () => {
+  /*
+    This described "04-health.png" and asserted the reference's values: four metric cards with "7,542"
+    and "7h 15m", a wellness score with its ring drawn from one number, a seven-point weekly trend,
+    three timestamped recent-activity rows, four Quick Log actions, and a medication card.
+
+    Every one of those came from `healthHomeFixture`, which had no source behind it — no repository,
+    no provider, no storage namespace — and the fixture's own docblock said "Nothing here is live".
+    Issue #27 removed it. These cases are rewritten rather than deleted because the screen still
+    exists and still needs asserting; what changed is that it is now asserted for what it must *not*
+    say.
+  */
   beforeEach(async () => {
     await render(<ModuleHomeScreen moduleId="health" />);
   });
 
-  it('renders every reference section, and none of the generic ones', () => {
-    for (const testID of [
-      'health-hero',
-      'health-metrics',
-      'health-medication-focus',
-      'health-trend-activity',
-      'health-quick-log',
-      'health-insight',
-    ]) {
+  it('renders the hero, the real actions and an honest state — and none of the fabricated cards', async () => {
+    for (const testID of ['health-hero', 'health-quick-actions', 'health-features']) {
       expect(screen.getByTestId(testID)).toBeTruthy();
     }
-    expect(screen.queryByTestId('health-quick-actions')).toBeNull();
-    expect(screen.queryByTestId('health-glance')).toBeNull();
-    expect(screen.queryByTestId('health-today')).toBeNull();
-    expect(screen.queryByTestId('health-capabilities')).toBeNull();
-  });
-
-  it('shows exactly four wellness metric cards with the reference’s values', () => {
-    expect(healthHomeFixture.metrics).toHaveLength(4);
-    const expected = [
-      ['7,542', 'Steps'],
-      ['7h 15m', 'Sleep'],
-      ['6 cups', 'Water'],
-      ['Good', 'Mood'],
-    ];
-    expect(healthHomeFixture.metrics.map((m) => [m.value, m.label])).toEqual(expected);
-    for (const metric of healthHomeFixture.metrics) {
-      expect(screen.getByTestId(`health-metric-${metric.key}`)).toBeTruthy();
+    /*
+      Each of these existed only to present data that does not exist. Absent, not emptied: an empty
+      metric card still says "Steps —", and an empty trend chart is a data graphic with no data.
+    */
+    for (const gone of [
+      'health-metrics',
+      'health-medication-focus',
+      'health-medication',
+      'health-focus',
+      'health-trend-activity',
+      'health-trend',
+      'health-trend-chart',
+      'health-activity',
+      'health-quick-log',
+      'health-insight',
+      'health-hero-ring',
+    ]) {
+      expect(screen.queryByTestId(gone)).toBeNull();
     }
   });
 
-  it('renders the wellness score and its ring from one value', () => {
-    expect(screen.getByText('86')).toBeTruthy();
-    const ring = screen.getByTestId('health-hero-ring');
-    // The ring must reflect the score, not a hard-coded arc.
-    expect(String(ring.props.accessibilityLabel)).toContain('86');
-    expect(screen.getByTestId('health-hero-action')).toBeTruthy();
+  it('states no wellness score, and draws no ring for one', () => {
+    /*
+      The ring is gone rather than zeroed. A ring at zero claims the score *is* zero, and an unswept
+      track reads as a load that never finishes.
+    */
+    expect(screen.queryByTestId('health-hero-ring')).toBeNull();
+    expect(screen.queryByText('86')).toBeNull();
+    expect(screen.queryByText('Wellness Score')).toBeNull();
   });
 
-  it('renders both two-column sections with their reference content', () => {
-    expect(screen.getByText('Vitamin D')).toBeTruthy();
-    expect(screen.getByText('8:00 AM')).toBeTruthy();
-    expect(screen.getByText('Taken')).toBeTruthy();
-    expect(screen.getByTestId('health-focus-breathing')).toBeTruthy();
-    expect(screen.getByTestId('health-focus-walk')).toBeTruthy();
-    expect(screen.getByTestId('health-trend-chart')).toBeTruthy();
-    for (const item of healthHomeFixture.recentActivity.items) {
-      expect(screen.getByTestId(`health-activity-${item.key}`)).toBeTruthy();
+  it('says nothing about a medication having been taken', async () => {
+    /*
+      The highest-risk claim on the screen: "Vitamin D · 8:00 AM · Taken" told a user the application
+      had recorded a dose. Asserted by text as well as by testID, because the danger is the words.
+    */
+    for (const claim of ['Medication Reminder', 'Vitamin D', 'Taken', '8:00 AM']) {
+      expect(screen.queryByText(claim)).toBeNull();
     }
   });
 
-  it('plots seven days with seven labels', () => {
-    expect(healthHomeFixture.weeklyTrend.values).toHaveLength(7);
-    expect(healthHomeFixture.weeklyTrend.labels).toEqual([
-      'Mon',
-      'Tue',
-      'Wed',
-      'Thu',
-      'Fri',
-      'Sat',
-      'Sun',
-    ]);
+  it('offers its own reviewed empty copy rather than an invented reading', async () => {
+    await waitFor(() => expect(screen.getByTestId('module-empty-state')).toBeTruthy());
+    expect(screen.getByText(moduleRegistry.health.stateCopy.empty.title)).toBeTruthy();
   });
 
-  it('offers exactly the four Quick Log actions', () => {
-    const expected = ['Water', 'Mood', 'Medication', 'Weight'];
-    expect(healthHomeFixture.quickLog.actions.map((a) => a.label)).toEqual(expected);
-    for (const action of healthHomeFixture.quickLog.actions) {
-      expect(screen.getByTestId(`health-quick-${action.key}`)).toBeTruthy();
-    }
-  });
-
-  it('carries the medical disclaimer in the insight, as the policy requires', () => {
-    const insight = screen.getByTestId('health-insight');
-    expect(String(insight.props.accessibilityLabel)).toContain('not medical advice');
-    // The AI policy and the screen must agree that Health needs a disclaimer.
-    expect(moduleAIPolicies.health.standingDisclaimer).toBeDefined();
+  it('invites an entry in the hero instead of reporting one', () => {
+    const hero = moduleRegistry.health.hero;
+    expect(hero.headline).toBe('Start with one entry');
+    // Non-numeric, in every field the hero renders.
+    expect(`${hero.eyebrow} ${hero.headline} ${hero.support ?? ''}`).not.toMatch(/[0-9]/);
+    expect(hero.progress).toBeUndefined();
+    // One verb: the hero's CTA is this module's own empty-state action.
+    expect(hero.actionLabel).toBe(moduleRegistry.health.stateCopy.empty.action);
   });
 
   it('labels the bottom navigation exactly as the reference does', () => {
