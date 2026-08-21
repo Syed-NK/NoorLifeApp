@@ -9,6 +9,7 @@ import { AccessibilityProvider } from './accessibility-provider';
 import { AuthCallbackProvider } from './auth-callback-provider';
 import { AuthProvider } from './auth-provider';
 import { DesignSystemProvider } from './design-system-provider';
+import { RecoveryContainmentProvider } from './recovery-containment-provider';
 import { FontProvider } from './font-provider';
 import { LocalizationProvider } from './localization-provider';
 import { TodayAgendaProvider } from './today-agenda-provider';
@@ -54,6 +55,22 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
               <AuthCallbackProvider>
                 <AuthProvider>
                   {/*
+                    Renders nothing, and must sit here rather than in the entry gate.
+
+                    It is the **one** owner of recovery containment: it reads the pending-recovery
+                    marker once per launch, resolves it against the live session, and carries out the
+                    clean-up the decision calls for. It lived in `useStartupRouting` — which only
+                    `index.tsx` mounts — so a deep-linked launch never mounted it and took no
+                    containment decision at all (issue #30). This layer mounts for every route, so it
+                    is armed on every launch however it started, exactly as
+                    `useNativeSplashBackstop` is in the root layout.
+
+                    Directly inside Auth because it reads the session and may sign out, and inside
+                    AuthCallback because it mints and clears the in-memory grant. Above everything
+                    protected, because a contained session may not reach any of it.
+                  */}
+                  <RecoveryContainmentProvider>
+                    {/*
                     Renders nothing, and must sit here rather than under the Faith routes.
 
                     It resolves *whose* Faith data the storage boundary addresses, and Faith storage
@@ -66,9 +83,9 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
                     reads Faith storage because it sets the owner during render. See
                     `faith-scope-provider.tsx`.
                   */}
-                  <FaithScopeProvider>
-                    <EntitlementProvider>
-                      {/*
+                    <FaithScopeProvider>
+                      <EntitlementProvider>
+                        {/*
                       Renders nothing. It loads the Qur'an's 114-surah catalogue once a session
                       exists, so the Qur'an tab reads it synchronously instead of awaiting storage
                       on the frame it is opened — see `quran-catalogue-warmup.ts` for why a
@@ -77,8 +94,8 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
                       Inside Auth because the approved adapter needs an authenticated invocation,
                       and warming before sign-in would spend a call that can only be refused.
                     */}
-                      <QuranCatalogueWarmup />
-                      {/*
+                        <QuranCatalogueWarmup />
+                        {/*
                       Renders nothing. The **one** production owner of Content Sync: it runs the
                       seven-connected-day check when a session becomes ready, when the app returns to
                       the foreground, and when connectivity becomes confirmed.
@@ -91,8 +108,8 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
 
                       It synchronises metadata only. No audio download is ever started from here.
                     */}
-                      <ContentSyncCoordinator />
-                      {/*
+                        <ContentSyncCoordinator />
+                        {/*
                       Publishes today's Planner agenda as a read-only port, so Main Home can show the
                       user's real plan without importing Planner. It replaced three invented timeline
                       rows — see `today-agenda-provider.tsx`.
@@ -101,9 +118,10 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
                       user and fails closed with no owner, and above `children` because Main Home is
                       one of them.
                     */}
-                      <TodayAgendaProvider>{children}</TodayAgendaProvider>
-                    </EntitlementProvider>
-                  </FaithScopeProvider>
+                        <TodayAgendaProvider>{children}</TodayAgendaProvider>
+                      </EntitlementProvider>
+                    </FaithScopeProvider>
+                  </RecoveryContainmentProvider>
                 </AuthProvider>
               </AuthCallbackProvider>
             </FontProvider>

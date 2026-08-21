@@ -2,9 +2,13 @@ import { Redirect } from 'expo-router';
 import type { ReactNode } from 'react';
 
 import { authRoutes } from '@application/navigation/routes';
+import { useAuthCallback } from '@application/providers/auth-callback-provider';
 import { useAuth } from '@application/providers/auth-provider';
+import { useRecoveryContainmentState } from '@application/providers/recovery-containment-provider';
+import { SET_NEW_PASSWORD_ROUTE } from '@features/auth-callback/auth-callback-routes';
 
 import { protectedRouteAccess } from './protected-routes';
+import { recoveryRouteAccess } from './recovery-route-access';
 
 /**
  * **The application's authentication boundary for every route that needs one.**
@@ -60,6 +64,64 @@ export function ProtectedRouteBoundary({ children }: { readonly children: ReactN
   }
   if (access === 'redirect') {
     return <Redirect href={authRoutes.welcome} />;
+  }
+  /*
+    Authority established. One more question before protected content mounts — see below. Composed
+    here rather than mounted separately at all nineteen points, so the two decisions stay distinct
+    functions without doubling the places a layout has to remember to wrap.
+  */
+  return <RecoveryContainmentGate>{children}</RecoveryContainmentGate>;
+}
+
+/**
+ * Holds a session that is still owed a password at the recovery screen — issue #30.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Why this is inside the authentication boundary, not beside it ───────────
+ * The order is a dependency, not a preference. A recovery-contained user **is** signed in — Supabase
+ * establishes a real session before `updateUser({ password })` can be called, which is the whole
+ * reason the marker exists — so asking "is this recovery open" is only meaningful once authority is
+ * established. Running it first would mean answering it for signed-out visitors, whose containment
+ * question is already answered by the redirect above.
+ *
+ * It stays a separate component and a separate pure function because it is a separate kind of claim:
+ * `protectedRouteAccess` decides identity and is permanent for the session;
+ * `recoveryRouteAccess` decides a temporary navigation restriction that clears the moment the
+ * password is set. Entitlement then runs inside this, unchanged — three questions in dependency
+ * order: who are you, do you owe a password, what may you use.
+ *
+ * ── It holds no state and performs no side effect ──────────────────────────
+ * Every effect belongs to the one actor in `RecoveryContainmentProvider` — the marker read, the
+ * grant, the clean-up, the sign-out. This reads two values and renders. That separation is what lets
+ * the same component sit at nineteen mount points without becoming nineteen actors: mounting a pure
+ * consumer more widely cannot duplicate a read, a navigation-driving state transition, a listener or
+ * a session clear, because it does none of them.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+function RecoveryContainmentGate({ children }: { readonly children: ReactNode }) {
+  const { recovery } = useAuthCallback();
+  const { pending } = useRecoveryContainmentState();
+
+  const access = recoveryRouteAccess({
+    recoveryOpen: recovery !== null,
+    resolved: pending !== null,
+  });
+
+  if (access === 'wait') {
+    /*
+      The launch-time marker read has not answered. Nothing — for the same reason as the branch
+      above, and with the same guarantee: `children` is not referenced, so no protected provider
+      mounts and no account-scoped read is issued while we do not know.
+    */
+    return null;
+  }
+  if (access === 'contain') {
+    /*
+      `Redirect`, so it replaces: Back from the password screen cannot fall through to the route the
+      link named. `SET_NEW_PASSWORD_ROUTE` is classified `callback`, so it sits outside this boundary
+      and this redirect cannot loop against itself.
+    */
+    return <Redirect href={SET_NEW_PASSWORD_ROUTE} />;
   }
   return <>{children}</>;
 }
