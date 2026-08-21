@@ -1,6 +1,11 @@
 import { render, screen, userEvent } from '@testing-library/react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
+import {
+  TodayAgendaProvider,
+  todayAgenda,
+  type TodayAgendaState,
+} from '@application/providers/today-agenda-provider';
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { MainHomeScreen } from '../screens/main-home-screen';
@@ -32,10 +37,25 @@ installMockLatencyTimers(() => renderMainHome());
  * Note: RNTL 14's `render` is asynchronous, so every render is awaited.
  */
 
-async function renderMainHome(props?: { readonly simulateFailure?: boolean }) {
+async function renderMainHome(props?: {
+  readonly simulateFailure?: boolean;
+  /**
+   * Today's real Planner tasks.
+   *
+   * Injected through the agenda port rather than seeded into storage, so a case says what it means
+   * without deriving an account key. Omitted means "the port is not overridden" — production wiring,
+   * which on an empty store reports no tasks.
+   */
+  readonly agenda?: TodayAgendaState;
+}) {
+  const screenElement = <MainHomeScreen simulateFailure={props?.simulateFailure ?? false} />;
   return render(
     <AppProviders>
-      <MainHomeScreen simulateFailure={props?.simulateFailure ?? false} />
+      {props?.agenda === undefined ? (
+        screenElement
+      ) : (
+        <TodayAgendaProvider state={props.agenda}>{screenElement}</TodayAgendaProvider>
+      )}
     </AppProviders>,
   );
 }
@@ -250,25 +270,71 @@ describe('Main Home timeline', () => {
   });
 
   /**
-   * The three fixture rows. The prayer row is deliberately absent from this list.
+   * The three fixtures that used to be asserted here are gone from the product.
    *
-   * It used to be first, as `['Dhuhr Prayer', '12:35 PM']` — a time and a prayer name pinned by a test
-   * that could only pass while the value was fabricated. The row is calculated now, so a test asserting
-   * a literal for it would either be wrong or would have to reproduce the calculation. Its content is
-   * covered by `main-home-prayer-row.test.tsx`, which asserts the *agreement* with Faith rather than a
-   * number.
-   *
-   * These three remain fixtures: Planner and Family own no live data yet.
+   * They were `School drop-off 8:00 AM`, `Work focus time 10:00 AM` and `Family dinner 5:30 PM` —
+   * invented rows shown as the user's own day while Planner held zero tasks. A test that pinned them
+   * was pinning the defect, exactly as the earlier `['Dhuhr Prayer', '12:35 PM']` case pinned a
+   * fabricated prayer time until that row became live. What replaces them is a statement about
+   * behaviour: real tasks appear, and their absence is stated rather than filled.
    */
   it.each([
     ['School drop-off', '8:00 AM'],
     ['Work focus time', '10:00 AM'],
     ['Family dinner', '5:30 PM'],
-  ])('renders "%s" at %s', async (title, time) => {
+  ])('never invents "%s" at %s', async (title, time) => {
     await renderMainHome();
     await settleReady();
-    expect(screen.getByText(title)).toBeTruthy();
-    expect(screen.getByText(time)).toBeTruthy();
+    expect(screen.queryByText(title)).toBeNull();
+    expect(screen.queryByText(time)).toBeNull();
+  });
+
+  /*
+    The port is injected with a *settled* empty reading rather than left to production wiring.
+
+    Under production wiring this case depends on when Planner's storage read resolves, and these
+    suites run on fake timers — so the assertion would be timing a mock rather than testing the
+    behaviour. While the read is genuinely in flight the section correctly says nothing at all about
+    tasks; what matters here is what it says once the answer is known, and that is stated directly.
+  */
+  it('says nothing is planned when the user has no tasks due today', async () => {
+    await renderMainHome({ agenda: todayAgenda([]) });
+    await settleReady();
+
+    expect(screen.getByText('Nothing planned for today')).toBeTruthy();
+    expect(screen.getByTestId('timeline-row-planner-nothing-today')).toBeTruthy();
+  });
+
+  it('claims no tasks at all while Planner is still being read', async () => {
+    await renderMainHome({ agenda: todayAgenda([], { status: 'loading' }) });
+    await settleReady();
+
+    // The real prayer row is still there; nothing is asserted about tasks either way.
+    expect(screen.getByTestId('timeline-row-next-prayer')).toBeTruthy();
+    expect(screen.queryByText('Nothing planned for today')).toBeNull();
+    expect(screen.queryByText('Your plan is unavailable — open Planner')).toBeNull();
+  });
+
+  it("renders the user's real task with its own title and time", async () => {
+    await renderMainHome({
+      agenda: todayAgenda([{ id: 'task.real-1', title: 'Collect prescription', time: '9:30 AM' }]),
+    });
+    await settleReady();
+
+    expect(screen.getByText('Collect prescription')).toBeTruthy();
+    expect(screen.getByText('9:30 AM')).toBeTruthy();
+    // ...and the honest empty row steps aside once there is something true to show.
+    expect(screen.queryByText('Nothing planned for today')).toBeNull();
+  });
+
+  it('states that the plan is unavailable rather than showing an empty day', async () => {
+    await renderMainHome({
+      agenda: todayAgenda([], { status: 'unavailable' }),
+    });
+    await settleReady();
+
+    expect(screen.getByText('Your plan is unavailable — open Planner')).toBeTruthy();
+    expect(screen.queryByText('Nothing planned for today')).toBeNull();
   });
 
   it('renders a prayer row that states no time it has not calculated', async () => {

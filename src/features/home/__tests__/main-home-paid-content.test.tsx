@@ -14,6 +14,7 @@ import { lockedModuleCopy } from '@features/subscription/subscription-copy';
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { LOCKED } from '../main-home-metrics';
+import { TodayAgendaProvider, todayAgenda } from '@application/providers/today-agenda-provider';
 import { MainHomeScreen } from '../screens/main-home-screen';
 import { mockRouter } from '../../../../jest.setup';
 
@@ -88,7 +89,15 @@ async function renderMainHome(adapter: PurchaseAdapter) {
           <FontProvider>
             <AuthProvider>
               <EntitlementProvider adapter={adapter}>
-                <MainHomeScreen />
+                {/*
+                  Today's plan is stated rather than seeded. These cases are about entitlement — what a
+                  locked row says and where tapping it goes — so the rows have to exist and be the
+                  user's own. Injecting the port gives real-shaped Planner rows without deriving an
+                  account key or timing a storage read.
+                */}
+                <TodayAgendaProvider state={todayAgenda(TODAY_TASKS)}>
+                  <MainHomeScreen />
+                </TodayAgendaProvider>
               </EntitlementProvider>
             </AuthProvider>
           </FontProvider>
@@ -110,11 +119,26 @@ const free = () => onPlan('free');
 const paid = () => onPlan('premium_family');
 const unresolved = () => renderMainHome(neverResolves);
 
-/** The three timeline rows that belong to a premium module, and what each must say. */
+/**
+ * The user's own tasks for today, as the agenda port would report them.
+ *
+ * These replaced three fixtures — School drop-off, Work focus time and Family dinner — that the app
+ * invented and showed as the user's day while Planner held nothing. The entitlement behaviour they
+ * exercised is real and stays under test; only the invented content is gone.
+ *
+ * There is no Family row any more. Family owns no task store, so a Family timeline row cannot be
+ * anyone's real commitment, and the case asserting one is removed rather than rewritten. Family's
+ * locked presentation is still covered through its summary card below.
+ */
+const TODAY_TASKS = [
+  { id: 'task.today-1', title: 'Collect prescription', time: '9:30 AM' },
+  { id: 'task.today-2', title: 'Call the plumber', time: '2:00 PM' },
+] as const;
+
+/** The timeline rows that belong to a premium module, and what each must say. */
 const PROTECTED_ROWS = [
-  { id: 'school-drop-off', title: 'School drop-off', time: '8:00 AM', module: 'Planner' },
-  { id: 'work-focus', title: 'Work focus time', time: '10:00 AM', module: 'Planner' },
-  { id: 'family-dinner', title: 'Family dinner', time: '5:30 PM', module: 'Family' },
+  { id: 'task.today-1', title: 'Collect prescription', time: '9:30 AM', module: 'Planner' },
+  { id: 'task.today-2', title: 'Call the plumber', time: '2:00 PM', module: 'Planner' },
 ] as const;
 
 /** Every route a locked Main Home surface must not reach without an explicit confirmation. */
@@ -148,7 +172,7 @@ describe('the upgrade sheet on Main Home', () => {
     // Nothing in `renderMainHome` mounts an UpgradeSheetProvider. If the screen did not mount
     // its own, `useUpgradeSheetActions` would have thrown while rendering the first locked row,
     // and this render would never have reached the hero.
-    await user.press(screen.getByTestId('timeline-row-school-drop-off'));
+    await user.press(screen.getByTestId('timeline-row-task.today-1'));
     expect(screen.getByTestId('main-home-upgrade-sheet')).toBeTruthy();
   });
 
@@ -161,7 +185,7 @@ describe('the upgrade sheet on Main Home', () => {
     const user = userEvent.setup();
     await free();
 
-    await user.press(screen.getByTestId('timeline-row-school-drop-off'));
+    await user.press(screen.getByTestId('timeline-row-task.today-1'));
     await user.press(screen.getByTestId('family-check-in-card'));
     await user.press(screen.getByTestId('overall-progress-card'));
 
@@ -175,21 +199,21 @@ describe('the upgrade sheet on Main Home', () => {
     const user = userEvent.setup();
     await free();
 
-    await user.press(screen.getByTestId('timeline-row-school-drop-off'));
+    await user.press(screen.getByTestId('timeline-row-task.today-1'));
     await user.press(screen.getByTestId('overall-progress-card'));
 
     // A timeline row and a summary card writing to the same slot is what proves there is one
     // provider instance and not one per surface: a second instance would leave the Planner
     // request standing in its own controller.
     expect(screen.getByText(sheetBodyFor('Overall Progress', 'Goals'))).toBeTruthy();
-    expect(screen.queryByText(sheetBodyFor('School drop-off', 'Planner'))).toBeNull();
+    expect(screen.queryByText(sheetBodyFor('Collect prescription', 'Planner'))).toBeNull();
   });
 
   it('clears the request on dismissal, without navigating', async () => {
     const user = userEvent.setup();
     await free();
 
-    await user.press(screen.getByTestId('timeline-row-family-dinner'));
+    await user.press(screen.getByTestId('timeline-row-task.today-2'));
     expect(screen.getByTestId('main-home-upgrade-sheet')).toBeTruthy();
 
     await user.press(screen.getByTestId('main-home-upgrade-sheet-not-now'));
@@ -275,7 +299,7 @@ describe('the timeline on a free plan', () => {
   it('keeps a locked row focusable rather than disabling it', async () => {
     await free();
 
-    const row = screen.getByTestId('timeline-row-school-drop-off');
+    const row = screen.getByTestId('timeline-row-task.today-1');
     expect(row.props.accessibilityState?.disabled).toBeFalsy();
     expect(row.props.accessibilityRole).toBe('button');
     // A 23 dp row with hit-slop up to the 44 dp floor, locked or not.
@@ -284,8 +308,14 @@ describe('the timeline on a free plan', () => {
 
   it('keeps every row, in the same order, locked or not', async () => {
     await free();
-    // Locking changes a row's surface and its destination. It never removes one.
-    expect(screen.getAllByTestId(/^timeline-row-/)).toHaveLength(4);
+    /*
+      Locking changes a row's surface and its destination. It never removes one.
+
+      Three rows now, not four: the live prayer row plus the user's two real tasks. It was four while
+      the section carried three invented rows; the count follows the data rather than a fixture, which
+      is the point of the change.
+    */
+    expect(screen.getAllByTestId(/^timeline-row-/)).toHaveLength(1 + TODAY_TASKS.length);
   });
 });
 
@@ -305,8 +335,8 @@ describe('the timeline on a paid plan', () => {
     const user = userEvent.setup();
     await paid();
 
-    await user.press(screen.getByTestId('timeline-row-family-dinner'));
-    expect(mockRouter.push).toHaveBeenCalledWith('/family');
+    await user.press(screen.getByTestId('timeline-row-task.today-2'));
+    expect(mockRouter.push).toHaveBeenCalledWith('/planner');
     expect(screen.queryByTestId('main-home-upgrade-sheet')).toBeNull();
   });
 });
