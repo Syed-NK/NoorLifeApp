@@ -1,3 +1,5 @@
+import { TRIAL_DAYS, trialLengthLabel } from './domain/trial-period';
+
 /**
  * Every customer-facing string in the subscription and family system.
  *
@@ -107,10 +109,15 @@ export const familyPlanCopy = {
 } as const;
 
 export const trialCopy = {
-  heading: '7-day free trial',
+  /*
+    Both strings take their length from `TRIAL_DAYS` rather than writing 7 again. The number was in
+    four places — the adapter, two screens and this copy — and a heading that outlives the length it
+    names is the same class of defect as a date that outlives its clock.
+  */
+  heading: `${trialLengthLabel} free trial`,
   /** Only ever rendered when the store has confirmed eligibility for this user. */
   body: (priceAfter: string, renewalDate: string) =>
-    `Your trial is free for 7 days. On ${renewalDate} it renews at ${priceAfter} unless you cancel before then.`,
+    `Your trial is free for ${TRIAL_DAYS} days. On ${renewalDate} it renews at ${priceAfter} unless you cancel before then.`,
   notEligible: 'The free trial is for first-time yearly subscribers.',
 } as const;
 
@@ -148,6 +155,15 @@ export const successCopy = {
   familyLater: 'Do this later',
   /** Setting up the family is never forced — the brief requires "Do this later" to stay open. */
   setupLater: 'You can set up your family now, or any time from the Family module.',
+  /*
+    Shown when there is no date that can be stated truthfully — the provider issued none, or issued one
+    that does not end after the purchase. Both say the subscription is active and point at the one place
+    that always knows, rather than approximating a date. The screen previously rendered nothing at all in
+    this case, which left a user who expected a trial end with no explanation.
+  */
+  trialDateUnknown: 'Your free trial is active. Your store account shows the exact end date.',
+  renewalDateUnknown:
+    'Your subscription is active. Your store account shows the exact next billing date.',
 } as const;
 
 export const restoreCopy = {

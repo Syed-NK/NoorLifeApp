@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { Redirect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { globalRoutes } from '@application/navigation/routes';
@@ -23,6 +23,11 @@ import {
   SubscriptionStateBanner,
 } from '../components/subscription-states';
 import { formatRenewalDate, yearlyPerMonth } from '../domain/pricing';
+import {
+  authoritativeRenewal,
+  displayableTrialEnd,
+  projectedTrialEnd,
+} from '../domain/trial-period';
 import { providerStoreName } from '../domain/subscription';
 import type { PurchaseOutcome } from '../services/purchase-adapter';
 import { useEntitlement, useEntitlementActions } from '../services/entitlement-context';
@@ -142,7 +147,7 @@ export function PurchaseConfirmScreen({ plan, period }: PurchaseConfirmScreenPro
             <TrialDisclosure
               eligible={offer.trialEligibleForUser}
               priceAfterTrial={offer.price.formatted}
-              renewalDate={formatRenewalDate(sevenDaysFromNow())}
+              renewalDate={formatRenewalDate(projectedTrialEnd(new Date()))}
               testID="confirm-trial"
             />
           ) : null}
@@ -377,7 +382,19 @@ export function PurchaseSuccessScreen() {
   const { entitlement, isMockMode } = useEntitlement();
 
   const isFamily = entitlement.plan === 'premium_family';
-  const periodEnd = formatRenewalDate(entitlement.currentPeriodEnd);
+
+  /*
+    Both dates come from the entitlement the provider issued — nothing is recomputed here, and the
+    trial sentence reads `trialEnd` rather than the period end it used to borrow.
+    `displayableTrialEnd` also refuses a trial that does not end after this moment: the defect this
+    screen had was announcing a trial end already in the past, and a value that cannot be true must go
+    missing rather than be rendered confidently.
+  */
+  const now = useMemo(() => new Date(), []);
+  const trialEnd = formatRenewalDate(displayableTrialEnd(entitlement, now));
+  const renewal = formatRenewalDate(authoritativeRenewal(entitlement));
+  const isTrialing = entitlement.status === 'trialing';
+  const shown = isTrialing ? trialEnd : renewal;
 
   return (
     <SubscriptionScreenScaffold
@@ -422,16 +439,28 @@ export function PurchaseSuccessScreen() {
           testID="success-banner"
         />
 
-        {periodEnd === null ? null : (
+        {shown === null ? (
+          /*
+            No date to state. Either the provider issued none, or the one it issued could not be
+            true — and the subscription is active either way, so this says what is known and stops.
+            Inventing a date here is precisely the failure this screen is being fixed for.
+          */
+          <EntryAuthText
+            token="caption"
+            align="center"
+            color={subscriptionColors.textSecondary}
+            testID="success-no-date"
+          >
+            {isTrialing ? successCopy.trialDateUnknown : successCopy.renewalDateUnknown}
+          </EntryAuthText>
+        ) : (
           <EntryAuthText
             token="caption"
             align="center"
             color={subscriptionColors.textSecondary}
             testID="success-renewal"
           >
-            {entitlement.status === 'trialing'
-              ? `Your free trial runs until ${periodEnd}.`
-              : `Next billing date: ${periodEnd}.`}
+            {isTrialing ? `Your free trial runs until ${shown}.` : `Next billing date: ${shown}.`}
           </EntryAuthText>
         )}
 
@@ -446,11 +475,12 @@ export function PurchaseSuccessScreen() {
 }
 
 /** Seven days out, for the trial disclosure on a purchase that has not happened yet. */
-function sevenDaysFromNow(): string {
-  const date = new Date();
-  date.setDate(date.getDate() + 7);
-  return date.toISOString();
-}
+/*
+  `sevenDaysFromNow` lived here and projected the trial end from the device clock, while the success
+  screen read the entitlement, whose dates came from a fixed `now`. Two clocks, and the screens
+  disagreed by however far the real date had drifted past the fixture. The projection is now
+  `projectedTrialEnd`, the only one in the app.
+*/
 
 const styles = StyleSheet.create({
   card: {
