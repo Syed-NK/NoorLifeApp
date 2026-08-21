@@ -1,6 +1,8 @@
 import { FaithHomeContent } from './faith/faith-home-content';
 import { NoorAIHomeContent } from './noor-ai/noor-ai-home-content';
 import { HealthHomeContent } from './health/health-home-content';
+import { PlannerProvider } from '@features/planner/di/planner-provider';
+import { PlannerHomeContent } from '@features/planner/screens/planner-home-content';
 import type { FrameworkModuleId } from './module-tokens';
 
 /**
@@ -30,6 +32,12 @@ export function ModuleHomeComposition({ moduleId }: { readonly moduleId: Framewo
       return <FaithHomeContent />;
     case 'health':
       return <HealthHomeContent />;
+    case 'planner':
+      return (
+        <PlannerProvider>
+          <PlannerHomeContent />
+        </PlannerProvider>
+      );
     default:
       // Planner, Finance, Learning, Family, Goals — awaiting their own reference passes.
       return null;
@@ -43,7 +51,12 @@ export function ModuleHomeComposition({ moduleId }: { readonly moduleId: Framewo
  * choose a branch and by tests to assert that a composed module is *not* rendering the
  * generic sample layout.
  */
-export const COMPOSED_MODULE_IDS: readonly FrameworkModuleId[] = ['noor-ai', 'faith', 'health'];
+export const COMPOSED_MODULE_IDS: readonly FrameworkModuleId[] = [
+  'noor-ai',
+  'faith',
+  'health',
+  'planner',
+];
 
 export function hasApprovedComposition(moduleId: FrameworkModuleId): boolean {
   return COMPOSED_MODULE_IDS.includes(moduleId);

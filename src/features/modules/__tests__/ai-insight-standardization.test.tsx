@@ -125,13 +125,7 @@ describe('only tint varies', () => {
 });
 
 describe('every module home renders the shared card', () => {
-  const GENERIC: readonly FrameworkModuleId[] = [
-    'planner',
-    'finance',
-    'learning',
-    'family',
-    'goals',
-  ];
+  const GENERIC: readonly FrameworkModuleId[] = ['finance', 'learning', 'family', 'goals'];
 
   it.each(GENERIC)('%s home renders it at the locked height', async (moduleId) => {
     await render(<ModuleHomeScreen moduleId={moduleId} />);

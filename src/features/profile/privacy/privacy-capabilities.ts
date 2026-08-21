@@ -152,6 +152,7 @@ export const ACCOUNT_HELD_DATA: readonly string[] = [
 export const DEVICE_STORAGE_NAMESPACES: readonly string[] = [
   'noorlife.faith',
   'noorlife.onboarding',
+  'noorlife.planner',
   'noorlife.preference',
   'noorlife.auth',
 ];

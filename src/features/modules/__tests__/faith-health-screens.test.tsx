@@ -31,20 +31,20 @@ import { faithAddress } from '@/test-support/faith-storage-address';
 installMockLatencyTimers(() => render(<ModuleHomeScreen moduleId="planner" />));
 
 describe('the architecture correction holds', () => {
-  it('composes Noor AI, Faith and Health to their references', () => {
-    expect([...COMPOSED_MODULE_IDS].sort()).toEqual(['faith', 'health', 'noor-ai']);
+  it('composes Noor AI, Faith, Health and Planner to their references', () => {
+    expect([...COMPOSED_MODULE_IDS].sort()).toEqual(['faith', 'health', 'noor-ai', 'planner']);
   });
 
-  it('leaves the other five modules on the generic layout', () => {
+  it('leaves the other four modules on the generic layout', () => {
     for (const id of FRAMEWORK_MODULE_IDS) {
-      if (id === 'faith' || id === 'health' || id === 'noor-ai') {
+      if (id === 'faith' || id === 'health' || id === 'noor-ai' || id === 'planner') {
         continue;
       }
       expect(hasApprovedComposition(id)).toBe(false);
     }
   });
 
-  it.each(['planner', 'finance', 'learning', 'family', 'goals'] as const)(
+  it.each(['finance', 'learning', 'family', 'goals'] as const)(
     'keeps %s rendering and unchanged',
     async (moduleId) => {
       // The brief requires the five untouched routes stay functional.
@@ -53,6 +53,12 @@ describe('the architecture correction holds', () => {
       expect(screen.getByTestId(`${moduleId}-quick-actions`)).toBeTruthy();
     },
   );
+
+  it('gives Planner its own truthful task composition', async () => {
+    await render(<ModuleHomeScreen moduleId="planner" />);
+    expect(screen.getByTestId('planner-hero')).toBeTruthy();
+    expect(screen.queryByTestId('planner-quick-actions')).toBeNull();
+  });
 });
 
 /**
