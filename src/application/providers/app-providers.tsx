@@ -11,6 +11,7 @@ import { AuthProvider } from './auth-provider';
 import { DesignSystemProvider } from './design-system-provider';
 import { FontProvider } from './font-provider';
 import { LocalizationProvider } from './localization-provider';
+import { TodayAgendaProvider } from './today-agenda-provider';
 
 /**
  * The application's provider boundaries, composed in dependency order.
@@ -91,7 +92,16 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
                       It synchronises metadata only. No audio download is ever started from here.
                     */}
                       <ContentSyncCoordinator />
-                      {children}
+                      {/*
+                      Publishes today's Planner agenda as a read-only port, so Main Home can show the
+                      user's real plan without importing Planner. It replaced three invented timeline
+                      rows — see `today-agenda-provider.tsx`.
+
+                      Inside Auth because Planner's storage address is derived from the signed-in
+                      user and fails closed with no owner, and above `children` because Main Home is
+                      one of them.
+                    */}
+                      <TodayAgendaProvider>{children}</TodayAgendaProvider>
                     </EntitlementProvider>
                   </FaithScopeProvider>
                 </AuthProvider>

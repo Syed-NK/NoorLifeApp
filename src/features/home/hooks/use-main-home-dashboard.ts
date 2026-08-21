@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { useTodayAgenda } from '@application/providers/today-agenda-provider';
 
 import { mockMainHomeDashboard } from '@mocks/main-home';
 import type { MainHomeDashboard } from '@shared/models/dashboard';
 import type { AsyncState } from '@shared/states/app-state';
 
+import { usePlannerTimelineEntries } from './use-planner-timeline-entries';
 import { usePrayerTimelineEntry } from './use-prayer-timeline-entry';
 
 /**
@@ -68,6 +72,38 @@ export function useMainHomeDashboard(options?: {
    */
   const prayerRow = usePrayerTimelineEntry();
 
+  /*
+    The Planner rows, from the same seam and for the same reason. They come through an
+    application-level read-only port, so Home never imports Planner: see
+    `today-agenda-provider.tsx` for why the boundary sits there.
+  */
+  const plannerRows = usePlannerTimelineEntries();
+  const agenda = useTodayAgenda();
+
+  /*
+    Planner is re-read whenever Main Home regains focus, so a task added, completed or deleted on the
+    Tasks or Calendar screen shows up the moment the user comes back. Without this the section would
+    keep reporting the plan as it stood at launch — a quieter version of the same dishonesty the
+    fixtures were.
+  */
+  /*
+    Armed once, and deliberately not re-armed when the agenda changes.
+
+    A focus effect that depends on the reload it calls re-arms on the state change that reload causes,
+    and refreshes forever. The current function is reached through a ref so this effect has no
+    dependency that its own work can invalidate.
+  */
+  const reloadAgenda = agenda.reload;
+  const reloadRef = useRef(reloadAgenda);
+  useEffect(() => {
+    reloadRef.current = reloadAgenda;
+  }, [reloadAgenda]);
+  useFocusEffect(
+    useCallback(() => {
+      void reloadRef.current();
+    }, []),
+  );
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setSettled({
@@ -108,11 +144,29 @@ export function useMainHomeDashboard(options?: {
    *
    * It is prepended, holding the position and the Faith accent the locked composition gives it.
    */
+  /*
+    Readiness is deliberately **not** gated on Planner.
+
+    Gating was tried and was wrong twice over. It coupled Main Home's first paint to another module's
+    storage read, so a slow or missing Planner would hold the whole screen on its skeleton; and it
+    made the screen untestable without the agenda provider mounted, which is a sign the dependency was
+    pointing the wrong way. The honest loading pattern is already in place — the dashboard shows
+    `MainHomeSkeleton` for its own load — and the Planner rows simply contribute nothing until they
+    have something true to say, exactly as the prayer row carries no time while its calculation runs.
+  */
   const state: AsyncState<MainHomeDashboard> =
     resolved.status === 'ready'
       ? {
           ...resolved,
-          data: { ...resolved.data, timeline: [prayerRow, ...resolved.data.timeline] },
+          /*
+            The live rows are composed here rather than stored: the prayer row first, then the user's
+            real Planner rows. `resolved.data.timeline` is empty now and is spread last so the shape
+            still comes from the model rather than from this file.
+          */
+          data: {
+            ...resolved.data,
+            timeline: [prayerRow, ...plannerRows, ...resolved.data.timeline],
+          },
         }
       : resolved;
 

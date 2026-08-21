@@ -1,4 +1,3 @@
-import { modulePalettes } from '@ds/tokens';
 import type { MainHomeDashboard } from '@shared/models/dashboard';
 
 /**
@@ -20,52 +19,34 @@ export const mockMainHomeDashboard: MainHomeDashboard = {
   },
 
   /**
-   * Source: Planner (events, tasks). The Faith row is **not** here any more.
+   * Source: Planner. **Nothing is in this array any more, and nothing may be put back.**
    *
-   * ── What was removed, and why the lock did not protect it ───────────────────
-   * The first entry was `{ id: 'dhuhr', time: '12:35 PM', title: 'Dhuhr Prayer' }`. Rows, order, times
-   * and titles are locked by implementation-lock §9, and that lock is what kept the value in place
-   * after the prayer-times fixture it came from had been deleted — so Main Home went on stating
-   * 12:35 PM while the Faith module calculated 1:14 PM for the same place.
+   * ── What was here, and why it had to go ─────────────────────────────────────
+   * Four rows once lived here as fixtures. The first, `{ time: '12:35 PM', title: 'Dhuhr Prayer' }`,
+   * outlived the prayer fixture it came from and left Main Home stating 12:35 PM while Faith
+   * calculated 1:14 PM for the same place; it became live first, supplied by
+   * `usePrayerTimelineEntry`.
    *
-   * The lock protects a *composition*: four rows, in this order, with these accents. It was never
-   * meant to certify a prayer time as correct, and a design reference cannot make one true. The row is
-   * still first and still Faith-accented; it is now supplied by `usePrayerTimelineEntry`, which reads
-   * the same calculation the Faith home hero does. Everything the lock actually describes is intact.
+   * The remaining three — School drop-off 8:00, Work focus time 10:00, Family dinner 17:30 — were
+   * kept on the argument that they were "placeholder events for modules that own no data". That
+   * argument does not survive contact with the product: they were presented as the user's own day,
+   * in the same rows and the same type as a real commitment, while Planner held zero tasks and
+   * promised, two taps away, that *"NoorLife will not invent a schedule for you."* Nobody created
+   * them, and nobody could complete or delete them. They are gone.
    *
-   * The remaining three rows are Planner and Family fixtures with no equivalent live source yet, and
-   * they stay. Their times are not claims about a calculation — they are placeholder events for
-   * modules that own no data at all on the free plan.
+   * The lock protects a *composition* — rows in order, with these accents — not these particular
+   * events. Every measurement still comes from `LOCKED.today`, and the Planner rows are now supplied
+   * by `usePlannerTimelineEntries` from the signed-in user's real tasks, with an honest sentence when
+   * there are none. Family owned no task store, so its row is not claimed at all rather than
+   * invented.
    *
-   * Accents match the four hues in 04-today-timeline-reference.png — green, blue, purple, amber —
-   * each taken from an existing module palette. The green one now lives on the live row.
+   * ── Why this stays an empty array rather than being deleted ─────────────────
+   * `MainHomeDashboard.timeline` is still the shape the screen consumes, and the composition in
+   * `useMainHomeDashboard` appends the live rows to it. Keeping the field means the mock still
+   * satisfies the model, and a source scan can assert this array holds nothing — a stronger
+   * guarantee than the field's absence, because absence is easy to undo by accident.
    */
-  timeline: [
-    {
-      id: 'school-drop-off',
-      time: '8:00 AM',
-      title: 'School drop-off',
-      icon: 'school-bag',
-      sourceModule: 'planner',
-      accent: modulePalettes.planner.primary,
-    },
-    {
-      id: 'work-focus',
-      time: '10:00 AM',
-      title: 'Work focus time',
-      icon: 'work',
-      sourceModule: 'planner',
-      accent: modulePalettes.learning.primary,
-    },
-    {
-      id: 'family-dinner',
-      time: '5:30 PM',
-      title: 'Family dinner',
-      icon: 'meal',
-      sourceModule: 'family',
-      accent: modulePalettes.finance.primary,
-    },
-  ],
+  timeline: [],
 
   // Source: Family module.
   familyCheckIn: {
