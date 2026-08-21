@@ -243,34 +243,63 @@ describe('abandoning the recovery is safe', () => {
     expect(signOutSpy).not.toHaveBeenCalled();
   });
 
-  it('does sign out when only a marker survives, with no grant yet', async () => {
+  it('reconstructs the grant from a surviving marker, so there is nothing to abandon', async () => {
     /**
      * The cold-launch shape: the process died after the exchange, so storage still holds the marker
-     * while the in-memory grant has not been reconstructed. Backing out here is a real abandonment
-     * and must end the recovery session, even though `recovery` is null.
+     * while the in-memory grant has not been reconstructed.
+     *
+     * **This case changed with issue #30, and the change is the point.** It used to assert that
+     * backing out here signs the session out, because with a marker and no grant the screen could not
+     * tell whether the recovery was resumable — and it could not, because containment was armed only
+     * by the entry route. A launch that did not go through the entry gate never read the marker, so
+     * "valid marker, matching session, no grant" was a state the application really produced.
+     *
+     * It is not producible any more. The one containment actor now runs inside `AppProviders`, on
+     * every launch path, so a valid marker matching the live session is resolved to `resume` and the
+     * grant is reconstructed before this screen renders. The user is therefore *in* their recovery
+     * rather than stranded beside it, which is the outcome the marker existed to produce.
+     *
+     * The screen's grantless refusal is not lost with this scenario — it is still asserted, where it
+     * is still reachable, in `new-password-recovery-gate.test.tsx`: no marker at all, an expired or
+     * mismatched one (both of which the actor ends in a sign-out), and a code in the route, which is
+     * an untrusted claim.
      */
     await writeRecoveryPending(SESSION_USER_ID);
 
     await renderPasswordScreen({ grant: false });
-    await waitFor(() => expect(screen.getByTestId('set-new-password-no-grant')).toBeTruthy());
 
-    await fireEvent.press(screen.getByTestId('set-new-password-header-back'));
+    /*
+      Reconstructed by the actor, not by the test: nothing here minted a grant. The banner's absence
+      is the evidence — the screen renders it precisely when it has no grant to act on. The submit
+      control is deliberately not asserted, because it also tracks form validity and nothing has been
+      typed; `new-password-recovery-gate.test.tsx` owns that pairing.
+    */
+    await waitFor(() => expect(screen.queryByTestId('set-new-password-no-grant')).toBeNull());
 
-    await waitFor(() => expect(signOutSpy).toHaveBeenCalled());
-    expect(await readRecoveryPending()).toEqual({ status: 'none' });
+    // And the session survives: a resumable recovery is not an abandonment.
+    expect(signOutSpy).not.toHaveBeenCalled();
+    expect(await readRecoveryPending()).toEqual({
+      status: 'valid',
+      marker: expect.objectContaining({ userId: SESSION_USER_ID }),
+    });
   });
 
-  it('clears the marker when the user asks for a new link instead', async () => {
+  it('clears the marker when the user backs out of a reconstructed recovery', async () => {
+    /*
+      Same reframing as the case above. With containment armed on every launch the grant is
+      reconstructed, so the no-grant "request a new link" affordance is not the exit a contained user
+      is offered — the header Back is. What matters is unchanged and still asserted: leaving the
+      recovery clears the marker, so a later launch is not contained by a recovery nobody intends to
+      finish.
+    */
     await writeRecoveryPending(SESSION_USER_ID);
 
     await renderPasswordScreen({ grant: false });
-    await waitFor(() => expect(screen.getByTestId('set-new-password-no-grant')).toBeTruthy());
+    await waitFor(() => expect(screen.queryByTestId('set-new-password-no-grant')).toBeNull());
 
-    await fireEvent.press(screen.getByTestId('set-new-password-no-grant-request'));
+    await fireEvent.press(screen.getByTestId('set-new-password-header-back'));
 
-    // Restarting is also abandoning: this recovery is not going to be finished.
     await waitFor(async () => expect(await readRecoveryPending()).toEqual({ status: 'none' }));
-    expect(mockRouter.replace).toHaveBeenCalledWith('/forgot-password');
   });
 });
 

@@ -47,8 +47,13 @@ jest.mock('@services/onboarding/onboarding-preferences', () => ({
   readOnboardingState: async () => ({ completed: true, isFirstLaunch: false }),
 }));
 
-jest.mock('../use-recovery-containment', () => ({
-  useRecoveryContainment: () => ({ pending: false }),
+/*
+  Containment moved out of `useStartupRouting` and into `RecoveryContainmentProvider` for issue #30,
+  so this substitutes the *consumer* rather than the hook. The verdict supplied is the same one:
+  answered, with no recovery pending, which is what every case in this file is about.
+*/
+jest.mock('@application/providers/recovery-containment-provider', () => ({
+  useRecoveryContainmentState: () => ({ pending: false, containment: { action: 'proceed' } }),
 }));
 
 function state(over: Partial<AuthState> = {}): AuthState {

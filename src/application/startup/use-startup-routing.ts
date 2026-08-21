@@ -5,8 +5,9 @@ import { useFontReadiness } from '@application/providers/font-provider';
 import { readOnboardingState } from '@services/onboarding/onboarding-preferences';
 import { readAccountJourney } from '@services/account/account-journey';
 
+import { useRecoveryContainmentState } from '@application/providers/recovery-containment-provider';
+
 import { STARTUP_TIMEOUT_MS, nextStartupState, type StartupState } from './startup-machine';
-import { useRecoveryContainment } from './use-recovery-containment';
 
 /**
  * Drives the startup sequence and produces exactly one routing decision.
@@ -35,10 +36,16 @@ export function useStartupRouting(): StartupRouting {
   /**
    * Read alongside fonts, session and onboarding rather than after them.
    *
-   * The hook resolves the marker against the live session itself, so all this layer has to do is
+   * The actor resolves the marker against the live session itself, so all this layer has to do is
    * feed the verdict in. It is consulted on every launch — a signed-out one answers immediately.
+   *
+   * **Consumed, not owned.** This used to call `useRecoveryContainment` directly, which made the
+   * entry gate the only thing that armed containment — and Expo Router never mounts the entry gate
+   * for a deep-linked launch, so a direct link took no containment decision at all (issue #30). The
+   * actor now lives in `RecoveryContainmentProvider`, above the navigator, and this reads its
+   * verdict. One owner, one set of side effects, and this layer keeps exactly the input it had.
    */
-  const recovery = useRecoveryContainment();
+  const recovery = useRecoveryContainmentState();
 
   const [elapsedMs, setElapsedMs] = useState(0);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
