@@ -9,7 +9,7 @@ import { TEST_FAITH_USER_ID } from '@/test-support/faith-storage-address';
 import { DUA_CATEGORIES } from '../data/duas/dua-categories';
 import { resolveDuaDetail } from '../data/duas/dua-detail';
 import { reviewedDuas } from '../data/duas/reviewed-dua';
-import { faithRouteAccess } from '../di/faith-route-guard';
+import { protectedRouteAccess as faithRouteAccess } from '@application/navigation/protected-routes';
 import { duaCategoryHref, duaDetailHref } from '../faith-routes';
 import {
   readQuranSelections,
@@ -98,7 +98,7 @@ describe('both routes live inside the stack the guard wraps', () => {
       established is signed in. Asserted by position rather than by presence: a guard nested inside the
       repository provider would let the provider mount first, which is the thing it exists to prevent.
     */
-    const guardAt = layout.indexOf('<FaithRouteGuard>');
+    const guardAt = layout.indexOf('<ProtectedRouteBoundary>');
     expect(guardAt).toBeGreaterThan(-1);
     for (const provider of [
       '<FaithPreferencesProvider>',
@@ -138,8 +138,11 @@ describe('both routes live inside the stack the guard wraps', () => {
       rejection on the strength of this: if the guard's source is unchanged, the rejection it produced last
       time is the rejection it produces now.
     */
-    const guard = readFileSync(join(__dirname, '..', 'di', 'faith-route-guard.tsx'), 'utf8');
-    expect(guard).toContain('export function faithRouteAccess(auth: AuthState): FaithRouteAccess');
+    const guard = readFileSync(
+      join(__dirname, '..', '..', '..', 'application', 'navigation', 'protected-routes.ts'),
+      'utf8',
+    );
+    expect(guard).toContain('export function protectedRouteAccess(auth: AuthState): RouteAccess');
     expect(guard).toContain('isLocallyAuthenticated');
     /* And its logic still consults nothing about the destination — one rule for the whole stack. */
     const code = guard.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
