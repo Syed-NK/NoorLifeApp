@@ -1,14 +1,11 @@
-import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
+import { PlannerProvider } from '@features/planner/di/planner-provider';
+import { PlannerCalendarScreen } from '@features/planner/screens/planner-calendar-screen';
 
 /** Planner → Calendar. */
 export default function Screen() {
   return (
-    <ModuleSectionScreen
-      moduleId="planner"
-      activeKey="calendar"
-      title="Calendar"
-      heroTitle="The month at a glance"
-      heroBody="Your events and NoorLife plans on one grid, so nothing gets double-booked."
-    />
+    <PlannerProvider>
+      <PlannerCalendarScreen />
+    </PlannerProvider>
   );
 }
