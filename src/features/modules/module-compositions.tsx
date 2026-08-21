@@ -2,6 +2,7 @@ import { FaithHomeContent } from './faith/faith-home-content';
 import { NoorAIHomeContent } from './noor-ai/noor-ai-home-content';
 import { HealthHomeContent } from './health/health-home-content';
 import { PlannerProvider } from '@features/planner/di/planner-provider';
+import { PlannerRoutineProvider } from '@features/planner/di/planner-routine-provider';
 import { PlannerHomeContent } from '@features/planner/screens/planner-home-content';
 import type { FrameworkModuleId } from './module-tokens';
 
@@ -35,7 +36,14 @@ export function ModuleHomeComposition({ moduleId }: { readonly moduleId: Framewo
     case 'planner':
       return (
         <PlannerProvider>
-          <PlannerHomeContent />
+          {/*
+            Both Planner stores, because the home shows a count from each. Two providers rather than
+            one that holds both: tasks and routines are separate envelopes, and a shared provider
+            would re-render every task list whenever a routine was ticked.
+          */}
+          <PlannerRoutineProvider>
+            <PlannerHomeContent />
+          </PlannerRoutineProvider>
         </PlannerProvider>
       );
     default:
