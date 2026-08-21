@@ -6,6 +6,7 @@ import { useModuleTheme } from '@features/modules/module-context';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { minimumHitSlop } from '@shared/utils/a11y';
+import { gridCellWidth, weekdayColumn } from '@shared/utils/calendar-grid';
 
 import type { CalendarMonth } from '../data/faith-calendar.repository';
 
@@ -33,44 +34,13 @@ import type { CalendarMonth } from '../data/faith-calendar.repository';
 /** Monday-first, matching the reference's column order. */
 const WEEKDAYS: readonly string[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-/** The card's own border, top/bottom/left/right, as `ModuleCard` draws it. */
-const CARD_BORDER = 1;
-
-/** How many columns a week has. Named so the arithmetic below is not a bare 7. */
-export const GRID_COLUMNS = 7;
-
-/**
- * The width of one day cell, given the page column and the card's padding.
- *
- * ── Why the card's *border* is in this arithmetic ───────────────────────────
- * It was not, and that cost an entire column. `contentWidth` is the page column; the card takes its
- * padding from both sides **and** its 1 dp border from both sides. Dividing the un-debited track by
- * seven made each cell ~0.3 dp too wide, so seven no longer fitted and `flexWrap` pushed the last
- * one onto the next row — Sunday rendered permanently empty and every date sat one column to the
- * left of its real weekday. On a calendar, that is not a cosmetic error: it tells the user the
- * wrong day of the week for every date in the month.
- *
- * `Math.floor` is belt and braces on top of the correction. A fractional cell width can still round
- * up in the compositor; flooring guarantees seven fit and wastes at most a fraction of a dp on the
- * trailing edge.
- *
- * Exported so the guarantee — seven cells fit the track — is asserted arithmetically rather than
- * inferred from a screenshot.
- */
-export function gridCellWidth(contentWidth: number, cardPadding: number): number {
-  const track = contentWidth - cardPadding * 2 - CARD_BORDER * 2;
-  return Math.floor(track / GRID_COLUMNS);
-}
-
-/** Column index (0 = Monday) for an ISO `YYYY-MM-DD` date. */
-export function weekdayColumn(iso: string): number {
-  const [year, month, day] = iso.split('-').map(Number);
-  if (year === undefined || month === undefined || day === undefined) {
-    return 0;
-  }
-  const sundayFirst = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-  return (sundayFirst + 6) % 7;
-}
+/*
+  The grid arithmetic moved to `@shared/utils/calendar-grid` when Planner's calendar needed the same
+  three answers. Re-exported here, rather than left behind as a second copy, so this file's callers
+  and tests keep working while there is still exactly one definition of a cell's width and a date's
+  weekday column. Two calendars in one app must not disagree about where the week starts.
+*/
+export { GRID_COLUMNS, gridCellWidth, weekdayColumn } from '@shared/utils/calendar-grid';
 
 export type HijriMonthGridProps = {
   readonly month: CalendarMonth;

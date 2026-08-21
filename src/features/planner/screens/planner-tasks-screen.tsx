@@ -1,3 +1,4 @@
+import { useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
@@ -15,6 +16,7 @@ import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import {
+  isLocalDate,
   localDateKey,
   offsetLocalDate,
   type PlannerTask,
@@ -35,6 +37,42 @@ const FAULT_COPY: Readonly<Record<PlannerTaskFault, string>> = {
   'invalid-time': 'Use a 24-hour time such as 09:30, after choosing a day.',
 };
 
+/**
+ * The due date a route parameter asked for, or `null`.
+ *
+ * Expo Router types a search parameter as `string | string[]`, because a URL may repeat it. So this
+ * takes the first value if it is an array, and then puts it through `isLocalDate` — the same
+ * validator the task contract uses — rather than trusting it. A deep link is untrusted input: it can
+ * carry `2026-02-30`, an empty string, a word, or twenty of them, and none of those may reach the
+ * composer as a due date. Anything that is not a real calendar day is discarded silently and the
+ * composer opens on its normal default, because a malformed link is not something to explain to a
+ * user who did not type it.
+ *
+ * Exported so the parsing rule is tested directly, without driving navigation.
+ */
+/**
+ * Which due chip a stored date corresponds to.
+ *
+ * Shared by the composer's initial state and by `beginEdit`, so opening a task for editing and
+ * arriving with a prefilled date agree about when a date counts as "Today" rather than "Date". They
+ * were briefly two copies of the same conditional, which is how one of them ends up not knowing
+ * about tomorrow.
+ */
+export function dueChoiceFor(dueDate: string | null, today: string, tomorrow: string): DueChoice {
+  if (dueDate === null) {
+    return 'none';
+  }
+  if (dueDate === today) {
+    return 'today';
+  }
+  return dueDate === tomorrow ? 'tomorrow' : 'custom';
+}
+
+export function prefilledDueDate(raw: string | string[] | undefined): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === 'string' && isLocalDate(value) ? value : null;
+}
+
 export function PlannerTasksScreen() {
   return (
     <ModuleScaffold moduleId="planner" activeKey="tasks" title="Tasks" testID="planner-tasks">
@@ -53,21 +91,35 @@ export function PlannerTasksScreen() {
  */
 function PlannerTasksBody() {
   const planner = usePlanner();
+  const params = useLocalSearchParams<{ date?: string | string[] }>();
+  const prefilled = prefilledDueDate(params.date);
+  const now = useMemo(() => new Date(), []);
+  const today = localDateKey(now);
+  const tomorrow = offsetLocalDate(now, 1);
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
-  const [dueChoice, setDueChoice] = useState<DueChoice>('today');
-  const [customDate, setCustomDate] = useState('');
+  /*
+    A prefilled date arrives from the calendar's "Add task for this day". It seeds the composer once,
+    as initial state, rather than through an effect that would fight the user: re-applying the
+    parameter on every render would snap the picker back each time they chose a different day.
+
+    Today and tomorrow keep their own chips even when passed explicitly, so the composer shows the
+    same choice the user would have made by hand for that date.
+  */
+  const [dueChoice, setDueChoice] = useState<DueChoice>(
+    prefilled === null ? 'today' : dueChoiceFor(prefilled, today, tomorrow),
+  );
+  const [customDate, setCustomDate] = useState(
+    prefilled !== null && dueChoiceFor(prefilled, today, tomorrow) === 'custom' ? prefilled : '',
+  );
   const [dueTime, setDueTime] = useState('');
   const [priority, setPriority] = useState<PlannerTaskPriority>('normal');
   const [editing, setEditing] = useState<PlannerTask | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<PlannerTask | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const now = useMemo(() => new Date(), []);
-  const today = localDateKey(now);
-  const tomorrow = offsetLocalDate(now, 1);
   const openTasks = planner.tasks.filter((task) => task.status === 'open');
   const completedTasks = planner.tasks.filter((task) => task.status === 'completed');
 
@@ -82,14 +134,7 @@ function PlannerTasksBody() {
   }
 
   function beginEdit(task: PlannerTask): void {
-    const choice: DueChoice =
-      task.dueDate === null
-        ? 'none'
-        : task.dueDate === today
-          ? 'today'
-          : task.dueDate === tomorrow
-            ? 'tomorrow'
-            : 'custom';
+    const choice = dueChoiceFor(task.dueDate, today, tomorrow);
     setEditing(task);
     setTitle(task.title);
     setNotes(task.notes);
