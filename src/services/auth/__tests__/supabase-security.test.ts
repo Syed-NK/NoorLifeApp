@@ -382,7 +382,7 @@ describe('no secrets in the repository', () => {
   });
 
   it('ships the template with no values filled in', () => {
-    for (const line of envExample.split('\n')) {
+    for (const line of envExample.split(/\r?\n/)) {
       if (line.startsWith('EXPO_PUBLIC_')) {
         expect(line).toMatch(/=$/);
       }

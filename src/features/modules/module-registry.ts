@@ -350,10 +350,9 @@ const planner: ModuleDefinition = {
   navigation: moduleThemes.planner.navigation,
   hero: {
     eyebrow: 'Your Day',
-    headline: '3 priorities',
-    support: 'Next: School drop-off',
-    supportSecondary: '8:00 AM',
-    actionLabel: 'Optimize My Day',
+    headline: 'Make today manageable',
+    support: 'Nothing enters your plan until you add it.',
+    actionLabel: 'Add a task',
     artworkAccessibilityLabel: '',
   },
   quickActions: [
