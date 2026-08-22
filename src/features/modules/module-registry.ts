@@ -260,28 +260,82 @@ const health: ModuleDefinition = {
   heroPictogram: ASSET.health,
   // Faith's approved reference captions its centre control; the others do not.
   showAICaption: false,
-  heroArtwork: noorLifeAssets.moduleHeroes.health,
+  /*
+    No artwork, deliberately. `04-health-hero.png` draws a rising line chart with plotted node
+    markers across the sky — a data visualisation, on the one screen that states no health source
+    exists. `resizeMode="cover"` offers no crop, so concealing it by offset would depend on the
+    hero's aspect ratio and could expose it again at another width. The asset stays in the
+    repository, unreferenced, for whenever a real provider makes a trend true.
+
+    This also fixes the sub-screens: Track, Trends and Records render `ModuleHeroCard`, which draws
+    the same field, so the chart was on four Health screens rather than one.
+  */
   heroScrim: 0.45,
   heroCopySide: 'left',
   routes: { home: '/health', ai: '/health/ai', help: '/settings/help' },
   navigation: moduleThemes.health.navigation,
+  /*
+    Issue #27. This hero stated a wellness score of 86, over a progress ring drawn from the same
+    number, under the eyebrow "Today’s Wellness" and the line "You’re building a balanced day."
+    There is no health data layer in this codebase — no repository, no provider, no storage
+    namespace — so all four were fabricated, and a wellness score is read as an assessment of the
+    person reading it.
+
+    Now an invitation, and non-numeric: a figure here has nothing to be a figure *of*. The CTA is
+    this module's own empty-state action, so there is one honest verb rather than two that can
+    drift, and it points at a real route that states its own status.
+  */
   hero: {
-    eyebrow: 'Today’s Wellness',
-    headline: '86',
-    support: 'Wellness Score',
-    supportSecondary: 'You’re building a balanced day.',
-    actionLabel: 'View Insights',
+    eyebrow: 'My Health',
+    headline: 'Health tracking isn’t available yet',
+    support: 'When it arrives, what you record will appear here.',
+    /*
+      No action. Every logging, trend and records destination is a placeholder today, so a button
+      here would name something that does not happen — and Health AI is the only working
+      destination, which must not be offered as a stand-in for tracking. Noor AI already ships with
+      an empty `actionLabel`, so the hero components treat '' as "no button" already.
+    */
+    actionLabel: '',
     artworkAccessibilityLabel: '',
   },
+  /*
+    One, because one works. The quick-action row has no unavailable affordance — every tile is
+    live — so a "Log entry" tile there would be an unqualified invitation to a placeholder. The
+    capability grid carries the unavailable ones, where the framework can say so before the tap.
+  */
   quickActions: [
-    { key: 'log', label: 'Log entry', icon: 'add-circle', href: '/health/log' },
-    { key: 'trends', label: 'Trends', icon: 'trends', href: '/health/trends' },
     { key: 'ask-health-ai', label: 'Ask Health AI', icon: 'robot', href: '/health/ai' },
   ],
   capabilities: [
-    { key: 'track', label: 'Track', icon: 'track', href: '/health/log', available: true },
-    { key: 'trends', label: 'Trends', icon: 'trends', href: '/health/trends', available: true },
-    { key: 'records', label: 'Records', icon: 'records', href: '/health/records', available: true },
+    /*
+      Marked unavailable because they are. Each of these routes exists and each renders the
+      framework’s section screen, which says the destination arrives with the module’s full
+      release — but that is only visible *after* the tap. A route existing does not make its named
+      action real, and the grid already has the honest affordance: greyed, disabled, and announced
+      as “not available yet” with its reason as the hint.
+    */
+    {
+      key: 'track',
+      label: 'Track',
+      icon: 'track',
+      available: false,
+      unavailableReason: 'Logging arrives with the Health module’s full release.',
+    },
+    {
+      key: 'trends',
+      label: 'Trends',
+      icon: 'trends',
+      available: false,
+      unavailableReason:
+        'Trends need something recorded first, and recording is not available yet.',
+    },
+    {
+      key: 'records',
+      label: 'Records',
+      icon: 'records',
+      available: false,
+      unavailableReason: 'Your history appears here once entries can be recorded.',
+    },
     { key: 'overview', label: 'Overview', icon: 'home', href: '/health', available: true },
     {
       key: 'sleep',

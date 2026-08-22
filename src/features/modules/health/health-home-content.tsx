@@ -1,385 +1,114 @@
-import { useRouter } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
-import { AppIcon, PressableScale } from '@ds/components';
-
-import { ModuleAIInsightCard } from '../components/module-ai-insight-card';
-import { ModuleCard, ModuleCardHeading, ModuleTwoColumn } from '../components/module-card';
-import { ModuleLineChart } from '../components/module-chart';
-import { ModuleText } from '../components/module-text';
-import { useModule } from '../module-context';
-import { comingSoon } from '../module-routes';
-import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import {
+  ModuleErrorState,
+  ModuleFeatureGrid,
+  ModuleLoadingState,
+  ModuleOfflineState,
+  ModuleStatusBanner,
+} from '../components';
+import { moduleLayout } from '../module-tokens';
+import type { UseModuleOverview } from '../use-module-overview';
 import { useModuleMetrics } from '../use-module-metrics';
 import { HealthHero } from './health-hero';
-import { healthHomeFixture } from './health-view-model';
-
-/** The reference's own accents, alongside the module theme. */
-const TONE = {
-  teal: '#0E9F8A',
-  navy: '#2A3A6B',
-  green: '#1B9E4B',
-  red: '#D64535',
-  grey: '#6B7896',
-} as const;
 
 /**
- * Health's home screen, composed to `04-health.png`.
+ * **Health's home, claiming nothing about anybody's health and promising nothing it cannot do.**
  *
- * A module-specific composition for the same reason Faith has one: the approved reference
- * contains four metric cards, two different two-column rows and a Quick Log card, and the
- * generic framework sections model none of them. The shell — scaffold, header, navigation,
- * card, text, tokens — stays shared.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── What this screen used to say (issue #27) ───────────────────────────────
+ * Every value on it came from `healthHomeFixture`, whose own docblock read "Nothing here is live":
+ * a wellness score of 86 over a progress ring; 7,542 steps, 7h 15m sleep, 6 cups of water, mood
+ * "Good"; a "Medication Reminder" reading *Vitamin D · 8:00 AM · Taken*; a "Weekly Trend" chart
+ * asserting activity was trending up; three timestamped "Recent Activity" rows; two "Today's Focus"
+ * suggestions; and an AI insight praising the user's activity.
+ *
+ * There is no health data layer in this codebase — no repository, no provider, no storage namespace.
+ * The medication row was the serious one: it told a user the application had recorded a dose of a
+ * named supplement at a time.
+ *
+ * ── The second correction: a route is not a feature ────────────────────────
+ * The first pass replaced all of that with the framework's empty state — *"No entries yet — Log one
+ * thing today"* — and a hero reading *"Start with one entry / Nothing is tracked until you log it. /
+ * Log your first entry"*. Truthful about data and **untruthful about capability**: `/health/log`
+ * exists, but it renders the framework's section screen, which says the destination arrives with the
+ * module's full release. Nothing can be logged. So the screen had stopped inventing readings and
+ * started inventing a feature.
+ *
+ * "No entries yet" is only honest when an entry is *possible*. With no way to create one it reads as
+ * the user's own omission — which is worse than a wrong number, because it assigns blame for it.
+ *
+ * So the state here is **not configured**, not empty:
+ *
+ *   • the hero states plainly that tracking is not available yet, and offers no action;
+ *   • one status banner says the same in the body, before anything invites a tap;
+ *   • Track, Trends and Records are marked unavailable in the capability grid, which greys them,
+ *     disables them and announces "not available yet" with the reason as a hint — *before* the tap
+ *     rather than after it;
+ *   • the quick-action row is gone. It has no unavailable affordance, so a "Log entry" tile there
+ *     would be an unqualified invitation to a placeholder.
+ *
+ * Health AI stays reachable through the bottom navigation, which is a real destination under its own
+ * policy. It is deliberately **not** promoted here: offering it beside "tracking is not available"
+ * would present a chat as the substitute for recording, which it is not.
+ *
+ * ── Why the states are still distinct ──────────────────────────────────────
+ * `loading`, `offline` and `failed` keep the framework's own components. `empty` is not rendered at
+ * all while there is no provider — that is what `HAS_HEALTH_PROVIDER` records — so "you have logged
+ * nothing" cannot stand in for "there is nothing to log with", and neither can stand in for "we
+ * could not read what you logged". A permission state exists in the framework and is unused, because
+ * nothing here requests a permission.
+ *
+ * ── One state, one read ────────────────────────────────────────────────────
+ * The overview state is passed in from `ModuleHomeScreen`, which already computes it — it used to be
+ * computed there and discarded while this screen read a fixture. This file constructs no repository,
+ * parses no storage, builds no account key and writes nothing.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
-export function HealthHomeContent() {
-  const router = useRouter();
-  const module = useModule();
-  const { dp } = useModuleMetrics();
-  const model = healthHomeFixture;
 
-  const soon = (label: string) => () => router.push(comingSoon('health', label));
-  const tone = (key: 'theme' | 'teal' | 'navy' | 'green' | 'red' | 'grey'): string =>
-    key === 'theme' ? module.theme.ink : TONE[key];
+/**
+ * Whether any authoritative Health source exists.
+ *
+ * A constant rather than a check, because there is nothing to check: no repository, no provider, no
+ * storage namespace. It is written down so the branch below states its reason, and so the day a real
+ * provider arrives there is one line to flip and a failing test to notice if the copy does not follow.
+ */
+const HAS_HEALTH_PROVIDER = false;
+
+/** Said once, in the body, in the module's own voice. */
+const UNAVAILABLE_MESSAGE =
+  'Health tracking is not available yet. Nothing is being recorded, and nothing here is measured.';
+
+export function HealthHomeContent({ state }: { readonly state: UseModuleOverview }) {
+  const { dp } = useModuleMetrics();
+  const gap = dp(moduleLayout.sectionGap);
 
   return (
-    <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
-      <HealthHero
-        score={model.wellness.score}
-        onViewInsights={() => router.push('/health/trends')}
-        testID="health-hero"
-      />
+    <View style={{ rowGap: gap }}>
+      {/*
+        No action passed, because the registry gives this hero no action label — every destination
+        that could be named here is a placeholder today. See `health-hero.tsx`.
+      */}
+      <HealthHero testID="health-hero" />
 
-      {/* ── Four wellness metrics ────────────────────────────────────────── */}
-      <View style={[styles.metricRow, { columnGap: dp(9) }]} testID="health-metrics">
-        {model.metrics.map((metric) => (
-          <PressableScale
-            key={metric.key}
-            onPress={soon(`${metric.label} detail`)}
-            accessibilityRole="button"
-            accessibilityLabel={`${metric.label}, ${metric.value}`}
-            style={[
-              styles.metricCard,
-              {
-                minHeight: dp(moduleLayout.healthMetricHeight),
-                borderRadius: dp(moduleLayout.radiusSmall),
-                paddingHorizontal: dp(6),
-                paddingVertical: dp(5),
-                columnGap: dp(4),
-              },
-            ]}
-            testID={`health-metric-${metric.key}`}
-          >
-            <AppIcon
-              name={metric.icon}
-              size={dp(moduleLayout.healthMetricIcon)}
-              color={tone(metric.tone)}
-            />
-            <View style={styles.flex}>
-              <ModuleText token="metricValue" numberOfLines={1} maxFontSizeMultiplier={1.2}>
-                {metric.value}
-              </ModuleText>
-              <ModuleText token="rowMeta" numberOfLines={1} maxFontSizeMultiplier={1.2}>
-                {metric.label}
-              </ModuleText>
-            </View>
-          </PressableScale>
-        ))}
-      </View>
+      {HAS_HEALTH_PROVIDER ? null : (
+        <ModuleStatusBanner tone="info" message={UNAVAILABLE_MESSAGE} testID="health-unavailable" />
+      )}
 
-      {/* ── Medication Reminder | Today's Focus ──────────────────────────── */}
-      <ModuleTwoColumn
-        testID="health-medication-focus"
-        left={
-          <ModuleCard
-            onPress={soon('Medication reminders')}
-            accessibilityLabel={`${model.medication.title}. ${model.medication.name}, ${model.medication.time}, ${model.medication.statusLabel}`}
-            padding={moduleLayout.twoColumnPadding}
-            style={styles.fillHeight}
-            testID="health-medication"
-          >
-            <View style={[styles.row, { columnGap: dp(6) }]}>
-              <AppIcon name="medication" size={dp(20)} color={TONE.green} />
-              <ModuleText token="cardHeading" numberOfLines={2} style={styles.flex}>
-                {model.medication.title}
-              </ModuleText>
-            </View>
-            <ModuleText token="rowLabel" numberOfLines={1} style={{ marginTop: dp(6) }}>
-              {model.medication.name}
-            </ModuleText>
-            <View style={[styles.pillStack, { rowGap: dp(6), marginTop: dp(7) }]}>
-              <StatusPill label={model.medication.time} />
-              <StatusPill label={model.medication.statusLabel} icon="check-circle" />
-            </View>
-          </ModuleCard>
-        }
-        right={
-          <ModuleCard
-            padding={moduleLayout.twoColumnPadding}
-            style={styles.fillHeight}
-            testID="health-focus"
-          >
-            <ModuleCardHeading title={model.focus.title} />
-            <View style={{ rowGap: dp(7) }}>
-              {model.focus.items.map((item, index) => (
-                <View key={item.key}>
-                  {index === 0 ? null : (
-                    <View style={[styles.divider, { marginBottom: dp(7) }]} accessible={false} />
-                  )}
-                  <PressableScale
-                    onPress={soon(item.title)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${item.title}. ${item.detail}`}
-                    style={[
-                      styles.row,
-                      { columnGap: dp(6), minHeight: dp(moduleLayout.minTouchTarget * 0.72) },
-                    ]}
-                    testID={`health-focus-${item.key}`}
-                  >
-                    {item.tiled ? (
-                      <View
-                        style={{
-                          width: dp(26),
-                          height: dp(26),
-                          borderRadius: dp(8),
-                          backgroundColor: module.theme.lightSurface,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <AppIcon name={item.icon} size={dp(17)} color={TONE.green} />
-                      </View>
-                    ) : (
-                      <View style={styles.bareIcon}>
-                        <AppIcon name={item.icon} size={dp(21)} color={module.theme.ink} />
-                      </View>
-                    )}
-                    <View style={styles.flex}>
-                      <ModuleText token="rowLabel" numberOfLines={1}>
-                        {item.title}
-                      </ModuleText>
-                      <ModuleText token="rowMeta" numberOfLines={1}>
-                        {item.detail}
-                      </ModuleText>
-                    </View>
-                    <AppIcon
-                      name="chevron-forward"
-                      size={dp(13)}
-                      color={moduleNeutrals.textTertiary}
-                    />
-                  </PressableScale>
-                </View>
-              ))}
-            </View>
-          </ModuleCard>
-        }
-      />
+      {state.status === 'loading' ? <ModuleLoadingState /> : null}
 
-      {/* ── Weekly Trend | Recent Activity ───────────────────────────────── */}
-      <ModuleTwoColumn
-        testID="health-trend-activity"
-        left={
-          <ModuleCard
-            onPress={() => router.push('/health/trends')}
-            accessibilityLabel={`${model.weeklyTrend.title}. ${model.weeklyTrend.summary}`}
-            padding={moduleLayout.twoColumnPadding}
-            style={styles.fillHeight}
-            testID="health-trend"
-          >
-            <ModuleText token="cardHeading" numberOfLines={1} accessibilityRole="header">
-              {model.weeklyTrend.title}
-            </ModuleText>
-            <ModuleText
-              token="rowMeta"
-              color={module.theme.ink}
-              numberOfLines={2}
-              style={{ marginBottom: dp(6) }}
-            >
-              {model.weeklyTrend.summary}
-            </ModuleText>
-            <ModuleLineChart
-              values={model.weeklyTrend.values}
-              labels={model.weeklyTrend.labels}
-              accessibilityLabel={`Seven day activity chart. ${model.weeklyTrend.summary}`}
-              testID="health-trend-chart"
-            />
-          </ModuleCard>
-        }
-        right={
-          <ModuleCard
-            padding={moduleLayout.twoColumnPadding}
-            style={styles.fillHeight}
-            testID="health-activity"
-          >
-            <ModuleCardHeading
-              title={model.recentActivity.title}
-              actionLabel="View All"
-              onAction={() => router.push('/health/records')}
-              testID="health-activity-viewall"
-            />
-            <View style={{ rowGap: dp(7) }}>
-              {model.recentActivity.items.map((item) => (
-                <View
-                  key={item.key}
-                  style={[styles.row, { columnGap: dp(6) }]}
-                  accessible
-                  accessibilityLabel={`${item.title}, ${item.detail}, ${item.time}`}
-                  testID={`health-activity-${item.key}`}
-                >
-                  <AppIcon name={item.icon} size={dp(18)} color={tone(item.tone)} />
-                  <View style={styles.flex}>
-                    <ModuleText token="rowLabel" numberOfLines={1}>
-                      {item.title}
-                    </ModuleText>
-                    <ModuleText token="rowMeta" numberOfLines={1}>
-                      {item.detail}
-                    </ModuleText>
-                  </View>
-                  <ModuleText token="rowMeta" numberOfLines={1}>
-                    {item.time}
-                  </ModuleText>
-                </View>
-              ))}
-            </View>
-          </ModuleCard>
-        }
-      />
+      {state.status === 'offline' ? <ModuleOfflineState onRetry={state.reload} /> : null}
 
-      {/* ── Quick Log ────────────────────────────────────────────────────── */}
-      <ModuleCard testID="health-quick-log">
-        <ModuleText
-          token="sectionTitle"
-          numberOfLines={1}
-          accessibilityRole="header"
-          style={{ marginBottom: dp(8) }}
-        >
-          {model.quickLog.title}
-        </ModuleText>
-        <View style={[styles.quickRow, { columnGap: dp(8) }]}>
-          {model.quickLog.actions.map((action) => (
-            <PressableScale
-              key={action.key}
-              onPress={soon(`Log ${action.label}`)}
-              accessibilityRole="button"
-              accessibilityLabel={`Log ${action.label}`}
-              style={[
-                styles.quickCard,
-                {
-                  minHeight: dp(moduleLayout.quickLogHeight),
-                  borderRadius: dp(moduleLayout.radiusSmall),
-                  rowGap: dp(4),
-                  paddingVertical: dp(7),
-                },
-              ]}
-              testID={`health-quick-${action.key}`}
-            >
-              <AppIcon name={action.icon} size={dp(24)} color={tone(action.tone)} />
-              <ModuleText
-                token="tileLabel"
-                align="center"
-                numberOfLines={1}
-                maxFontSizeMultiplier={1.2}
-                style={styles.stretch}
-              >
-                {action.label}
-              </ModuleText>
-            </PressableScale>
-          ))}
-        </View>
-      </ModuleCard>
+      {state.status === 'failed' ? (
+        <ModuleErrorState onRetry={state.reload} developerDetail={state.detail} />
+      ) : null}
 
       {/*
-        ── Health AI Insight ──────────────────────────────────────────────
-        The medical disclaimer is required by Health's AI policy and must stay visible,
-        so it is folded into the body copy rather than dropped — a compact source that
-        fits the fixed geometry, which is the permitted option. The full wording is on
-        the Health AI screen's standing banner.
+        Deliberately no `empty` branch while there is no provider. "No entries yet" invites an entry,
+        and there is no way to make one — see the docblock above for why that is the worse untruth.
       */}
-      <ModuleAIInsightCard
-        message={`${model.insight.body} ${model.insight.disclaimer}`}
-        onPress={() => router.push(module.routes.ai)}
-        testID="health-insight"
-      />
+
+      <ModuleFeatureGrid testID="health-features" />
     </View>
   );
 }
-
-/** The pale pills the reference uses for the medication time and its taken state. */
-function StatusPill({ label, icon }: { readonly label: string; readonly icon?: 'check-circle' }) {
-  const { dp } = useModuleMetrics();
-  return (
-    <View
-      style={[
-        styles.statusPill,
-        {
-          borderRadius: dp(moduleLayout.radiusSmall),
-          paddingHorizontal: dp(9),
-          paddingVertical: dp(5),
-          columnGap: dp(4),
-        },
-      ]}
-    >
-      {icon === undefined ? null : <AppIcon name={icon} size={dp(13)} color={TONE.green} />}
-      <ModuleText token="caption" color={TONE.green} numberOfLines={1}>
-        {label}
-      </ModuleText>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  flex: {
-    flex: 1,
-    minWidth: 0,
-  },
-  stretch: {
-    alignSelf: 'stretch',
-  },
-  fillHeight: {
-    flex: 1,
-  },
-  metricRow: {
-    flexDirection: 'row',
-  },
-  metricCard: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: moduleNeutrals.surface,
-    borderWidth: 1,
-    borderColor: moduleNeutrals.border,
-  },
-  pillStack: {
-    alignItems: 'flex-end',
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E8F7EE',
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: moduleNeutrals.divider,
-  },
-  bareIcon: {
-    width: 26,
-    alignItems: 'center',
-  },
-  quickRow: {
-    flexDirection: 'row',
-  },
-  quickCard: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: moduleNeutrals.surface,
-    borderWidth: 1,
-    borderColor: moduleNeutrals.border,
-    paddingHorizontal: 2,
-  },
-});

@@ -196,7 +196,13 @@ export type ModuleDefinition = {
    * then was a slot that rendered nothing; now that all eight assets exist, a required field
    * is the stronger contract — a module cannot be registered without its hero.
    */
-  readonly heroArtwork: ImageSourcePropType;
+  /**
+   * Optional: a module with no data source may register none.
+   *
+   * Absent for Health, whose approved artwork carries a rising line chart — a data visualisation on
+   * a screen that states there is no health data. See `module-hero-artwork.tsx`.
+   */
+  readonly heroArtwork?: ImageSourcePropType;
   /**
    * Black-scrim opacity over the copy side, 0 for none.
    *

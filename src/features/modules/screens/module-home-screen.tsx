@@ -73,7 +73,7 @@ export function ModuleHomeScreen({ moduleId, provider, testID }: ModuleHomeScree
         isModuleHome
         testID={testID ?? `${moduleId}-home`}
       >
-        <ModuleHomeComposition moduleId={moduleId} />
+        <ModuleHomeComposition moduleId={moduleId} state={state} />
       </ModuleScaffold>
     );
   }

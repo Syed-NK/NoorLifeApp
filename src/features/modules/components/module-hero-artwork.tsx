@@ -12,7 +12,17 @@ const SCRIM_END = 0.72;
 
 export type ModuleHeroArtworkProps = {
   /** The locked hero PNG. Never a pictogram. */
-  readonly source: ImageSourcePropType;
+  /**
+   * The artwork, or absent.
+   *
+   * Optional because a module with **no data source** may have nothing honest to put here. Health
+   * is the case: its approved landscape carries a rising line chart with plotted node markers, which
+   * reads as the user’s health trend on a screen that states no health source exists (issue #27).
+   * `resizeMode="cover"` gives no crop control, so concealing the chart by offset would depend on
+   * the hero’s aspect ratio and could expose it again at another width; omitting the layer is the
+   * one concealment that holds everywhere.
+   */
+  readonly source?: ImageSourcePropType;
   /**
    * Scrim strength at the copy edge, or 0 for none.
    *
@@ -46,6 +56,14 @@ export type ModuleHeroArtworkProps = {
  * horizontal alpha gradient does.
  */
 export function ModuleHeroArtwork({ source, scrim, copySide, testID }: ModuleHeroArtworkProps) {
+  /*
+    No artwork, no layer at all — not a transparent image and not a bare scrim. A scrim over the
+    hero's own fill would darken it for no reason, and the caller keeps its height, radius and
+    theme colour either way, so the geometry is identical with or without this.
+  */
+  if (source === undefined) {
+    return null;
+  }
   return (
     <View style={styles.fill} pointerEvents="none">
       {/*
