@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="learning"
       activeKey="library"
       title="Library"
-      heroTitle="Everything worth coming back to"
-      heroBody="Courses and reading you have started, saved or finished."
+      heroTitle="Library planned"
+      heroBody="Not built yet. Courses you begin will collect here."
     />
   );
 }

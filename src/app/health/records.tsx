@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="health"
       activeKey="records"
       title="Records"
-      heroTitle="Your history, kept private"
-      heroBody="Everything you have logged, in one place, stored against your account only."
+      heroTitle="Records planned"
+      heroBody="Not built yet. What you record will stay on your account."
     />
   );
 }

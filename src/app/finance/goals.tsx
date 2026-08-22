@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="finance"
       activeKey="goals"
       title="Savings"
-      heroTitle="Saving toward something specific"
-      heroBody="Name the thing, set the amount, and watch the gap close."
+      heroTitle="Goals planned"
+      heroBody="Not built yet. Name a goal and watch the gap close."
     />
   );
 }

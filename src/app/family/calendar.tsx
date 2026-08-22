@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="family"
       activeKey="calendar"
       title="Calendar"
-      heroTitle="One calendar, everyone on it"
-      heroBody="Shared plans your family can see and add to, without a group chat."
+      heroTitle="Calendar planned"
+      heroBody="Not built yet. Family plans will sit in one place."
     />
   );
 }

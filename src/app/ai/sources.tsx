@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="noor-ai"
       activeKey="ask-ai"
       title="Sources"
-      heroTitle="Where an answer came from"
-      heroBody="Noor AI cites what it used, so you can check it."
+      heroTitle="Citations planned"
+      heroBody="Not built yet. Answers will cite what they used."
     />
   );
 }

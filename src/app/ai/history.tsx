@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="noor-ai"
       activeKey="history"
       title="History"
-      heroTitle="Every question you have asked"
-      heroBody="Reopen a conversation, or pick up where one left off."
+      heroTitle="History planned"
+      heroBody="Not built yet. You will be able to reopen a past chat."
     />
   );
 }

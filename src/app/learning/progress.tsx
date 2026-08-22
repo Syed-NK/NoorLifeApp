@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="learning"
       activeKey="progress"
       title="Progress"
-      heroTitle="What has actually stuck"
-      heroBody="Lessons finished, streaks kept, and the topics that need another pass."
+      heroTitle="Progress planned"
+      heroBody="Not built yet. Finished lessons will show here."
     />
   );
 }

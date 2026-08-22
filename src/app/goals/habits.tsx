@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="goals"
       activeKey="habits"
       title="Habits"
-      heroTitle="The daily version of the goal"
-      heroBody="A goal you cannot start today is a habit you have not defined yet."
+      heroTitle="Habits planned"
+      heroBody="Not built yet. A goal will become a daily step here."
     />
   );
 }

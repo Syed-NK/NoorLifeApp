@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="finance"
       activeKey="budgets"
       title="Budgets"
-      heroTitle="A limit you chose yourself"
-      heroBody="Set an amount per category and see where you stand before the month ends."
+      heroTitle="Budgets planned"
+      heroBody="Not built yet. You will set an amount per category."
     />
   );
 }

@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="learning"
       activeKey="saved"
       title="Saved"
-      heroTitle="Read it when you have time"
-      heroBody="The articles and lessons you set aside, waiting rather than forgotten."
+      heroTitle="Saved reading planned"
+      heroBody="Not built yet. Reading you set aside will wait here."
     />
   );
 }

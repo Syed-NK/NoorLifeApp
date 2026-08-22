@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="family"
       activeKey="memories"
       title="Memories"
-      heroTitle="The moments worth keeping"
-      heroBody="Photos and notes from the days your family will want to look back on."
+      heroTitle="Album planned"
+      heroBody="Not built yet. Shared photos and notes will collect here."
     />
   );
 }
