@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="finance"
       activeKey="transactions"
       title="Spending"
-      heroTitle="Every entry, in order"
-      heroBody="What you spent and when, so a surprising month has an explanation."
+      heroTitle="Entries planned"
+      heroBody="Not built yet. What you record will appear in order."
     />
   );
 }

@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="goals"
       activeKey="progress"
       title="Progress"
-      heroTitle="Honest, not flattering"
-      heroBody="What you have kept and what you have missed, without a guilt trip about either."
+      heroTitle="Progress planned"
+      heroBody="Not built yet. It will show what you kept and missed."
     />
   );
 }

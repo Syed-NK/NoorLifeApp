@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="health"
       activeKey="trends"
       title="Trends"
-      heroTitle="The pattern, not the day"
-      heroBody="One bad night means nothing. Four in a row is worth knowing about."
+      heroTitle="Trends planned"
+      heroBody="Not built yet. Four bad nights matter; one does not."
     />
   );
 }

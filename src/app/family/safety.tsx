@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="family"
       activeKey="safety"
       title="Safety"
-      heroTitle="Shared carefully, by choice"
-      heroBody="Who can see what, and what stays private — set per person, changeable any time."
+      heroTitle="Controls planned"
+      heroBody="Not built yet. Sharing will be set per person."
     />
   );
 }

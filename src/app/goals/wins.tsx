@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="goals"
       activeKey="wins"
       title="Wins"
-      heroTitle="Proof it is working"
-      heroBody="The streaks you kept and the goals you closed, worth re-reading on a hard week."
+      heroTitle="Wins planned"
+      heroBody="Not built yet. Closed goals will collect here."
     />
   );
 }

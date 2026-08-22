@@ -7,8 +7,8 @@ export default function Screen() {
       moduleId="noor-ai"
       activeKey="saved"
       title="Saved"
-      heroTitle="Answers worth keeping"
-      heroBody="Anything you save stays here, ready to read again."
+      heroTitle="Saving planned"
+      heroBody="Not built yet. Answers you keep will stay here."
     />
   );
 }

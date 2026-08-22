@@ -16,6 +16,24 @@ export type ModuleHeroCardProps = {
   readonly support?: string;
   /** Suppresses the call to action on screens that should not repeat it. */
   readonly hideAction?: boolean;
+  /**
+   * Which presentation this card is in. `'hero'` — the default — is the module home’s card,
+   * unchanged in every respect.
+   *
+   * ── Why `'section'` exists (issue #37) ─────────────────────────────────
+   * A module home hero holds an approved short phrase beside its artwork, and the copy column is
+   * sized for exactly that: 52% of the content width, one line of display type. A placeholder
+   * section screen has a different job — it has to *explain* that a destination is not built — and
+   * that explanation does not fit in half a card at display size. Measured on a physical device, the
+   * honest copy clipped to “Controls pl…” and “…before each mo…” **at font scale 1.0**, and on Noor AI
+   * it also ran across the robot, because this card puts copy on the left and that module’s artwork
+   * is on the left.
+   *
+   * So the section presentation drops the decorative artwork, gives the copy the whole card, sets the
+   * headline at heading rather than display size, and lets the card grow if the type does. Palette,
+   * radius, padding and starting height are the same card.
+   */
+  readonly layout?: 'hero' | 'section';
   readonly onAction?: () => void;
   readonly testID?: string;
 };
@@ -46,6 +64,7 @@ export function ModuleHeroCard({
   headline,
   support,
   hideAction = false,
+  layout = 'hero',
   onAction,
   testID,
 }: ModuleHeroCardProps) {
@@ -55,6 +74,7 @@ export function ModuleHeroCard({
 
   const resolvedEyebrow = eyebrow ?? hero.eyebrow;
   const resolvedSupport = support ?? hero.support;
+  const section = layout === 'section';
   const showAction = !hideAction && hero.actionLabel !== '';
 
   return (
@@ -62,15 +82,26 @@ export function ModuleHeroCard({
       style={[
         styles.root,
         {
-          height: dp(moduleLayout.heroHeight),
+          /*
+            `minHeight` in section mode, so a larger font scale lengthens the card instead of cutting
+            the sentence off. At scale 1.0 it renders at exactly the height it always did.
+          */
+          ...(section
+            ? { minHeight: dp(moduleLayout.heroHeight) }
+            : { height: dp(moduleLayout.heroHeight) }),
           borderRadius: dp(moduleLayout.cardRadius),
           backgroundColor: module.theme.gradientStart,
         },
       ]}
       testID={testID}
     >
+      {/*
+        No source in section mode, so `ModuleHeroArtwork` renders nothing — the same optional-source
+        path Health uses. Omitted rather than repositioned: the copy needs the whole width, and artwork
+        left underneath it would be the overlap this fix exists to remove.
+      */}
       <ModuleHeroArtwork
-        source={module.heroArtwork}
+        source={section ? undefined : module.heroArtwork}
         scrim={module.heroScrim}
         copySide={module.heroCopySide}
         testID={`${testID ?? 'module-hero'}-artwork`}
@@ -82,8 +113,10 @@ export function ModuleHeroCard({
           {
             paddingHorizontal: dp(moduleLayout.heroPadding),
             paddingVertical: dp(moduleLayout.heroCopyPaddingV),
-            width: contentWidth * moduleLayout.heroTextColumnRatio,
-            rowGap: dp(2),
+            ...(section
+              ? { alignSelf: 'stretch' as const }
+              : { width: contentWidth * moduleLayout.heroTextColumnRatio }),
+            rowGap: dp(section ? 3 : 2),
           },
         ]}
       >
@@ -95,9 +128,9 @@ export function ModuleHeroCard({
 
         <View style={[styles.headlineRow, { columnGap: dp(5) }]}>
           <ModuleText
-            token="heroDisplay"
+            token={section ? 'cardHeading' : 'heroDisplay'}
             color={module.theme.onFill}
-            numberOfLines={1}
+            numberOfLines={section ? 2 : 1}
             maxFontSizeMultiplier={1.1}
           >
             {headline ?? hero.headline}
@@ -115,7 +148,7 @@ export function ModuleHeroCard({
         </View>
 
         {resolvedSupport === undefined ? null : (
-          <ModuleText token="heroBody" color={module.theme.onFill} numberOfLines={2}>
+          <ModuleText token="heroBody" color={module.theme.onFill} numberOfLines={section ? 4 : 2}>
             {resolvedSupport}
           </ModuleText>
         )}

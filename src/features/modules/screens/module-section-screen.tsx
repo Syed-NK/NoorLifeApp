@@ -67,6 +67,11 @@ export function ModuleSectionScreen({
     >
       <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
         <ModuleHeroCard
+          /*
+            The placeholder presentation: no decorative artwork, copy across the whole card, room to
+            wrap. See `module-hero-card.tsx` for what it measured at on a device.
+          */
+          layout="section"
           eyebrow={title}
           headline={heroTitle}
           support={heroBody}
