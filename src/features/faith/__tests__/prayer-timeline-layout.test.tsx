@@ -16,6 +16,7 @@ import {
   type PrayerJourneyEntry,
 } from '../components/prayer-journey-timeline';
 import { shouldStackPrayerActions } from '../components/prayer-action-cards';
+import { PrayerNextSummary } from '../components/prayer-next-summary';
 import { createMockFaithRepositories } from '../data/mock';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { faithPictogramSlot, getFaithPictogram } from '../faith-pictogram-assets';
@@ -133,26 +134,71 @@ describe('the next-prayer summary is live', () => {
   /**
    * The ring is a proportion, so it is drawn from the real interval or not at all.
    *
-   * The mock repository's day is a real calculated day, so at almost every hour there *is* a
-   * preceding marker and the sweep exists. The one interval that cannot be known — before Fajr —
-   * yields a track and no sweep, and both are legitimate, so the assertion is that the two agree:
-   * a sweep exists exactly when a head does, and the track exists either way.
+   * ── Why this no longer samples the current interval ─────────────────────
+   * It used to render the screen, accept whatever proportion the live Makkah day happened to yield,
+   * and assert that the head and the sweep agreed about it. The property is right; the sampling was
+   * not. At almost every hour there is a sweep and the case passes, so a defect present in the first
+   * ~1/120 of *every* interval survived nine days and was then caught by chance in CI — a 101-second
+   * window after Dhuhr (issue #39).
+   *
+   * The invariant below is unchanged, down to the line that states it. What changed is that both of
+   * its branches are now reached deliberately, by passing fixed proportions into the same card the
+   * screen builds — same component, same three testIDs, no clock, no repository. The boundary either
+   * side of half a segment is enumerated in `prayer-progress-ring-boundary.test.tsx`.
    */
-  it('draws the ring’s track always and its sweep only when the interval is known', async () => {
+  it.each([
+    ['a proportion large enough to draw', 0.5, true],
+    ['a proportion too small to draw a segment', 0, false],
+    ['no knowable interval', null, false],
+  ])(
+    'draws the ring’s track always and its sweep only when the interval is known: %s',
+    async (_label, progress, sweptSomething) => {
+      await render(
+        <ModuleProvider moduleId="faith">
+          <PrayerNextSummary
+            pictogram={faithPictogramSlot('p2-asr')}
+            prayerName="Asr"
+            clock="4:15 PM"
+            remaining="2 hr 5 min remaining"
+            remainingLines={['2 hr', '5 min']}
+            dayRelation="today"
+            progress={progress}
+            testID="faith-prayer-next"
+          />
+        </ModuleProvider>,
+      );
+
+      expect(
+        screen.getByTestId('faith-prayer-next-ring-track', { includeHiddenElements: true }),
+      ).toBeTruthy();
+
+      const head = screen.queryByTestId('faith-prayer-next-ring-head', {
+        includeHiddenElements: true,
+      });
+      const firstSegment = screen.queryByTestId('faith-prayer-next-ring-sweep-0', {
+        includeHiddenElements: true,
+      });
+      expect(head === null).toBe(firstSegment === null);
+
+      // And which branch it is, so neither case can quietly stop being covered.
+      expect(firstSegment === null).toBe(!sweptSomething);
+    },
+  );
+
+  /**
+   * The screen still has to wire the ring, at whatever hour the suite runs.
+   *
+   * Only the track is asserted here, because it is the one part of the ring that is unconditional —
+   * which is exactly why it is the part a screen-level case can assert without depending on the
+   * clock. What the sweep and head do with the proportion is settled above and in the boundary suite.
+   */
+  it('renders the ring inside the live card on the screen', async () => {
     await renderScreen();
     await screen.findByTestId('faith-prayer-next');
 
     expect(
       screen.getByTestId('faith-prayer-next-ring-track', { includeHiddenElements: true }),
     ).toBeTruthy();
-
-    const head = screen.queryByTestId('faith-prayer-next-ring-head', {
-      includeHiddenElements: true,
-    });
-    const firstSegment = screen.queryByTestId('faith-prayer-next-ring-sweep-0', {
-      includeHiddenElements: true,
-    });
-    expect(head === null).toBe(firstSegment === null);
   });
 
   it('hard-codes none of the reference’s values in the Prayer sources', () => {
