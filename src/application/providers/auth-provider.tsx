@@ -169,6 +169,61 @@ const UNRESOLVED: AuthState = {
 const CONNECTIVITY_TIMEOUT_MS = 2000;
 
 /**
+ * How long the launch waits for Supabase to answer before deciding without it.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── What this bounds, and what it deliberately does not ────────────────────
+ * `resolveSession()` is unbounded by design and stays that way — every other caller runs straight
+ * after a user action, where waiting is the correct behaviour and a bound would abandon a sign-in
+ * that was about to succeed. This bound is a property of the **launch policy**, which is this
+ * provider's concern, so it lives here rather than inside the service.
+ *
+ * It does not cancel anything. The request keeps running and its real answer is still applied when
+ * it lands (see `resolveLaunch`). What the bound stops is a network round trip *blocking a decision
+ * that can already be made* — which, on a device holding a valid receipt, it can.
+ *
+ * ── Why a timeout is never a signed-out verdict ────────────────────────────
+ * A bound firing means "we have not finished asking". It is not `no-session`, and mapping it to one
+ * would be the original defect rebuilt: #34 names this explicitly, and the receipt would be cleared
+ * on a flapping link. So the timeout branch has exactly two outcomes — adopt the receipt if there is
+ * one, or stay `unknown` and let the startup machine hold. Never Authentication Options.
+ *
+ * ── Why six seconds ───────────────────────────────────────────────────────
+ * The measured refresh on a live link is sub-second to about two, so six is well clear of a healthy
+ * round trip and will not pre-empt one that was going to succeed. The ceiling on it is the one that
+ * matters: the connectivity probe (2 s) plus this must stay under
+ * `STARTUP_PRESENTATION_CEILING_MS` (10 s), so a bounded launch resolves *before* the #31 "still
+ * resolving" notice would appear. That keeps the notice for launches that are genuinely unresolved
+ * rather than merely slow, which is what makes it truthful. `startup-authority-latency.test.tsx`
+ * asserts that relationship, so raising either value without the other fails.
+ */
+export const SESSION_RESOLUTION_TIMEOUT_MS = 6000;
+
+/** A sentinel distinct from every `SessionResolution` kind, so a bound cannot be mistaken for one. */
+const TIMED_OUT = Symbol('session-resolution-timed-out');
+
+/**
+ * Races a promise against a bound, clearing the timer either way.
+ *
+ * The handle is kept and cleared for the reason `isConfirmedOffline` records: `Promise.race` settles
+ * on the first result and does not cancel the loser, so a bare `setTimeout` leaves a live timer
+ * behind on every launch — which in Jest holds the environment open after the run finishes.
+ */
+async function withBound<T>(work: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<typeof TIMED_OUT>((resolve) => {
+    handle = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+  try {
+    return await Promise.race([work, bound]);
+  } finally {
+    if (handle !== undefined) {
+      clearTimeout(handle);
+    }
+  }
+}
+
+/**
  * Whether the platform **positively reports no link at all**.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -270,6 +325,38 @@ export function AuthProvider({
   const network = useMemo(() => connectivity ?? createExpoConnectivity(), [connectivity]);
 
   /**
+   * The single writer of authority, and where "is this still true?" is answered.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── The hole this closes ───────────────────────────────────────────────────
+   * Taking the profile read off the critical path means a network result now lands *after* authority
+   * was published, so for the first time this provider has work in flight that can arrive into a
+   * different world than the one it started in. Before, every await sat inside the one function that
+   * then wrote state, so "stale" could not happen; now it can, and it has to be structurally
+   * impossible rather than merely unlikely.
+   *
+   * ── Why a predicate over `previous` and not a generation counter ─────────────
+   * The first attempt at that was an epoch counter in a ref, and a ref is the wrong instrument here:
+   * the actions object is built in a `useMemo`, so every function it closes over is reachable from
+   * render, and `react-hooks/refs` cannot tell that these particular reads all happen after an await.
+   * Moving the same counter into a mutable `useState` object only trades one correct complaint for
+   * another.
+   *
+   * The state itself is the better authority. React hands the *current* value to a functional update,
+   * so a caller with something to write can ask "is what I am about to overwrite still the thing I
+   * decided about?" at the exact instant of the write — later than any counter could be sampled, and
+   * with no second copy of the truth to keep in step. An unmounted provider needs no check at all:
+   * React discards the update, and Strict Mode's second mount has its own state for the same reason.
+   *
+   * `onlyIf` omitted means unconditional, which is right for a decision the user has just taken and
+   * for a server verdict that must land whatever else has happened since.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  const publish = useCallback((next: AuthState, onlyIf?: (previous: AuthState) => boolean) => {
+    setState((previous) => (onlyIf === undefined || onlyIf(previous) ? next : previous));
+  }, []);
+
+  /**
    * Mirrors the authority onto the services gate, during render.
    *
    * ── Why not an effect ──────────────────────────────────────────────────────
@@ -301,6 +388,90 @@ export function AuthProvider({
   );
 
   /**
+   * Reads the durable profile row and folds it into an authority that has already been published.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── Not a second resolution ────────────────────────────────────────────────
+   * This decides nothing. It cannot sign anyone in, cannot sign anyone out, cannot change an
+   * authority and does not touch the receipt's revocation contract. It refines two display-facing
+   * values on a session that was already validated, and if it never completes the launch is
+   * unaffected — which is the entire point of moving it off the critical path.
+   *
+   * There is no retry and no loop. One read per adoption; a failure is silence, exactly as the old
+   * inline `.catch(() => null)` was, and for the same reason: the local fallback is already correct.
+   *
+   * ── How a late answer is made inert ────────────────────────────────────────
+   * One condition, checked at the instant of the write rather than before the read: the account
+   * signed in **now** must still be this account. `previous.user` inside the functional update is
+   * whoever is current, not whoever was current when the read began, so a sign-out leaves no user to
+   * match, and an account replacement leaves a different id — which is what makes account A's row
+   * unable to land under account B a property rather than a probability. An unmounted provider never
+   * runs the updater at all, and Strict Mode's second mount has its own state.
+   *
+   * A second launch for the same account is deliberately *not* excluded: the row is still theirs, so
+   * there is nothing stale about it. Whose name gets written is the only thing enrichment could get
+   * wrong, and identity answers that completely.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  const enrich = useCallback(async (user: AuthUser): Promise<void> => {
+    const profile = await authService.getProfile(user.id).catch(() => null);
+    if (profile === null) {
+      return;
+    }
+
+    /*
+      ── Set from inside the updater, which is not pure, and is safe here ──────
+      React invokes an updater twice in development to surface impurity, so writing to an outer
+      variable from one is normally a mistake. This particular write is idempotent — a boolean to
+      `true`, from the same branch, on the same input — so a double invocation produces the identical
+      result, and there is no synchronous way to read current state from a continuation without a ref
+      (which `react-hooks/refs` correctly refuses here; see `publish`).
+
+      It matters that this is gated rather than unconditional: the receipt below is account-scoped, so
+      refreshing it from a row that did *not* merge would write account A's name over account B's
+      receipt — the one place in this function where a stale read could do lasting damage rather than
+      merely being ignored.
+    */
+    let applied = false;
+    setState((previous) => {
+      /*
+        The identity check, at the moment of the write. `previous.user` is whoever is signed in now —
+        not whoever was signed in when the read began — so a row for a replaced account cannot merge.
+      */
+      if (
+        previous.status !== 'signed-in' ||
+        previous.user === null ||
+        previous.user.id !== user.id
+      ) {
+        return previous;
+      }
+      applied = true;
+      const durableName = profile.full_name ?? null;
+      return {
+        ...previous,
+        user: durableName === null ? previous.user : toProfile(user, durableName),
+        hasCompletedOnboarding: profile.onboarding_completed ?? previous.hasCompletedOnboarding,
+      };
+    });
+
+    if (!applied) {
+      return;
+    }
+    /*
+      The receipt is refreshed with the durable values so the *next* launch starts from the row rather
+      than from the session copy — which is what stops a name edited in Profile from reappearing as
+      the old one on every offline launch. Same key, same owner, no second store.
+    */
+    await writeOfflineReceipt({
+      userId: user.id,
+      displayName: profile.full_name ?? toProfile(user, null).fullName,
+      avatarUrl: user.avatarUrl,
+      hasCompletedOnboarding: profile.onboarding_completed ?? (await readOnboardingFlag()),
+      now: Date.now(),
+    });
+  }, []);
+
+  /**
    * Applies a **server-validated** user, and records that it happened.
    *
    * ── Why the receipt is written here and nowhere else ───────────────────────
@@ -309,32 +480,67 @@ export function AuthProvider({
    * the receipt anywhere else would make it a claim about nothing.
    */
   const adopt = useCallback(
-    async (user: AuthUser | null) => {
+    async (user: AuthUser | null, onlyIf?: (previous: AuthState) => boolean) => {
       if (user === null) {
-        setState(await signedOut());
+        publish(await signedOut());
         return;
       }
       // An unconfirmed account is not a usable session: leaving it signed out is what stops Verify
       // Email being bypassed.
       if (!user.emailConfirmed) {
-        setState(await signedOut(user.email));
+        publish(await signedOut(user.email));
         return;
       }
-      // The profile row is the durable record; a read failure falls back to the local flag rather than
-      // blocking launch.
-      const profile = await authService.getProfile(user.id).catch(() => null);
-      const localFlag = await readOnboardingFlag();
-      const resolved = toProfile(user, profile?.full_name ?? null);
-      const onboarded = profile?.onboarding_completed ?? localFlag;
+      /*
+        ═══════════════════════════════════════════════════════════════════════
+        ── Authority is published before the profile is read ──────────────────
+        The profile read used to sit here, awaited, between a validated session and
+        `status: 'signed-in'` — a second serial network hop gating an authentication decision for the
+        sake of a display name and a duplicate onboarding flag. #34 measures what that costs.
 
-      setState({
-        status: 'signed-in',
-        authority: 'online',
-        user: resolved,
-        hasCompletedOnboarding: onboarded,
-        pendingVerificationEmail: null,
-        isBackendConfigured: isSupabaseConfigured,
-      });
+        The two are different kinds of fact. **Authority** is *whose session this is and may this
+        device open its data* — a security decision, and `user` above is the validated answer to it.
+        **Enrichment** is *what to call them*, which has a local answer already: `toProfile` falls
+        back to the session's own `user_metadata.full_name`, then the address, and the only surface
+        that renders it — Main Home's greeting — additionally carries its own `?? 'there'`. Nothing
+        account-shaped is empty or placeholder in the gap, which is the constraint #28 and #31 rest
+        on and the reason this split is safe rather than merely faster.
+
+        The onboarding flag is not a routing input for a signed-in launch: `nextStartupState` decides
+        an authenticated destination from recovery containment and the plan-selection read, and
+        consults `hasCompletedOnboarding` only on the signed-*out* branch. So the local flag is a
+        complete answer here, and the durable column refines a value nothing is waiting on.
+
+        ── The two local reads run together ───────────────────────────────────
+        Neither needs the other. The receipt supplies the last durable name known for *this* user id,
+        which is what keeps the greeting from showing the signup name and then visibly switching to
+        an edited one when the row arrives — and it is not a new cache: it is the receipt this
+        function already writes, already owner-keyed, already read on every offline launch.
+        ═══════════════════════════════════════════════════════════════════════
+      */
+      const [localFlag, priorReceipt] = await Promise.all([
+        readOnboardingFlag(),
+        readOfflineReceipt(),
+      ]);
+      /*
+        Strictly the same account. A receipt for another user is not a fallback for this one, and an
+        id mismatch must produce the session's own name rather than a previous occupant's.
+      */
+      const knownName =
+        priorReceipt !== null && priorReceipt.userId === user.id ? priorReceipt.displayName : null;
+      const resolved = toProfile(user, knownName);
+
+      publish(
+        {
+          status: 'signed-in',
+          authority: 'online',
+          user: resolved,
+          hasCompletedOnboarding: localFlag,
+          pendingVerificationEmail: null,
+          isBackendConfigured: isSupabaseConfigured,
+        },
+        onlyIf,
+      );
 
       /*
         Token-free, and written only now. See `offline-receipt.ts` for why an id and a display name are
@@ -344,11 +550,13 @@ export function AuthProvider({
         userId: user.id,
         displayName: resolved.fullName,
         avatarUrl: user.avatarUrl,
-        hasCompletedOnboarding: onboarded,
+        hasCompletedOnboarding: localFlag,
         now: Date.now(),
       });
+
+      void enrich(user);
     },
-    [signedOut],
+    [enrich, publish, signedOut],
   );
 
   /** Enters offline authority from a validated receipt, or reports that there is none. */
@@ -357,7 +565,7 @@ export function AuthProvider({
     if (receipt === null) {
       return false;
     }
-    setState({
+    publish({
       status: 'signed-in',
       authority: 'offline',
       user: {
@@ -383,7 +591,7 @@ export function AuthProvider({
       isBackendConfigured: isSupabaseConfigured,
     });
     return true;
-  }, []);
+  }, [publish]);
 
   /**
    * Decides the launch state once, from what can actually be established.
@@ -397,14 +605,111 @@ export function AuthProvider({
    * Nothing here enters the app before deciding: the state stays `unknown`, and the startup machine
    * holds on the splash rather than flashing Authentication Options.
    */
-  const resolveLaunch = useCallback(async () => {
-    if (!isSupabaseConfigured) {
-      setState(await signedOut());
-      return;
-    }
+  /**
+   * Applies a **server answer** without deciding anything the answer does not say.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * Extracted so the two callers that need these exact semantics share them rather than keeping two
+   * copies of a security decision. `revalidateOnlineAuthority` calls it after re-asking, and the
+   * launch's bounded path calls it when a request that outran its bound finally lands.
+   *
+   * "Without deciding anything the answer does not say" is the whole contract. An upgrade and a
+   * verdict are both written; `retryable-offline` and `unavailable` are **silence**, because a failed
+   * attempt has taught us nothing and re-adopting on it would mint a fresh user object and churn
+   * identity through every consumer on a flapping link.
+   *
+   * A verdict is still allowed to sign the user out — that is how a remote sign-out reaches a device
+   * running from a receipt, and it is only reachable here because a server actually answered.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  const applyServerAnswer = useCallback(
+    async (
+      resolution: Awaited<ReturnType<typeof authService.resolveSession>>,
+      /** Guards an **upgrade** only. A verdict is never conditional — see the caller. */
+      onlyIf?: (previous: AuthState) => boolean,
+    ) => {
+      switch (resolution.kind) {
+        case 'authenticated':
+          await adopt(resolution.user, onlyIf);
+          return;
+        case 'no-session':
+        case 'invalid-or-revoked':
+          await clearOfflineReceipt();
+          publish(await signedOut());
+          return;
+        case 'retryable-offline':
+        case 'unavailable':
+          return;
+      }
+    },
+    [adopt, publish, signedOut],
+  );
 
-    if (await isConfirmedOffline(network)) {
-      /*
+  /**
+   * Applies a resolution that arrived **within** the launch's bound, where a completed failure is
+   * itself information.
+   *
+   * The difference from `applyServerAnswer` is `retryable-offline`: here the attempt finished and
+   * reported the server unreachable, which is the pre-existing launch contract — adopt the receipt if
+   * there is one, and otherwise nothing has been established, so the launch says so. That is not the
+   * same event as *the bound firing*, where the request is still running and no failure has been
+   * observed at all. Collapsing the two would either make a slow link look like an outage or make an
+   * outage look like a launch still in progress.
+   */
+  const applyLaunchResolution = useCallback(
+    async (resolution: Awaited<ReturnType<typeof authService.resolveSession>>) => {
+      switch (resolution.kind) {
+        case 'authenticated':
+          await adopt(resolution.user);
+          return;
+        case 'no-session':
+        case 'invalid-or-revoked':
+          /*
+            A verdict. The server answered, and the answer ends offline access for this device — which
+            is exactly how a remote sign-out reaches a phone that had been running from a receipt.
+          */
+          await clearOfflineReceipt();
+          publish(await signedOut());
+          return;
+        case 'retryable-offline':
+          /*
+            The platform said the internet was reachable and the request still could not complete — a
+            captive portal, a flapping link, a server that never answered. Not a verdict, so the
+            receipt survives and local access is permitted if one exists.
+          */
+          if (!(await adoptOffline())) {
+            publish(await signedOut());
+          }
+          return;
+        case 'unavailable':
+          publish(await signedOut());
+          return;
+      }
+    },
+    [adopt, adoptOffline, publish, signedOut],
+  );
+
+  const resolveLaunch = useCallback(
+    /**
+     * @param isLive Whether the launch this belongs to is still the live one.
+     *
+     * Owned by the mount effect as a closure variable rather than kept in a ref, which is both the
+     * idiomatic answer and the only one that lints: the actions object is built in a `useMemo`, so
+     * anything it reaches must not read refs during render. The effect already had exactly this flag
+     * for the Supabase listener and simply never shared it — which is why an abandoned launch could
+     * still write a receipt and issue a profile read after the provider had gone.
+     */
+    async (isLive: () => boolean) => {
+      if (!isSupabaseConfigured) {
+        publish(await signedOut());
+        return;
+      }
+
+      if (await isConfirmedOffline(network)) {
+        if (!isLive()) {
+          return;
+        }
+        /*
         The platform says there is no link at all. **No refresh is attempted** — locked decision 7:
         a token refresh with no route could only fail, and its failure would tell us nothing the port
         has not already said.
@@ -413,41 +718,84 @@ export function AuthProvider({
         because only an attempt can distinguish a captive portal from a working connection. See
         `isConfirmedOffline` for why the default is to try.
       */
-      if (!(await adoptOffline())) {
-        setState(await signedOut());
-      }
-      return;
-    }
-
-    const resolution = await authService.resolveSession();
-    switch (resolution.kind) {
-      case 'authenticated':
-        await adopt(resolution.user);
-        return;
-      case 'no-session':
-      case 'invalid-or-revoked':
-        /*
-          A verdict. The server answered, and the answer ends offline access for this device — which
-          is exactly how a remote sign-out reaches a phone that had been running from a receipt.
-        */
-        await clearOfflineReceipt();
-        setState(await signedOut());
-        return;
-      case 'retryable-offline':
-        /*
-          The platform said the internet was reachable and the request still could not complete — a
-          captive portal, a flapping link, a server that never answered. Not a verdict, so the receipt
-          survives and local access is permitted if one exists.
-        */
         if (!(await adoptOffline())) {
-          setState(await signedOut());
+          publish(await signedOut());
         }
         return;
-      case 'unavailable':
-        setState(await signedOut());
+      }
+
+      /*
+      ═════════════════════════════════════════════════════════════════════════
+      ── The bound, and why the request is not abandoned ──────────────────────
+      The promise is kept. `withBound` only decides how long the *launch* waits on it; the request
+      carries on and its real answer is applied below when it lands. So the bound buys resolution
+      time without giving up the one thing that ends offline access — a definitive server verdict.
+      That matters for revocation: a remote sign-out still reaches this device on this launch, just
+      after the receipt has already opened the user's own data rather than instead of it.
+      ═════════════════════════════════════════════════════════════════════════
+    */
+      const inFlight = authService.resolveSession();
+      const raced = await withBound(inFlight, SESSION_RESOLUTION_TIMEOUT_MS);
+
+      /*
+        Checked here as well as in the continuation below, because the request winning its race after
+        the provider has gone is the ordinary case for a launch the user backed out of — and applying
+        it would write a receipt and issue a profile read for a tree that no longer exists.
+      */
+      if (!isLive()) {
         return;
-    }
-  }, [adopt, adoptOffline, network, signedOut]);
+      }
+
+      if (raced === TIMED_OUT) {
+        /*
+        Not a verdict, and specifically **not** `no-session`. Two outcomes only:
+
+          • a valid receipt exists → offline authority, under the existing permitted-offline policy.
+            Locked decision 7 is untouched: the attempt was made and is still running; what changed
+            is that its slowness no longer holds the launch;
+          • no receipt → the state stays `unknown`. The startup machine holds the splash and, past
+            its ceiling, shows #31's identity-free notice. Not Authentication Options, not Welcome,
+            and no protected surface — because nothing has been established yet, and saying otherwise
+            would be the false signed-out verdict #31 removed, reintroduced by a timer.
+      */
+        await adoptOffline();
+
+        void inFlight.then(
+          async (late) => {
+            /*
+            Nothing at all once the launch is over. Below this line lies real work — a receipt write
+            and a profile read — and React discarding a setState does not undo either of those.
+          */
+            if (!isLive()) {
+              return;
+            }
+            /*
+            ── What a late answer may overwrite ─────────────────────────────────
+            Only the conclusion this launch reached without it. If the state has since become
+            `signed-out`, or already holds `online` authority from a Supabase event, then something
+            newer and better informed has spoken and an upgrade must be silent — otherwise a late
+            `authenticated` would resurrect a session the user had deliberately ended.
+
+            A **verdict** is exempt and lands unconditionally: `no-session` and `invalid-or-revoked`
+            are how a remote sign-out reaches a device running from a receipt, and suppressing one to
+            protect a newer state would make the receipt unrevocable for the life of the process.
+          */
+            await applyServerAnswer(
+              late,
+              (previous) => previous.status === 'unknown' || previous.authority === 'offline',
+            );
+          },
+          () => {
+            /* A rejection tells the launch nothing it has not already assumed. */
+          },
+        );
+        return;
+      }
+
+      await applyLaunchResolution(raced);
+    },
+    [adoptOffline, applyLaunchResolution, applyServerAnswer, network, publish, signedOut],
+  );
 
   /**
    * Re-asks the server, while this process is running on offline authority.
@@ -497,26 +845,14 @@ export function AuthProvider({
       return;
     }
 
-    const resolution = await authService.resolveSession();
-    switch (resolution.kind) {
-      case 'authenticated':
-        await adopt(resolution.user);
-        return;
-      case 'no-session':
-      case 'invalid-or-revoked':
-        await clearOfflineReceipt();
-        setState(await signedOut());
-        return;
-      case 'retryable-offline':
-      case 'unavailable':
-        /*
-          Nothing learned, so nothing written. `unavailable` cannot be reached from offline authority —
-          an unconfigured build never gets one — and is inert here rather than duplicating a launch
-          decision that has already been taken.
-        */
-        return;
-    }
-  }, [adopt, network, signedOut]);
+    /*
+      The same switch the bounded launch path uses when a late answer lands, because they are the same
+      question: a server has spoken while this process already believes something. `unavailable`
+      cannot be reached from offline authority — an unconfigured build never gets one — and is inert
+      there rather than duplicating a launch decision already taken.
+    */
+    await applyServerAnswer(await authService.resolveSession());
+  }, [applyServerAnswer, network]);
 
   /**
    * Attaches the triggers, and only while they can do something.
@@ -597,7 +933,7 @@ export function AuthProvider({
     let cancelled = false;
 
     void (async () => {
-      await resolveLaunch();
+      await resolveLaunch(() => !cancelled);
     })();
 
     const unsubscribe = authService.subscribeToAuthChanges(({ event, user }) => {
@@ -630,7 +966,7 @@ export function AuthProvider({
           return;
         }
         await clearOfflineReceipt();
-        setState(await signedOut());
+        publish(await signedOut());
       })();
     });
 
@@ -638,7 +974,7 @@ export function AuthProvider({
       cancelled = true;
       unsubscribe();
     };
-  }, [adopt, resolveLaunch, signedOut]);
+  }, [adopt, publish, resolveLaunch, signedOut]);
 
   const { pendingVerificationEmail } = state;
 
@@ -703,7 +1039,7 @@ export function AuthProvider({
           this is a decision.
         */
         await clearOfflineReceipt();
-        setState(await signedOut());
+        publish(await signedOut());
         await authService.signOut().catch(() => undefined);
       },
       async completeOnboarding() {
@@ -738,7 +1074,7 @@ export function AuthProvider({
         );
       },
     }),
-    [adopt, pendingVerificationEmail, signedOut, state.user?.id],
+    [adopt, pendingVerificationEmail, publish, signedOut, state.user?.id],
   );
 
   return (
