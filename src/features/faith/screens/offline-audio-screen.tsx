@@ -445,6 +445,19 @@ function SurahPanel({
     >
       {surahs.map((entry) => {
         const complete = entry.complete;
+        /*
+          ── An `onPress` was removed from the row below, and it was already dead ──
+          The spread used to add `onPress: () => onDownloadSurah(entry.surah)` for an incomplete
+          surah, alongside `trailingInteractive`. `FaithRow` ignores `onPress` in that combination —
+          deliberately, see its own note — so the handler had never run: the row reported
+          `clickable=false` to the platform, and only a device dump showed it. `FaithRowProps` is now
+          a union that makes the pair a compile error, which is what surfaced this one.
+
+          Deleting it changes no behaviour. **What it does not fix is real:** an incomplete download
+          has no retry affordance on this row, and never had a working one. It needs its own control
+          in `trailing` beside "Remove", which is a change to the offline-audio flow that the branch
+          finding this could not exercise on a device.
+        */
         return (
           <FaithRow
             key={entry.surah}
@@ -455,9 +468,7 @@ function SurahPanel({
                 : `${entry.playable} of ${entry.total ?? '?'} verses — plays until the first missing verse`
             }
             icon={complete ? 'download' : 'retry'}
-            {...(complete
-              ? {}
-              : { iconColor: moduleNeutrals.warning, onPress: () => onDownloadSurah(entry.surah) })}
+            {...(complete ? {} : { iconColor: moduleNeutrals.warning })}
             trailing={
               <PressableScale
                 onPress={() => onRemoveSurah(entry.surah)}

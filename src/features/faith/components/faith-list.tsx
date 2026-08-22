@@ -20,7 +20,7 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
  * semantics, one place to fix a spacing bug.
  */
 
-export type FaithRowProps = {
+type FaithRowShared = {
   readonly title: string;
   readonly subtitle?: string;
   readonly meta?: string;
@@ -41,7 +41,6 @@ export type FaithRowProps = {
   readonly pictogram?: FaithPictogramSlot;
   /** Arabic shown right-aligned above the title, e.g. a surah's name. */
   readonly arabic?: string;
-  readonly onPress?: () => void;
   /** Replaces the trailing chevron — a bookmark toggle, a checkbox. */
   readonly trailing?: ReactNode;
   /**
@@ -61,12 +60,41 @@ export type FaithRowProps = {
    * which becomes its own group, and the control in `trailing` stays an independent node with its own
    * name, value and hint. Verify with `uiautomator dump`, not with Jest alone.
    *
-   * A row is never both `onPress` and `trailingInteractive` — see the note in the component.
+   * A row is never both `onPress` and `trailingInteractive` — the type below makes that impossible.
    */
-  readonly trailingInteractive?: boolean;
   readonly accessibilityLabel?: string;
   readonly testID: string;
 };
+
+/**
+ * A row is pressable, or it carries its own control. Never both.
+ *
+ * ── Why this is a union rather than two optional booleans ───────────────────
+ * Because the component *silently ignores* `onPress` when `trailingInteractive` is set — for a
+ * good reason of its own, documented at the branch below: a row press that also drove the control
+ * beside it would put two handlers on one gesture.
+ *
+ * Silently ignoring it is the problem. The Prayer reminders rows passed both, so tapping a row did
+ * nothing at all; `uiautomator` reported the row as `clickable=false` on the device while the Jest
+ * case asserting the press *passed*, because `fireEvent.press` calls the prop directly and never
+ * goes near the platform tree. Nothing about the JavaScript was wrong, and nothing could have
+ * caught it: an ignored prop is invisible to types, to lint and to Jest.
+ *
+ * Now it is visible to the first of those. Passing both is a compile error, in every module, for
+ * ever. A row that needs a press *and* a control puts a second control in `trailing` — two nodes,
+ * two actions, no shared gesture — which is what those reminders rows do now.
+ */
+export type FaithRowProps = FaithRowShared &
+  (
+    | {
+        readonly onPress?: () => void;
+        readonly trailingInteractive?: false;
+      }
+    | {
+        readonly onPress?: never;
+        readonly trailingInteractive: true;
+      }
+  );
 
 export function FaithRow({
   title,

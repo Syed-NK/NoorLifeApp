@@ -4,6 +4,7 @@ import {
   activeLocationRevision,
   resetActiveLocationRevisionForTest,
 } from '../data/location/active-location';
+import { alertsFor } from '@/test-support/prayer-alert-fixtures';
 import { formattedHijriForCalendarDay, locationDayFor } from '../data/calendar-day';
 import { hasData } from '../data/faith-result';
 import { createHijriCalendarRepository } from '../data/hijri/hijri-calendar.repository';
@@ -257,7 +258,7 @@ describe('saving a city moves every location-derived surface, in one commit', ()
       { prayerTimes: repos.prayerTimes, notifications, now: () => NOW },
       {
         masterEnabled: true,
-        enabledPrayers: ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'],
+        alerts: alertsFor('fajr', 'dhuhr', 'asr', 'maghrib', 'isha'),
         settings: SETTINGS,
       },
     );

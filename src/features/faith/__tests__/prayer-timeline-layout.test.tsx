@@ -66,6 +66,41 @@ function testIDsInOrder(root: unknown): readonly string[] {
   return found;
 }
 
+/**
+ * A row's spoken utterance, from whichever node carries it.
+ *
+ * ── Why that is not always the row itself ──────────────────────────────────
+ * A row with a notification button cannot be one accessible node: on Android `accessible`
+ * collapses the subtree, and the button would vanish from the accessibility tree entirely — the
+ * release defect `FaithRowProps.trailingInteractive` documents. So when the Prayer screen renders
+ * the card, the utterance sits on the row's summary node and the button is its own node. Where the
+ * card is rendered without the callback, the row is still one node and carries it directly.
+ *
+ * Reading whichever node has it keeps these assertions about the behaviour — every row states its
+ * name, time and state in one utterance — rather than about which element holds the string.
+ */
+function rowUtterance(key: string): string {
+  const summary = screen.queryByTestId(`faith-prayer-journey-${key}-summary`, {
+    includeHiddenElements: true,
+  });
+  const fromSummary = summary?.props.accessibilityLabel;
+  if (typeof fromSummary === 'string') {
+    return fromSummary;
+  }
+  return String(
+    screen.getByTestId(`faith-prayer-journey-${key}`, { includeHiddenElements: true }).props
+      .accessibilityLabel,
+  );
+}
+
+/**
+ * The notification buttons' labels, which are interleaved between the rows in tree order.
+ *
+ * Filtered out where a case is asserting the *rows*, so that adding a per-row control does not
+ * silently change what a sequence assertion is comparing.
+ */
+const NOTIFY_BUTTON_LABEL = 'Notification settings for ';
+
 /** Every `accessibilityLabel` in a subtree, in the same order. */
 function labelsInOrder(root: unknown): readonly string[] {
   const found: string[] = [];
@@ -240,7 +275,9 @@ describe('the vertical journey holds the whole day, in order', () => {
     await renderScreen();
     const card = await screen.findByTestId('faith-prayer-journey');
 
-    const names = labelsInOrder(card).map((label) => label.split(/[,\s]/)[0]);
+    const names = labelsInOrder(card)
+      .filter((label) => !label.startsWith(NOTIFY_BUTTON_LABEL))
+      .map((label) => label.split(/[,\s]/)[0]);
     expect(names.slice(0, 6)).toEqual(['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']);
   });
 
@@ -288,9 +325,7 @@ describe('the vertical journey holds the whole day, in order', () => {
     await screen.findByTestId('faith-prayer-journey');
 
     for (const key of ORDER) {
-      const label = String(
-        screen.getByTestId(`faith-prayer-journey-${key}`).props.accessibilityLabel,
-      );
+      const label = rowUtterance(key);
       expect(label).toMatch(/\d{1,2}:\d{2} (AM|PM)/);
       expect(label).toMatch(/(next prayer|completed|passed|later today)$/);
     }
@@ -486,9 +521,7 @@ describe('Sunrise is a time marker, never a prayer', () => {
     await screen.findByTestId('faith-prayer-journey');
 
     expect(screen.getByText('Time marker • not a prayer')).toBeTruthy();
-    expect(
-      String(screen.getByTestId('faith-prayer-journey-sunrise').props.accessibilityLabel),
-    ).toMatch(/time marker, not a prayer/);
+    expect(rowUtterance('sunrise')).toMatch(/time marker, not a prayer/);
   });
 
   it('keeps its chronological place between Fajr and Dhuhr', async () => {
@@ -693,16 +726,28 @@ describe('the two action cards', () => {
     expect(registry).not.toMatch(/require\([^)]*p3-reminder-bell/);
   });
 
-  it('claims no scheduling and no delivery', async () => {
+  it('says what the destination sets, and claims no delivery', async () => {
+    /*
+      ── The claim that expired ───────────────────────────────────────────
+      This case used to require "Preferences only" and "does not schedule notifications yet".
+      Both were accurate while the destination stored switches and delivered nothing; both became
+      false when alerts became real scheduled notifications, and the card went on saying them.
+
+      The subtitle now describes the settings’ granularity, which is true whatever the platform
+      does afterwards. What it may still never say is that a notification will arrive.
+    */
     await renderScreen();
     const card = await screen.findByTestId('faith-prayer-reminders-action');
 
     expect(screen.getByText('Prayer reminders')).toBeTruthy();
-    expect(screen.getByText('Preferences only')).toBeTruthy();
-    expect(String(card.props.accessibilityLabel)).toMatch(/does not schedule notifications yet/i);
-    // The reference's claim must not have survived the replacement.
+    expect(screen.getByText('Per prayer, per day')).toBeTruthy();
+    expect(screen.queryByText('Preferences only')).toBeNull();
+    expect(String(card.props.accessibilityLabel)).not.toMatch(/does not schedule/i);
+
+    /* Neither the reference’s claim nor a promise of delivery. */
     expect(screen.queryByText('Manage notifications')).toBeNull();
     expect(screen.queryByText('Choose which prayers notify you')).toBeNull();
+    expect(String(card.props.accessibilityLabel)).not.toMatch(/will (arrive|notify)/i);
   });
 
   /**

@@ -89,3 +89,56 @@ export function prayerAlertChannelId(sound: PrayerAlertSound = currentPrayerAler
 
 /** The user-facing channel name, as it appears in Android's notification settings. */
 export const PRAYER_ALERT_CHANNEL_NAME = 'Prayer alerts';
+
+/**
+ * The silent channel's id and name.
+ *
+ * ── Why "Silent" needs a second channel rather than a flag ───────────────
+ * Because on Android a notification's sound is the *channel's* property, not the notification's.
+ * `NotificationCompat.Builder.setSound()` — which is what `expo-notifications` calls when a
+ * schedule request carries a sound — has been ignored since API 26, and a channel's sound is fixed
+ * at creation and immutable afterwards. So there is no way to silence one notification on a channel
+ * that has a sound, and no way to silence the channel later either.
+ *
+ * Two channels is the platform's own answer: alerts the user wants audible go to `prayer-alerts`,
+ * alerts they want silent go to `prayer-alerts-silent`, and Android's notification settings show
+ * them as two categories — which is honest, because they behave differently.
+ *
+ * The silent channel is created with `sound: null`, which `expo-notifications` maps to
+ * `NotificationChannel.setSound(null, …)`. Verified against the installed native source rather than
+ * assumed: an absent `sound` key means the system default, and an explicit `null` means no sound.
+ * Its importance is `default` rather than `high`, because a heads-up banner with no sound is a
+ * strange thing to ask for and `high` is what makes one appear.
+ */
+export const PRAYER_ALERT_SILENT_CHANNEL_ID = 'prayer-alerts-v1-silent';
+export const PRAYER_ALERT_SILENT_CHANNEL_NAME = 'Prayer alerts (silent)';
+
+/**
+ * Whether a full call to prayer can be played at all, and why not.
+ *
+ * ── Why this is a value and not a boolean ────────────────────────────
+ * The sheet shows a full-adhān row, disabled, so that somebody looking for the feature learns what
+ * NoorLife intends rather than concluding it was forgotten. A disabled row has to say *why*, and
+ * the reason has to come from the same place the capability does — otherwise the row will one day
+ * explain an absence that has been filled.
+ *
+ * `available` becomes true only when `currentPrayerAlertSound()` returns a `bundled-azan`, which
+ * needs a licensed asset registered with the config plugin. Every requirement is listed in
+ * `docs/PRAYER_ALERT_AUDIO_REQUIREMENTS.md`; nothing here can be made true by editing this file.
+ */
+export type FullAdhanAvailability = {
+  readonly available: boolean;
+  /** One short sentence, shown beneath the disabled row. Never a promise of a date. */
+  readonly reason: string;
+};
+
+export function fullAdhanAvailability(
+  sound: PrayerAlertSound = currentPrayerAlertSound(),
+): FullAdhanAvailability {
+  return sound.kind === 'bundled-azan'
+    ? { available: true, reason: sound.label }
+    : {
+        available: false,
+        reason: 'Not available yet. NoorLife has no licensed adhān recording to play.',
+      };
+}

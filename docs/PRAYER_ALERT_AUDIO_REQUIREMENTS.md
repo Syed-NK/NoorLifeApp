@@ -93,7 +93,48 @@ default is what ships.
 
 ---
 
-## 6. Related follow-up not covered by this task
+## 6. Fajr is a separate content decision, not a special case of the same file
+
+The adhān for Fajr differs from the other four: it carries the *tathwīb* — `aṣ-ṣalātu khayrun min
+an-nawm` — which does not belong in the adhān for Dhuhr, Asr, Maghrib or Isha. So `sounds` is not one
+asset repeated five times.
+
+Three consequences, all of which have to be settled before a full adhān can ship:
+
+- **Two licensed recordings, not one.** A Fajr adhān and a general adhān, ideally from the same
+  muezzin, or the app will sound like two apps.
+- **Two Android channels, not one.** A channel's sound is immutable, so a per-prayer sound means a
+  per-sound channel — `prayer-alerts-v2-<general>` and `prayer-alerts-v2-<fajr>`.
+  `prayerAlertChannelId()` already derives the id from the sound, so this is a new value rather than
+  new logic; what it is not is invisible, because the user will see two more categories in their
+  system notification settings. That is a product decision, not an implementation detail.
+- **An excerpt cannot be assumed safe.** iOS caps a notification sound at **30 seconds** and silently
+  falls back to the default beyond it. Whether a 30-second excerpt of a Fajr adhān contains the
+  tathwīb depends on where it is cut — so the excerpt is a religious content decision, not an
+  audio-engineering one.
+
+**Nothing in this build plays any adhān.** `fullAdhanAvailability()` reports it unavailable, the
+per-prayer sheet shows the row disabled with that reason, and **no preference for it is stored** — a
+stored "play the adhān" that nothing could honour would be the same defect as the pre-reminder which
+sat unread in storage for three releases.
+
+Sunrise is excluded permanently rather than pending an asset. `canEverPlayFullAdhan()` returns false
+for it, and its row says sunrise is a time marker rather than saying "not yet", because that will
+still be true after a recording is licensed.
+
+### What "Silent" already proved about per-notification sound
+
+Recorded here because a future adhān will meet the same trap. `sound: false` in a notification's
+content silences it on iOS and does **nothing** on Android 8 or later: `NotificationCompat.Builder
+.setSound()` has been ignored since API 26, and the channel decides.
+
+So the silent option is a second channel — `prayer-alerts-v1-silent`, created with an explicit
+`sound: null`. Verified against `AndroidXNotificationsChannelManager.createSoundUriFromArguments` in
+the installed package rather than assumed: an **absent** `sound` key yields
+`Settings.System.DEFAULT_NOTIFICATION_URI`, and an explicit **null** yields `null`, which is silence.
+One keystroke apart, and the wrong one makes every prayer alert silent.
+
+## 7. Related follow-up not covered by this task
 
 - **A direct route to Android's exact-alarm setting** needs `expo-intent-launcher`
   (`Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM`). Today `openSystemSettings()` opens the app's own

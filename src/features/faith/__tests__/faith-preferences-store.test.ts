@@ -78,20 +78,20 @@ describe('faith preferences are one shared snapshot', () => {
       of the user's two prayers switched itself back off.
     */
     const first = updateFaithPreferences((current) => ({
-      prayerNotifications: current.prayerNotifications.map((entry) =>
-        entry.prayer === 'fajr' ? { ...entry, enabled: true } : entry,
+      prayerAlerts: current.prayerAlerts.map((entry) =>
+        entry.time === 'fajr' ? { ...entry, notify: true } : entry,
       ),
     }));
     const second = updateFaithPreferences((current) => ({
-      prayerNotifications: current.prayerNotifications.map((entry) =>
-        entry.prayer === 'asr' ? { ...entry, enabled: true } : entry,
+      prayerAlerts: current.prayerAlerts.map((entry) =>
+        entry.time === 'asr' ? { ...entry, notify: true } : entry,
       ),
     }));
     await Promise.all([first, second]);
 
     const enabled = getFaithPreferencesSnapshot()
-      .preferences.prayerNotifications.filter((entry) => entry.enabled)
-      .map((entry) => entry.prayer);
+      .preferences.prayerAlerts.filter((entry) => entry.notify)
+      .map((entry) => entry.time);
     expect(enabled).toEqual(expect.arrayContaining(['fajr', 'asr']));
   });
 

@@ -1,9 +1,11 @@
-import type {
-  AsrJuristicMethod,
-  CalculationMethod,
-  PrayerKey,
-  PrayerNotificationPreference,
-} from '../data/prayer-times.repository';
+import {
+  defaultAllAlertSettings,
+  EVERY_DAY,
+  normaliseAllAlertSettings,
+  NOTIFIABLE_TIMES,
+  type PrayerAlertSettings,
+} from '../data/notifications/prayer-alert-preferences';
+import type { AsrJuristicMethod, CalculationMethod } from '../data/prayer-times.repository';
 import type { ReciterId, TranslationId } from '../data/quran-content.repository';
 import {
   DEFAULT_TASBIH_MATERIAL_ID,
@@ -116,7 +118,25 @@ export type FaithPreferences = {
    * user left it and the screen says delivery is disabled.
    */
   readonly prayerNotificationsEnabled: boolean;
-  readonly prayerNotifications: readonly PrayerNotificationPreference[];
+  /**
+   * Each notifiable time's own choices — whether to notify, on which days, how long before, and
+   * with what sound.
+   *
+   * ── What this replaced, and why the name changed ────────────────────────────
+   * `prayerNotifications: PrayerNotificationPreference[]`, which held `{ prayer, enabled,
+   * minutesBefore }`. Two problems, and the second is why the field was renamed rather than widened:
+   *
+   *   1. It could say *which* times were on and nothing about when or how, so repeat days, a
+   *      pre-reminder choice and a sound choice had nowhere to arrive.
+   *   2. **`minutesBefore` was stored, defaulted to 10, and read by nothing.** It was documented as
+   *      "minutes before the prayer time" and no pre-reminder was ever scheduled from it, so the
+   *      blob on every install has been promising a reminder that could not arrive. A field that
+   *      has been lying is worth retiring by name rather than repurposing quietly.
+   *
+   * The migration carries the part that was real — which times were on — and deliberately drops
+   * the part that was not.
+   */
+  readonly prayerAlerts: readonly PrayerAlertSettings[];
   /**
    * Show a romanised reading aid beneath **Qur'an** Arabic.
    *
@@ -189,9 +209,13 @@ export type FaithPreferences = {
   readonly locationLabel: string | null;
 };
 
-const DEFAULT_NOTIFICATIONS: readonly PrayerNotificationPreference[] = (
-  ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as const satisfies readonly PrayerKey[]
-).map((prayer) => ({ prayer, enabled: false, minutesBefore: 10 }));
+/**
+ * Every notifiable time, all switched off, with no repeat days and no pre-reminder.
+ *
+ * Sunrise is present here where it was absent before, because it may now be switched on as an
+ * ordinary reminder. Being present in the defaults is not being offered: `notify` is false for all
+ * six, and nothing schedules a time whose `notify` is false.
+ */
 
 /**
  * Notifications default to **off**.
@@ -327,7 +351,7 @@ export const defaultFaithPreferences: FaithPreferences = {
   calculationMethod: 'muslim-world-league',
   asrMethod: 'standard',
   prayerNotificationsEnabled: false,
-  prayerNotifications: DEFAULT_NOTIFICATIONS,
+  prayerAlerts: defaultAllAlertSettings(),
   /**
    * Off by default, where the unscoped flag it replaces was on.
    *
@@ -364,6 +388,54 @@ function isPreferences(value: unknown): value is Partial<FaithPreferences> {
 }
 
 /**
+ * The per-time alert settings, from whatever storage holds.
+ *
+ * ── Three inputs, in order of preference ────────────────────────────────────
+ *   1. A `prayerAlerts` array written by this build or later — normalised and used.
+ *   2. A legacy `prayerNotifications` array — migrated, see below.
+ *   3. Neither — the defaults, everything off.
+ *
+ * ── What the migration keeps, and the one thing it refuses to ───────────────
+ * `enabled` becomes `notify`, and an enabled time is given **all seven days**. That is not a
+ * default being invented: a user whose Fajr was on was being alerted every day, so every day is
+ * what preserving their state means. Anything narrower would silently reduce what they had.
+ *
+ * `minutesBefore` is **dropped**, and that is the deliberate part. It was stored, it defaulted to
+ * 10, and no pre-reminder was ever scheduled from it — so on essentially every install it holds a
+ * number the user never chose. Carrying it into a field that now works would start delivering a
+ * second notification ten minutes before every prayer to people who never asked for one. The
+ * pre-reminder therefore starts at None for everybody, which is also the brief's default.
+ */
+export function migratePrayerAlerts(
+  current: unknown,
+  legacy: unknown,
+): readonly PrayerAlertSettings[] {
+  if (Array.isArray(current)) {
+    return normaliseAllAlertSettings(current);
+  }
+  if (!Array.isArray(legacy)) {
+    return defaultAllAlertSettings();
+  }
+
+  const wasEnabled = new Set<string>();
+  for (const entry of legacy) {
+    if (isRecord(entry) && entry.enabled === true && typeof entry.prayer === 'string') {
+      wasEnabled.add(entry.prayer);
+    }
+  }
+
+  return normaliseAllAlertSettings(
+    NOTIFIABLE_TIMES.map((time) => ({
+      time,
+      notify: wasEnabled.has(time),
+      repeatDays: wasEnabled.has(time) ? EVERY_DAY : [],
+      preReminderMinutes: 0,
+      sound: 'system-default',
+    })),
+  );
+}
+
+/**
  * The stored blob as it was written by a build that predates `TranslationChoice`.
  *
  * Read explicitly rather than by casting, because the whole point of the migration is that these
@@ -372,6 +444,13 @@ function isPreferences(value: unknown): value is Partial<FaithPreferences> {
 type LegacyShape = {
   readonly translationId?: unknown;
   readonly reciterId?: unknown;
+  /**
+   * The pre-`prayerAlerts` notification array, as written by every build up to this one.
+   *
+   * Read from the legacy shape rather than from `merged`, because its `minutesBefore` is exactly
+   * the value that must not be carried forward — see `migratePrayerAlerts`.
+   */
+  readonly prayerNotifications?: unknown;
   /**
    * The unscoped transliteration flag, as written by builds before it was split.
    *
@@ -391,7 +470,15 @@ type LegacyShape = {
 export function migratePreferences(stored: unknown): FaithPreferences {
   const record = isPreferences(stored) ? stored : {};
   const legacy = record as LegacyShape;
-  const merged = { ...defaultFaithPreferences, ...record } as FaithPreferences;
+  /*
+    Overridden on `merged` rather than added to each `return` below, because there are three
+    return paths and a field added to two of them is a field missing from one.
+  */
+  const merged = {
+    ...defaultFaithPreferences,
+    ...record,
+    prayerAlerts: migratePrayerAlerts(record.prayerAlerts, legacy.prayerNotifications),
+  } as FaithPreferences;
 
   /**
    * The reciter, correcting NoorLife's own superseded default but never the user's choice.

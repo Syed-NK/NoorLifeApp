@@ -1,12 +1,18 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppIcon } from '@ds/components';
 import { modulePalettes, shadowCard } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
 import { ModuleCard } from '@features/modules/components/module-card';
 import { useModuleTheme } from '@features/modules/module-context';
-import { moduleLayout, moduleNeutrals, moduleType } from '@features/modules/module-tokens';
+import {
+  moduleLayout,
+  moduleNeutrals,
+  moduleType,
+  withAlpha,
+} from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
+import { minimumHitSlop } from '@shared/utils/a11y';
 
 import type { PrayerMarkerState } from '../data/prayer/prayer-interval';
 import { FaithPictogram, type FaithPictogramSlot } from './faith-locked-library';
@@ -103,6 +109,16 @@ const TRACK_UPCOMING_DP = 2;
 const TRACK_UPCOMING_COLOUR = moduleNeutrals.textTertiary;
 
 /**
+   The notification control's touch target.
+
+   36 dp drawn, with `minimumHitSlop` taking the *touchable* area to the 44 dp minimum without
+   making the row taller. The row’s minimum height is what the dashboard’s fit calculation is
+   built on, so a control that grew it would push the card past its band — see
+   `prayer-dashboard-fit.ts`.
+*/
+const NOTIFY_TARGET_DP = 36;
+
+/**
  * The three states, re-exported from the domain rather than restated here.
  *
  * They are a fact about the day, not about this drawing — see `data/prayer/prayer-interval.ts`.
@@ -143,6 +159,13 @@ export type PrayerJourneyEntry = {
    * entry rather than a string comparison against a label that could be translated later.
    */
   readonly isPrayer: boolean;
+  /**
+   * Whether this time's notification is switched on.
+   *
+   * Only read when the card is given `onOpenNotificationSettings`; without a way to change it, the
+   * state is not worth drawing.
+   */
+  readonly notifyOn?: boolean;
 };
 
 export type PrayerJourneyTimelineProps = {
@@ -156,12 +179,23 @@ export type PrayerJourneyTimelineProps = {
    * not started, which is the opposite of true.
    */
   readonly dayBoundaryNote: string | null;
+  /**
+   * Opens one time's notification settings.
+   *
+   * ── Why the control is opt-in rather than always drawn ────────────────────
+   * The card is rendered in two places: the Prayer screen, where a notification control belongs,
+   * and its own layout tests. An always-on control would put a button with nothing behind it into
+   * every other use, and — more to the point — it changes the row’s accessibility shape (see the
+   * note in `Row`), which should happen only where the button is real.
+   */
+  readonly onOpenNotificationSettings?: (key: string) => void;
   readonly testID: string;
 };
 
 export function PrayerJourneyTimeline({
   entries,
   dayBoundaryNote,
+  onOpenNotificationSettings,
   testID,
 }: PrayerJourneyTimelineProps) {
   const { dp } = useModuleMetrics();
@@ -202,6 +236,7 @@ export function PrayerJourneyTimeline({
           separated={
             index > 0 && entry.state !== 'next' && (entries[index - 1]?.state ?? '') !== 'next'
           }
+          onOpenNotificationSettings={onOpenNotificationSettings}
           testID={`${testID}-${entry.key}`}
         />
       ))}
@@ -230,12 +265,14 @@ function Row({
   trackAbove,
   trackBelow,
   separated,
+  onOpenNotificationSettings,
   testID,
 }: {
   readonly entry: PrayerJourneyEntry;
   readonly trackAbove: PrayerJourneyState | null;
   readonly trackBelow: PrayerJourneyState | null;
   readonly separated: boolean;
+  readonly onOpenNotificationSettings?: (key: string) => void;
   readonly testID: string;
 }) {
   const theme = useModuleTheme();
@@ -243,6 +280,7 @@ function Row({
 
   const isNext = entry.state === 'next';
   const disc = dp(isNext ? NEXT_DISC_DP : DISC_DP);
+  const interactive = onOpenNotificationSettings !== undefined;
 
   const trackStyle = (state: PrayerJourneyState | null) =>
     state === null
@@ -274,13 +312,23 @@ function Row({
             }
           : null,
       ]}
-      accessible
       /*
-        One utterance per row, and it states the semantic state in words: a listener gets "next
-        prayer" or "completed" rather than inferring it from a colour they cannot see. Sunrise says
-        what it is before anything else, so it is never mistaken for one of the five.
+        ── Why `accessible` is conditional ──────────────────────────────────
+        One utterance per row is right when the row is only text: a listener gets "next prayer" or
+        "completed" rather than inferring it from a colour they cannot see, and sunrise says what it
+        is before anything else so it is never mistaken for one of the five.
+
+        But on Android `accessible` means *this subtree is one node*: the platform collapses
+        everything inside it and stops exposing the children. A notification button inside an
+        accessible row is therefore invisible to TalkBack and unreachable by an accessibility-driven
+        tap — the exact release defect `FaithRowProps.trailingInteractive` documents, where six
+        prayer switches vanished from the tree while every Jest test passed.
+
+        So when there is a button, the row stops being one node and the utterance moves onto the
+        text column, which becomes its own group. Verify with `uiautomator dump`, not with Jest.
       */
-      accessibilityLabel={spokenLabel(entry)}
+      accessible={!interactive}
+      accessibilityLabel={interactive ? undefined : spokenLabel(entry)}
       testID={testID}
     >
       {/*
@@ -400,33 +448,89 @@ function Row({
             : null,
         ]}
       >
-        <View style={styles.flex}>
-          {/*
-            Uncapped. A prayer name is one short word, and clamping it is what produced mid-word
-            breaks at large type sizes; the row grows instead, which is what its minimum height
-            leaves room for.
-          */}
+        {/*
+          The row's information as one node: the name, its marker note and its time.
+
+          ── Why this wrapper exists at all ──────────────────────────────────
+          Because the button beside it must be reachable. When the whole row is `accessible`, Android
+          collapses the subtree and the button disappears from the tree entirely — so with a button
+          present the row stops being one node and *this* becomes the node that speaks for it. It
+          wraps the name **and** the time, so a reader is not told the time twice: once inside this
+          utterance and again from the time text as its own node.
+
+          It carries a testID either way, so the row's utterance is addressable whichever shape the
+          row is in.
+        */}
+        <View
+          style={[styles.row, styles.flex, { columnGap: dp(8) }]}
+          accessible={interactive}
+          accessibilityLabel={interactive ? spokenLabel(entry) : undefined}
+          testID={`${testID}-summary`}
+        >
+          <View style={styles.flex}>
+            {/*
+              Uncapped. A prayer name is one short word, and clamping it is what produced mid-word
+              breaks at large type sizes; the row grows instead, which is what its minimum height
+              leaves room for.
+            */}
+            <ModuleText
+              token={isNext ? 'cardTitle' : 'body'}
+              color={isNext ? theme.ink : moduleNeutrals.textPrimary}
+              testID={`${testID}-label`}
+            >
+              {entry.label}
+            </ModuleText>
+            {entry.isPrayer ? null : (
+              <ModuleText token="caption" testID={`${testID}-marker-note`}>
+                Time marker • not a prayer
+              </ModuleText>
+            )}
+          </View>
+
           <ModuleText
             token={isNext ? 'cardTitle' : 'body'}
-            color={isNext ? theme.ink : moduleNeutrals.textPrimary}
-            testID={`${testID}-label`}
+            color={isNext ? theme.ink : moduleNeutrals.textSecondary}
+            testID={`${testID}-time`}
           >
-            {entry.label}
+            {entry.clock}
           </ModuleText>
-          {entry.isPrayer ? null : (
-            <ModuleText token="caption" testID={`${testID}-marker-note`}>
-              Time marker • not a prayer
-            </ModuleText>
-          )}
         </View>
 
-        <ModuleText
-          token={isNext ? 'cardTitle' : 'body'}
-          color={isNext ? theme.ink : moduleNeutrals.textSecondary}
-          testID={`${testID}-time`}
-        >
-          {entry.clock}
-        </ModuleText>
+        {onOpenNotificationSettings === undefined ? null : (
+          <Pressable
+            onPress={() => onOpenNotificationSettings(entry.key)}
+            accessibilityRole="button"
+            /*
+              Says what pressing it does, and states the current setting so a listener does not have
+              to open the sheet to find out. Never the word "alarm": what this schedules is a
+              notification, and whether the device delivers it at the exact minute is not knowable
+              from here.
+            */
+            accessibilityLabel={`Notification settings for ${entry.label}`}
+            accessibilityValue={{ text: entry.notifyOn === true ? 'On' : 'Off' }}
+            hitSlop={minimumHitSlop(dp(NOTIFY_TARGET_DP))}
+            style={{
+              width: dp(NOTIFY_TARGET_DP),
+              height: dp(NOTIFY_TARGET_DP),
+              borderRadius: dp(NOTIFY_TARGET_DP / 2),
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor:
+                entry.notifyOn === true ? withAlpha(theme.primary, 0.14) : 'transparent',
+            }}
+            testID={`${testID}-notify`}
+          >
+            <AppIcon
+              name="notification"
+              size={dp(18)}
+              /*
+                Tinted when on, tertiary when off. The state is carried by `accessibilityValue` as
+                well, because colour alone is not a state anybody can rely on.
+              */
+              color={entry.notifyOn === true ? theme.primary : moduleNeutrals.textTertiary}
+            />
+          </Pressable>
+        )}
       </View>
     </View>
   );

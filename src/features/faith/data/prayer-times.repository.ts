@@ -260,13 +260,20 @@ export type NextPrayer = {
   readonly dayRelation: NextPrayerDayRelation;
 };
 
-/** Per-prayer reminder preference. A contract only — no notification is scheduled yet. */
-export type PrayerNotificationPreference = {
-  readonly prayer: PrayerKey;
-  readonly enabled: boolean;
-  /** Minutes before the prayer time. 0 means at the time itself. */
-  readonly minutesBefore: number;
-};
+/*
+  ── `PrayerNotificationPreference` was removed from here ──────────────────────
+  It held `{ prayer, enabled, minutesBefore }` and described itself as "a contract only — no
+  notification is scheduled yet". Both halves stopped being true: alerts are now real local
+  notifications, and the per-time choices live in `PrayerAlertSettings`
+  (`data/notifications/prayer-alert-preferences.ts`), which adds the repeat days, the pre-reminder and
+  the sound the old shape had nowhere to put.
+
+  Its `minutesBefore` is the reason it is deleted rather than kept beside the new type. That field was
+  stored on every install, defaulted to 10, and read by nothing — a preference promising a reminder it
+  could not deliver. Leaving the type exported is an invitation to reach for it again and reintroduce
+  exactly that. The repository's read/write accessors for it went with the same change, because they
+  were a second writer to a blob the preference store already owns.
+*/
 
 export type PrayerTimesRepository = {
   /**
@@ -407,9 +414,15 @@ export type PrayerTimesRepository = {
     settings: PrayerCalculationSettings,
   ): Promise<FaithResult<NextPrayer>>;
 
-  readNotificationPreferences(): Promise<FaithResult<readonly PrayerNotificationPreference[]>>;
+  /*
+    ── `readNotificationPreferences` / `writeNotificationPreferences` were removed here ──────
+    They read and wrote the same stored blob as `faith-preferences.ts`, through a second door.
+    Nothing in the app ever called them — only test doubles implemented them — and a second
+    writer to preferences is not a harmless spare: the store serialises its mutations precisely
+    so that two changes in flight cannot erase one another, and a caller reaching the blob
+    around it gets none of that. That failure has already happened once in this module.
 
-  writeNotificationPreferences(
-    preferences: readonly PrayerNotificationPreference[],
-  ): Promise<FaithResult<readonly PrayerNotificationPreference[]>>;
+    Notification settings are read through `useFaithPreferences` and written through its
+    `update`, which is the one authoritative path. The repository's job is prayer times.
+  */
 };

@@ -17,17 +17,25 @@ import type {
   NotificationPort,
 } from './notification.port';
 import {
+  MAX_PENDING_ALERTS,
   planPrayerAlerts,
   prayerAlertContent,
   scheduleFingerprint,
   SCHEDULE_HORIZON_DAYS,
-  type PlannedAlert,
+  type PrayerAlertPlan,
 } from './prayer-alert-plan';
+import {
+  NOTIFIABLE_TIMES,
+  settingsFor,
+  type PrayerAlertSettings,
+} from './prayer-alert-preferences';
 import {
   currentPrayerAlertSound,
   prayerAlertChannelId,
   prayerAlertSoundFile,
   PRAYER_ALERT_CHANNEL_NAME,
+  PRAYER_ALERT_SILENT_CHANNEL_ID,
+  PRAYER_ALERT_SILENT_CHANNEL_NAME,
 } from './prayer-alert-sound';
 
 /**
@@ -82,6 +90,16 @@ export type ScheduleState =
       readonly nextAt: string | null;
       readonly nextLabel: string | null;
       readonly preparedAt: string;
+      /**
+       * The last calendar date the pending alerts actually reach.
+       *
+       * Reported because it is no longer always the end of the horizon. With six times and
+       * pre-reminders switched on, the pending ceiling can bite before seven days are covered, and a
+       * screen that said “the next 7 days” would then be wrong.
+       */
+      readonly coversThrough: string | null;
+      /** Whether the pending ceiling cut the plan short of the horizon. */
+      readonly truncated: boolean;
     }
   /**
    * Alerts are pending but were built from inputs that have since changed.
@@ -107,9 +125,29 @@ export type PrayerNotificationDependencies = {
 
 export type PrayerNotificationPreferences = {
   readonly masterEnabled: boolean;
-  readonly enabledPrayers: readonly PrayerKey[];
+  /**
+   * Every notifiable time's own choices, already normalised.
+   *
+   * This replaced a bare list of switched-on prayers. The list could say *which* times were on and
+   * nothing about when or how, so repeat days, pre-reminders and the sound choice had nowhere to
+   * arrive — and `minutesBefore` sat in storage for three releases being read by nothing.
+   */
+  readonly alerts: readonly PrayerAlertSettings[];
   readonly settings: PrayerCalculationSettings;
 };
+
+/** The times switched on, for the status. Derived, so it cannot disagree with `alerts`. */
+function enabledTimes(alerts: readonly PrayerAlertSettings[]): readonly PrayerKey[] {
+  return NOTIFIABLE_TIMES.filter((time) => settingsFor(alerts, time).notify);
+}
+
+/** Whether any switched-on time has asked for silence — i.e. whether the silent channel is needed. */
+function needsSilentChannel(alerts: readonly PrayerAlertSettings[]): boolean {
+  return NOTIFIABLE_TIMES.some((time) => {
+    const settings = settingsFor(alerts, time);
+    return settings.notify && settings.sound === 'silent';
+  });
+}
 
 /** The channel NoorLife's prayer alerts use. Derived from the sound — see `prayer-alert-sound.ts`. */
 export function prayerAlertChannel() {
@@ -121,7 +159,35 @@ export function prayerAlertChannel() {
       'Alerts at the calculated time of each prayer, for the location and method you selected.',
     importance: 'high' as const,
     soundFile: prayerAlertSoundFile(sound),
+    silent: false,
   };
+}
+
+/**
+ * The channel for alerts the user asked to be silent.
+ *
+ * A second channel rather than a flag, because on Android a notification's sound belongs to its
+ * channel and a channel's sound is immutable after creation — see `prayer-alert-sound.ts`. Created
+ * only when some switched-on time actually asks for silence, so a user who never chooses it never
+ * sees a second category in their system settings.
+ *
+ * `default` importance rather than `high`: a heads-up banner that makes no sound is a strange thing
+ * to ask for, and `high` is what produces one.
+ */
+export function prayerAlertSilentChannel() {
+  return {
+    id: PRAYER_ALERT_SILENT_CHANNEL_ID,
+    name: PRAYER_ALERT_SILENT_CHANNEL_NAME,
+    description: 'The same prayer alerts, delivered without a sound.',
+    importance: 'default' as const,
+    soundFile: null,
+    silent: true,
+  };
+}
+
+/** Which channel an alert belongs on. The only place that mapping is made. */
+export function channelIdFor(silent: boolean): string {
+  return silent ? prayerAlertSilentChannel().id : prayerAlertChannel().id;
 }
 
 /**
@@ -151,7 +217,8 @@ export async function reconcilePrayerAlerts(
   preferences: PrayerNotificationPreferences,
 ): Promise<PrayerAlertStatus> {
   const { prayerTimes, notifications, now } = dependencies;
-  const { masterEnabled, enabledPrayers, settings } = preferences;
+  const { masterEnabled, alerts, settings } = preferences;
+  const enabledPrayers = enabledTimes(alerts);
 
   const permission = await notifications.getPermission();
   const exactAlarms = await notifications.exactAlarmCapability();
@@ -192,6 +259,15 @@ export async function reconcilePrayerAlerts(
   }
 
   await notifications.ensureChannel(prayerAlertChannel());
+  /*
+    Only when something actually asks for it. Creating the silent channel unconditionally would put
+    a second “Prayer alerts (silent)” category in every user’s system settings, including the ones
+    who never chose silence — and an Android channel cannot be removed once the user has seen it
+    without the removal itself being visible.
+  */
+  if (needsSilentChannel(alerts)) {
+    await notifications.ensureChannel(prayerAlertSilentChannel());
+  }
   const withChannel = { ...base, channelReady: true };
 
   const location = await prayerTimes.resolveCurrentLocation();
@@ -253,7 +329,8 @@ export async function reconcilePrayerAlerts(
   }
 
   const nowMs = now().getTime();
-  const planned = planPrayerAlerts({ days, enabled: enabledPrayers, nowMs });
+  const plan = planPrayerAlerts({ days, alerts, nowMs });
+  const planned = plan.alerts;
 
   const fingerprint = scheduleFingerprint({
     latitude: location.data.coordinate.latitude,
@@ -263,8 +340,9 @@ export async function reconcilePrayerAlerts(
     method: settings.method,
     asr: settings.asr,
     offsetsMinutes: settings.offsetsMinutes,
-    enabled: enabledPrayers,
+    alerts,
     horizonDays: SCHEDULE_HORIZON_DAYS,
+    maxPending: MAX_PENDING_ALERTS,
   });
 
   /*
@@ -284,7 +362,7 @@ export async function reconcilePrayerAlerts(
     });
 
   if (storedIsComplete) {
-    return { ...withChannel, schedule: describeScheduled(stored, planned) };
+    return { ...withChannel, schedule: describeScheduled(stored, plan) };
   }
 
   // ── Schedule the replacement set first. Nothing is cancelled until it all exists. ──
@@ -296,13 +374,19 @@ export async function reconcilePrayerAlerts(
     const identifier = await notifications.schedule({
       title,
       body,
-      channelId: prayerAlertChannel().id,
+      channelId: channelIdFor(alert.silent),
       at: new Date(alert.at),
       /*
-        The prayer and its calendar date, and nothing else. No coordinate, no place name and no
-        clock — a notification payload is readable by anything that can read notifications.
+        The prayer, its calendar date and which kind of alert it is — and nothing else. No
+        coordinate, no place name, no clock and no account: a notification payload is readable by
+        anything that can read notifications.
       */
-      data: { prayer: alert.prayer, date: alert.calendarDate, kind: 'prayer-alert' },
+      data: {
+        prayer: alert.prayer,
+        date: alert.calendarDate,
+        kind: alert.type === 'pre' ? 'prayer-pre-alert' : 'prayer-alert',
+      },
+      silent: alert.silent,
     });
     if (identifier === null) {
       refused = true;
@@ -340,7 +424,7 @@ export async function reconcilePrayerAlerts(
   };
   await writeStoredSchedule(next);
 
-  return { ...withChannel, schedule: describeScheduled(next, planned) };
+  return { ...withChannel, schedule: describeScheduled(next, plan) };
 }
 
 /** Cancels everything pending and forgets it. */
@@ -410,21 +494,20 @@ async function cancelAll(
   }
 }
 
-function describeScheduled(
-  stored: StoredPrayerSchedule,
-  planned: readonly PlannedAlert[],
-): ScheduleState {
+function describeScheduled(stored: StoredPrayerSchedule, plan: PrayerAlertPlan): ScheduleState {
   const count = Object.keys(stored.identifiers).length;
   if (count === 0) {
     return { kind: 'none' };
   }
-  const first = planned[0];
+  const first = plan.alerts[0];
   return {
     kind: 'scheduled',
     count,
     nextAt: first?.at ?? null,
     nextLabel: first?.label ?? null,
     preparedAt: stored.preparedAt,
+    coversThrough: plan.coversThrough,
+    truncated: plan.truncated,
   };
 }
 

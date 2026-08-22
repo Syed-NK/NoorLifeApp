@@ -7,7 +7,6 @@ import {
   type CalculationParameters,
 } from 'adhan';
 
-import { readFaithPreferences, writeFaithPreferences } from '../../storage/faith-preferences';
 import {
   beginLocationOperation,
   commitActivePrayerLocation,
@@ -43,7 +42,6 @@ import type {
   PrayerKey,
   PrayerLocation,
   PrayerLocationMode,
-  PrayerNotificationPreference,
   PrayerTime,
   PrayerTimesRepository,
 } from '../prayer-times.repository';
@@ -921,19 +919,6 @@ export function createAdhanPrayerTimesRepository(
           dayRelation: 'tomorrow',
         },
       };
-    },
-
-    async readNotificationPreferences(): Promise<
-      FaithResult<readonly PrayerNotificationPreference[]>
-    > {
-      return { kind: 'ok', data: (await readFaithPreferences()).prayerNotifications };
-    },
-
-    async writeNotificationPreferences(
-      preferences: readonly PrayerNotificationPreference[],
-    ): Promise<FaithResult<readonly PrayerNotificationPreference[]>> {
-      const saved = await writeFaithPreferences({ prayerNotifications: preferences });
-      return { kind: 'ok', data: saved.prayerNotifications };
     },
   };
 }
