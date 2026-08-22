@@ -285,9 +285,17 @@ async function isConfirmedOffline(connectivity: ConnectivityPort): Promise<boole
 const AuthContext = createContext<AuthState>(UNRESOLVED);
 const AuthActionsContext = createContext<AuthActions | null>(null);
 
+/**
+ * What to call somebody when nothing better is known.
+ *
+ * Named because two places must agree on it: `toProfile`'s last resort, and the receipt's refusal to
+ * persist an address. A literal in both would drift.
+ */
+const NEUTRAL_DISPLAY_NAME = 'Friend';
+
 /** The first word of a name, for the Main Home greeting. Never empty. */
 function givenNameOf(full: string): string {
-  return full.trim().split(/\s+/)[0] ?? 'Friend';
+  return full.trim().split(/\s+/)[0] ?? NEUTRAL_DISPLAY_NAME;
 }
 
 /**
@@ -337,7 +345,27 @@ function receiptProjection(state: AuthState): ReceiptProjection | null {
   }
   return {
     userId: state.user.id,
-    displayName: state.user.fullName,
+    /*
+      ── The address never becomes the display name ─────────────────────────────
+      `toProfile`'s fallback chain ends `?? user.email ?? NEUTRAL_DISPLAY_NAME`, so an account whose
+      session carries no name at all — a provider sign-in that supplies none, or a signup with no
+      metadata — resolves its display name **to the address**. Persisting that put the address in the
+      Keystore, which is precisely what `offline-receipt.ts` set out to stop: it *rejects* a stored
+      record carrying an `email` field rather than ignoring it, so the same value arriving under
+      `displayName` defeats that check by renaming the field. Worse than not having the check.
+
+      This was equally true of the write in `adopt` before this branch existed, so it is a repair
+      rather than a regression — and it heals a device that already holds such a record, because the
+      projection no longer matches what is stored and the next online launch replaces it.
+
+      The equality test is deliberately the whole condition. A profile row whose `full_name` genuinely
+      *is* the address reaches the same outcome, which is also right: how the address got into the
+      field does not change whether it belongs in the Keystore.
+    */
+    displayName:
+      state.user.email !== undefined && state.user.fullName === state.user.email
+        ? NEUTRAL_DISPLAY_NAME
+        : state.user.fullName,
     avatarUrl: state.user.avatarUri ?? null,
     hasCompletedOnboarding: state.hasCompletedOnboarding,
   };
@@ -354,7 +382,7 @@ function receiptMatches(stored: OfflineIdentity, projection: ReceiptProjection):
 }
 
 function toProfile(user: AuthUser, durableFullName: string | null = null): UserProfile {
-  const full = durableFullName ?? user.fullName ?? user.email ?? 'Friend';
+  const full = durableFullName ?? user.fullName ?? user.email ?? NEUTRAL_DISPLAY_NAME;
   const given = givenNameOf(full);
   return {
     id: user.id,
