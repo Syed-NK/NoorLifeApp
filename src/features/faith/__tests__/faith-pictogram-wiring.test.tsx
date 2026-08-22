@@ -226,10 +226,22 @@ describe('the held reminder bell reaches no screen', () => {
     await renderScreen(<PrayerTimesScreen />);
     const row = await screen.findByTestId('faith-prayer-reminders-action');
 
-    expect(String(row.props.accessibilityLabel)).toMatch(/does not schedule notifications yet/i);
-    expect(await screen.findByText(/Preferences only/)).toBeTruthy();
-    // The reference's claim must not have survived the layout change.
+    /*
+      ── What this used to assert, and why it changed ──────────────────────
+      It pinned "Preferences only" and "does not schedule notifications yet". Both were true when
+      the destination stored switches and delivered nothing, and both became a statement that the
+      feature does not work once alerts became real scheduled notifications. The card was found
+      saying it on a device, one tap from the settings it was describing.
+
+      What is pinned instead is the pair of claims the card must still never make: that a
+      notification *will* arrive, and that nothing is scheduled.
+    */
+    expect(String(row.props.accessibilityLabel)).not.toMatch(/does not schedule/i);
+    expect(screen.queryByText(/Preferences only/)).toBeNull();
+    expect(await screen.findByText('Per prayer, per day')).toBeTruthy();
+    /* Delivery is the one thing it can never promise — see the note in `prayer-action-cards`. */
     expect(screen.queryByText('Choose which prayers notify you')).toBeNull();
+    expect(screen.queryByText('Manage notifications')).toBeNull();
   });
 
   /**

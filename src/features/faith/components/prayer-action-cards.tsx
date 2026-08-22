@@ -251,12 +251,24 @@ export function PrayerActionCards({
     <ActionCard
       title="Prayer reminders"
       /*
-        ── Not the reference's subtitle ────────────────────────────────────────
-        The reference reads "Manage notifications", and that is a claim NoorLife cannot make: no
-        permission is requested, nothing is scheduled, no background handler exists and no delivery
-        can be verified. Two words that say exactly what the destination does instead.
+        ── This said "Preferences only", and that stopped being true ───────────
+        It was right when the destination stored switches and delivered nothing: no permission was
+        requested, nothing was scheduled, and the card said so. Alerts are now real local
+        notifications scheduled from the same instants this screen renders, so "preferences only" —
+        and the spoken "NoorLife does not schedule notifications yet" below it — had become a
+        statement that the feature does not work. Found on a device, on this card, one tap from the
+        settings it was describing.
+
+        Still not the reference's "Manage notifications", and deliberately not "Choose which prayers
+        notify you" either — a phrase two existing tests explicitly ban, because it promises that a
+        notification *will* arrive. Delivery is the one thing this feature can never claim: there is
+        no receipt, and Do Not Disturb, battery saving and per-channel settings can each suppress an
+        alert silently.
+
+        So the subtitle describes the *settings* rather than an outcome. Their granularity is the
+        useful thing to know before tapping, and it is true whatever the platform does afterwards.
       */
-      subtitle="Preferences only"
+      subtitle="Per prayer, per day"
       /*
         A restrained vector, deliberately. P3's dimensional gold bell is *held*: artwork that says
         "finished feature" beside a control that reminds nobody is the failure the held state exists
@@ -264,7 +276,7 @@ export function PrayerActionCards({
       */
       mark={{ kind: 'vector', icon: 'notification' }}
       onPress={onReminders}
-      accessibilityLabel="Prayer reminders. Preferences only — NoorLife does not schedule notifications yet. Opens reminder preferences."
+      accessibilityLabel="Prayer reminders. Notification settings for each prayer, including which days and how long before. Opens prayer reminder settings."
       testID="faith-prayer-reminders-action"
     />
   );

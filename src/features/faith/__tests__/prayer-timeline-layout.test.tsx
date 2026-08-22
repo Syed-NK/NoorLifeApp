@@ -726,16 +726,28 @@ describe('the two action cards', () => {
     expect(registry).not.toMatch(/require\([^)]*p3-reminder-bell/);
   });
 
-  it('claims no scheduling and no delivery', async () => {
+  it('says what the destination sets, and claims no delivery', async () => {
+    /*
+      ── The claim that expired ───────────────────────────────────────────
+      This case used to require "Preferences only" and "does not schedule notifications yet".
+      Both were accurate while the destination stored switches and delivered nothing; both became
+      false when alerts became real scheduled notifications, and the card went on saying them.
+
+      The subtitle now describes the settings’ granularity, which is true whatever the platform
+      does afterwards. What it may still never say is that a notification will arrive.
+    */
     await renderScreen();
     const card = await screen.findByTestId('faith-prayer-reminders-action');
 
     expect(screen.getByText('Prayer reminders')).toBeTruthy();
-    expect(screen.getByText('Preferences only')).toBeTruthy();
-    expect(String(card.props.accessibilityLabel)).toMatch(/does not schedule notifications yet/i);
-    // The reference's claim must not have survived the replacement.
+    expect(screen.getByText('Per prayer, per day')).toBeTruthy();
+    expect(screen.queryByText('Preferences only')).toBeNull();
+    expect(String(card.props.accessibilityLabel)).not.toMatch(/does not schedule/i);
+
+    /* Neither the reference’s claim nor a promise of delivery. */
     expect(screen.queryByText('Manage notifications')).toBeNull();
     expect(screen.queryByText('Choose which prayers notify you')).toBeNull();
+    expect(String(card.props.accessibilityLabel)).not.toMatch(/will (arrive|notify)/i);
   });
 
   /**
