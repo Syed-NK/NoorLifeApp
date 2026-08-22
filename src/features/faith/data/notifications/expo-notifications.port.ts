@@ -45,20 +45,40 @@ Notifications.setNotificationHandler({
   }),
 });
 
-function toPermission(
+/**
+ * The platform's permission response, as one of NoorLife's three states.
+ *
+ * Exported for its own test. It is three lines of branching that decide whether a screen tells a user
+ * their device has refused them, and getting it wrong is not visible in any type — it is visible only
+ * on a device, which is where it was found.
+ */
+export function toPermission(
   response: Notifications.NotificationPermissionsStatus,
 ): NotificationPermission {
   if (response.granted) {
     return 'granted';
   }
   /*
-    `canAskAgain` is what separates "not asked yet" from "refused". On iOS a refusal is permanent
-    until the user visits Settings, and reporting it as `undetermined` would put a button on screen
-    that raises no dialog — the exact defect the location Grant control had.
+    `canAskAgain` is what separates "not asked yet" from "refused", and it is the **only** thing that
+    separates them. On iOS a refusal is permanent until the user visits Settings, and reporting that
+    as `undetermined` would put a button on screen that raises no dialog — the defect the location
+    Grant control once had. `canAskAgain: false` still reports `denied`, so that stays true.
+
+    ── Why `status` is no longer part of the test ──────────────────────────────
+    Because Android has no UNDETERMINED runtime-permission status. Before the app has ever asked,
+    `getPermissionsAsync()` on Android 13+ returns `status: DENIED` with `canAskAgain: true` — so
+    requiring UNDETERMINED classified every never-asked Android user as **denied**.
+
+    Observed on both devices with a freshly installed build that had never asked: the per-prayer sheet
+    said "Your device is not allowing NoorLife to send notifications, so nothing will arrive" and
+    offered "Open system settings". Both statements were false. Nothing was blocking anything, and the
+    thing that actually raises the prompt — switching a time on — was the one action the screen did not
+    mention. A first run told the user their device had refused something it had never been asked.
+
+    A prompt being available is exactly what `canAskAgain` reports, on both platforms, so that is what
+    the question now is.
   */
-  return response.canAskAgain && response.status === Notifications.PermissionStatus.UNDETERMINED
-    ? 'undetermined'
-    : 'denied';
+  return response.canAskAgain ? 'undetermined' : 'denied';
 }
 
 export function createExpoNotificationPort(): NotificationPort {
