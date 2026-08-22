@@ -260,13 +260,20 @@ export type NextPrayer = {
   readonly dayRelation: NextPrayerDayRelation;
 };
 
-/** Per-prayer reminder preference. A contract only — no notification is scheduled yet. */
-export type PrayerNotificationPreference = {
-  readonly prayer: PrayerKey;
-  readonly enabled: boolean;
-  /** Minutes before the prayer time. 0 means at the time itself. */
-  readonly minutesBefore: number;
-};
+/*
+  ── `PrayerNotificationPreference` was removed from here ──────────────────────
+  It held `{ prayer, enabled, minutesBefore }` and described itself as "a contract only — no
+  notification is scheduled yet". Both halves stopped being true: alerts are now real local
+  notifications, and the per-time choices live in `PrayerAlertSettings`
+  (`data/notifications/prayer-alert-preferences.ts`), which adds the repeat days, the pre-reminder and
+  the sound the old shape had nowhere to put.
+
+  Its `minutesBefore` is the reason it is deleted rather than kept beside the new type. That field was
+  stored on every install, defaulted to 10, and read by nothing — a preference promising a reminder it
+  could not deliver. Leaving the type exported is an invitation to reach for it again and reintroduce
+  exactly that. The repository's read/write accessors for it went with the same change, because they
+  were a second writer to a blob the preference store already owns.
+*/
 
 export type PrayerTimesRepository = {
   /**
