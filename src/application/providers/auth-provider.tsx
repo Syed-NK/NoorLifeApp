@@ -14,6 +14,7 @@ import {
   clearOfflineReceipt,
   readOfflineReceipt,
   writeOfflineReceipt,
+  type OfflineIdentity,
 } from '@services/auth/offline-receipt';
 import { isServerValidatedAuthEvent, isTerminalAuthEvent } from '@services/auth/session-resolution';
 import { setRemoteAccessAuthorised } from '@services/network/remote-access';
@@ -297,6 +298,61 @@ function givenNameOf(full: string): string {
  * edited the two disagree — and the row is the record. Passing null (no row, or a row with no
  * name) falls back to the session copy, which is still a real value rather than a guess.
  */
+/** The durable values a receipt records, or null when this authority may not produce one. */
+type ReceiptProjection = {
+  readonly userId: string;
+  readonly displayName: string;
+  readonly avatarUrl: string | null;
+  readonly hasCompletedOnboarding: boolean;
+};
+
+/**
+ * The receipt this authority implies, derived rather than signalled.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Why the receipt became a projection ────────────────────────────────────
+ * It had two writers — one in `adopt` at publication, one in enrichment when the durable row landed —
+ * and they needed to agree about *when* the values were final. That agreement was a boolean set from
+ * inside a `setState` updater, which is an impure updater and a side effect controlled from a place
+ * React is entitled to evaluate twice.
+ *
+ * A single derivation removes the question rather than answering it. The receipt records what
+ * published authority already says, so there is nothing to signal between two writers: whatever the
+ * state holds *is* the record, and the effect below is the only thing that persists it.
+ *
+ * ── Why `online` is the whole condition ────────────────────────────────────
+ * A receipt asserts "this device held a real session for this user". `authority: 'online'` is set by
+ * exactly one function — `adopt`, reached only after Supabase confirmed a live session — so keying on
+ * it preserves the original invariant precisely: no other path can produce one.
+ *
+ * Offline authority is excluded deliberately. It was *read from* a receipt, so re-writing it would
+ * refresh a validation timestamp on the strength of the record it came from, which is a claim about
+ * nothing. Signed-out and unresolved states project null, which is what makes a sign-out inert here
+ * without a second check.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+function receiptProjection(state: AuthState): ReceiptProjection | null {
+  if (state.status !== 'signed-in' || state.authority !== 'online' || state.user === null) {
+    return null;
+  }
+  return {
+    userId: state.user.id,
+    displayName: state.user.fullName,
+    avatarUrl: state.user.avatarUri ?? null,
+    hasCompletedOnboarding: state.hasCompletedOnboarding,
+  };
+}
+
+/** Whether a stored receipt already records exactly these durable values. */
+function receiptMatches(stored: OfflineIdentity, projection: ReceiptProjection): boolean {
+  return (
+    stored.userId === projection.userId &&
+    stored.displayName === projection.displayName &&
+    stored.avatarUrl === projection.avatarUrl &&
+    stored.hasCompletedOnboarding === projection.hasCompletedOnboarding
+  );
+}
+
 function toProfile(user: AuthUser, durableFullName: string | null = null): UserProfile {
   const full = durableFullName ?? user.fullName ?? user.email ?? 'Friend';
   const given = givenNameOf(full);
@@ -356,6 +412,83 @@ export function AuthProvider({
     setState((previous) => (onlyIf === undefined || onlyIf(previous) ? next : previous));
   }, []);
 
+  const projection = receiptProjection(state);
+  /*
+    A scalar key, so the effect below runs once per distinct set of durable values rather than once per
+    render. The record has four fields and they are all primitives; a unit separator joins them because
+    a display name may legitimately contain anything a person is called, including the characters one
+    would otherwise reach for.
+  */
+  const projectionKey =
+    projection === null
+      ? null
+      : [
+          projection.userId,
+          projection.displayName,
+          projection.avatarUrl ?? '',
+          String(projection.hasCompletedOnboarding),
+        ].join('\u001f');
+
+  /**
+   * Persists the receipt, and is the only thing that does.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── What each guarantee rests on ───────────────────────────────────────────
+   * **Inert on sign-out, replacement and unresolved states** — not by checking for them, but because
+   * `receiptProjection` returns null for all three. A replaced account produces a *different* key, so
+   * the effect re-runs for B and the in-flight attempt for A is cancelled by the cleanup below before
+   * it can write. Account A's values are never in scope for account B's run.
+   *
+   * **Inert on unmount and cancellation** — the cleanup sets `cancelled`, and it is checked after the
+   * only await that precedes the write. Strict Mode's mount / cleanup / mount therefore cancels the
+   * first attempt while it is still reading, and exactly one write survives.
+   *
+   * **One write per real change** — the key gates re-runs within a session, and the stored-value
+   * comparison gates the rest: a launch that re-publishes the same durable values, or an enrichment
+   * whose row matches what the receipt already holds, reads and returns without writing.
+   *
+   * **A failed write changes nothing else** — it is caught and dropped. The receipt is a convenience
+   * for the *next* launch; failing to refresh it must not revoke this one's authority, alter the live
+   * profile, or sign anybody out. There is no retry: the next publication projects the same values and
+   * the next launch will try again.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  useEffect(() => {
+    if (projectionKey === null) {
+      return;
+    }
+    /*
+      Re-derived inside the effect from the key's own dependency, not captured from the render that
+      queued it — so the values written are the values the key describes, and nothing else.
+    */
+    const [userId, displayName, avatarUrl, onboarded] = projectionKey.split('\u001f');
+    if (userId === undefined || displayName === undefined) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const stored = await readOfflineReceipt();
+      if (cancelled) {
+        return;
+      }
+      const next = {
+        userId,
+        displayName,
+        avatarUrl: avatarUrl === undefined || avatarUrl === '' ? null : avatarUrl,
+        hasCompletedOnboarding: onboarded === 'true',
+      };
+      if (stored !== null && receiptMatches(stored, next)) {
+        return;
+      }
+      await writeOfflineReceipt({ ...next, now: Date.now() }).catch(() => undefined);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectionKey]);
+
   /**
    * Mirrors the authority onto the services gate, during render.
    *
@@ -411,6 +544,13 @@ export function AuthProvider({
    * A second launch for the same account is deliberately *not* excluded: the row is still theirs, so
    * there is nothing stale about it. Whose name gets written is the only thing enrichment could get
    * wrong, and identity answers that completely.
+   *
+   * ── Why the same check is still sound at persistence time ──────────────────
+   * It is not re-derived there. Persistence reads the **published state**, so it inherits this check
+   * rather than repeating it: a row that failed the branch above changed nothing, so it contributes
+   * nothing to persist. The projection can therefore only ever describe an account that is signed in
+   * *now* under online authority — which is a strictly stronger statement than "the account that was
+   * signed in when some read began", and it is re-evaluated on every publication rather than captured.
    * ═══════════════════════════════════════════════════════════════════════════
    */
   const enrich = useCallback(async (user: AuthUser): Promise<void> => {
@@ -418,26 +558,16 @@ export function AuthProvider({
     if (profile === null) {
       return;
     }
-
     /*
-      ── Set from inside the updater, which is not pure, and is safe here ──────
-      React invokes an updater twice in development to surface impurity, so writing to an outer
-      variable from one is normally a mistake. This particular write is idempotent — a boolean to
-      `true`, from the same branch, on the same input — so a double invocation produces the identical
-      result, and there is no synchronous way to read current state from a continuation without a ref
-      (which `react-hooks/refs` correctly refuses here; see `publish`).
+      A pure updater, and the whole of what enrichment does. It returns a value and nothing else: no
+      outer variable is written, no promise is started, and nothing downstream is gated on whether the
+      branch was taken. React may evaluate it twice — in development it deliberately does — and the
+      second evaluation produces the identical result from the identical input.
 
-      It matters that this is gated rather than unconditional: the receipt below is account-scoped, so
-      refreshing it from a row that did *not* merge would write account A's name over account B's
-      receipt — the one place in this function where a stale read could do lasting damage rather than
-      merely being ignored.
+      Persisting the durable values is a *separate* concern, and it is derived from the state this
+      publishes rather than signalled from in here. See `receiptProjection` and the effect below it.
     */
-    let applied = false;
     setState((previous) => {
-      /*
-        The identity check, at the moment of the write. `previous.user` is whoever is signed in now —
-        not whoever was signed in when the read began — so a row for a replaced account cannot merge.
-      */
       if (
         previous.status !== 'signed-in' ||
         previous.user === null ||
@@ -445,29 +575,12 @@ export function AuthProvider({
       ) {
         return previous;
       }
-      applied = true;
       const durableName = profile.full_name ?? null;
       return {
         ...previous,
         user: durableName === null ? previous.user : toProfile(user, durableName),
         hasCompletedOnboarding: profile.onboarding_completed ?? previous.hasCompletedOnboarding,
       };
-    });
-
-    if (!applied) {
-      return;
-    }
-    /*
-      The receipt is refreshed with the durable values so the *next* launch starts from the row rather
-      than from the session copy — which is what stops a name edited in Profile from reappearing as
-      the old one on every offline launch. Same key, same owner, no second store.
-    */
-    await writeOfflineReceipt({
-      userId: user.id,
-      displayName: profile.full_name ?? toProfile(user, null).fullName,
-      avatarUrl: user.avatarUrl,
-      hasCompletedOnboarding: profile.onboarding_completed ?? (await readOnboardingFlag()),
-      now: Date.now(),
     });
   }, []);
 
@@ -543,17 +656,11 @@ export function AuthProvider({
       );
 
       /*
-        Token-free, and written only now. See `offline-receipt.ts` for why an id and a display name are
-        the whole of it, and for the revocation tradeoff this accepts.
+        The receipt is **not** written here any more. It is a projection of published online authority
+        and is persisted by the one effect below, which subsumes both this write and the second one
+        enrichment used to perform. Two writers for one account-scoped record, each with its own idea
+        of when the values were final, is what made the old pair need a flag passed between them.
       */
-      await writeOfflineReceipt({
-        userId: user.id,
-        displayName: resolved.fullName,
-        avatarUrl: user.avatarUrl,
-        hasCompletedOnboarding: localFlag,
-        now: Date.now(),
-      });
-
       void enrich(user);
     },
     [enrich, publish, signedOut],
