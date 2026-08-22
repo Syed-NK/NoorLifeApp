@@ -18,6 +18,20 @@ import { withAlpha } from '@features/modules/module-tokens';
  * `progress` is `null` when the interval that would give the sweep its meaning is not knowable — see
  * `data/prayer/prayer-interval.ts`. In that state the track is drawn and the sweep is not, so the ring
  * shows the countdown without claiming a proportion it cannot compute. It never guesses a start.
+ *
+ * ── One predicate decides whether anything is being claimed ─────────────────
+ * The sweep and its head used to be decided separately: the head appeared whenever `progress` was
+ * non-null, while the sweep appeared only once the proportion filled a whole segment. Those two
+ * thresholds agree for most of an interval and disagree at the start of every one of them, where a
+ * gold knob sat alone on an empty track — a measured position asserted by a ring showing no measure
+ * (issue #39). They also disagreed out of range: the segment count was clamped to 0–1 and the head
+ * position was not, so a fraction outside the interval put the knob at an angle the sweep never
+ * reached.
+ *
+ * So the proportion is clamped once, the segment count is derived from it once, and `sweepEnd` — the
+ * turn the sweep reaches, or `null` when it reaches nothing — is the single fact both layers read.
+ * `sweepEnd !== null` *is* "a visible sweep exists", by construction rather than by two conditions
+ * happening to line up.
  */
 
 /** Segments around the full circle. 60 gives 6° steps, which reads as a curve at these diameters. */
@@ -54,7 +68,35 @@ export function PrayerProgressRing({
 }: PrayerProgressRingProps) {
   const radius = (size - stroke) / 2;
   const centre = size / 2;
-  const filled = progress === null ? 0 : Math.round(Math.min(1, Math.max(0, progress)) * SEGMENTS);
+  /**
+   * The proportion this ring is allowed to draw, clamped once.
+   *
+   * `prayerIntervalProgress` already clamps, so production cannot deliver a fraction outside 0–1
+   * today. Clamping here anyway is what makes the two layers below provably consistent for every
+   * value of the prop rather than for every value the current caller happens to pass.
+   */
+  const measured = progress === null ? null : Math.min(1, Math.max(0, progress));
+
+  /**
+   * Segments to draw, at the ring’s own 6° quantisation.
+   *
+   * `Math.round` is deliberate and unchanged: it draws the *nearest* whole segment. `Math.ceil`
+   * would light a full 6° the instant an interval began, claiming up to six minutes of a long wait
+   * that had not passed, and `Math.floor` would withhold the last segment of a wait that had all but
+   * ended. Nearest is the honest one, so the fix moves the head to agree with it rather than moving
+   * this rule to agree with the head.
+   */
+  const filled = measured === null ? 0 : Math.round(measured * SEGMENTS);
+
+  /**
+   * **The one predicate.** Where the sweep ends, or `null` when there is no sweep.
+   *
+   * Both the sweep and its head read this, so "a head exists" and "a sweep exists" cannot come
+   * apart: it is non-null exactly when `filled` is at least one, which is exactly when a segment is
+   * drawn. Below half a segment the ring shows its track and says nothing — which is the same answer
+   * it gives when the interval is unknowable, and for the same reason.
+   */
+  const sweepEnd: number | null = filled === 0 ? null : measured;
 
   /** A point on the circumference, measured clockwise from the top — where a dial starts. */
   const pointAt = (
@@ -116,14 +158,17 @@ export function PrayerProgressRing({
       {/*
         The head of the sweep, in gold — the reference's one warm accent on this card. Drawn only
         when there is a sweep to head: a knob on an empty track would imply a measured position.
+
+        `sweepEnd`, never `progress`. Reading the prop here is the defect in issue #39 — it made the
+        head appear a segment before the sweep it is the head of, at the start of every interval.
       */}
-      {progress === null ? null : (
+      {sweepEnd === null ? null : (
         <View
           testID={`${testID}-head`}
           style={{
             position: 'absolute',
-            left: pointAt(progress).x - stroke * 0.8,
-            top: pointAt(progress).y - stroke * 0.8,
+            left: pointAt(sweepEnd).x - stroke * 0.8,
+            top: pointAt(sweepEnd).y - stroke * 0.8,
             width: stroke * 1.6,
             height: stroke * 1.6,
             borderRadius: stroke * 0.8,
