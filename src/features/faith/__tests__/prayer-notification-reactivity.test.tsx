@@ -408,7 +408,7 @@ describe('each row opens its own settings, and the choices survive a restart', (
     const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
     await drain(30);
 
-    fireEvent.press(view.getByTestId('faith-prayer-reminder-row-isha'));
+    fireEvent.press(view.getByTestId('faith-prayer-reminder-open-isha'));
     await drain(10);
 
     expect(view.getByTestId('faith-prayer-alert-sheet-isha')).toBeTruthy();
@@ -431,7 +431,7 @@ describe('each row opens its own settings, and the choices survive a restart', (
     const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
     await drain(30);
 
-    fireEvent.press(view.getByTestId('faith-prayer-reminder-row-asr'));
+    fireEvent.press(view.getByTestId('faith-prayer-reminder-open-asr'));
     await drain(10);
 
     const sheet = 'faith-prayer-alert-sheet-asr';
@@ -445,7 +445,7 @@ describe('each row opens its own settings, and the choices survive a restart', (
     const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
     await drain(30);
 
-    fireEvent.press(view.getByTestId('faith-prayer-reminder-row-fajr'));
+    fireEvent.press(view.getByTestId('faith-prayer-reminder-open-fajr'));
     await drain(10);
 
     const control = view.getByTestId('faith-prayer-alert-sheet-fajr-full-adhan');
@@ -461,5 +461,59 @@ describe('each row opens its own settings, and the choices survive a restart', (
     const line = view.getByTestId('faith-prayer-notification-full-adhan');
     expect(String(line.props.accessibilityLabel)).toMatch(/full adh/i);
     expect(String(line.props.accessibilityLabel)).toMatch(/not available|no licensed/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The settings button is a real, reachable control
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('each row opens its settings from its own button', () => {
+  /*
+    ── Why a button and not the row ──────────────────────────────────────────
+    The row used to pass `onPress` alongside `trailingInteractive`, and `FaithRow` ignores `onPress`
+    in that combination — deliberately, because a row press that also drove the switch beside it
+    would put two handlers on one gesture. So nothing opened: `uiautomator` reported the row as
+    `clickable=false` on the device while a Jest case asserting the press passed, because
+    `fireEvent.press` calls the prop directly and never reaches the platform tree.
+
+    `FaithRowProps` is now a union that makes the pair a compile error. The press lives on its own
+    button, which is a separate node with its own label and hint — two actions, no shared gesture.
+  */
+  it('gives every time its own settings button, labelled and hinted', async () => {
+    const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
+    await drain();
+
+    for (const time of NOTIFIABLE_TIMES) {
+      const button = view.getByTestId(`faith-prayer-reminder-open-${time}`);
+      expect(String(button.props.accessibilityLabel)).toMatch(/^Notification settings for /);
+      expect(String(button.props.accessibilityHint)).toMatch(/days, pre-reminder and sound/i);
+      /* Its own role, distinct from the switch's. */
+      expect(button.props.accessibilityRole).toBe('button');
+      /* Small by design, expanded to the minimum — the row's height must not grow. */
+      expect(button.props.hitSlop).toBeDefined();
+    }
+  });
+
+  it('keeps the switch and the button as two separate controls', async () => {
+    const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
+    await drain();
+
+    const switchNode = view.getByTestId('faith-prayer-reminder-fajr');
+    const button = view.getByTestId('faith-prayer-reminder-open-fajr');
+    expect(switchNode).not.toBe(button);
+    /* The row itself carries no press, which is what the type now enforces. */
+    expect(view.getByTestId('faith-prayer-reminder-row-fajr').props.onPress).toBeUndefined();
+  });
+
+  it('opens the sheet for the button that was pressed, and only that one', async () => {
+    const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
+    await drain();
+
+    fireEvent.press(view.getByTestId('faith-prayer-reminder-open-maghrib'));
+    await drain(10);
+
+    expect(view.getByTestId('faith-prayer-alert-sheet-maghrib')).toBeTruthy();
+    expect(view.queryByTestId('faith-prayer-alert-sheet-fajr')).toBeNull();
   });
 });

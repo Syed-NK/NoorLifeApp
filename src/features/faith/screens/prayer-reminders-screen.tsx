@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Switch, View } from 'react-native';
+import { Pressable, Switch, View } from 'react-native';
 
+import { AppIcon } from '@ds/components';
 import { ModuleStatusBanner, ModuleText } from '@features/modules/components';
 import { ModuleCard } from '@features/modules/components/module-card';
-import { moduleLayout } from '@features/modules/module-tokens';
+import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
+import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
 import { FaithScreen, FaithSuccessBanner } from '../components/faith-screen';
@@ -53,6 +55,14 @@ import { usePrayerNotifications } from '../hooks/use-prayer-notifications';
  * has is about one prayer at a time. The row keeps its switch — a fast on/off is worth having — and
  * pressing the row opens everything else.
  */
+/**
+ * The settings button's drawn size beside each row's switch.
+ *
+ * 28 dp drawn with `minimumHitSlop` taking the touchable area to the 44 dp minimum, so it sits
+ * beside a Switch inside the row's existing height rather than growing every row.
+ */
+const SETTINGS_BUTTON_DP = 28;
+
 export function PrayerRemindersScreen() {
   const { dp } = useModuleMetrics();
   const { preferences, persistenceError } = useFaithPreferences();
@@ -159,26 +169,62 @@ export function PrayerRemindersScreen() {
               */
               subtitle={perTimeSubtitle(settingsFor(time), isObligatory(time))}
               icon="notification"
-              onPress={() => setOpenSheet(time)}
+              /*
+                ── Two controls, not a pressable row ─────────────────────────────
+                This row used to pass `onPress` as well as `trailingInteractive`, and `FaithRow`
+                silently dropped it: with an interactive trailing control the row deliberately
+                returns a non-pressable container, for a good reason of its own — a row press that
+                also toggled the switch would put two handlers on one gesture.
+
+                So nothing opened. `uiautomator` reported the row as `clickable=false` on the
+                device while the Jest case passed, because `fireEvent.press` calls the prop
+                directly and never goes near the platform tree — the same trap that once hid six
+                unreachable switches.
+
+                A settings button beside the switch is the honest shape: two distinct actions, two
+                independently focusable nodes, and no gesture shared between them.
+              */
               trailing={
-                <Switch
-                  value={settingsFor(time).notify}
-                  onValueChange={(value) => void notifications.setNotify(time, value)}
-                  disabled={!preferences.prayerNotificationsEnabled}
-                  accessibilityLabel={`Notify me for ${capitalise(time)}`}
-                  accessibilityHint={
-                    preferences.prayerNotificationsEnabled
-                      ? `Turns the ${capitalise(time)} notification on or off`
-                      : 'Switch prayer notifications on first'
-                  }
-                  testID={`faith-prayer-reminder-${time}`}
-                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: dp(4) }}>
+                  <Switch
+                    value={settingsFor(time).notify}
+                    onValueChange={(value) => void notifications.setNotify(time, value)}
+                    disabled={!preferences.prayerNotificationsEnabled}
+                    accessibilityLabel={`Notify me for ${capitalise(time)}`}
+                    accessibilityHint={
+                      preferences.prayerNotificationsEnabled
+                        ? `Turns the ${capitalise(time)} notification on or off`
+                        : 'Switch prayer notifications on first'
+                    }
+                    testID={`faith-prayer-reminder-${time}`}
+                  />
+                  <Pressable
+                    onPress={() => setOpenSheet(time)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Notification settings for ${capitalise(time)}`}
+                    accessibilityHint={`Opens days, pre-reminder and sound for ${capitalise(time)}`}
+                    hitSlop={minimumHitSlop(dp(SETTINGS_BUTTON_DP))}
+                    style={{
+                      width: dp(SETTINGS_BUTTON_DP),
+                      height: dp(SETTINGS_BUTTON_DP),
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    testID={`faith-prayer-reminder-open-${time}`}
+                  >
+                    <AppIcon
+                      name="chevron-forward"
+                      size={dp(16)}
+                      color={moduleNeutrals.textSecondary}
+                    />
+                  </Pressable>
+                </View>
               }
               trailingInteractive
               accessibilityLabel={`${capitalise(time)}. ${perTimeSubtitle(
                 settingsFor(time),
                 isObligatory(time),
-              )}. Opens its notification settings.`}
+              )}.`}
               testID={`faith-prayer-reminder-row-${time}`}
             />
           ))}
