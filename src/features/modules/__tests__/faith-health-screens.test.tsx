@@ -357,7 +357,7 @@ describe('Health home — no fabricated health claim survives', () => {
   });
 
   it('renders the hero, the real actions and an honest state — and none of the fabricated cards', async () => {
-    for (const testID of ['health-hero', 'health-quick-actions', 'health-features']) {
+    for (const testID of ['health-hero', 'health-unavailable', 'health-features']) {
       expect(screen.getByTestId(testID)).toBeTruthy();
     }
     /*
@@ -376,6 +376,13 @@ describe('Health home — no fabricated health claim survives', () => {
       'health-quick-log',
       'health-insight',
       'health-hero-ring',
+      /*
+        The quick-action row went with the second correction: it has no unavailable affordance, so a
+        "Log entry" tile there was an unqualified invitation to a placeholder route.
+      */
+      'health-quick-actions',
+      // And no hero action, because no destination performs a named action today.
+      'health-hero-action',
     ]) {
       expect(screen.queryByTestId(gone)).toBeNull();
     }
@@ -401,19 +408,24 @@ describe('Health home — no fabricated health claim survives', () => {
     }
   });
 
-  it('offers its own reviewed empty copy rather than an invented reading', async () => {
-    await waitFor(() => expect(screen.getByTestId('module-empty-state')).toBeTruthy());
-    expect(screen.getByText(moduleRegistry.health.stateCopy.empty.title)).toBeTruthy();
+  it('states that tracking is unavailable rather than that the user has logged nothing', async () => {
+    /*
+      This asserted the empty state, which was the first correction and turned out to be the wrong
+      one: "No entries yet" is only honest when an entry is possible, and nothing here can create
+      one. With no way to log, it reads as the user's own omission.
+    */
+    await waitFor(() => expect(screen.getByTestId('health-unavailable')).toBeTruthy());
+    expect(screen.queryByTestId('module-empty-state')).toBeNull();
+    expect(screen.queryByText(moduleRegistry.health.stateCopy.empty.title)).toBeNull();
   });
 
-  it('invites an entry in the hero instead of reporting one', () => {
+  it('says what is true in the hero, and offers no action it cannot perform', () => {
     const hero = moduleRegistry.health.hero;
-    expect(hero.headline).toBe('Start with one entry');
+    expect(hero.headline).toBe('Health tracking isn’t available yet');
+    expect(hero.actionLabel).toBe('');
     // Non-numeric, in every field the hero renders.
     expect(`${hero.eyebrow} ${hero.headline} ${hero.support ?? ''}`).not.toMatch(/[0-9]/);
     expect(hero.progress).toBeUndefined();
-    // One verb: the hero's CTA is this module's own empty-state action.
-    expect(hero.actionLabel).toBe(moduleRegistry.health.stateCopy.empty.action);
   });
 
   it('labels the bottom navigation exactly as the reference does', () => {
@@ -440,11 +452,22 @@ describe('theme and asset use stay correct', () => {
     expect(moduleRegistry[moduleId].heroPictogram).toBe(moduleRegistry[moduleId].pictogram);
   });
 
-  it.each(['faith', 'health'] as const)('%s renders its locked hero artwork', (moduleId) => {
-    // Through Phase 4A this asserted  was null, which was the honest record of
-    // artwork that did not exist. The eight locked PNGs now do exist, so the contract flips.
-    expect(moduleRegistry[moduleId].heroArtwork).toBe(noorLifeAssets.moduleHeroes[moduleId]);
-    expect(moduleRegistry[moduleId].heroArtwork).not.toBe(moduleRegistry[moduleId].pictogram);
+  it('faith renders its locked hero artwork', () => {
+    /*
+      Through Phase 4A this asserted null, which was the honest record of artwork that did not
+      exist. The locked PNGs now do exist, so the contract flipped.
+
+      Health registers none, by issue #27: `04-health-hero.png` draws a rising line chart with
+      plotted node markers, which reads as the user’s health trend on a screen stating no health
+      source exists. Unregistered rather than cropped — `cover` gives no crop, and an offset would
+      depend on the aspect ratio.
+    */
+    expect(moduleRegistry.faith.heroArtwork).toBe(noorLifeAssets.moduleHeroes.faith);
+    expect(moduleRegistry.faith.heroArtwork).not.toBe(moduleRegistry.faith.pictogram);
+  });
+
+  it('health renders no hero artwork at all', () => {
+    expect(moduleRegistry.health.heroArtwork).toBeUndefined();
   });
 
   it('uses the approved Noor AI robot for both insight cards', async () => {

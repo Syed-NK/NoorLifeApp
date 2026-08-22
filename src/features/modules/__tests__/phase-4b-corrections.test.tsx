@@ -65,7 +65,17 @@ describe('1 — exactly eight core modules exist', () => {
 });
 
 describe('2 — all eight heroes resolve to the locked hero PNGs', () => {
-  it.each(EXPECTED_MODULES)('%s uses its own locked hero asset', (moduleId) => {
+  it.each(EXPECTED_MODULES)('%s uses its own locked hero asset, or none', (moduleId) => {
+    /*
+      Health registers none, by issue #27: `04-health-hero.png` draws a rising line chart with
+      plotted node markers, which reads as the user’s health trend on a screen stating no health
+      source exists. Unregistered rather than cropped — `cover` gives no crop, and an offset would
+      depend on the aspect ratio.
+    */
+    if (moduleId === 'health') {
+      expect(moduleRegistry.health.heroArtwork).toBeUndefined();
+      return;
+    }
     const key = moduleId === 'noor-ai' ? 'noorAI' : moduleId;
     expect(moduleRegistry[moduleId].heroArtwork).toBe(noorLifeAssets.moduleHeroes[key]);
   });
@@ -294,7 +304,12 @@ describe('8 — hero copy is approved, concise, and never elided', () => {
       expect(hero.headline.length).toBeGreaterThan(0);
       // Noor AI's reference has a question and a pill rather than a labelled figure with a
       // button, so it is the one module with no hero CTA.
-      if (id === 'noor-ai') {
+      /*
+        Two modules ship an empty label now. Noor AI's reference has a question and a pill rather
+        than a labelled figure with a button; Health has no working destination to name, so issue
+        #27 removed its CTA rather than point it at a placeholder.
+      */
+      if (id === 'noor-ai' || id === 'health') {
         expect(hero.actionLabel).toBe('');
       } else {
         expect(hero.actionLabel.length).toBeGreaterThan(0);

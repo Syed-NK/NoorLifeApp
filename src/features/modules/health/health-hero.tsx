@@ -9,7 +9,8 @@ import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 
 export type HealthHeroProps = {
-  readonly onAction: () => void;
+  /** Called only when the registry gives this hero an action label. */
+  readonly onAction?: () => void;
   readonly testID?: string;
 };
 
@@ -48,6 +49,12 @@ export function HealthHero({ onAction, testID }: HealthHeroProps) {
   const module = useModule();
   const { dp } = useModuleMetrics();
   const hero = module.hero;
+  /*
+    An empty label means no button, the convention `ModuleHeroCard` already applies and Noor AI
+    already ships. Health has no action today: every logging, trend and records destination is a
+    placeholder, so a button here would name something that does not happen.
+  */
+  const showAction = hero.actionLabel !== '' && onAction !== undefined;
 
   return (
     <View
@@ -91,27 +98,29 @@ export function HealthHero({ onAction, testID }: HealthHeroProps) {
             {hero.support}
           </ModuleText>
 
-          <PressableScale
-            onPress={onAction}
-            accessibilityRole="button"
-            accessibilityLabel={hero.actionLabel}
-            style={[
-              styles.button,
-              {
-                marginTop: dp(6),
-                minHeight: dp(moduleLayout.heroButtonHeight),
-                borderRadius: dp(moduleLayout.radiusSmall),
-                paddingHorizontal: dp(10),
-                columnGap: dp(5),
-              },
-            ]}
-            testID={`${testID ?? 'health-hero'}-action`}
-          >
-            <AppIcon name="add-circle" size={dp(13)} color={module.theme.ink} />
-            <ModuleText token="cardAction" color={module.theme.ink} numberOfLines={1}>
-              {hero.actionLabel}
-            </ModuleText>
-          </PressableScale>
+          {showAction ? (
+            <PressableScale
+              onPress={onAction}
+              accessibilityRole="button"
+              accessibilityLabel={hero.actionLabel}
+              style={[
+                styles.button,
+                {
+                  marginTop: dp(6),
+                  minHeight: dp(moduleLayout.heroButtonHeight),
+                  borderRadius: dp(moduleLayout.radiusSmall),
+                  paddingHorizontal: dp(10),
+                  columnGap: dp(5),
+                },
+              ]}
+              testID={`${testID ?? 'health-hero'}-action`}
+            >
+              <AppIcon name="add-circle" size={dp(13)} color={module.theme.ink} />
+              <ModuleText token="cardAction" color={module.theme.ink} numberOfLines={1}>
+                {hero.actionLabel}
+              </ModuleText>
+            </PressableScale>
+          ) : null}
         </View>
         {/*
           The copy column keeps its own width and the artwork keeps the rest. Where the ring used to

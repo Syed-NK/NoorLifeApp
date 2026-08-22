@@ -76,7 +76,20 @@ describe('the asset registry', () => {
 describe.each(FRAMEWORK_MODULE_IDS)('module hero artwork: %s', (moduleId) => {
   const definition = moduleRegistry[moduleId];
 
-  it('references its own locked hero', () => {
+  it('references its own locked hero, or none where none is honest', () => {
+    /*
+      Health is the exception, and the exception is the point.
+
+      `04-health-hero.png` draws a rising line chart with plotted node markers across the sky. On a
+      screen that states no health source exists, that reads as the user’s trend — so issue #27
+      unregisters it rather than crop it, because `resizeMode="cover"` gives no crop and any offset
+      would depend on the hero’s aspect ratio. The asset stays in the repository for whenever a real
+      provider makes a trend true.
+    */
+    if (moduleId === 'health') {
+      expect(definition.heroArtwork).toBeUndefined();
+      return;
+    }
     // The asset registry keys Noor AI as `noorAI`; module ids are kebab-case.
     const key = moduleId === 'noor-ai' ? 'noorAI' : moduleId;
     expect(definition.heroArtwork).toBe(noorLifeAssets.moduleHeroes[key]);

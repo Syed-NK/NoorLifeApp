@@ -188,9 +188,17 @@ describe('the Health screen states no medical or wellness value', () => {
     expect(screen.queryByText(/great job|keep listening to your body/i)).toBeNull();
   });
 
-  it('renders Health’s own reviewed empty copy', async () => {
-    await waitFor(() => expect(screen.getByTestId('module-empty-state')).toBeTruthy());
-    expect(screen.getByText(moduleRegistry.health.stateCopy.empty.title)).toBeTruthy();
+  it('states that tracking is unavailable, not that the user logged nothing', async () => {
+    /*
+      The second correction. The first pass rendered the framework’s empty state — "No entries
+      yet — Log one thing today" — which is only honest when an entry is *possible*. Nothing on
+      this screen can create one: every logging destination is a placeholder. So it read as the
+      user's own omission, which is worse than a wrong number because it assigns blame for it.
+    */
+    await waitFor(() => expect(screen.getByTestId('health-unavailable')).toBeTruthy());
+    expect(screen.queryByTestId('module-empty-state')).toBeNull();
+    expect(screen.queryByText(moduleRegistry.health.stateCopy.empty.title)).toBeNull();
+    expect(screen.queryByText(/no entries yet/i)).toBeNull();
   });
 });
 
@@ -314,14 +322,129 @@ describe('the approved composition and the framework are intact', () => {
     expect(hero).toMatch(/numberOfLines=\{2\}/);
   });
 
-  it('offers only actions that lead to real routes', () => {
+  it('navigates nowhere from the home, because nothing here performs an action', () => {
+    /*
+      This used to allow `/health/log` and the AI route. `/health/log` renders the framework’s
+      section screen, which says the destination arrives with the module’s full release — so the CTA
+      named an action that does not happen. The home now navigates from nowhere: the capability grid
+      does its own routing and marks the unavailable ones, and Health AI stays reachable through the
+      bottom navigation rather than being promoted as a stand-in for tracking.
+    */
     const content = code(join(HEALTH_DIR, 'health-home-content.tsx'));
-    const hrefs = [...content.matchAll(/router\.push\(([^)]+)\)/g)].map((m) => m[1]);
-    expect(hrefs.length).toBeGreaterThan(0);
-    for (const href of hrefs) {
-      // Either a literal Health route that exists, or the module's own registered AI route.
-      expect(href === "'/health/log'" || href === 'module.routes.ai').toBe(true);
-    }
+    expect(content).not.toMatch(/router\.push|useRouter/);
     expect(content).not.toContain('comingSoon');
+  });
+});
+
+describe('no action promises what its destination cannot do', () => {
+  /**
+   * Every Health destination reachable from the home, and what it actually does.
+   *
+   * `ModuleSectionScreen` is the framework’ honest "not yet" shell — real chrome, real
+   * navigation, a banner saying the destination arrives with the module’s full release, and no
+   * content. Reaching one is not performing the action its name promises, which is the distinction
+   * this describe exists for: a route existing does not make its named action real.
+   */
+  const PLACEHOLDER_ROUTES = ['log', 'trends', 'records'] as const;
+
+  it.each(PLACEHOLDER_ROUTES)('/health/%s is only a placeholder', (route) => {
+    const source = readFileSync(
+      join(__dirname, '..', '..', '..', 'app', 'health', `${route}.tsx`),
+      'utf8',
+    );
+    expect(source).toContain('ModuleSectionScreen');
+  });
+
+  it('names no logging, tracking, trend or records action anywhere on the home', () => {
+    /*
+      An *invitation* is the defect, not the vocabulary. "Health tracking isn't available yet" has to
+      be allowed to name the thing that is unavailable — that is the whole message — so this looks for
+      the imperative instead: a line that tells the user to do something the app cannot do.
+
+      The first version of this assertion banned the words outright and failed on the honest copy,
+      which is worth recording: a rule that forbids naming a limitation makes the limitation harder to
+      state than to hide.
+    */
+    const hero = moduleRegistry.health.hero;
+    const lines = [hero.eyebrow, hero.headline, hero.support, hero.supportSecondary].filter(
+      (value): value is string => value !== undefined,
+    );
+    for (const line of lines) {
+      expect(line).not.toMatch(/^(log|track|record|start|add|view|see|check)\b/i);
+    }
+    // And no button at all, so there is nothing to name an action with.
+    expect(hero.actionLabel).toBe('');
+  });
+
+  it('offers a quick action only where the destination performs it', () => {
+    /*
+      The quick-action row has no unavailable affordance — every tile is live and routes on tap — so
+      an unavailable capability cannot be represented there honestly. Health keeps exactly the one
+      whose destination works.
+    */
+    const actions = moduleRegistry.health.quickActions;
+    expect(actions.map((action) => action.href)).toEqual(['/health/ai']);
+    for (const action of actions) {
+      expect(action.href).not.toMatch(/\/health\/(log|trends|records)$/);
+    }
+  });
+
+  it('marks every placeholder capability unavailable, with a reason', () => {
+    /*
+      Before the tap, which is the requirement. The grid greys these, disables them, announces "not
+      available yet" and puts the reason in the hint.
+    */
+    const byKey = new Map(moduleRegistry.health.capabilities.map((c) => [c.key, c]));
+    for (const key of ['track', 'trends', 'records', 'sleep', 'water']) {
+      const capability = byKey.get(key);
+      expect(capability?.available).toBe(false);
+      expect(capability?.unavailableReason).toBeTruthy();
+    }
+    // Overview is the screen the user is already on, so it genuinely works.
+    expect(byKey.get('overview')?.available).toBe(true);
+  });
+
+  it('does not present Health AI as a substitute for tracking', () => {
+    /*
+      It stays reachable — bottom navigation, under its own policy — and is deliberately not offered
+      beside "tracking is not available", where it would read as the replacement for recording.
+    */
+    const content = code(join(HEALTH_DIR, 'health-home-content.tsx'));
+    expect(content).not.toMatch(/routes\.ai|health\/ai|Ask Health AI/);
+  });
+});
+
+describe('the no-data hero carries no data imagery', () => {
+  it('registers no hero artwork while there is no provider', () => {
+    /*
+      `04-health-hero.png` draws a rising line chart with plotted node markers across the sky. On a
+      screen stating that no health source exists, that reads as the user's trend. Unregistered rather
+      than cropped: `resizeMode="cover"` gives no crop control, so an offset would depend on the
+      hero's aspect ratio and could expose the chart again at another width.
+
+      This also covers Track, Trends and Records, which render `ModuleHeroCard` over the same field —
+      the chart was on four Health screens, not one.
+    */
+    expect(moduleRegistry.health.heroArtwork).toBeUndefined();
+  });
+
+  it('draws no ring, chart, gauge or progress in the Health hero', () => {
+    const hero = code(join(HEALTH_DIR, 'health-hero.tsx'));
+    expect(hero).not.toMatch(/ProgressRing|ModuleLineChart|Chart|Gauge|Svg|Polyline/);
+    expect(moduleRegistry.health.hero.progress).toBeUndefined();
+  });
+
+  it('keeps the hero geometry it always had', () => {
+    // The artwork layer is absent; the box is not. Height, radius and theme fill are unchanged.
+    const hero = code(join(HEALTH_DIR, 'health-hero.tsx'));
+    expect(hero).toContain('moduleLayout.heroHeight');
+    expect(hero).toContain('moduleLayout.cardRadius');
+    expect(hero).toContain('module.theme.gradientEnd');
+  });
+
+  it('lets the artwork layer be absent without a scrim over nothing', () => {
+    const artwork = code(join(__dirname, '..', 'components', 'module-hero-artwork.tsx'));
+    expect(artwork).toMatch(/source === undefined/);
+    expect(artwork).toContain('return null');
   });
 });
