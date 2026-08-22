@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Modal, View } from 'react-native';
+import { Modal, StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '@ds/components';
-import { neutralColors } from '@ds/tokens';
+import { neutralColors, touchTarget } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
+import { useModuleTheme } from '@features/modules/module-context';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
@@ -16,6 +17,7 @@ import { useOfflineRecitation } from '../di/offline-recitation-context';
 import { faithNavKeys } from '../faith-routes';
 import { SUDAIS_ATTRIBUTION } from '../data/quran-foundation/recitation-attribution';
 import {
+  ACTIVE_DOWNLOAD_STATES,
   COMPLETE_AYAH_COUNT,
   SURAH_COUNT,
   type OfflineDownloadState,
@@ -172,7 +174,19 @@ function OfflineAudioBody() {
       <SurahPanel
         snapshot={snapshot}
         onRemoveSurah={(surah) => setConfirming(surah)}
-        onDownloadSurah={(surah) => void service.start({ kind: 'selected', surahs: [surah] })}
+        /*
+          One run at a time — `execute` returns immediately when another is in flight — so while the
+          download is estimating, transferring, verifying or removing, no retry can take effect on
+          any row. The control says so rather than accepting a press that does nothing.
+        */
+        busy={ACTIVE_DOWNLOAD_STATES.includes(snapshot.state)}
+        /*
+          `retrySurah`, not `start({ selected: [surah] })`. `start` **records** the scope it is
+          given, so retrying one surah would have rewritten the scope to that surah alone and
+          quietly dropped everything else the user had asked for from the definition of
+          "complete". That the old wiring was unreachable is the only reason it never did.
+        */
+        onRetrySurah={(surah) => void service.retrySurah(surah)}
       />
 
       <SyncPanel snapshot={snapshot} onCheck={() => void service.reconcile()} />
@@ -419,11 +433,14 @@ function isResumable(state: OfflineDownloadState): boolean {
 function SurahPanel({
   snapshot,
   onRemoveSurah,
-  onDownloadSurah,
+  onRetrySurah,
+  busy,
 }: {
   readonly snapshot: OfflineSnapshot;
   readonly onRemoveSurah: (surah: number) => void;
-  readonly onDownloadSurah: (surah: number) => void;
+  readonly onRetrySurah: (surah: number) => void;
+  /** True while a run is in flight, in which case no retry can take effect. */
+  readonly busy: boolean;
 }) {
   /*
     Read straight from the snapshot. This used to be a `useMemo` over 114 surahs keyed on
@@ -432,6 +449,7 @@ function SurahPanel({
     one manifest disagreeing is the defect class this feature exists to eliminate, and a memo between
     the data and the screen was the only thing that could reintroduce it.
   */
+  const theme = useModuleTheme();
   const surahs = snapshot.downloadedSurahs;
 
   if (surahs.length === 0) {
@@ -446,17 +464,16 @@ function SurahPanel({
       {surahs.map((entry) => {
         const complete = entry.complete;
         /*
-          ── An `onPress` was removed from the row below, and it was already dead ──
-          The spread used to add `onPress: () => onDownloadSurah(entry.surah)` for an incomplete
-          surah, alongside `trailingInteractive`. `FaithRow` ignores `onPress` in that combination —
-          deliberately, see its own note — so the handler had never run: the row reported
-          `clickable=false` to the platform, and only a device dump showed it. `FaithRowProps` is now
-          a union that makes the pair a compile error, which is what surfaced this one.
+          ── Why Retry is a control here and not a press on the row ────────────
+          This row used to pass `onPress` alongside `trailingInteractive`, and `FaithRow` ignores
+          `onPress` in that combination — deliberately, because a row press that also drove the
+          control beside it would put two handlers on one gesture. So the handler had never run: the
+          row reported `clickable=false` to the platform, and only a device dump showed it.
+          `FaithRowProps` is now a union that makes the pair a compile error.
 
-          Deleting it changes no behaviour. **What it does not fix is real:** an incomplete download
-          has no retry affordance on this row, and never had a working one. It needs its own control
-          in `trailing` beside "Remove", which is a change to the offline-audio flow that the branch
-          finding this could not exercise on a device.
+          The replacement is a second control in the same trailing area: two independently focusable
+          nodes, each with its own label, hint and target, sharing no gesture. Remove keeps its own
+          confirmation and is unchanged.
         */
         return (
           <FaithRow
@@ -470,18 +487,56 @@ function SurahPanel({
             icon={complete ? 'download' : 'retry'}
             {...(complete ? {} : { iconColor: moduleNeutrals.warning })}
             trailing={
-              <PressableScale
-                onPress={() => onRemoveSurah(entry.surah)}
-                accessibilityRole="button"
-                accessibilityLabel={`Remove downloaded surah ${entry.surah}, ${entry.playable} verses`}
-                accessibilityHint="Deletes the audio from this device"
-                style={{ minHeight: 44, justifyContent: 'center' }}
-                testID={`faith-offline-audio-remove-surah-${entry.surah}`}
-              >
-                <ModuleText token="cardAction" color={moduleNeutrals.warning}>
-                  Remove
-                </ModuleText>
-              </PressableScale>
+              <View style={styles.rowActions}>
+                {complete ? null : (
+                  <PressableScale
+                    onPress={() => onRetrySurah(entry.surah)}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Retry surah ${entry.surah}, ${entry.playable} of ${
+                      entry.total ?? '?'
+                    } verses downloaded`}
+                    /*
+                      The hint says what the service actually does. A run covers the recorded scope,
+                      so this resumes the download and fetches what is still missing — it does not
+                      fetch this surah alone, and claiming otherwise would be a promise the executor
+                      does not keep. See `retrySurah` for why that is not worked around here.
+                    */
+                    accessibilityHint={
+                      busy
+                        ? 'Unavailable while a download is running'
+                        : 'Resumes the download and fetches the verses still missing. Nothing already downloaded is fetched again.'
+                    }
+                    accessibilityState={{ disabled: busy }}
+                    style={styles.rowAction}
+                    testID={`faith-offline-audio-retry-surah-${entry.surah}`}
+                  >
+                    <ModuleText
+                      token="cardAction"
+                      color={busy ? moduleNeutrals.textTertiary : theme.ink}
+                      maxFontSizeMultiplier={1.4}
+                    >
+                      Retry
+                    </ModuleText>
+                  </PressableScale>
+                )}
+                <PressableScale
+                  onPress={() => onRemoveSurah(entry.surah)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove downloaded surah ${entry.surah}, ${entry.playable} verses`}
+                  accessibilityHint="Deletes the audio from this device"
+                  style={styles.rowAction}
+                  testID={`faith-offline-audio-remove-surah-${entry.surah}`}
+                >
+                  <ModuleText
+                    token="cardAction"
+                    color={moduleNeutrals.warning}
+                    maxFontSizeMultiplier={1.4}
+                  >
+                    Remove
+                  </ModuleText>
+                </PressableScale>
+              </View>
             }
             /*
               The row carries its own control, so the container must not merge it — the same rule the
@@ -495,6 +550,32 @@ function SurahPanel({
     </FaithRowGroup>
   );
 }
+
+const styles = StyleSheet.create({
+  /*
+    Retry and Remove side by side in the row’s trailing area. A row gap as well as a column gap
+    because at a large OS text size the two labels wrap onto separate lines, and two 44 dp targets
+    touching edge to edge is how a mis-tap removes audio somebody meant to repair.
+  */
+  rowActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
+    columnGap: 14,
+    rowGap: 4,
+  },
+  /*
+    `touchTarget.minimum` unscaled, deliberately. `dp()` scales by screen width, and a floor that
+    shrinks on a narrower phone is not a floor — measured at 43 dp on a 384 dp device when it was
+    wrapped, which is the defect `205659b` fixed for the prayer sheet.
+  */
+  rowAction: {
+    minHeight: touchTarget.minimum,
+    minWidth: touchTarget.minimum,
+    justifyContent: 'center',
+  },
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Synchronisation

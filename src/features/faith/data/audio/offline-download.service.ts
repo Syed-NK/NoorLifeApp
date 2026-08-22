@@ -200,6 +200,21 @@ export type OfflineDownloadService = {
   cancel(): Promise<void>;
   /** Re-queues only rows that failed or are missing. Downloads nothing that is already verified. */
   retryFailed(): Promise<void>;
+  /**
+   * Continues the download from a partial surah's row, without narrowing what the user asked for.
+   *
+   * ── The thing it deliberately does not do ─────────────────────────────────
+   * It does not fetch that surah alone. A run is scoped, and `execute` derives the estimate, the
+   * storage gate and whether the download is *finished* from the scope it is handed: give it one
+   * surah and a successful run reports the whole download `complete`. Separating a run's work from
+   * its accounting is a change to the executor's contract, not to a retry control, so the row's copy
+   * says what actually happens — the download resumes and fetches what is still missing.
+   *
+   * So the recorded scope is neither narrowed nor rewritten: a user repairing one surah has not asked
+   * to stop wanting the others. The `surah` argument changes the outcome in exactly one case — after
+   * a cancellation, when there is no recorded scope left to resume.
+   */
+  retrySurah(surah: number): Promise<void>;
 
   removeAll(): Promise<void>;
   removeSurah(surah: number): Promise<void>;
@@ -984,6 +999,33 @@ export function createOfflineDownloadService(config: {
         ),
       );
       await this.resume();
+    },
+
+    async retrySurah(surah): Promise<void> {
+      /*
+        Nothing is re-queued first, and nothing needs to be: `pendingWork` already returns every
+        published verse whose held row is not `available` with a good signature and a non-zero length,
+        which is every `failed` and every `queued` one. `retryFailed` resets them anyway; here that
+        would only add manifest writes. Deleting a re-queue from this method passed all 25 cases, which
+        is how it was shown to be dead rather than assumed to be.
+
+        So a retry is the existing download path and nothing more, and every guarantee that path
+        already had is inherited: the `run !== null` guard means a second press is not a second
+        download; `bindForRun` refuses a generation this device does not own and fails closed with
+        `no-generation` when nobody is signed in; the connectivity gate stops an offline retry before a
+        byte is requested; and promotion stays non-overwriting.
+      */
+      if (manifest.current().scope.kind !== 'none') {
+        await this.resume();
+        return;
+      }
+      /*
+        Except after a cancellation, which clears the scope — and `resume` returns immediately on an
+        empty scope, so a partial surah would show a Retry control that did nothing at all. There is no
+        wider intent left to preserve here: the user cancelled it. Asking for this surah is the whole
+        of what they just asked for, so it becomes the scope, exactly as picking it from the list would.
+      */
+      await this.start({ kind: 'selected', surahs: [surah] });
     },
 
     async removeAll(): Promise<void> {
