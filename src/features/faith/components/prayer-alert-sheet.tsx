@@ -2,7 +2,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-na
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@ds/components';
-import { neutralColors } from '@ds/tokens';
+import { neutralColors, touchTarget } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
 import { useModuleTheme } from '@features/modules/module-context';
 import { moduleLayout, moduleNeutrals, withAlpha } from '@features/modules/module-tokens';
@@ -295,6 +295,14 @@ export function PrayerAlertSheet({
                       accessibilityState={{ checked: selected, disabled: !editable }}
                       /* The full day name, because "T" is ambiguous spoken aloud and "S" is worse. */
                       accessibilityLabel={day.name}
+                      /*
+                        Seven circles have to fit one row at 360 dp, which fixes the drawn diameter
+                        below the 44 dp minimum — the case `minimumHitSlop` exists for. Measured on
+                        the emulator at 100 px / 2.625 = 38.1 dp before this was added. The 6 dp
+                        column gap means two neighbours' expanded areas meet without overlapping, so
+                        a tap between them still resolves to the nearer day.
+                      */
+                      hitSlop={minimumHitSlop(dp(DAY_DIAMETER_DP))}
                       style={[
                         styles.day,
                         {
@@ -469,6 +477,19 @@ function Choice({
       style={{
         paddingHorizontal: dp(12),
         paddingVertical: dp(8),
+        /*
+          ── Sized rather than slopped, and the difference matters here ────────
+          These pills wrap onto a second row with a 6 dp gap. Expanding a 30 dp control to 44 with
+          hit slop would push 7 dp past each edge, so the two rows' touch areas would overlap by 8 dp
+          and a tap in the gap could land on either row. Growing the pill itself removes the
+          ambiguity, and `minimumHitSlop`'s own note prefers sizing the control where the design
+          allows it.
+
+          Measured on the emulator at 79 px / 2.625 = 30.1 dp before this was added — below the 44 dp
+          minimum that §8 requires.
+        */
+        minHeight: dp(touchTarget.minimum),
+        justifyContent: 'center',
         borderRadius: dp(moduleLayout.radiusSmall),
         backgroundColor: selected ? withAlpha(theme.primary, 0.14) : moduleNeutrals.surfaceMuted,
         borderWidth: selected ? StyleSheet.hairlineWidth : StyleSheet.hairlineWidth,
