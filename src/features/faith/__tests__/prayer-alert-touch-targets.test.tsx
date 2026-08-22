@@ -111,7 +111,12 @@ describe('the option pills reach the minimum by being that size', () => {
 
     const style = flatStyle(id(suffix));
     expect(typeof style.minHeight).toBe('number');
-    expect(style.minHeight as number).toBeGreaterThanOrEqual(touchTarget.minimum);
+    /*
+      Exactly the token, unscaled. `dp()` scales by screen width, so a floor wrapped in it measured
+      43 dp on the 384 dp physical phone — and a minimum that shrinks with the screen is not a
+      minimum. Asserted as equality rather than `>=` so re-wrapping it fails here.
+    */
+    expect(style.minHeight).toBe(touchTarget.minimum);
   });
 
   it.each(PILLS)('%s is sized rather than slopped', async (suffix) => {

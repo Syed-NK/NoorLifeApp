@@ -487,8 +487,14 @@ function Choice({
 
           Measured on the emulator at 79 px / 2.625 = 30.1 dp before this was added — below the 44 dp
           minimum that §8 requires.
+
+          ── Not wrapped in `dp()`, and that is the point ──────────────────────
+          `dp()` scales by screen width, so `dp(44)` is 43 on a 384 dp handset — measured at 121 px /
+          2.8125 on the physical phone. Every *design* dimension should scale like that; an
+          accessibility floor must not, because a minimum that shrinks with the screen is not a
+          minimum. This one value is therefore taken unscaled while everything around it scales.
         */
-        minHeight: dp(touchTarget.minimum),
+        minHeight: touchTarget.minimum,
         justifyContent: 'center',
         borderRadius: dp(moduleLayout.radiusSmall),
         backgroundColor: selected ? withAlpha(theme.primary, 0.14) : moduleNeutrals.surfaceMuted,
