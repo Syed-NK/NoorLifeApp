@@ -103,11 +103,21 @@ export function createExpoNotificationPort(): NotificationPort {
               ? Notifications.AndroidImportance.HIGH
               : Notifications.AndroidImportance.DEFAULT,
           /*
-            `undefined` means the channel takes the system's default notification sound. It is not
-            the same as `null`, which on Android means *silent* — a prayer alert that makes no sound
-            is not the default this app wants, and the difference is one keystroke.
+            Three states, not two, and the difference is one keystroke.
+
+            An **absent** `sound` key means the channel takes the system’s default notification sound.
+            An explicit **null** means silent — `expo-notifications` passes it straight through to
+            `NotificationChannel.setSound(null, …)`. A **filename** means that bundled asset.
+
+            So a deliberately silent channel has to send `sound: null`, and an ordinary one must not send
+            the key at all. Collapsing the two would make every prayer alert silent — the sort of failure
+            nobody notices until a prayer has been missed.
           */
-          ...(channel.soundFile === null ? {} : { sound: channel.soundFile }),
+          ...(channel.silent
+            ? { sound: null }
+            : channel.soundFile === null
+              ? {}
+              : { sound: channel.soundFile }),
         });
       } catch {
         // A channel that could not be created is reported through `channelReady` upstream rather
@@ -142,6 +152,14 @@ export function createExpoNotificationPort(): NotificationPort {
             title: request.title,
             body: request.body,
             data: request.data,
+            /*
+              iOS is where this takes effect: `false` is the documented value for a silent notification,
+              and iOS has no channel to carry the choice instead. On Android it is inert — the channel
+              decides, and a per-notification sound has been ignored since API 26 — but it is sent on both
+              rather than branched on platform, because a request that states what it wants is easier to
+              verify than one that states it only where it happens to work.
+            */
+            sound: request.silent ? false : 'default',
           },
           trigger: {
             /*
@@ -192,7 +210,12 @@ export function createExpoNotificationPort(): NotificationPort {
     async presentNow(request: Omit<ScheduleRequest, 'at'>): Promise<string | null> {
       try {
         return await Notifications.scheduleNotificationAsync({
-          content: { title: request.title, body: request.body, data: request.data },
+          content: {
+            title: request.title,
+            body: request.body,
+            data: request.data,
+            sound: request.silent ? false : 'default',
+          },
           /*
             `null` is expo's "deliver immediately". It still goes through the configured channel, so
             the test genuinely exercises the channel a prayer alert would use rather than a default

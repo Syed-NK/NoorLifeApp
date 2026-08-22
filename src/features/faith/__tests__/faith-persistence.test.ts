@@ -255,8 +255,15 @@ describe('preferences', () => {
 
   it('defaults every prayer notification to off', async () => {
     const prefs = await readFaithPreferences();
-    expect(prefs.prayerNotifications).toHaveLength(5);
-    expect(prefs.prayerNotifications.every((entry) => !entry.enabled)).toBe(true);
+    /*
+      Six, not five: sunrise is now among the notifiable times, as an ordinary reminder. Being
+      present in the defaults is not being offered — every one of the six is off.
+    */
+    expect(prefs.prayerAlerts).toHaveLength(6);
+    expect(prefs.prayerAlerts.every((entry) => !entry.notify)).toBe(true);
+    // And nothing has repeat days or a pre-reminder until the user enables it.
+    expect(prefs.prayerAlerts.every((entry) => entry.repeatDays.length === 0)).toBe(true);
+    expect(prefs.prayerAlerts.every((entry) => entry.preReminderMinutes === 0)).toBe(true);
   });
 
   it('persists a partial update without dropping the other fields', async () => {

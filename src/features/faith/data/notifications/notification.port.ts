@@ -76,6 +76,18 @@ export type NotificationChannelSpec = {
    * creation, so a new sound needs a new channel id. That is why the id is versioned.
    */
   readonly soundFile: string | null;
+  /**
+   * Whether this channel is deliberately silent.
+   *
+   * Distinct from `soundFile === null`, and the distinction is the whole reason it exists: a null
+   * file means "whatever the platform's default notification sound is", and silent means "no sound".
+   * `expo-notifications` maps an **absent** channel sound to the system default and an **explicit
+   * null** to silence, so the port has to be able to say which of the two it means.
+   *
+   * Android only in effect. On iOS silence is a property of each notification, not of a channel, so
+   * `ScheduleRequest.silent` carries it there.
+   */
+  readonly silent: boolean;
 };
 
 export type ScheduleRequest = {
@@ -86,6 +98,15 @@ export type ScheduleRequest = {
   readonly at: Date;
   /** Opaque payload, echoed back by the platform. Carries no personal data. */
   readonly data: Readonly<Record<string, string>>;
+  /**
+   * Whether this alert should make no sound.
+   *
+   * Both halves are needed and neither is redundant. On Android the answer is already decided by
+   * `channelId` — a silent alert is routed to the silent channel — and this flag changes nothing,
+   * because a per-notification sound has been ignored since API 26. On iOS there are no channels and
+   * this flag is the only thing that silences it.
+   */
+  readonly silent: boolean;
 };
 
 /** One entry in the platform's pending list. */

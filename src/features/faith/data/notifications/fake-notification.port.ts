@@ -48,6 +48,14 @@ export type FakeNotificationPort = NotificationPort & {
   readonly setPermission: (permission: NotificationPermission) => void;
   /** Immediately-presented notifications, so the test action can be asserted separately. */
   readonly presented: () => readonly { readonly title: string; readonly channelId: string }[];
+  /**
+   * Every schedule request, in full and in order.
+   *
+   * `pending()` reports what the platform is holding, which is deliberately a narrower view — it
+   * carries no title or body, because the real platform's pending list does not reliably either.
+   * The privacy and wording assertions need the request as it was made, so it is recorded here.
+   */
+  readonly requests: () => readonly ScheduleRequest[];
 };
 
 export function createFakeNotificationPort(
@@ -63,6 +71,7 @@ export function createFakeNotificationPort(
   const channels: NotificationChannelSpec[] = [];
   const calls: string[] = [];
   const presented: { title: string; channelId: string }[] = [];
+  const requests: ScheduleRequest[] = [];
   let scheduleCalls = 0;
   let nextId = 1;
 
@@ -96,6 +105,12 @@ export function createFakeNotificationPort(
 
     async schedule(request: ScheduleRequest): Promise<string | null> {
       scheduleCalls += 1;
+      /*
+        Recorded before the refusal check, so a rolled-back attempt is still visible to a test.
+        What the app *asked* for is as interesting as what survived — a request carrying a
+        coordinate would be a privacy defect whether or not the platform accepted it.
+      */
+      requests.push(request);
       if (failOnCall !== null && scheduleCalls === failOnCall) {
         calls.push('schedule:refused');
         return null;
@@ -139,5 +154,6 @@ export function createFakeNotificationPort(
       permission = next;
     },
     presented: () => [...presented],
+    requests: () => [...requests],
   };
 }

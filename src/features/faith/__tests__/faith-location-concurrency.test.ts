@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { alertsFor } from '@/test-support/prayer-alert-fixtures';
 import { formattedHijriForCalendarDay } from '../data/calendar-day';
 import { hasData } from '../data/faith-result';
 import { createFakeNotificationPort } from '../data/notifications/fake-notification.port';
@@ -235,7 +236,7 @@ describe('Case A — a timed-out device request cannot overwrite a city saved af
     // The schedule as it stands for Dubai.
     await reconcilePrayerAlerts(
       { prayerTimes: repository, notifications, now: () => NOW },
-      { masterEnabled: true, enabledPrayers: ['fajr', 'dhuhr'], settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor('fajr', 'dhuhr'), settings: SETTINGS },
     );
     const dubaiAlerts = notifications.pending().map((alert) => alert.at);
     expect(dubaiAlerts.length).toBeGreaterThan(0);
@@ -250,7 +251,7 @@ describe('Case A — a timed-out device request cannot overwrite a city saved af
     */
     await reconcilePrayerAlerts(
       { prayerTimes: repository, notifications, now: () => NOW },
-      { masterEnabled: true, enabledPrayers: ['fajr', 'dhuhr'], settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor('fajr', 'dhuhr'), settings: SETTINGS },
     );
     expect(notifications.pending().map((alert) => alert.at)).toEqual(dubaiAlerts);
   });

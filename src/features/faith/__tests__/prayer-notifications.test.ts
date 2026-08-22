@@ -4,9 +4,13 @@ import path from 'node:path';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { createFakeNotificationPort } from '../data/notifications/fake-notification.port';
+import { alertsFor, alertSettingsFixture } from '@/test-support/prayer-alert-fixtures';
+
 import {
+  MAX_PENDING_ALERTS,
   planPrayerAlerts,
   plannedAlertKey,
+  prayerAlertContent,
   scheduleFingerprint,
   SCHEDULE_HORIZON_DAYS,
 } from '../data/notifications/prayer-alert-plan';
@@ -121,10 +125,19 @@ function fakeRepository(
     },
     getMonthlyTimes: async () => ({ kind: 'ok', data: [] }),
     getNextPrayer: async () => ({ kind: 'error', code: 'unavailable' }),
-    readNotificationPreferences: async () => ({ kind: 'ok', data: [] }),
-    writeNotificationPreferences: async () => ({ kind: 'ok', data: [] }),
   };
 }
+
+/**
+ * The plan's alerts alone.
+ *
+ * `planPrayerAlerts` now returns coverage facts beside them — whether the pending ceiling cut the
+ * plan short, and the last date it reaches — because with six times and pre-reminders the ceiling
+ * can bite before the horizon ends. The cases below are about *which* alerts are planned, so they
+ * read the list; the ceiling has its own describe block.
+ */
+const planAlerts = (input: Parameters<typeof planPrayerAlerts>[0]) =>
+  planPrayerAlerts(input).alerts;
 
 /** Well before the first day's Fajr, so every planned alert is in the future. */
 const BEFORE_ANY = Date.parse('2026-08-13T00:30:00+03:00');
@@ -134,34 +147,80 @@ beforeEach(async () => {
   await AsyncStorage.clear();
 });
 
-describe('the plan never contains a sunrise alert', () => {
-  it('schedules the five prayers and excludes sunrise, on every day of the horizon', () => {
+describe('sunrise is offered, and is never announced as a prayer', () => {
+  /*
+    ── What changed here, and what did not ─────────────────────────────────────
+    Sunrise used to be structurally unschedulable: the plan walked `OBLIGATORY_PRAYERS`, so a caller
+    that asked for it got nothing. It is now offered as an ordinary reminder, because a nudge that
+    the night's window is closing is a reasonable thing to want.
+
+    Everything that made it *not a prayer* is still true — but it is now enforced by the code that
+    chooses the wording and the code that refuses an adhān, rather than by leaving it off a list.
+    Those are the properties these cases pin, and they are stronger than the old absence: an absence
+    protects nothing once somebody adds the feature.
+  */
+  it('schedules nothing for sunrise until it is switched on', () => {
     const days = Array.from({ length: SCHEDULE_HORIZON_DAYS }, (_unused, index) => dayFor(index));
-    const planned = planPrayerAlerts({ days, enabled: ALL_FIVE, nowMs: BEFORE_ANY });
+    const planned = planAlerts({ days, alerts: alertsFor(...ALL_FIVE), nowMs: BEFORE_ANY });
 
     expect(planned).toHaveLength(SCHEDULE_HORIZON_DAYS * 5);
     expect(planned.some((alert) => alert.prayer === ('sunrise' as PrayerKey))).toBe(false);
   });
 
-  it('cannot be made to schedule sunrise even when it is asked for', () => {
-    /*
-      The plan is built by walking the domain's five, not by filtering the day's six — so a caller
-      that passed sunrise in gets no sunrise alert rather than one that slipped through a filter.
-    */
-    const planned = planPrayerAlerts({
+  it('schedules it alongside the prayers once it is switched on', () => {
+    const planned = planAlerts({
       days: [dayFor(0)],
-      enabled: ['sunrise' as PrayerKey, 'fajr'],
+      alerts: alertsFor('sunrise', 'fajr'),
       nowMs: BEFORE_ANY,
     });
 
-    expect(planned.map((alert) => alert.prayer)).toEqual(['fajr']);
+    // Chronological, so Fajr precedes sunrise — which is also the order the day runs in.
+    expect(planned.map((alert) => alert.prayer)).toEqual(['fajr', 'sunrise']);
+  });
+
+  it('never calls it a prayer, and never says it is time for it', () => {
+    const planned = planAlerts({
+      days: [dayFor(0)],
+      alerts: alertSettingsFixture({ on: ['sunrise'], preReminderMinutes: 10 }),
+      nowMs: BEFORE_ANY,
+    });
+
+    // Both kinds of alert, so neither wording can drift on its own.
+    expect(planned).toHaveLength(2);
+    for (const alert of planned) {
+      const { title, body } = prayerAlertContent(alert);
+      expect(`${title} ${body}`).not.toMatch(/prayer/i);
+      expect(`${title} ${body}`).not.toMatch(/it is time for/i);
+      expect(`${title} ${body}`).not.toMatch(/adh[aā]n|azan/i);
+    }
+  });
+
+  it('does say those things for a prayer, which is the contrast that matters', () => {
+    const planned = planAlerts({
+      days: [dayFor(0)],
+      alerts: alertSettingsFixture({ on: ['fajr'], preReminderMinutes: 10 }),
+      nowMs: BEFORE_ANY,
+    });
+
+    const atTime = planned.find((alert) => alert.type === 'time');
+    const before = planned.find((alert) => alert.type === 'pre');
+    expect(atTime).toBeDefined();
+    expect(before).toBeDefined();
+    expect(prayerAlertContent(atTime!)).toEqual({
+      title: 'Fajr prayer time',
+      body: 'It is time for Fajr.',
+    });
+    expect(prayerAlertContent(before!)).toEqual({
+      title: 'Fajr soon',
+      body: 'Fajr begins in 10 minutes.',
+    });
   });
 });
 
 describe('the plan uses the displayed instants and nothing else', () => {
   it('carries the repository’s own timestamp through untouched', () => {
     const day = dayFor(0);
-    const planned = planPrayerAlerts({ days: [day], enabled: ALL_FIVE, nowMs: BEFORE_ANY });
+    const planned = planAlerts({ days: [day], alerts: alertsFor(...ALL_FIVE), nowMs: BEFORE_ANY });
 
     for (const alert of planned) {
       const displayed = day.times.find((time) => time.key === alert.prayer);
@@ -174,28 +233,32 @@ describe('the plan uses the displayed instants and nothing else', () => {
   it('excludes prayers that have already passed', () => {
     // Mid-afternoon: Fajr, Dhuhr and Asr are behind us on day one.
     const afternoon = Date.parse('2026-08-13T16:00:00+03:00');
-    const planned = planPrayerAlerts({ days: [dayFor(0)], enabled: ALL_FIVE, nowMs: afternoon });
+    const planned = planAlerts({
+      days: [dayFor(0)],
+      alerts: alertsFor(...ALL_FIVE),
+      nowMs: afternoon,
+    });
 
     expect(planned.map((alert) => alert.prayer)).toEqual(['maghrib', 'isha']);
   });
 
   it('handles the tomorrow-Fajr boundary by scheduling tomorrow’s, not today’s', () => {
     const afterIsha = Date.parse('2026-08-13T22:00:00+03:00');
-    const planned = planPrayerAlerts({
+    const planned = planAlerts({
       days: [dayFor(0), dayFor(1)],
-      enabled: ALL_FIVE,
+      alerts: alertsFor(...ALL_FIVE),
       nowMs: afterIsha,
     });
 
-    expect(planned[0]?.key).toBe(plannedAlertKey('2026-08-14', 'fajr'));
+    expect(planned[0]?.key).toBe(plannedAlertKey('2026-08-14', 'fajr', 'time'));
     expect(planned.some((alert) => alert.calendarDate === '2026-08-13')).toBe(false);
   });
 
   it('produces one alert per prayer per day even if a day repeats', () => {
     // A horizon straddling a DST transition can yield the same calendar date twice.
-    const planned = planPrayerAlerts({
+    const planned = planAlerts({
       days: [dayFor(0), dayFor(0)],
-      enabled: ALL_FIVE,
+      alerts: alertsFor(...ALL_FIVE),
       nowMs: BEFORE_ANY,
     });
 
@@ -204,9 +267,9 @@ describe('the plan uses the displayed instants and nothing else', () => {
   });
 
   it('orders the plan chronologically', () => {
-    const planned = planPrayerAlerts({
+    const planned = planAlerts({
       days: [dayFor(0), dayFor(1)],
-      enabled: ALL_FIVE,
+      alerts: alertsFor(...ALL_FIVE),
       nowMs: BEFORE_ANY,
     });
     const instants = planned.map((alert) => Date.parse(alert.at));
@@ -223,8 +286,9 @@ describe('the fingerprint reacts to every input that changes a prayer time', () 
     method: 'muslim-world-league',
     asr: 'standard',
     offsetsMinutes: {},
-    enabled: ALL_FIVE,
+    alerts: alertsFor(...ALL_FIVE),
     horizonDays: 7,
+    maxPending: MAX_PENDING_ALERTS,
   };
 
   it.each([
@@ -234,7 +298,7 @@ describe('the fingerprint reacts to every input that changes a prayer time', () 
     ['a calculation method change', { method: 'umm-al-qura' }],
     ['a madhab change', { asr: 'hanafi' }],
     ['a per-prayer adjustment', { offsetsMinutes: { fajr: 2 } }],
-    ['a prayer being switched off', { enabled: ['fajr', 'dhuhr'] as readonly PrayerKey[] }],
+    ['a prayer being switched off', { alerts: alertsFor('fajr', 'dhuhr') }],
   ])('changes on %s', (_name, change) => {
     expect(scheduleFingerprint({ ...base, ...change })).not.toBe(scheduleFingerprint(base));
   });
@@ -264,7 +328,10 @@ describe('the fingerprint reacts to every input that changes a prayer time', () 
 
   it('does not depend on the order the prayers were enabled in', () => {
     expect(
-      scheduleFingerprint({ ...base, enabled: ['isha', 'fajr', 'asr', 'dhuhr', 'maghrib'] }),
+      scheduleFingerprint({
+        ...base,
+        alerts: alertsFor('isha', 'fajr', 'asr', 'dhuhr', 'maghrib'),
+      }),
     ).toBe(scheduleFingerprint(base));
   });
 });
@@ -274,7 +341,7 @@ describe('permission is requested only after an explicit choice, and after the c
     const notifications = createFakeNotificationPort({ permission: 'undetermined' });
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     expect(notifications.calls()).not.toContain('requestPermission');
@@ -310,7 +377,7 @@ describe('scheduling', () => {
 
     const status = await reconcilePrayerAlerts(
       { prayerTimes, notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     expect(status.schedule.kind).toBe('scheduled');
@@ -324,7 +391,7 @@ describe('scheduling', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ['fajr'], settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor('fajr'), settings: SETTINGS },
     );
 
     const firstDayFajr = dayFor(0).times.find((time) => time.key === 'fajr');
@@ -336,7 +403,7 @@ describe('scheduling', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ['fajr'], settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor('fajr'), settings: SETTINGS },
     );
 
     for (const entry of notifications.pending()) {
@@ -347,7 +414,7 @@ describe('scheduling', () => {
   it('does nothing on a second run with unchanged inputs', async () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     const dependencies = { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) };
-    const preferences = { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS };
+    const preferences = { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS };
 
     await reconcilePrayerAlerts(dependencies, preferences);
     const afterFirst = notifications.calls().length;
@@ -363,7 +430,7 @@ describe('scheduling', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
     const firstIds = notifications.pending().map((entry) => entry.identifier);
 
@@ -371,7 +438,7 @@ describe('scheduling', () => {
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
       {
         masterEnabled: true,
-        enabledPrayers: ALL_FIVE,
+        alerts: alertsFor(...ALL_FIVE),
         settings: { ...SETTINGS, method: 'umm-al-qura' },
       },
     );
@@ -385,14 +452,14 @@ describe('scheduling', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
       {
         masterEnabled: true,
-        enabledPrayers: ['fajr', 'dhuhr', 'asr', 'maghrib'],
+        alerts: alertsFor('fajr', 'dhuhr', 'asr', 'maghrib'),
         settings: SETTINGS,
       },
     );
@@ -406,12 +473,12 @@ describe('scheduling', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     const status = await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: false, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: false, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     expect(notifications.pending()).toEqual([]);
@@ -424,7 +491,7 @@ describe('failure states are states, not exceptions', () => {
     const notifications = createFakeNotificationPort({ permission: 'denied' });
     const status = await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     expect(notifications.pending()).toEqual([]);
@@ -438,7 +505,7 @@ describe('failure states are states, not exceptions', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     const status = await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository({ location: null }), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     expect(status.schedule).toMatchObject({ kind: 'failed', reason: 'location' });
@@ -455,7 +522,7 @@ describe('failure states are states, not exceptions', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ['fajr'], settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor('fajr'), settings: SETTINGS },
     );
     const before = notifications
       .pending()
@@ -472,6 +539,7 @@ describe('failure states are states, not exceptions', () => {
         channelId: prayerAlertChannel().id,
         at: new Date(BEFORE_ANY + 3_600_000),
         data: { prayer: 'fajr', date: '2026-08-13', kind: 'prayer-alert' },
+        silent: false,
       });
       void identifier;
     }
@@ -479,7 +547,7 @@ describe('failure states are states, not exceptions', () => {
     const refusing = createFakeNotificationPort({ permission: 'granted', failScheduleOnCall: 3 });
     const status = await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications: refusing, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     expect(status.schedule).toMatchObject({ kind: 'failed', reason: 'platform-refused' });
@@ -491,7 +559,7 @@ describe('failure states are states, not exceptions', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     const status = await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository({ failDayIndex: 3 }), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     expect(status.schedule).toMatchObject({ kind: 'failed', reason: 'calculation' });
@@ -504,7 +572,7 @@ describe('reconciliation on launch and resume', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     // A reboot that dropped the alarms. Storage still lists them; the platform has none.
@@ -512,7 +580,7 @@ describe('reconciliation on launch and resume', () => {
 
     const status = await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     expect(status.schedule.kind).toBe('scheduled');
@@ -523,13 +591,13 @@ describe('reconciliation on launch and resume', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     notifications.setPermission('denied');
     const status = await reconcilePrayerAlerts(
       { prayerTimes: fakeRepository(), notifications, now: now(BEFORE_ANY) },
-      { masterEnabled: true, enabledPrayers: ALL_FIVE, settings: SETTINGS },
+      { masterEnabled: true, alerts: alertsFor(...ALL_FIVE), settings: SETTINGS },
     );
 
     expect(status.schedule.kind).toBe('stale');
@@ -544,6 +612,7 @@ describe('the test notification', () => {
       body: 'This is a test.',
       channelId: prayerAlertChannel().id,
       data: { kind: 'test' },
+      silent: false,
     });
 
     const [presented] = notifications.presented();
@@ -643,14 +712,14 @@ describe('the pending count is the horizon minus what has already passed', () =>
 
   it('produces one request per selected prayer per horizon day when nothing has passed', () => {
     const days = Array.from({ length: SCHEDULE_HORIZON_DAYS }, (_unused, index) => dayFor(index));
-    const planned = planPrayerAlerts({ days, enabled: ['fajr'], nowMs: BEFORE_ANY });
+    const planned = planAlerts({ days, alerts: alertsFor('fajr'), nowMs: BEFORE_ANY });
 
     expect(planned).toHaveLength(SCHEDULE_HORIZON_DAYS);
   });
 
   it('drops only today’s occurrence once it is past, leaving six', () => {
     const days = Array.from({ length: SCHEDULE_HORIZON_DAYS }, (_unused, index) => dayFor(index));
-    const planned = planPrayerAlerts({ days, enabled: ['fajr'], nowMs: AFTERNOON_DAY_ONE });
+    const planned = planAlerts({ days, alerts: alertsFor('fajr'), nowMs: AFTERNOON_DAY_ONE });
 
     /* The device result, reproduced from the same arithmetic: 7 days − 1 past = 6. */
     expect(planned).toHaveLength(SCHEDULE_HORIZON_DAYS - 1);
@@ -660,7 +729,7 @@ describe('the pending count is the horizon minus what has already passed', () =>
 
   it('gives every request a distinct date and prayer, spanning consecutive days', () => {
     const days = Array.from({ length: SCHEDULE_HORIZON_DAYS }, (_unused, index) => dayFor(index));
-    const planned = planPrayerAlerts({ days, enabled: ['fajr'], nowMs: AFTERNOON_DAY_ONE });
+    const planned = planAlerts({ days, alerts: alertsFor('fajr'), nowMs: AFTERNOON_DAY_ONE });
 
     const keys = planned.map((alert) => alert.key);
     expect(new Set(keys).size).toBe(keys.length);
@@ -673,20 +742,20 @@ describe('the pending count is the horizon minus what has already passed', () =>
 
   it('cannot count a sunrise or a test notification among them', () => {
     const days = Array.from({ length: SCHEDULE_HORIZON_DAYS }, (_unused, index) => dayFor(index));
-    const planned = planPrayerAlerts({ days, enabled: ['fajr'], nowMs: AFTERNOON_DAY_ONE });
+    const planned = planAlerts({ days, alerts: alertsFor('fajr'), nowMs: AFTERNOON_DAY_ONE });
 
     expect(planned.some((alert) => alert.prayer === 'sunrise')).toBe(false);
     /* Every key is `date:prayer`, so nothing that is not a planned prayer can occupy a slot. */
     for (const alert of planned) {
-      expect(alert.key).toBe(plannedAlertKey(alert.calendarDate, alert.prayer));
+      expect(alert.key).toBe(plannedAlertKey(alert.calendarDate, alert.prayer, alert.type));
     }
   });
 
   it('collapses a repeated day rather than scheduling it twice', () => {
     /* A horizon straddling a DST transition can return the same calendar day twice. */
-    const planned = planPrayerAlerts({
+    const planned = planAlerts({
       days: [dayFor(0), dayFor(0), dayFor(1)],
-      enabled: ['fajr'],
+      alerts: alertsFor('fajr'),
       nowMs: BEFORE_ANY,
     });
     expect(planned).toHaveLength(2);
@@ -708,7 +777,7 @@ describe('reconciliation is idempotent', () => {
     };
     const preferences = {
       masterEnabled: true,
-      enabledPrayers: ['fajr'] as readonly PrayerKey[],
+      alerts: alertsFor('fajr'),
       settings: SETTINGS,
     };
 
@@ -736,7 +805,7 @@ describe('reconciliation is idempotent', () => {
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     const preferences = {
       masterEnabled: true,
-      enabledPrayers: ['fajr'] as readonly PrayerKey[],
+      alerts: alertsFor('fajr'),
       settings: SETTINGS,
     };
 

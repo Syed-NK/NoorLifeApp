@@ -407,9 +407,15 @@ export type PrayerTimesRepository = {
     settings: PrayerCalculationSettings,
   ): Promise<FaithResult<NextPrayer>>;
 
-  readNotificationPreferences(): Promise<FaithResult<readonly PrayerNotificationPreference[]>>;
+  /*
+    ── `readNotificationPreferences` / `writeNotificationPreferences` were removed here ──────
+    They read and wrote the same stored blob as `faith-preferences.ts`, through a second door.
+    Nothing in the app ever called them — only test doubles implemented them — and a second
+    writer to preferences is not a harmless spare: the store serialises its mutations precisely
+    so that two changes in flight cannot erase one another, and a caller reaching the blob
+    around it gets none of that. That failure has already happened once in this module.
 
-  writeNotificationPreferences(
-    preferences: readonly PrayerNotificationPreference[],
-  ): Promise<FaithResult<readonly PrayerNotificationPreference[]>>;
+    Notification settings are read through `useFaithPreferences` and written through its
+    `update`, which is the one authoritative path. The repository's job is prayer times.
+  */
 };

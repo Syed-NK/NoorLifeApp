@@ -10,6 +10,10 @@ import {
   createFakeNotificationPort,
   type FakeNotificationPort,
 } from '../data/notifications/fake-notification.port';
+import {
+  canEverPlayFullAdhan,
+  NOTIFIABLE_TIMES,
+} from '../data/notifications/prayer-alert-preferences';
 import { OBLIGATORY_PRAYERS } from '../data/prayer-times.repository';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { PrayerRemindersScreen } from '../screens/prayer-reminders-screen';
@@ -116,14 +120,20 @@ describe('the switches are independently reachable', () => {
     expect(master.props.value).toBe(false);
   });
 
-  it('keeps every per-prayer switch independently reachable', async () => {
+  it('keeps every per-time switch independently reachable', async () => {
     const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
     await drain();
 
-    for (const prayer of OBLIGATORY_PRAYERS) {
-      expect(view.getByTestId(`faith-prayer-reminder-row-${prayer}`).props.accessible).toBe(false);
-      const control = view.getByTestId(`faith-prayer-reminder-${prayer}`);
-      expect(String(control.props.accessibilityLabel)).toContain('alert');
+    /*
+      All six now, sunrise included. The row is not `accessible`, so its switch stays an
+      independent node — the release defect where six switches vanished from the Android
+      accessibility tree while every Jest assertion passed. Verify on device with `uiautomator
+      dump`; this only pins the props that make it possible.
+    */
+    for (const time of NOTIFIABLE_TIMES) {
+      expect(view.getByTestId(`faith-prayer-reminder-row-${time}`).props.accessible).toBe(false);
+      const control = view.getByTestId(`faith-prayer-reminder-${time}`);
+      expect(String(control.props.accessibilityLabel)).toContain('Notify me for');
       expect(control.props.accessibilityHint).toBeDefined();
     }
   });
@@ -158,16 +168,31 @@ describe('the switches are independently reachable', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('the screen reports what is scheduled, not what is preferred', () => {
-  it('offers the five obligatory prayers and never sunrise', async () => {
+  it('offers all six times, and marks the one that is not a prayer', async () => {
     const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
     await drain();
 
+    /*
+      ── What changed ──────────────────────────────────────────────────────
+      Sunrise used to have no row at all: the list was built from `OBLIGATORY_PRAYERS`, so it was
+      structurally absent. It is now offered as an ordinary reminder, and what keeps it honest is
+      no longer its absence but the two things asserted below — the row says it is a time marker,
+      and the domain still refuses it a call to prayer.
+    */
     expect(OBLIGATORY_PRAYERS).toEqual(['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']);
-    for (const prayer of OBLIGATORY_PRAYERS) {
-      expect(view.getByTestId(`faith-prayer-reminder-${prayer}`)).toBeTruthy();
+    for (const time of NOTIFIABLE_TIMES) {
+      expect(view.getByTestId(`faith-prayer-reminder-${time}`)).toBeTruthy();
     }
-    /* Structurally absent: the rows are built from the domain's own list of the five. */
-    expect(view.queryByTestId('faith-prayer-reminder-sunrise')).toBeNull();
+    expect(view.getByTestId('faith-prayer-reminder-sunrise')).toBeTruthy();
+
+    /*
+      Asserted on the rendered text rather than the row's `accessibilityLabel`: a row with an
+      interactive trailing control is deliberately not `accessible`, so the utterance lives on its
+      text column. The visible words are what a sighted reader gets and what a screen reader reads
+      from that column, so this is the stronger of the two assertions anyway.
+    */
+    expect(view.getByText(/time marker, not a prayer/)).toBeTruthy();
+    expect(canEverPlayFullAdhan('sunrise')).toBe(false);
   });
 
   it('does not claim a schedule when permission alone is granted', async () => {
@@ -297,5 +322,144 @@ describe('the screen reports what is scheduled, not what is preferred', () => {
 
     /* Same inputs, same identifiers still pending: the cheap path does no platform work at all. */
     expect(notifications.pending()).toHaveLength(first);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Permission is asked for once, and only by an explicit switch
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the OS is asked only when a person switches something on', () => {
+  it('asks for nothing while the screen merely renders', async () => {
+    const notifications = createFakeNotificationPort({ permission: 'undetermined' });
+    await renderReminders(notifications);
+    await drain(30);
+
+    expect(notifications.calls()).not.toContain('requestPermission');
+    expect(notifications.pending()).toEqual([]);
+  });
+
+  it('asks when a time is switched on, and creates the channel first', async () => {
+    /*
+      The order is the point. On Android 13+ the system permission dialog lists the app's channels,
+      so a prompt raised before the channel exists describes nothing — and the channel created
+      afterwards takes whatever importance the OS defaulted to rather than the one asked for.
+    */
+    await seedPreferences({ prayerNotificationsEnabled: true });
+    const notifications = createFakeNotificationPort({ permission: 'undetermined' });
+    const view = await renderReminders(notifications);
+    await drain(30);
+
+    fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', true);
+    await drain(30);
+
+    const calls = notifications.calls();
+    const channel = calls.findIndex((call) => call.startsWith('ensureChannel:'));
+    const prompt = calls.indexOf('requestPermission');
+    expect(channel).toBeGreaterThanOrEqual(0);
+    expect(prompt).toBeGreaterThan(channel);
+  });
+
+  it('does not ask again when a second time is switched on', async () => {
+    await seedPreferences({ prayerNotificationsEnabled: true });
+    const notifications = createFakeNotificationPort({ permission: 'granted' });
+    const view = await renderReminders(notifications);
+    await drain(30);
+
+    fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', true);
+    await drain(30);
+    fireEvent(view.getByTestId('faith-prayer-reminder-asr'), 'valueChange', true);
+    await drain(30);
+
+    /* Already granted: there is nothing to ask, and asking anyway is how an app gets muted. */
+    expect(notifications.calls().filter((call) => call === 'requestPermission')).toEqual([]);
+  });
+
+  it('never asks when a time is switched off', async () => {
+    await seedPreferences({
+      prayerNotificationsEnabled: true,
+      prayerAlerts: [
+        {
+          time: 'fajr',
+          notify: true,
+          repeatDays: [0, 1, 2, 3, 4, 5, 6],
+          preReminderMinutes: 0,
+          sound: 'system-default',
+        },
+      ],
+    });
+    const notifications = createFakeNotificationPort({ permission: 'undetermined' });
+    const view = await renderReminders(notifications);
+    await drain(30);
+
+    fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', false);
+    await drain(30);
+
+    expect(notifications.calls()).not.toContain('requestPermission');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The per-time sheet, from the reminders screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('each row opens its own settings, and the choices survive a restart', () => {
+  it('opens the sheet for the row that was pressed', async () => {
+    const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
+    await drain(30);
+
+    fireEvent.press(view.getByTestId('faith-prayer-reminder-row-isha'));
+    await drain(10);
+
+    expect(view.getByTestId('faith-prayer-alert-sheet-isha')).toBeTruthy();
+    expect(view.queryByTestId('faith-prayer-alert-sheet-fajr')).toBeNull();
+  });
+
+  it('keeps a repeat-day and pre-reminder choice across a remount', async () => {
+    /*
+      The force-stop case, as far as Jest can reach it: the store is reset and re-hydrated from
+      storage, which is what a relaunch does. What is asserted is that the *stored* choice is what
+      comes back — not the default the screen would show if the write had not landed.
+    */
+    await seedPreferences({
+      prayerNotificationsEnabled: true,
+      prayerAlerts: [
+        { time: 'asr', notify: true, repeatDays: [1, 3], preReminderMinutes: 15, sound: 'silent' },
+      ],
+    });
+
+    const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
+    await drain(30);
+
+    fireEvent.press(view.getByTestId('faith-prayer-reminder-row-asr'));
+    await drain(10);
+
+    const sheet = 'faith-prayer-alert-sheet-asr';
+    expect(view.getByTestId(`${sheet}-notify`).props.value).toBe(true);
+    expect(String(view.getByTestId(`${sheet}-repeat-summary`).props.children)).toBe('Mon, Wed');
+    expect(view.getByTestId(`${sheet}-pre-15`).props.accessibilityState.selected).toBe(true);
+    expect(view.getByTestId(`${sheet}-sound-silent`).props.accessibilityState.selected).toBe(true);
+  });
+
+  it('reports the full adhān as unavailable wherever the sheet is opened from', async () => {
+    const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
+    await drain(30);
+
+    fireEvent.press(view.getByTestId('faith-prayer-reminder-row-fajr'));
+    await drain(10);
+
+    const control = view.getByTestId('faith-prayer-alert-sheet-fajr-full-adhan');
+    expect(control.props.disabled).toBe(true);
+    expect(control.props.value).toBe(false);
+  });
+
+  it('says on the screen itself that no adhān is available', async () => {
+    const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
+    await drain(30);
+
+    /* Stated rather than omitted: somebody looking for the feature should learn it is absent here. */
+    const line = view.getByTestId('faith-prayer-notification-full-adhan');
+    expect(String(line.props.accessibilityLabel)).toMatch(/full adh/i);
+    expect(String(line.props.accessibilityLabel)).toMatch(/not available|no licensed/i);
   });
 });

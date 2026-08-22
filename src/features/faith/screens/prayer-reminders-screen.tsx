@@ -8,11 +8,19 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
 import { FaithScreen, FaithSuccessBanner } from '../components/faith-screen';
-import { SCHEDULE_HORIZON_DAYS } from '../data/notifications/prayer-alert-plan';
-import { prayerAlertSoundLabel } from '../data/notifications/prayer-alert-sound';
+import { PrayerAlertSheet } from '../components/prayer-alert-sheet';
+import { MAX_PENDING_ALERTS, SCHEDULE_HORIZON_DAYS } from '../data/notifications/prayer-alert-plan';
+import {
+  isObligatory,
+  NOTIFIABLE_TIMES,
+  preReminderLabel,
+  repeatDaysLabel,
+  type PrayerAlertSettings,
+} from '../data/notifications/prayer-alert-preferences';
+import { fullAdhanAvailability } from '../data/notifications/prayer-alert-sound';
 import type { PrayerAlertStatus } from '../data/notifications/prayer-notifications.service';
 import { formatPrayerClock } from '../data/prayer/prayer-clock';
-import { OBLIGATORY_PRAYERS, type PrayerKey } from '../data/prayer-times.repository';
+import { type PrayerKey } from '../data/prayer-times.repository';
 import { faithNavKeys } from '../faith-routes';
 import { useFaithPreferences } from '../hooks/use-faith-preferences';
 import { usePrayerNotifications } from '../hooks/use-prayer-notifications';
@@ -32,19 +40,30 @@ import { usePrayerNotifications } from '../hooks/use-prayer-notifications';
  * per-channel settings can each suppress one silently. So every state below is reported separately,
  * and `deliveryVerifiable` is a field rather than a comment.
  *
- * ── Sunrise has no switch, and cannot ───────────────────────────────────────
- * The rows are built from `OBLIGATORY_PRAYERS`, the domain's own list of the five. Sunrise is a
- * clock reading, not an act of worship, and there is no code path that could offer an alert for it.
+ * ── Sunrise has a switch now, and still is not a prayer ─────────────────────
+ * It used to be structurally absent: the rows were built from `OBLIGATORY_PRAYERS` and no code path
+ * could offer an alert for it. It is now offered, because a reminder that the night prayer window
+ * has closed is a reasonable thing to want — and everything that made it *not a prayer* is still
+ * enforced, in the places that decide rather than by leaving it off a list: its notification never
+ * says "prayer time", and its full-adhān row says sunrise never plays one rather than "not yet".
+ *
+ * ── Where the per-time choices live ─────────────────────────────────────────
+ * In a sheet opened from the row, not on this screen. Repeat days, a pre-reminder and a sound are
+ * three controls each; six times would be eighteen controls in one scroll, and the question a user
+ * has is about one prayer at a time. The row keeps its switch — a fast on/off is worth having — and
+ * pressing the row opens everything else.
  */
 export function PrayerRemindersScreen() {
   const { dp } = useModuleMetrics();
   const { preferences, persistenceError } = useFaithPreferences();
   const notifications = usePrayerNotifications();
   const [tested, setTested] = useState<'sent' | 'failed' | null>(null);
+  /** Which time’s sheet is open, or `null`. One at a time, by construction. */
+  const [openSheet, setOpenSheet] = useState<PrayerKey | null>(null);
 
   const { status } = notifications;
-  const enabledFor = (prayer: PrayerKey): boolean =>
-    preferences.prayerNotifications.find((entry) => entry.prayer === prayer)?.enabled ?? false;
+  const settingsFor = (time: PrayerKey): PrayerAlertSettings => notifications.settingsForTime(time);
+  const adhan = fullAdhanAvailability();
 
   return (
     <FaithScreen
@@ -125,38 +144,42 @@ export function PrayerRemindersScreen() {
         </FaithRowGroup>
 
         {/*
-          Built from the domain's five. Sunrise is structurally absent — see the note above.
+          All six of the day’s times. Sunrise is among them and is labelled as a time marker; what
+          makes it not a prayer is enforced where it matters, not by leaving it off this list.
         */}
-        <FaithRowGroup title="Prayers" testID="faith-prayer-reminders">
-          {OBLIGATORY_PRAYERS.map((prayer) => (
+        <FaithRowGroup title="Times" testID="faith-prayer-reminders">
+          {NOTIFIABLE_TIMES.map((time) => (
             <FaithRow
-              key={prayer}
-              title={capitalise(prayer)}
+              key={time}
+              title={capitalise(time)}
               /*
-                The per-prayer row says what the *preference* is, and says so in preference words.
-                Whether that preference produced a pending request is the master row's and the status
-                panel's business — five rows each claiming "scheduled" would be five chances to make
-                a promise the platform has not confirmed.
+                The row states the *preference*, in preference words. Whether it produced a pending
+                request is the status panel’s business — six rows each claiming "scheduled" would be
+                six chances to make a promise the platform has not confirmed.
               */
-              subtitle={perPrayerSubtitle(enabledFor(prayer), status)}
+              subtitle={perTimeSubtitle(settingsFor(time), isObligatory(time))}
               icon="notification"
+              onPress={() => setOpenSheet(time)}
               trailing={
                 <Switch
-                  value={enabledFor(prayer)}
-                  onValueChange={(value) => void notifications.setPrayerEnabled(prayer, value)}
+                  value={settingsFor(time).notify}
+                  onValueChange={(value) => void notifications.setNotify(time, value)}
                   disabled={!preferences.prayerNotificationsEnabled}
-                  accessibilityLabel={`${capitalise(prayer)} alert`}
+                  accessibilityLabel={`Notify me for ${capitalise(time)}`}
                   accessibilityHint={
                     preferences.prayerNotificationsEnabled
-                      ? `Turns the ${capitalise(prayer)} reminder on or off`
-                      : 'Enable prayer notifications first'
+                      ? `Turns the ${capitalise(time)} notification on or off`
+                      : 'Switch prayer notifications on first'
                   }
-                  testID={`faith-prayer-reminder-${prayer}`}
+                  testID={`faith-prayer-reminder-${time}`}
                 />
               }
               trailingInteractive
-              accessibilityLabel={`${capitalise(prayer)} alert, ${enabledFor(prayer) ? 'on' : 'off'}.`}
-              testID={`faith-prayer-reminder-row-${prayer}`}
+              accessibilityLabel={`${capitalise(time)}. ${perTimeSubtitle(
+                settingsFor(time),
+                isObligatory(time),
+              )}. Opens its notification settings.`}
+              testID={`faith-prayer-reminder-row-${time}`}
             />
           ))}
         </FaithRowGroup>
@@ -182,8 +205,8 @@ export function PrayerRemindersScreen() {
               testID="preference"
             />
             <StatusLine
-              label="Prayers selected"
-              value={selectedPrayersText(preferences.prayerNotifications)}
+              label="Times selected"
+              value={selectedTimesText(preferences.prayerAlerts)}
               testID="selected"
             />
             <StatusLine
@@ -197,7 +220,17 @@ export function PrayerRemindersScreen() {
               value={reconciliationText(status, notifications.busy)}
               testID="reconciliation"
             />
-            <StatusLine label="Sound" value={prayerAlertSoundLabel()} testID="sound" />
+            <StatusLine label="Sound" value={soundsText(preferences.prayerAlerts)} testID="sound" />
+            {/*
+              Stated rather than omitted. A user looking for a call to prayer should find out here
+              that NoorLife does not have one, instead of concluding it failed to play.
+            */}
+            <StatusLine
+              label="Full adhān"
+              value={adhan.available ? adhan.reason : 'Not available'}
+              hint={adhan.available ? undefined : adhan.reason}
+              testID="full-adhan"
+            />
             <StatusLine
               label="Location used for scheduling"
               value={preferences.locationLabel ?? 'Set on the Prayer Times screen'}
@@ -262,6 +295,28 @@ export function PrayerRemindersScreen() {
           ]}
         </FaithRowGroup>
       </View>
+
+      {/*
+        One sheet, for whichever time was pressed. Rendered at the screen’s root rather than inside
+        a row so that a row unmounting — which a preference change causes — cannot take the open
+        sheet with it.
+      */}
+      {openSheet === null ? null : (
+        <PrayerAlertSheet
+          time={openSheet}
+          label={capitalise(openSheet)}
+          settings={settingsFor(openSheet)}
+          masterEnabled={preferences.prayerNotificationsEnabled}
+          permission={status?.permission ?? 'undetermined'}
+          exactAlarms={status?.exactAlarms ?? 'unknown'}
+          onSetNotify={(notify) => void notifications.setNotify(openSheet, notify)}
+          onSetRepeatDays={(days) => void notifications.setRepeatDays(openSheet, days)}
+          onSetPreReminder={(minutes) => void notifications.setPreReminder(openSheet, minutes)}
+          onSetSound={(sound) => void notifications.setSound(openSheet, sound)}
+          onOpenSystemSettings={() => void notifications.openSystemSettings()}
+          onClose={() => setOpenSheet(null)}
+        />
+      )}
     </FaithScreen>
   );
 }
@@ -279,7 +334,7 @@ export function PrayerRemindersScreen() {
  * Stated in the UI because the count is the number a user would otherwise have to guess at, and
  * because a number nobody can check is a number nobody can challenge.
  */
-const horizonHint = `One request per selected prayer for each of the next ${SCHEDULE_HORIZON_DAYS} days. Times already past today are not scheduled.`;
+const horizonHint = `Up to ${MAX_PENDING_ALERTS} requests, covering at most ${SCHEDULE_HORIZON_DAYS} days: one per selected time each day, plus one for each pre-reminder. Times already past today are not scheduled, and the soonest are kept when the ceiling is reached.`;
 
 function StatusLine({
   label,
@@ -347,13 +402,26 @@ function masterSubtitle(status: PrayerAlertStatus | null): string {
  * nothing pending — otherwise five rows would read "Alert at the prayer time" over a schedule that
  * does not exist, which is the same claim the master row was corrected for.
  */
-function perPrayerSubtitle(enabled: boolean, status: PrayerAlertStatus | null): string {
-  if (!enabled) {
-    return 'Off';
+/**
+ * One line describing a time's own choices.
+ *
+ * Built from the settings alone and never from the schedule state, so it cannot imply that
+ * something is pending. "Every day" is what the user chose; whether the device will deliver it is
+ * four separate lines in the status panel.
+ */
+export function perTimeSubtitle(settings: PrayerAlertSettings, prayer: boolean): string {
+  const marker = prayer ? '' : ' · time marker, not a prayer';
+  if (!settings.notify) {
+    return `Off${marker}`;
   }
-  return status !== null && status.preferenceEnabled && status.schedule.kind === 'scheduled'
-    ? 'Alert at the prayer time'
-    : 'Selected';
+  if (settings.repeatDays.length === 0) {
+    return `On, but no days selected${marker}`;
+  }
+  const before =
+    settings.preReminderMinutes === 0
+      ? ''
+      : ` · ${preReminderLabel(settings.preReminderMinutes)} before`;
+  return `${repeatDaysLabel(settings.repeatDays)}${before}${marker}`;
 }
 
 function bannerMessage(status: PrayerAlertStatus | null): string {
@@ -402,11 +470,27 @@ function countLabel(count: number): string {
   return count === 1 ? '1 alert' : `${count} alerts`;
 }
 
-function selectedPrayersText(
-  entries: readonly { readonly prayer: PrayerKey; readonly enabled: boolean }[],
-): string {
-  const on = entries.filter((entry) => entry.enabled).map((entry) => capitalise(entry.prayer));
+function selectedTimesText(entries: readonly PrayerAlertSettings[]): string {
+  const on = entries.filter((entry) => entry.notify).map((entry) => capitalise(entry.time));
   return on.length === 0 ? 'None' : on.join(', ');
+}
+
+/**
+ * Which sounds the switched-on times are using.
+ *
+ * A summary rather than one value, because the choice is per time now. It names both when they
+ * differ, so a user who silenced Fajr alone is not told everything is silent.
+ */
+function soundsText(entries: readonly PrayerAlertSettings[]): string {
+  const on = entries.filter((entry) => entry.notify);
+  if (on.length === 0) {
+    return 'System default';
+  }
+  const silent = on.filter((entry) => entry.sound === 'silent').length;
+  if (silent === 0) {
+    return 'System default';
+  }
+  return silent === on.length ? 'Silent' : 'System default for some times, silent for others';
 }
 
 /**

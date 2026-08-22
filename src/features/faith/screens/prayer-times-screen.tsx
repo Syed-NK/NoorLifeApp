@@ -15,6 +15,7 @@ import { FaithPictogramDevAudit } from '../components/faith-pictogram-dev-audit'
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
 import { FaithSectionHero } from '../components/faith-section-hero';
 import { PrayerActionCards } from '../components/prayer-action-cards';
+import { PrayerAlertSheet } from '../components/prayer-alert-sheet';
 import {
   prayerDashboardMode,
   prayerDashboardSafeBodyHeight,
@@ -33,6 +34,7 @@ import {
   formatPrayerClock,
   formatRemaining,
 } from '../data/prayer/prayer-clock';
+import { isNotifiable } from '../data/notifications/prayer-alert-preferences';
 import { prayerIntervalProgress, prayerMarkerState } from '../data/prayer/prayer-interval';
 import type { DailyPrayerTimes, NextPrayer, PrayerKey } from '../data/prayer-times.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
@@ -48,6 +50,7 @@ import {
 } from '../hooks/use-location-refresh';
 import { permissionAdvice, useLocationPermission } from '../hooks/use-location-permission';
 import { usePrayerCountdown } from '../hooks/use-prayer-countdown';
+import { usePrayerNotifications } from '../hooks/use-prayer-notifications';
 import { useTopOnEntry } from '../hooks/use-top-on-entry';
 
 /**
@@ -318,6 +321,25 @@ function PrayerDay({
   const router = useRouter();
 
   /**
+   * The notification coordinator, **without** reconciling on mount.
+   *
+   * ── Why `false` is load-bearing here ────────────────────────────────────
+   * A reconciliation costs one `getDailyTimes` per day of the horizon. Paying that to *display* the
+   * prayer times would make the screen’s mount several times more expensive for a schedule nothing
+   * on this screen has changed yet. When a setting does change, the preference write publishes new
+   * schedule inputs and the reconciliation follows from that — which is the same path the reminders
+   * screen uses, so there is one trigger rather than two.
+   */
+  const notifications = usePrayerNotifications(false);
+  /*
+    The master switch, for the sheet. Read here rather than threaded down from the screen: the store
+    is a subscription, so a second reader costs a subscription and not a second source of truth.
+  */
+  const { preferences } = useFaithPreferences();
+  /** Which time’s sheet is open, or `null`. */
+  const [alertSheet, setAlertSheet] = useState<PrayerKey | null>(null);
+
+  /**
    * The live countdown, from the same hook the hero and Main Home use.
    *
    * Deliberately not `next.minutesUntil`: that figure is computed once, when the repository was
@@ -355,6 +377,12 @@ function PrayerDay({
     state: prayerMarkerState(time.at, highlighted?.at ?? null, now),
     /* Sunrise is a clock reading, not an act of worship, and every surface here honours that. */
     isPrayer: time.key !== 'sunrise',
+    /*
+      Drawn from the stored preference, not from the schedule. The bell says what the user asked
+      for; whether the platform will deliver it is four separate facts and belongs on the reminders
+      screen, not on a 36 dp glyph.
+    */
+    notifyOn: notifications.settingsForTime(time.key).notify,
   }));
 
   /*
@@ -550,8 +578,38 @@ function PrayerDay({
       <PrayerJourneyTimeline
         entries={entries}
         dayBoundaryNote={dayBoundaryNote}
+        /*
+          Reads the delivery state as the sheet opens, so the sheet can be honest about permission
+          and timing without this screen having reconciled a schedule. `getPermission` never
+          prompts, so opening a settings surface cannot raise a system dialog.
+        */
+        onOpenNotificationSettings={(key) => {
+          if (!isNotifiable(key as PrayerKey)) {
+            return;
+          }
+          setAlertSheet(key as PrayerKey);
+          void notifications.refreshDelivery();
+        }}
         testID="faith-prayer-journey"
       />
+
+      {alertSheet === null ? null : (
+        <PrayerAlertSheet
+          time={alertSheet}
+          /* The repository’s own label for the time, never a string built here. */
+          label={day.times.find((time) => time.key === alertSheet)?.label ?? alertSheet}
+          settings={notifications.settingsForTime(alertSheet)}
+          masterEnabled={preferences.prayerNotificationsEnabled}
+          permission={notifications.delivery?.permission ?? 'undetermined'}
+          exactAlarms={notifications.delivery?.exactAlarms ?? 'unknown'}
+          onSetNotify={(notify) => void notifications.setNotify(alertSheet, notify)}
+          onSetRepeatDays={(days) => void notifications.setRepeatDays(alertSheet, days)}
+          onSetPreReminder={(minutes) => void notifications.setPreReminder(alertSheet, minutes)}
+          onSetSound={(sound) => void notifications.setSound(alertSheet, sound)}
+          onOpenSystemSettings={() => void notifications.openSystemSettings()}
+          onClose={() => setAlertSheet(null)}
+        />
+      )}
 
       {/*
         ── Development only, both of them ──────────────────────────────────────

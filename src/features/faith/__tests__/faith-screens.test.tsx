@@ -266,8 +266,6 @@ describe('repository swapping', () => {
         getDailyTimes: async () => permissionRequired,
         getMonthlyTimes: async () => permissionRequired,
         getNextPrayer: async () => permissionRequired,
-        readNotificationPreferences: async () => ({ kind: 'ok', data: [] }),
-        writeNotificationPreferences: async () => ({ kind: 'ok', data: [] }),
       },
     });
 

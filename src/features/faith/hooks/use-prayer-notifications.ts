@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 
+import type {
+  ExactAlarmCapability,
+  NotificationPermission,
+} from '../data/notifications/notification.port';
 import {
   prayerAlertChannel,
   reconcilePrayerAlerts,
   requestPrayerAlertPermission,
   type PrayerAlertStatus,
 } from '../data/notifications/prayer-notifications.service';
-import { OBLIGATORY_PRAYERS, type PrayerKey } from '../data/prayer-times.repository';
+import {
+  alertSettingsFingerprint,
+  enableSettings,
+  NOTIFIABLE_TIMES,
+  normaliseRepeatDays,
+  settingsFor,
+  type AlertSoundChoice,
+  type PrayerAlertSettings,
+  type PreReminderMinutes,
+} from '../data/notifications/prayer-alert-preferences';
+import { type PrayerKey } from '../data/prayer-times.repository';
 import { useFaithRepositories } from '../di/faith-repository-context';
 import type { FaithPreferences } from '../storage/faith-preferences';
 import { getFaithPreferencesSnapshot } from '../state/faith-preferences-store';
@@ -31,12 +45,42 @@ import { useFaithPreferences } from './use-faith-preferences';
 
 export type UsePrayerNotifications = {
   readonly status: PrayerAlertStatus | null;
+  /**
+   * Whether the OS will deliver, and how precisely — without building a schedule.
+   *
+   * ── Why this exists separately from `status` ──────────────────────────────
+   * `status` is the product of a full reconciliation, which costs one prayer-time calculation per
+   * day of the horizon. The Prayer screen must not pay that on mount, so it takes the hook with
+   * `reconcileOnMount` false — and then `status` is `null`, and a sheet reading permission from it
+   * would tell a user who has already granted permission that NoorLife has never asked.
+   *
+   * Two port reads answer that question and nothing else. Cheap enough to run when a sheet opens.
+   */
+  readonly delivery: {
+    readonly permission: NotificationPermission;
+    readonly exactAlarms: ExactAlarmCapability;
+  } | null;
+  /** Reads the delivery state above. No scheduling, no prayer-time calculation, never a prompt. */
+  readonly refreshDelivery: () => Promise<void>;
   /** True while a reconciliation is in flight. The screen keeps rendering the previous status. */
   readonly busy: boolean;
   /** Turns the master switch on or off, requesting permission the first time it goes on. */
   readonly setMasterEnabled: (enabled: boolean) => Promise<void>;
-  /** Turns one prayer on or off. Never offered for sunrise — it is not in `OBLIGATORY_PRAYERS`. */
-  readonly setPrayerEnabled: (prayer: PrayerKey, enabled: boolean) => Promise<void>;
+  /**
+   * Turns one time's notifications on or off, requesting permission the first time one goes on.
+   *
+   * Switching on also fills in all seven repeat days when none have been chosen — see
+   * `enableSettings`, which is where that rule lives so the sheet and this hook cannot disagree.
+   */
+  readonly setNotify: (time: PrayerKey, notify: boolean) => Promise<void>;
+  /** Replaces the repeat days for one time. Sunday is `0`. */
+  readonly setRepeatDays: (time: PrayerKey, days: readonly number[]) => Promise<void>;
+  /** Sets the pre-reminder for one time. `0` is None. */
+  readonly setPreReminder: (time: PrayerKey, minutes: PreReminderMinutes) => Promise<void>;
+  /** Sets the sound for one time. */
+  readonly setSound: (time: PrayerKey, sound: AlertSoundChoice) => Promise<void>;
+  /** One time's current settings, always defined. */
+  readonly settingsForTime: (time: PrayerKey) => PrayerAlertSettings;
   /** Rebuilds the schedule from current inputs. */
   readonly refreshSchedule: () => Promise<void>;
   /** Shows a clearly-labelled test notification through the prayer-alert channel. */
@@ -53,24 +97,26 @@ export type UsePrayerNotifications = {
  *   form. Measured: it dominated the location screen's mount.
  */
 /**
- * The switched-on prayers, filtered to the five.
+ * Every notifiable time's settings, normalised.
  *
- * The filter is belt and braces rather than defensive clutter: sunrise is not offered as a switch and
- * is not in `DEFAULT_NOTIFICATIONS`, so it cannot reach here through the UI — but the preference blob
- * is user-writable storage, and a `sunrise` entry arriving from a future build or a corrupted read
- * must not become a scheduled alert. Sunrise is a clock reading, not an act of worship.
+ * The preference blob is user-writable storage, so it can be missing a time, hold one twice, or
+ * hold a repeat day that is not a day. `normaliseAllAlertSettings` — applied on read by
+ * `migratePrayerAlerts` — has already made all of that well-formed; this reads the result.
+ *
+ * Sunrise is included, and that is the change. It may be switched on as an ordinary reminder. What
+ * it may never be is announced as a prayer or given a call to prayer, and neither of those is
+ * decided here: the planner chooses its wording from `isObligatory`, and the sheet refuses the
+ * full-adhān row for it.
  */
-function obligatoryEnabled(preferences: FaithPreferences): readonly PrayerKey[] {
-  return preferences.prayerNotifications
-    .filter((entry) => entry.enabled)
-    .map((entry) => entry.prayer)
-    .filter((prayer) => OBLIGATORY_PRAYERS.includes(prayer));
+function alertSettings(preferences: FaithPreferences): readonly PrayerAlertSettings[] {
+  return preferences.prayerAlerts;
 }
 
 export function usePrayerNotifications(reconcileOnMount = true): UsePrayerNotifications {
   const { prayerTimes, notifications } = useFaithRepositories();
   const { preferences, ready, update } = useFaithPreferences();
   const [status, setStatus] = useState<PrayerAlertStatus | null>(null);
+  const [delivery, setDelivery] = useState<UsePrayerNotifications['delivery']>(null);
   const [busy, setBusy] = useState(false);
 
   /**
@@ -83,7 +129,14 @@ export function usePrayerNotifications(reconcileOnMount = true): UsePrayerNotifi
    */
   const scheduleInputs = [
     preferences.prayerNotificationsEnabled,
-    obligatoryEnabled(preferences).join(','),
+    /*
+      Every per-time choice, not merely which times are on. A repeat day removed or a pre-reminder
+      changed has to re-reconcile, and it is the same fingerprint the service compares, so a change
+      here and a change there cannot drift apart.
+    */
+    NOTIFIABLE_TIMES.map((time) =>
+      alertSettingsFingerprint(settingsFor(alertSettings(preferences), time)),
+    ).join(';'),
     preferences.calculationMethod,
     preferences.asrMethod,
   ].join('|');
@@ -123,7 +176,7 @@ export function usePrayerNotifications(reconcileOnMount = true): UsePrayerNotifi
       { prayerTimes, notifications, now: () => new Date() },
       {
         masterEnabled: current.prayerNotificationsEnabled,
-        enabledPrayers: obligatoryEnabled(current),
+        alerts: alertSettings(current),
         settings: {
           method: current.calculationMethod,
           asr: current.asrMethod,
@@ -133,6 +186,20 @@ export function usePrayerNotifications(reconcileOnMount = true): UsePrayerNotifi
     );
     setStatus(next);
   }, [prayerTimes, notifications]);
+
+  /**
+   * The two facts a sheet needs, read directly from the port.
+   *
+   * `getPermission` never prompts — that is its contract — so this is safe to call from a control
+   * that merely opens a settings surface. Nothing here schedules or cancels anything.
+   */
+  const refreshDelivery = useCallback(async () => {
+    const [permission, exactAlarms] = await Promise.all([
+      notifications.getPermission(),
+      notifications.exactAlarmCapability(),
+    ]);
+    setDelivery({ permission, exactAlarms });
+  }, [notifications]);
 
   /** The same work, with the busy flag — for the "Refresh schedule" control. */
   const refreshSchedule = useCallback(async () => {
@@ -226,38 +293,79 @@ export function usePrayerNotifications(reconcileOnMount = true): UsePrayerNotifi
     [notifications, update],
   );
 
-  const setPrayerEnabled = useCallback(
-    async (prayer: PrayerKey, enabled: boolean) => {
+  /**
+   * The one way any per-time setting is written.
+   *
+   * ── A functional update, not a computed array ─────────────────────────────
+   * An earlier version mapped over an array captured from the render that created the callback and
+   * wrote the whole thing back. Two controls touched in quick succession therefore both derived
+   * from the same pre-change array and the second write erased the first — a user saw one of their
+   * two prayers silently switch itself back off. Deriving inside the updater means the store
+   * applies it to whatever the previous mutation left behind, and the store serialises mutations so
+   * there is a "previous" to speak of.
+   *
+   * No `reconcile()` call here: the write publishes a new `scheduleInputs`, and that is the
+   * trigger. Calling both would run two reconciliations for one tap, and the second would read the
+   * stored identifiers before the first had written them — which is how 34 pending alerts once
+   * became 56.
+   */
+  const updateSettings = useCallback(
+    async (time: PrayerKey, change: (settings: PrayerAlertSettings) => PrayerAlertSettings) => {
+      await update((current) => ({
+        prayerAlerts: current.prayerAlerts.map((entry) =>
+          entry.time === time ? change(entry) : entry,
+        ),
+      }));
+    },
+    [update],
+  );
+
+  const setNotify = useCallback(
+    async (time: PrayerKey, notify: boolean) => {
       /*
-        Enabling the first prayer is what triggers the permission request when the master switch is
-        already on but nothing has ever been scheduled — the other half of "only after the user
-        explicitly enables their first prayer alert".
+        Switching a time on is the other half of "only after the user explicitly enables their
+        first alert": it asks for permission when the master is already on and the OS has not been
+        asked yet. Nothing here runs on mount, and nothing runs for switching a time *off*.
       */
       if (
-        enabled &&
+        notify &&
         getFaithPreferencesSnapshot().preferences.prayerNotificationsEnabled &&
         (await notifications.getPermission()) !== 'granted'
       ) {
         await requestPrayerAlertPermission(notifications);
       }
 
-      /*
-        ── A functional update, not a computed array ─────────────────────────
-        This used to map over `preferences.prayerNotifications` captured from the render that created
-        the callback, then write the whole array. Two switches tapped in quick succession therefore
-        both derived from the same pre-toggle array and the second write erased the first — the user
-        saw one of their two prayers silently switch itself back off. Deriving inside the updater
-        means the store applies it to whatever the previous mutation left behind, and the store
-        serialises mutations so there is a "previous" to speak of.
-      */
-      await update((current) => ({
-        prayerNotifications: current.prayerNotifications.map((entry) =>
-          entry.prayer === prayer ? { ...entry, enabled } : entry,
-        ),
-      }));
-      /* No reconcile call here either — see `setMasterEnabled`. The write drives it. */
+      await updateSettings(time, (settings) =>
+        notify ? enableSettings(settings) : { ...settings, notify: false },
+      );
     },
-    [notifications, update],
+    [notifications, updateSettings],
+  );
+
+  const setRepeatDays = useCallback(
+    async (time: PrayerKey, days: readonly number[]) => {
+      // Normalised on the way in as well as on the way out of storage, so a caller cannot store a
+      // duplicate or an eighth day.
+      await updateSettings(time, (settings) => ({
+        ...settings,
+        repeatDays: normaliseRepeatDays([...days]),
+      }));
+    },
+    [updateSettings],
+  );
+
+  const setPreReminder = useCallback(
+    async (time: PrayerKey, minutes: PreReminderMinutes) => {
+      await updateSettings(time, (settings) => ({ ...settings, preReminderMinutes: minutes }));
+    },
+    [updateSettings],
+  );
+
+  const setSound = useCallback(
+    async (time: PrayerKey, sound: AlertSoundChoice) => {
+      await updateSettings(time, (settings) => ({ ...settings, sound }));
+    },
+    [updateSettings],
   );
 
   const sendTestNotification = useCallback(async () => {
@@ -271,15 +379,29 @@ export function usePrayerNotifications(reconcileOnMount = true): UsePrayerNotifi
       body: 'This is a test. It confirms notifications can reach you; it is not a prayer alert.',
       channelId: prayerAlertChannel().id,
       data: { kind: 'test' },
+      silent: false,
     });
     return identifier !== null;
   }, [notifications]);
 
   return {
     status,
+    /*
+      A full reconciliation already answers both, so it wins when it has run. `delivery` is the
+      fallback for screens that never reconcile on mount.
+    */
+    delivery:
+      status === null
+        ? delivery
+        : { permission: status.permission, exactAlarms: status.exactAlarms },
+    refreshDelivery,
     busy,
     setMasterEnabled,
-    setPrayerEnabled,
+    setNotify,
+    setRepeatDays,
+    setPreReminder,
+    setSound,
+    settingsForTime: (time: PrayerKey) => settingsFor(alertSettings(preferences), time),
     refreshSchedule,
     sendTestNotification,
     openSystemSettings: useCallback(() => notifications.openSystemSettings(), [notifications]),

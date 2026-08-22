@@ -258,9 +258,15 @@ describe('the Prayer Times card says it', () => {
     expect(String(card.props.accessibilityLabel)).toMatch(/^Next prayer tomorrow\./);
     expect(String(card.props.accessibilityLabel)).toContain('Fajr at 4:31 AM');
 
-    // And the timeline still shows today's Fajr, unrelabelled.
+    /*
+      And the timeline still shows today's Fajr, unrelabelled.
+
+      Read from the row's summary node: on the Prayer screen each row carries a notification button,
+      so the row cannot be one accessible node — Android would collapse the button out of the tree —
+      and the utterance sits on the summary instead. See `prayer-journey-timeline.tsx`.
+    */
     expect(
-      String(screen.getByTestId('faith-prayer-journey-fajr').props.accessibilityLabel),
+      String(screen.getByTestId('faith-prayer-journey-fajr-summary').props.accessibilityLabel),
     ).toContain('4:30 AM');
   });
 
