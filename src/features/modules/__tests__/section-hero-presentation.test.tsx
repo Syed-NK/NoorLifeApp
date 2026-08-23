@@ -130,10 +130,21 @@ describe('the module home hero is untouched', () => {
   });
 
   it('still draws the artwork on a module home', async () => {
-    await render(<ModuleHomeScreen moduleId="planner" />);
-    await waitFor(() => expect(screen.getByTestId('planner-hero')).toBeTruthy());
+    /*
+      ── Why this moved from Planner to Finance (issue #50) ────────────────────
+      It used to render Planner, on the reasonable assumption that any module home would do. Planner
+      is now the one module that will not: its headline contains "manageable", which is wider on its
+      own than the 52% column, so its hero gives the copy the whole card and the decorative artwork
+      steps aside. Finance's widest word clears the column by more than double, so it is the honest
+      witness for "an ordinary module home still draws its artwork".
+
+      The rule that decides this, and the per-module outcome across every tested width and text size,
+      are pinned in `hero-copy-fit.test.ts`.
+    */
+    await render(<ModuleHomeScreen moduleId="finance" />);
+    await waitFor(() => expect(screen.getByTestId('finance-hero')).toBeTruthy());
     // The home hero keeps its locked artwork layer.
-    expect(screen.getByTestId('planner-hero-artwork')).toBeTruthy();
+    expect(screen.getByTestId('finance-hero-artwork')).toBeTruthy();
   });
 });
 

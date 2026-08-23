@@ -232,8 +232,14 @@ describe('the card can grow to hold what it now wraps', () => {
   });
 
   it('keeps the artwork layer for the modules that define one', () => {
-    /* Growth must not have been bought by dropping the locked artwork — that is section mode's trade. */
-    expect(source).toContain('source={section ? undefined : module.heroArtwork}');
+    /*
+      Growth must not have been bought by dropping the locked artwork wholesale — that is section
+      mode's trade. It is now also the trade a *home* makes, but only where the copy cannot fit
+      beside the artwork: the source is keyed on `fullWidthCopy`, whose derivation and per-module
+      outcome are pinned in `hero-copy-fit.test.ts`. Every shared hero still registers artwork, so
+      the constrained case is a decision rather than a missing asset.
+    */
+    expect(source).toContain('source={fullWidthCopy ? undefined : module.heroArtwork}');
     for (const module of SHARED_HERO_MODULES) {
       expect(module.heroArtwork).toBeDefined();
     }

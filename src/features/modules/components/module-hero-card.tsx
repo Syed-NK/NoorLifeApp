@@ -4,6 +4,7 @@ import { AppIcon, PressableScale } from '@ds/components';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { useModule } from '../module-context';
+import { shouldWidenHeroCopy } from '../hero-copy-fit';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleProgressBar } from './module-chart';
@@ -63,6 +64,13 @@ export type ModuleHeroCardProps = {
  * it is unreliable on Android, and shrinking type below an approved token trades a visible defect for
  * a subtler one.
  *
+ * **And nothing splits inside a word.** Wrapping cannot help a word wider than its own line, and one
+ * approved headline has one: "manageable" is 158.7 dp at `heroDisplay` against a 155 dp column at
+ * 384 dp, so Android broke it between letters. Where `shouldWidenHeroCopy` sees that coming, this
+ * card omits the decorative artwork and gives the copy the whole width — the artwork is the
+ * decoration and the headline is the message. Measured per card from its own registered copy, so the
+ * four heroes whose widest word clears the column by more than half keep their artwork everywhere.
+ *
  * **Explicit vertical padding.** The copy group is centred in the card with real padding at
  * both ends, so the button can never sit against the bottom edge, on any device.
  */
@@ -76,13 +84,44 @@ export function ModuleHeroCard({
   testID,
 }: ModuleHeroCardProps) {
   const module = useModule();
-  const { dp, contentWidth } = useModuleMetrics();
+  const { dp, contentWidth, fontScale, type } = useModuleMetrics();
   const hero = module.hero;
 
   const resolvedEyebrow = eyebrow ?? hero.eyebrow;
+  const resolvedHeadline = headline ?? hero.headline;
   const resolvedSupport = support ?? hero.support;
   const section = layout === 'section';
   const showAction = !hideAction && hero.actionLabel !== '';
+
+  /*
+    ── When the column cannot hold a word, the copy takes the card ────────────
+    The second half of issue #50. Three lines and a growing card removed the ellipsis; they could not
+    help a *single word* wider than the line it has to sit on, and Android splits such a word between
+    letters. `shouldWidenHeroCopy` measures this card's own approved headline against this column at
+    this scale, and says whether that is about to happen — see `hero-copy-fit.ts` for the derivation
+    and for why the threshold is nowhere near an edge.
+
+    Where it is about to happen the artwork is omitted and the copy takes the available card width.
+    Artwork is decorative and the headline is not. Everything else is untouched: same tokens, palette,
+    radius, spacing, `minHeight`, the approved strings exactly as registered, and no shrinking,
+    hyphenation or word-splitting anywhere.
+  */
+  const widenCopy =
+    !section &&
+    shouldWidenHeroCopy({
+      headline: resolvedHeadline,
+      columnWidth:
+        contentWidth * moduleLayout.heroTextColumnRatio - dp(moduleLayout.heroPadding) * 2,
+      fontSize: type('heroDisplay').fontSize,
+      fontScale,
+    });
+
+  /*
+    Both presentations that give the copy the whole card. They are not the same presentation: section
+    mode also drops to a heading-size token and a wider row gap, and those stay keyed on `section`
+    alone, so `layout="section"` behaves exactly as it did.
+  */
+  const fullWidthCopy = section || widenCopy;
 
   return (
     <View
@@ -107,12 +146,12 @@ export function ModuleHeroCard({
       testID={testID}
     >
       {/*
-        No source in section mode, so `ModuleHeroArtwork` renders nothing — the same optional-source
-        path Health uses. Omitted rather than repositioned: the copy needs the whole width, and artwork
-        left underneath it would be the overlap this fix exists to remove.
+        No source when the copy has the whole card, so `ModuleHeroArtwork` renders nothing — the same
+        optional-source path Health uses. Omitted rather than repositioned or scaled: the copy needs
+        the whole width, and artwork left underneath it would be the overlap this fix exists to remove.
       */}
       <ModuleHeroArtwork
-        source={section ? undefined : module.heroArtwork}
+        source={fullWidthCopy ? undefined : module.heroArtwork}
         scrim={module.heroScrim}
         copySide={module.heroCopySide}
         testID={`${testID ?? 'module-hero'}-artwork`}
@@ -124,7 +163,7 @@ export function ModuleHeroCard({
           {
             paddingHorizontal: dp(moduleLayout.heroPadding),
             paddingVertical: dp(moduleLayout.heroCopyPaddingV),
-            ...(section
+            ...(fullWidthCopy
               ? { alignSelf: 'stretch' as const }
               : { width: contentWidth * moduleLayout.heroTextColumnRatio }),
             rowGap: dp(section ? 3 : 2),
@@ -154,21 +193,18 @@ export function ModuleHeroCard({
               at large scales — would move text over the busy part of the locked artwork and need the
               scrim to follow it, which is a change to artwork appearance to solve a text problem.
 
-              ── What three lines still cannot fix ────────────────────────────
-              Measured on a 384 dp phone: "manageable" is about 160 dp wide on its own at this token
-              and the column is 155 dp, so Android breaks that one word between letters rather than
-              ellipsising it. The full string renders, which is what this issue asked for, but the
-              break is ugly.
-
-              Hyphenation was tried and is worse, not better: 'full' made Android lay the word out on
-              a line of its own and ellipsise it again ("Make / today / managea…"). Everything else
-              that would fix it changes something this issue may not — the approved copy, the approved
-              column ratio, or the type token — so it is reported rather than decided here.
+              ── What three lines could not fix, and what does ────────────────
+              Three lines let a long headline wrap; they cannot help a single word wider than the line
+              it must sit on. "manageable" is 158.7 dp at this token against a 155 dp column at 384 dp,
+              so Android split it between letters. That is now handled a level up, by `widenCopy`: the
+              copy takes the whole card and the decorative artwork steps aside, which gives the word
+              324 dp to sit in at that width. The line limit stays three because wrapping is still what
+              happens to a headline too long for one line — in either presentation.
             */
             numberOfLines={section ? 2 : 3}
             maxFontSizeMultiplier={1.1}
           >
-            {headline ?? hero.headline}
+            {resolvedHeadline}
           </ModuleText>
           {hero.headlineSuffix === undefined ? null : (
             <ModuleText
