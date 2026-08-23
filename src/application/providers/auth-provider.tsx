@@ -293,6 +293,53 @@ const AuthActionsContext = createContext<AuthActions | null>(null);
  */
 const NEUTRAL_DISPLAY_NAME = 'Friend';
 
+/**
+ * The name to display, or null when nothing usable is known.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── The one rule, and why it is equality rather than a pattern ──────────────
+ * A stored name that **is this account's own address** is not a name. It arrives that way from a build
+ * before #48, which wrote the address into `profiles.full_name` and into the offline receipt, and it
+ * cannot be assumed to have been chosen: nobody typed it, a fallback did.
+ *
+ * The test is equality with *that account's* address, trimmed and case-folded — not the presence of an
+ * `@`. `profile-name.ts` is explicit that there is no character allow-list for names, because a
+ * Latin-only pattern would reject أحمد, Айша, 王 and every hyphenated or accented European name; names
+ * are not addresses and have no format to conform to. So `a@b` as a name is perfectly acceptable for an
+ * account whose address is something else, and rejecting it would be a validation rule protecting
+ * nothing. Only the collision matters.
+ *
+ * Case-folded and trimmed because addresses are compared that way everywhere else: `Ahmed@Example.com`
+ * stored against `ahmed@example.com` is the same address, and a leading space is a paste artefact
+ * rather than a distinguishing character.
+ *
+ * ── Why empty is here too ──────────────────────────────────────────────────
+ * A whitespace-only `full_name` is the other value that is not a name, and `validateFullName` already
+ * refuses it on the way *in*. Refusing it on the way out as well costs one comparison and stops a
+ * greeting that reads "Assalamu Alaikum," followed by nothing.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+function usableName(
+  candidate: string | null | undefined,
+  email: string | null | undefined,
+): string | null {
+  if (candidate === null || candidate === undefined) {
+    return null;
+  }
+  const trimmed = candidate.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  if (
+    email !== null &&
+    email !== undefined &&
+    trimmed.toLowerCase() === email.trim().toLowerCase()
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
 /** The first word of a name, for the Main Home greeting. Never empty. */
 function givenNameOf(full: string): string {
   return full.trim().split(/\s+/)[0] ?? NEUTRAL_DISPLAY_NAME;
@@ -362,10 +409,12 @@ function receiptProjection(state: AuthState): ReceiptProjection | null {
       *is* the address reaches the same outcome, which is also right: how the address got into the
       field does not change whether it belongs in the Keystore.
     */
-    displayName:
-      state.user.email !== undefined && state.user.fullName === state.user.email
-        ? NEUTRAL_DISPLAY_NAME
-        : state.user.fullName,
+    /*
+      The same rule as `toProfile`, not an approximation of it. This used to compare for exact equality
+      with the address, which would have missed a case or whitespace variant — and the two disagreeing
+      is how an address gets persisted after being correctly refused for display.
+    */
+    displayName: usableName(state.user.fullName, state.user.email) ?? NEUTRAL_DISPLAY_NAME,
     avatarUrl: state.user.avatarUri ?? null,
     hasCompletedOnboarding: state.hasCompletedOnboarding,
   };
@@ -382,12 +431,27 @@ function receiptMatches(stored: OfflineIdentity, projection: ReceiptProjection):
 }
 
 function toProfile(user: AuthUser, durableFullName: string | null = null): UserProfile {
-  const full = durableFullName ?? user.fullName ?? user.email ?? NEUTRAL_DISPLAY_NAME;
-  const given = givenNameOf(full);
+  /*
+    ═════════════════════════════════════════════════════════════════════════
+    ── The address is not a name, and there is no rung below a real one ──────
+    This chain used to end `?? user.email ?? NEUTRAL_DISPLAY_NAME`, so an account that never supplied a
+    name resolved its *name* to its sign-in address — and Main Home rendered that as the greeting, the
+    most prominent text on the first screen. Issue #48.
+
+    Every candidate below a genuine name is wrong, which is why there is now nothing there. The address
+    is not a name. Its local part is not a name — parsing one out would be a guess dressed as data. And
+    initials derived from either are a fabrication. So when no name is known the fields are **omitted**,
+    and each consumer applies its own already-approved neutral: Main Home's `?? 'there'`, and the
+    Profile surfaces' "not available" copy. None of them needed changing, which is the sign that absence
+    was the value they were always written for.
+
+    The address is still carried — in `email`, spread below, where it is labelled as what it is.
+    ═════════════════════════════════════════════════════════════════════════
+  */
+  const full = usableName(durableFullName ?? user.fullName, user.email);
   return {
     id: user.id,
-    fullName: full,
-    givenName: given,
+    ...(full === null ? {} : { fullName: full, givenName: givenNameOf(full) }),
     ...(user.avatarUrl === null ? {} : { avatarUri: user.avatarUrl }),
     // Spread rather than assigned, so a provider with no address leaves the field absent instead
     // of setting it to an empty string the Profile card would then render as a blank line.
@@ -664,11 +728,29 @@ export function AuthProvider({
         readOfflineReceipt(),
       ]);
       /*
-        Strictly the same account. A receipt for another user is not a fallback for this one, and an
-        id mismatch must produce the session's own name rather than a previous occupant's.
+        ── What may be seeded from a receipt, and what may not ─────────────────
+        Strictly the same account: a receipt for another user is not a fallback for this one, and an id
+        mismatch must produce the session's own name rather than a previous occupant's.
+
+        And strictly a *name*. Two stored values are not names, and both would otherwise arrive here as
+        one:
+
+          • `NEUTRAL_DISPLAY_NAME` is the wire form of "no name known" — the record cannot store
+            absence, so seeding it back would turn absence into a placeholder and hand Main Home
+            something to greet by;
+          • the account's own **address**, which a build before #48 wrote into this field. Seeding that
+            would reintroduce the whole defect through the cache rather than the fallback chain — and
+            worse, the projection would then match what is stored, so the record would never heal.
+
+        Both fall through to no name, which is the honest value and the one that heals on the next
+        write.
       */
       const knownName =
-        priorReceipt !== null && priorReceipt.userId === user.id ? priorReceipt.displayName : null;
+        priorReceipt !== null &&
+        priorReceipt.userId === user.id &&
+        priorReceipt.displayName !== NEUTRAL_DISPLAY_NAME
+          ? usableName(priorReceipt.displayName, user.email)
+          : null;
       const resolved = toProfile(user, knownName);
 
       publish(
@@ -705,8 +787,17 @@ export function AuthProvider({
       authority: 'offline',
       user: {
         id: receipt.userId,
-        fullName: receipt.displayName,
-        givenName: givenNameOf(receipt.displayName),
+        /*
+          ── `NEUTRAL_DISPLAY_NAME` is the wire form of "no name known" ────────
+          `isReceipt` requires a non-empty `displayName`, so the record cannot store absence directly;
+          the projection writes the neutral name instead. Decoding it back to absent here is what keeps
+          an offline launch and an online one greeting the same person the same way — otherwise a
+          nameless account would read "Assalamu Alaikum, Friend" offline and "…, there" online, which
+          is two different neutral answers to one question.
+        */
+        ...(receipt.displayName === NEUTRAL_DISPLAY_NAME
+          ? {}
+          : { fullName: receipt.displayName, givenName: givenNameOf(receipt.displayName) }),
         ...(receipt.avatarUrl === null ? {} : { avatarUri: receipt.avatarUrl }),
         /*
           No `email`. The receipt no longer carries one, so Profile's identity row renders its
