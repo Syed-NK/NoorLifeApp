@@ -247,6 +247,159 @@ describe('an account that never gave a name', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// A stored name that is really the address
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('a stored name that is this account’s own address', () => {
+  it('is not a name when the durable row holds it exactly', async () => {
+    /*
+      ═══════════════════════════════════════════════════════════════════════
+      ── Why this is not "the user chose it" ────────────────────────────────
+      A build before #48 wrote the address into `profiles.full_name` through the same fallback that put
+      it on screen. Reading it back as a deliberate choice would launder the defect into data: nobody
+      typed it, a fallback did. So the row is refused for display exactly as the session copy is.
+      ═══════════════════════════════════════════════════════════════════════
+    */
+    mockGetProfile.mockResolvedValue({
+      id: NAMELESS.id,
+      full_name: NAMELESS.email,
+      avatar_url: null,
+      onboarding_completed: true,
+    });
+
+    await launch();
+    await settle();
+
+    expect(current()?.fullName).toBeUndefined();
+    expect(current()?.givenName).toBeUndefined();
+    expect(current()?.email).toBe(NAMELESS.email);
+  });
+
+  it.each([
+    ['a different case', 'Nameless@Example.COM'],
+    ['surrounding whitespace', '  nameless@example.com  '],
+    ['both', '	Nameless@EXAMPLE.com '],
+  ])('is not a name when the durable row holds it with %s', async (_label, stored) => {
+    /*
+      Addresses are compared case-folded and trimmed everywhere else, and a stored variant is the same
+      address. An exact-match rule would have let every one of these through — which is precisely how a
+      value refused for display still ends up persisted.
+    */
+    mockGetProfile.mockResolvedValue({
+      id: NAMELESS.id,
+      full_name: stored,
+      avatar_url: null,
+      onboarding_completed: true,
+    });
+
+    await launch();
+    await settle();
+
+    expect(current()?.fullName).toBeUndefined();
+    expect(current()?.givenName).toBeUndefined();
+  });
+
+  it('is not a name when the session metadata holds it', async () => {
+    mockResolveSession.mockResolvedValue({
+      kind: 'authenticated',
+      user: { ...NAMELESS, fullName: 'NAMELESS@example.com' },
+    });
+
+    await launch();
+    await settle();
+
+    expect(current()?.fullName).toBeUndefined();
+  });
+
+  it('heals the receipt to the neutral marker rather than persisting the address', async () => {
+    mockGetProfile.mockResolvedValue({
+      id: NAMELESS.id,
+      full_name: 'Nameless@Example.com',
+      avatar_url: null,
+      onboarding_completed: true,
+    });
+
+    await launch();
+    await settle();
+
+    const written = receiptWrites();
+    expect(written.length).toBeGreaterThan(0);
+    expect(JSON.stringify(written)).not.toContain('@');
+    expect(written.at(-1)?.displayName).toBe('Friend');
+  });
+
+  it('keeps a name that merely contains an @ but is not this address', async () => {
+    /*
+      `profile-name.ts` is explicit that names have no character allow-list, because a Latin-only
+      pattern would reject أحمد, Айша, 王 and every hyphenated or accented European name. So the rule is
+      equality with *this account's* address, never the presence of a character — and a name like this
+      one, however unusual, belongs to the person who entered it.
+    */
+    mockGetProfile.mockResolvedValue({
+      id: NAMELESS.id,
+      full_name: 'DJ @midnight',
+      avatar_url: null,
+      onboarding_completed: true,
+    });
+
+    await launch();
+    await settle();
+
+    expect(current()?.fullName).toBe('DJ @midnight');
+    expect(current()?.givenName).toBe('DJ');
+  });
+
+  it('keeps a name that is somebody else’s address shape', async () => {
+    mockGetProfile.mockResolvedValue({
+      id: NAMELESS.id,
+      full_name: 'someone.else@elsewhere.test',
+      avatar_url: null,
+      onboarding_completed: true,
+    });
+
+    await launch();
+    await settle();
+
+    /* Not this account's address, so not this rule's business. The name contract governs it. */
+    expect(current()?.fullName).toBe('someone.else@elsewhere.test');
+  });
+
+  it('treats a whitespace-only stored name as no name', async () => {
+    /*
+      The other value that is not a name. `validateFullName` refuses it on the way in; refusing it here
+      too stops a greeting that reads "Assalamu Alaikum," followed by nothing.
+    */
+    mockGetProfile.mockResolvedValue({
+      id: NAMELESS.id,
+      full_name: '   ',
+      avatar_url: null,
+      onboarding_completed: true,
+    });
+
+    await launch();
+    await settle();
+
+    expect(current()?.fullName).toBeUndefined();
+    expect(current()?.givenName).toBeUndefined();
+  });
+
+  it('trims a genuine name rather than storing the padding', async () => {
+    mockGetProfile.mockResolvedValue({
+      id: NAMELESS.id,
+      full_name: '  Ahmed Al-Rashid  ',
+      avatar_url: null,
+      onboarding_completed: true,
+    });
+
+    await launch();
+    await settle();
+
+    expect(current()?.fullName).toBe('Ahmed Al-Rashid');
+    expect(current()?.givenName).toBe('Ahmed');
+  });
+});
+
 describe('an account that did give a name', () => {
   it('keeps it, and derives the given name from it', async () => {
     mockResolveSession.mockResolvedValue({ kind: 'authenticated', user: NAMED });
@@ -468,8 +621,15 @@ describe('the fallback chain', () => {
       on the *name* chain only; `email` is spread into its own field a few lines below and must stay.
     */
     const body = toProfileCode();
-    expect(body).toContain('durableFullName ?? user.fullName ?? null');
+    /*
+      Routed through `usableName` rather than picking a candidate inline, so the address rule and the
+      empty rule live in one place and the receipt projection and the seeding path share them rather
+      than approximating them.
+    */
+    expect(body).toContain('usableName(durableFullName ?? user.fullName, user.email)');
+    /* And nothing below it: no value may be *substituted* for a name that is not there. */
     expect(body).not.toMatch(/\?\?\s*user\.email/);
+    expect(body).not.toMatch(/usableName\([^)]*\)\s*\?\?/);
   });
 
   it('still carries the address in the address field', () => {
