@@ -146,7 +146,14 @@ describe('every other authority is unchanged', () => {
       account would skip the subscription introduction entirely.
     */
     mockAuth.current = state({ authority: 'online' });
-    mockReadJourney.mockResolvedValue({ status: 'unconfigured', reason: 'no-column' });
+    /*
+        `pending`, not `unconfigured`. This case is about an account that genuinely has not chosen a
+        plan, and `pending` is the state that means exactly that — the server looked at the row and
+        found no choice recorded. `unconfigured` was standing in for it while the two shared a routing
+        outcome; they no longer do, because a deployment with nowhere to store an answer has not
+        given one.
+      */
+    mockReadJourney.mockResolvedValue({ status: 'pending' });
 
     const { getByTestId } = await launch();
     await waitFor(() => expect(getByTestId('probe')).toHaveTextContent('subscription_choice'), {

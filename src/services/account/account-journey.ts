@@ -28,11 +28,20 @@ import { assertRemoteAccess } from '@services/network/remote-access';
  *
  *   • `unconfigured` — this deployment **cannot record** a plan choice. The migration has not run, or
  *     the build has no backend at all. Nothing is wrong with the request; there is nowhere for the
- *     answer to live. The existing decision stands: the caller routes to the chooser, which costs one
- *     tap to leave, rather than letting a new account past a step it never took.
+ *     answer to live.
  *   • `unavailable` — the request **could not be completed**: no route, a captive portal, a server
- *     that never answered, a transport failure, or a bound elapsing at the caller. Nothing has been
- *     learned, and nothing may be concluded from it.
+ *     that never answered, a transport failure, or a bound elapsing at the caller.
+ *
+ * ── Both are unknown, and neither may route ────────────────────────────────
+ * They are kept apart because the *diagnosis* differs — one names a migration to apply, the other a
+ * network to fix — and a caller that could not tell them apart could not report either usefully. But
+ * neither says anything about this account, so neither may produce a routing verdict.
+ *
+ * `unconfigured` briefly did, on the reasoning that a deployment with nowhere to store the answer has
+ * no accounts that chose a plan, so showing the chooser was harmless. It is not harmless: it invents a
+ * purchase decision to preserve availability, and it does so for exactly the person it hurts most — a
+ * subscriber whose backend is mis-deployed, shown a plan chooser as though they had never chosen.
+ * Absence of a place to record the answer is not the answer.
  */
 
 /** The approved plan codes. Paid codes are written by server-side verification only. */
@@ -49,7 +58,8 @@ export type AccountJourneyState =
    * This deployment cannot record a plan choice: the migration has not run, or there is no backend.
    *
    * A statement about the *installation*, not about the account and not about the network. Reported,
-   * never assumed — and deliberately still routed to the chooser by the caller.
+   * never assumed, and **never routable** — the reason string names the migration so the deployment
+   * can be fixed, which is the honest response to a build that cannot answer.
    */
   | { readonly status: 'unconfigured'; readonly reason: string }
   /**

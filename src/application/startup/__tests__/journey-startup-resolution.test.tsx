@@ -234,15 +234,114 @@ describe('a definitive not-selected answer', () => {
     expect(destination()).toBe('subscription_choice');
   });
 
-  it('routes there for a deployment that cannot record a plan choice', async () => {
+  it('is the only thing that reaches it', async () => {
     /*
-      `unconfigured` stays routable, deliberately and unchanged. The migration has not run, so nobody
-      has a plan record; showing the chooser is correct and costs one tap to leave, and holding the
-      launch instead would mean the app never opens at all on such a build.
+      Enumerated rather than asserted once. `pending` is the single state that means "the server looked
+      at this account's row and found no choice recorded", and it is therefore the single state allowed
+      to produce a purchase screen. Every other answer is checked in the suites below.
     */
-    mockReadJourney.mockResolvedValue({ status: 'unconfigured', reason: 'no column' });
+    mockReadJourney.mockResolvedValue({ status: 'pending' });
     await launchAndAge();
     expect(destination()).toBe('subscription_choice');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A deployment that cannot record an answer has not given one
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('a deployment that cannot record a plan choice', () => {
+  it('holds rather than routing, because the installation is not the account', async () => {
+    /*
+      ═══════════════════════════════════════════════════════════════════════
+      ── The correction ────────────────────────────────────────────────────
+      This routed to the chooser, on the reasoning that a deployment with nowhere to store the answer
+      has no accounts that chose a plan, so the chooser was harmless.
+
+      It is not harmless. It invents a purchase decision in order to preserve availability, and it does
+      so for exactly the person it hurts most: a subscriber whose backend is mis-deployed, shown a plan
+      chooser as though they had never chosen. Absence of a place to record the answer is not the
+      answer — so it holds, and the development diagnosis names the migration to apply.
+      ═══════════════════════════════════════════════════════════════════════
+    */
+    mockReadJourney.mockResolvedValue({
+      status: 'unconfigured',
+      reason: 'profiles.initial_plan_selection_completed_at is not available',
+    });
+    await launchAndAge();
+
+    expect(destination()).toBeNull();
+    expect(currentState()).not.toBe('subscription_choice');
+  });
+
+  it.each([
+    ['42703', 'undefined column'],
+    ['42P01', 'undefined table'],
+    ['PGRST204', 'schema cache miss'],
+    ['PGRST205', 'schema cache miss'],
+  ])('holds for the schema-missing answer behind code %s', async (_code, reason) => {
+    /*
+      Each recognised schema code produces `unconfigured` at the service — pinned in
+      `account-journey-states.test.ts` — and every one of them must hold here. Enumerated so that a
+      code added to the service's set without a routing decision cannot slip through.
+    */
+    mockReadJourney.mockResolvedValue({ status: 'unconfigured', reason });
+    await launchAndAge();
+    expect(destination()).toBeNull();
+  });
+
+  it('never reaches the chooser, even after ten minutes', async () => {
+    mockReadJourney.mockResolvedValue({ status: 'unconfigured', reason: 'no column' });
+
+    await render(tree());
+    await settle(600_000);
+
+    /*
+      Availability is not preserved by guessing. Ten minutes of a mis-deployed backend produces a
+      launch that has not opened — which is a defect somebody fixes — rather than a plan chooser shown
+      to paying users, which is a defect that looks like a product.
+    */
+    expect(seen.map((entry) => entry.split('|')[1])).not.toContain('subscription_choice');
+    expect(seen.map((entry) => entry.split('|')[0])).not.toContain('subscription_choice');
+    expect(destination()).toBeNull();
+  });
+
+  it('resolves once the same service can answer, without a relaunch', async () => {
+    /*
+      The migration is applied, or the capability comes back, while the app is running. The launch was
+      held rather than frozen, so the next answer settles it — and it settles it to whatever is true,
+      including the chooser if the account genuinely owes the introduction.
+    */
+    mockReadJourney.mockResolvedValueOnce({ status: 'unconfigured', reason: 'no column' });
+    await render(tree());
+    await settle(JOURNEY_READ_TIMEOUT_MS + 500);
+    expect(destination()).toBeNull();
+
+    mockReadJourney.mockResolvedValue({ status: 'completed', planCode: 'premium_single' });
+    await foreground();
+    await settle(STARTUP_PRESENTATION_CEILING_MS);
+
+    expect(destination()).toBe('authenticated_home');
+  });
+
+  it('resolves to the chooser when the recovered answer is a definitive no', async () => {
+    mockReadJourney.mockResolvedValueOnce({ status: 'unconfigured', reason: 'no column' });
+    await render(tree());
+    await settle(JOURNEY_READ_TIMEOUT_MS + 500);
+
+    mockReadJourney.mockResolvedValue({ status: 'pending' });
+    await foreground();
+    await settle(STARTUP_PRESENTATION_CEILING_MS);
+
+    /* Held, then answered — the chooser is reached from a real verdict and only from one. */
+    expect(destination()).toBe('subscription_choice');
+  });
+
+  it('is still outranked by recovery containment', async () => {
+    mockRecovery.pending = true;
+    mockReadJourney.mockResolvedValue({ status: 'unconfigured', reason: 'no column' });
+    await launchAndAge();
+    expect(destination()).toBe('password_recovery');
   });
 });
 

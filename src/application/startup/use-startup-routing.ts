@@ -81,25 +81,41 @@ type OwnedJourneyDecision = {
 /**
  * Interprets a journey read for routing.
  *
- * ── Why `unconfigured` and `unavailable` part company here ──────────────────
+ * ── Only the account may answer a question about the account ────────────────
  *   • `completed`   → selected. The account has recorded a choice.
- *   • `pending`     → not selected. The server looked and the account owes the introduction.
- *   • `unconfigured`→ not selected, **deliberately, and unchanged**. This deployment cannot record a
- *     plan choice at all, so nobody has one; the existing decision is to show the chooser rather than
- *     let a new account past a step it never took, and it costs one tap to leave. It is a definitive
- *     statement about the installation rather than an outage, which is why it is not an unknown.
- *   • `unavailable` → unknown. Nothing was learned. Mapping this to "has not chosen a plan" is the
- *     defect: it routes an entitled, possibly paying account to a purchase screen because the network
- *     was slow, which is *could not ask* becoming *the answer is no* — the same mistake as the
- *     original sign-out bug, two layers up.
+ *   • `pending`     → not selected. The server looked at the row and the account owes the
+ *     introduction. **The only definitive no**, and the only thing that may reach the chooser.
+ *   • `unconfigured`→ unknown. This deployment cannot record a plan choice, which is a fact about the
+ *     *installation* and says nothing whatever about this account. It used to route to the chooser on
+ *     the reasoning that nobody could have a record so the chooser was harmless — but that reasoning
+ *     invents a purchase decision to preserve availability, and it is wrong for exactly the account it
+ *     would hurt: a subscriber whose backend is mis-deployed is shown a plan chooser as if they had
+ *     never chosen. Absence of a place to record the answer is not the answer.
+ *   • `unavailable` → unknown. Nothing was learned.
+ *
+ * Both unknowns hold the launch, and holding a mis-deployed build is the point rather than a cost: an
+ * app that will not open is a defect somebody fixes, while a plan chooser shown to paying users is a
+ * defect that looks like a product. The diagnosis is emitted in development, naming the migration.
  */
 function decisionFor(journey: Awaited<ReturnType<typeof readAccountJourney>>): JourneyDecision {
+  /*
+    ── The operational half of "unavailable, plus a diagnosis" ────────────────
+    Holding a mis-deployed build is only defensible if somebody can tell *why* it is holding. This is
+    that, and it lives here rather than at one call site so the answer is reported wherever it arrives
+    — including after the bound has elapsed, which is precisely when a slow or broken backend shows up.
+
+    Development only, and the reason string is the service's own: it names the migration file. Nothing
+    account-shaped is in it, which is why it is safe to print.
+  */
+  if (__DEV__ && (journey.status === 'unconfigured' || journey.status === 'unavailable')) {
+    console.warn(`[startup] account journey ${journey.status}: ${journey.reason}`);
+  }
   switch (journey.status) {
     case 'completed':
       return 'selected';
     case 'pending':
-    case 'unconfigured':
       return 'not-selected';
+    case 'unconfigured':
     case 'unavailable':
       return 'unknown';
   }
@@ -305,9 +321,6 @@ export function useStartupRouting(): StartupRouting {
         return;
       }
 
-      if (raced.status === 'unconfigured' && __DEV__) {
-        console.warn(`[startup] account journey not configured: ${raced.reason}`);
-      }
       apply(decisionFor(raced));
     })();
 
