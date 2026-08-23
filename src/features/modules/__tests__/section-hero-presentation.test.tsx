@@ -106,17 +106,27 @@ describe('the module home hero is untouched', () => {
     expect(optIn.map((path) => path.split(/[\\/]/).pop())).toEqual(['module-section-screen.tsx']);
   });
 
-  it('keeps the home geometry on the default path', () => {
+  it('keeps the home column and the home type token', () => {
     /*
-      Asserted as a conditional rather than a constant: `height` still applies unless section mode is
-      on, and the copy column keeps its 52% ratio. If either became unconditional the home hero would
-      have changed shape.
+      ── Updated for issue #50, and what it still guards ──────────────────────
+      This began as #37's guard that adding the section presentation had not disturbed the home hero.
+      Two of its four assertions have been deliberately overtaken:
+
+        • `height` became `minHeight` **unconditionally**, because a fixed box cannot honour wrapping —
+          it is exactly what turned "this headline needs a second line" into an ellipsis. It is a
+          floor, so copy that fits still renders at the height it always did;
+        • the home headline went from one line to three, which is the fix.
+
+      The two that still matter are asserted unchanged: the copy column keeps its 52% ratio, so text
+      does not move over the busy part of the locked artwork, and the two presentations keep distinct
+      type tokens. Those are what "the home hero is still the home hero" actually rests on.
     */
     const card = code(CARD);
-    expect(card).toContain('{ height: dp(moduleLayout.heroHeight) }');
+    expect(card).toContain('minHeight: dp(moduleLayout.heroHeight)');
+    expect(card).not.toContain('{ height: dp(moduleLayout.heroHeight) }');
     expect(card).toContain('{ width: contentWidth * moduleLayout.heroTextColumnRatio }');
     expect(card).toMatch(/token=\{section \? 'cardHeading' : 'heroDisplay'\}/);
-    expect(card).toMatch(/numberOfLines=\{section \? 2 : 1\}/);
+    expect(card).toMatch(/numberOfLines=\{section \? 2 : 3\}/);
   });
 
   it('still draws the artwork on a module home', async () => {
@@ -183,9 +193,17 @@ describe('the section presentation makes the copy readable', () => {
     expect(typeof flat.minHeight).toBe('number');
   });
 
-  it('gives the body room to wrap', () => {
-    // Four lines in section mode against two on a home, because a sentence needs more than a phrase.
-    expect(code(CARD)).toMatch(/numberOfLines=\{section \? 4 : 2\}/);
+  it('gives the body four lines in both presentations', () => {
+    /*
+      This asserted four in section mode against two on a home. Issue #50 measured the home at 320 dp
+      and OS scale 1.5 — where the support line, which carries no multiplier cap, needs four — so the
+      two limits converged on the larger number.
+
+      That is not a loss of distinction. The presentations still differ in type token, in whether the
+      artwork is drawn, and in how many lines the *headline* may take, and each of those is asserted
+      elsewhere in this file. A sentence needs the same room whichever card it is in.
+    */
+    expect(code(CARD)).toMatch(/numberOfLines=\{4\}/);
   });
 });
 
