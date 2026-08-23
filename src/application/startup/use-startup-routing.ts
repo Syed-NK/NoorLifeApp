@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 
 import { useAuth } from '@application/providers/auth-provider';
 import { useFontReadiness } from '@application/providers/font-provider';
 import { readOnboardingState } from '@services/onboarding/onboarding-preferences';
 import { readAccountJourney } from '@services/account/account-journey';
+import { WAIT_EXPIRED, waitAtMost } from '@shared/utils/bounded-wait';
 
 import { useRecoveryContainmentState } from '@application/providers/recovery-containment-provider';
 
@@ -35,6 +37,74 @@ export type StartupRouting = {
 /** Ticks often enough to hit the minimums precisely without busy-waiting. */
 const TICK_MS = 100;
 
+/**
+ * How long the launch waits for the account-journey read before deciding without it.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Why four seconds, and not the session bound's six ──────────────────────
+ * The two reads are not comparable work. The session lookup's bound is sized for a *token refresh* —
+ * a round trip that legitimately takes a second or two on a healthy link. This is a single indexed
+ * row read, `select … eq('id', …) .maybeSingle()`, with no refresh and no negotiation. One that has
+ * not answered in four seconds is not about to.
+ *
+ * ── Its relationship to the presentation ceiling ───────────────────────────
+ * This read starts *after* authority publishes, so the two bounds add up on a bad launch: the
+ * connectivity probe (2 s) plus the session bound (6 s) plus this is 12 s, past
+ * `STARTUP_PRESENTATION_CEILING_MS`. That is deliberate and fine, and the reason it is fine is worth
+ * stating: the ceiling changes only what is **displayed**. Past it the launch says "still resolving"
+ * — which at that point is precisely true, because neither authority nor the plan decision has
+ * landed. It is not a verdict, it may not become one, and no bound here is chosen to beat it.
+ *
+ * What four seconds does buy is that the *common* case stays inside the ceiling: authority in about a
+ * second plus a bounded journey read is under five, so the notice stays reserved for launches that
+ * are genuinely stuck rather than merely slow. That keeps #31's notice honest, which is a
+ * presentation goal, not a correctness one.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const JOURNEY_READ_TIMEOUT_MS = 4000;
+
+/**
+ * What the launch knows about the plan decision, at the routing layer.
+ *
+ * Three states, because there are three genuinely different answers and the previous two collapsed
+ * the third into "no" — issue #46. `AccountJourneyState` has four members; two of them map here to
+ * `not-selected` for reasons recorded at each mapping.
+ */
+type JourneyDecision = 'selected' | 'not-selected' | 'unknown';
+
+/** A decision together with the account it was read for, so it can never be read under another. */
+type OwnedJourneyDecision = {
+  readonly userId: string;
+  readonly decision: JourneyDecision;
+};
+
+/**
+ * Interprets a journey read for routing.
+ *
+ * ── Why `unconfigured` and `unavailable` part company here ──────────────────
+ *   • `completed`   → selected. The account has recorded a choice.
+ *   • `pending`     → not selected. The server looked and the account owes the introduction.
+ *   • `unconfigured`→ not selected, **deliberately, and unchanged**. This deployment cannot record a
+ *     plan choice at all, so nobody has one; the existing decision is to show the chooser rather than
+ *     let a new account past a step it never took, and it costs one tap to leave. It is a definitive
+ *     statement about the installation rather than an outage, which is why it is not an unknown.
+ *   • `unavailable` → unknown. Nothing was learned. Mapping this to "has not chosen a plan" is the
+ *     defect: it routes an entitled, possibly paying account to a purchase screen because the network
+ *     was slow, which is *could not ask* becoming *the answer is no* — the same mistake as the
+ *     original sign-out bug, two layers up.
+ */
+function decisionFor(journey: Awaited<ReturnType<typeof readAccountJourney>>): JourneyDecision {
+  switch (journey.status) {
+    case 'completed':
+      return 'selected';
+    case 'pending':
+    case 'unconfigured':
+      return 'not-selected';
+    case 'unavailable':
+      return 'unknown';
+  }
+}
+
 export function useStartupRouting(): StartupRouting {
   const fonts = useFontReadiness();
   const auth = useAuth();
@@ -55,7 +125,21 @@ export function useStartupRouting(): StartupRouting {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [isFirstLaunch, setIsFirstLaunch] = useState(true);
-  const [planSelected, setPlanSelected] = useState<boolean | null>(null);
+  /*
+    Keyed by owner rather than a bare boolean. The selector below refuses to read a decision that
+    belongs to another account, so a late answer for a replaced account cannot be *consulted* at all —
+    which is a stronger guarantee than checking at the moment it is written, and needs no guard there.
+  */
+  const [journey, setJourney] = useState<OwnedJourneyDecision | null>(null);
+  /**
+   * Bumped to re-attempt a read that finished without an answer.
+   *
+   * Not a retry loop: nothing here fires on a timer, and a read that produced a *definitive* answer is
+   * never re-attempted. It is a **trigger**, the same shape the auth provider already uses to recover
+   * an offline launch when connectivity returns — an external event that makes the question worth
+   * asking again.
+   */
+  const [journeyAttempt, setJourneyAttempt] = useState(0);
 
   /**
    * The moment the branded splash mounted.
@@ -128,12 +212,31 @@ export function useStartupRouting(): StartupRouting {
   }, [fonts.error]);
 
   /**
-   * Journey state for a signed-in account, read alongside everything else.
+   * Journey state for a signed-in account, read alongside everything else and **bounded**.
    *
-   * Only attempted once the session resolves, because it needs a user id. `unconfigured` maps to
-   * **false**, not true: the migration adding these columns is not applied yet, and treating "we
-   * cannot tell" as "already chose a plan" is precisely the bug that sends a new account straight
-   * to Main Home. False sends them to the plan chooser, which costs one tap to leave.
+   * ═══════════════════════════════════════════════════════════════════════════
+   * Only attempted once the session resolves, because it needs a user id — which is an argument for
+   * taking it off the critical path rather than for starting it earlier, and there is nowhere earlier
+   * to start it.
+   *
+   * ── The bound, and why the request is not abandoned ────────────────────────
+   * The promise is kept. `waitAtMost` decides how long the *launch* waits on it; the read carries on
+   * and its answer is applied below when it lands. That matters because a definitive answer that was
+   * merely late is exactly what resolves an unknown launch honestly — aborting the request would
+   * throw away the one thing that can.
+   *
+   * ── What the bound elapsing means ─────────────────────────────────────────
+   * `unknown`, and nothing else. Not "has not chosen a plan": the launch holds, shows #31's
+   * identity-free notice past the ceiling, and resolves if and when the answer arrives. A paying
+   * account is never sent to a purchase screen because a row read was slow.
+   *
+   * ── How a stale result is made inert ──────────────────────────────────────
+   * Two mechanisms, and they cover different windows. The `cancelled` flag stops a result landing
+   * after this effect has been torn down — a sign-out, an account replacement, an unmount. And the
+   * write is *owner-stamped*, so even a result that does land cannot be read while another account is
+   * current, because the selector requires the id to match. Backgrounding changes neither: the read
+   * is not re-attempted, and whatever it eventually says is still checked against both.
+   * ═══════════════════════════════════════════════════════════════════════════
    */
   useEffect(() => {
     if (auth.status === 'unknown') {
@@ -160,23 +263,54 @@ export function useStartupRouting(): StartupRouting {
       return;
     }
 
+    const userId = auth.user.id;
     let cancelled = false;
-    readAccountJourney(auth.user.id).then(
-      (journey) => {
-        if (cancelled) {
-          return;
-        }
-        if (journey.status === 'unconfigured' && __DEV__) {
-          console.warn(`[startup] account journey unavailable: ${journey.reason}`);
-        }
-        setPlanSelected(journey.status === 'completed');
-      },
-      () => {
-        if (!cancelled) {
-          setPlanSelected(false);
-        }
-      },
-    );
+
+    const apply = (decision: JourneyDecision) => {
+      if (cancelled) {
+        return;
+      }
+      setJourney({ userId, decision });
+    };
+
+    void (async () => {
+      /*
+        `readAccountJourney` is documented never to reject — every failure resolves to a reported
+        state. This still catches, because "documented not to" is a property of the current
+        implementation rather than of the type, and the consequence of being wrong matters: an escaped
+        rejection would leave the launch holding with no recorded reason, and in a test it surfaces as
+        an unhandled rejection rather than as the behaviour under test. A rejection is an outage by any
+        other name, so it lands where every other outage does.
+      */
+      const inFlight = readAccountJourney(userId).catch(
+        (reason: unknown) =>
+          ({
+            status: 'unavailable' as const,
+            reason: reason instanceof Error ? reason.message : 'Journey read rejected.',
+          }) satisfies Awaited<ReturnType<typeof readAccountJourney>>,
+      );
+      const raced = await waitAtMost(inFlight, JOURNEY_READ_TIMEOUT_MS);
+
+      if (raced === WAIT_EXPIRED) {
+        apply('unknown');
+        /*
+          The read continues. A definitive answer arriving after the bound resolves the unknown state
+          for this account — an upgrade in either direction, since "not selected" is as definitive as
+          "selected" and both are better than holding. It reaches `apply`, so it is still subject to
+          the cancellation flag and still owner-stamped.
+        */
+        void inFlight.then((late) => {
+          apply(decisionFor(late));
+        });
+        return;
+      }
+
+      if (raced.status === 'unconfigured' && __DEV__) {
+        console.warn(`[startup] account journey not configured: ${raced.reason}`);
+      }
+      apply(decisionFor(raced));
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -185,7 +319,74 @@ export function useStartupRouting(): StartupRouting {
       resolved offline and later reaches a server transitions `offline → online`, and that is
       exactly when the journey read becomes both possible and necessary.
     */
-  }, [auth.status, auth.authority, auth.user]);
+  }, [auth.status, auth.authority, auth.user, journeyAttempt]);
+
+  /**
+   * Asks again when the app comes back to the foreground, and only while the answer is unknown.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── What makes the bound load-bearing ──────────────────────────────────────
+   * Without this, bounding the read changes nothing a user could observe: an *unknown* answer and a
+   * read still in flight both hold the launch, so the bound would be a comment with a timer attached.
+   * A mutation that removed it passed every test, which is how that was noticed rather than argued.
+   *
+   * The bound's value is that it produces a **known** unknown — a moment at which it is worth asking
+   * again. This is that moment's consumer: a user who sees the resolving notice, fixes the connection
+   * or leaves the captive portal, and comes back to the app now gets a launch that completes, instead
+   * of one that needs a force-quit.
+   *
+   * ── Why foreground, and why only while unknown ─────────────────────────────
+   * Foreground is the event that correlates with a user having done something about it, and it is the
+   * one this codebase already treats as a recovery trigger. The listener is attached **only** while the
+   * decision is unknown, so an ordinary launch carries no extra subscription and makes no extra
+   * request; a definitive answer detaches it. One re-attempt per foreground, bounded the same way,
+   * with the same guards — no loop, no timer, no inflation.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  const journeyUnknown = journey !== null && journey.decision === 'unknown';
+  useEffect(() => {
+    if (!journeyUnknown) {
+      return;
+    }
+    const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') {
+        setJourneyAttempt((attempt) => attempt + 1);
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [journeyUnknown]);
+
+  /**
+   * The journey decision this account may actually be routed on.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── Owner first, then meaning ──────────────────────────────────────────────
+   * A decision read for another account is not consulted at all. That is what makes a stale result
+   * structurally unable to route the current one: it is refused at the point of *reading*, every
+   * render, against whoever is signed in now — rather than checked once when it was written and
+   * trusted thereafter.
+   *
+   * ── The three-way mapping, and why ~unknown~ is ~null~ ─────────────────────
+   * ~null~ is the machine's "not answered yet", and ~isResolved~ requires a non-null value for a
+   * signed-in online launch. So an unknown journey **holds** the launch: branded splash, then #31's
+   * identity-free notice, and the real destination whenever an answer lands.
+   *
+   * That is the honest reading and it is also the conservative one. The alternatives were both worse:
+   * ~false~ routes an entitled account to a purchase screen because a row read was slow, and ~true~
+   * lets a genuinely new account past the introduction it has not seen. Holding asserts nothing about
+   * the plan in either direction, exposes no protected surface, and stays retryable — the request that
+   * has not answered yet still can.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  const currentUserId = auth.user?.id;
+  const planSelectedInput: boolean | null =
+    journey === null || currentUserId === undefined || journey.userId !== currentUserId
+      ? null
+      : journey.decision === 'unknown'
+        ? null
+        : journey.decision === 'selected';
 
   const state = nextStartupState({
     elapsedMs,
@@ -206,7 +407,7 @@ export function useStartupRouting(): StartupRouting {
      * launch reads the real journey state and enforces the chooser if it is genuinely outstanding.
      */
     hasCompletedPlanSelection:
-      auth.status === 'signed-in' ? auth.authority === 'offline' || planSelected : false,
+      auth.status === 'signed-in' ? auth.authority === 'offline' || planSelectedInput : false,
     /**
      * No input can currently set this.
      *
