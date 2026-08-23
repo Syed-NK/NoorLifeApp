@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+import { pinModuleWindow } from '@/test-support/module-window';
 
 import { ModuleProvider } from '../module-context';
 import { moduleRegistry } from '../module-registry';
@@ -112,7 +113,15 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
      * did, while no hero artwork existed. Now that the eight locked PNGs are in the project,
      * putting the small pictogram in the hero is explicitly forbidden — so the assertion is
      * inverted: the hero shows its own artwork, and never the pictogram.
+     *
+     * ── The window is pinned, added for issue #50 ───────────────────────────
+     * React Native's Jest mock reports a 750 dp window at font scale 2, and at that text size the
+     * hero deliberately drops its artwork so the approved copy stays whole. This case is about the
+     * ordinary presentation, so it names an ordinary device rather than asserting the ordinary
+     * outcome at the most extreme text size Android offers. The accessibility presentation is
+     * asserted, at the configurations where it is the right answer, in `hero-copy-fit.test.ts`.
      */
+    pinModuleWindow();
     await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
 
     const art = screen.getByTestId(`${moduleId}-hero-artwork`);

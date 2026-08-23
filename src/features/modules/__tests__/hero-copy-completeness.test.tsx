@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
 
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+import { pinModuleWindow } from '@/test-support/module-window';
 
 import { PlannerProvider } from '@features/planner/di/planner-provider';
 import { PlannerRoutineProvider } from '@features/planner/di/planner-routine-provider';
@@ -26,8 +27,15 @@ import { ModuleHomeScreen } from '../screens/module-home-screen';
  * width assertion in the suite and fail here.
  *
  * Planner is reached through its own composition rather than the generic home, because that is how
- * the app reaches it — and Planner is the one module the rule constrains, so testing it through the
- * wrong entry point would test the wrong tree.
+ * the app reaches it — and Planner is the one module whose *headline* constrains it, so testing it
+ * through the wrong entry point would test the wrong tree.
+ *
+ * ── Every case names its device ─────────────────────────────────────────────
+ * React Native's Jest mock reports a 750 dp window at font scale 2. That is not a phone, and at that
+ * text size the rule constrains every hero — so a suite that did not pin the window would assert
+ * "the ordinary hero keeps its artwork" in the one configuration where it must not. Each block below
+ * pins the configuration its claim is about: an ordinary phone for the ordinary presentation, and a
+ * large-text phone for the pill that overflows there.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -52,6 +60,11 @@ async function renderPlannerHero() {
 }
 
 describe('the widened hero keeps every approved string', () => {
+  beforeEach(() => {
+    // An ordinary phone: Planner is constrained here by its headline alone.
+    pinModuleWindow();
+  });
+
   it('renders Planner’s eyebrow, headline, support and call to action', async () => {
     /*
       The module the rule constrains, and therefore the one where "the copy takes the card" has to be
@@ -100,6 +113,10 @@ describe('the widened hero keeps every approved string', () => {
 describe('the ordinary heroes are untouched', () => {
   const ORDINARY = SHARED.filter((module) => module.id !== 'planner');
 
+  beforeEach(() => {
+    pinModuleWindow();
+  });
+
   it.each(ORDINARY.map((module) => module.id))(
     '%s renders all four strings and keeps its artwork',
     async (id) => {
@@ -121,4 +138,45 @@ describe('the ordinary heroes are untouched', () => {
       expect(screen.getByLabelText(definition!.hero.actionLabel)).toBeTruthy();
     },
   );
+});
+
+describe('a pill too wide for the column constrains the hero too', () => {
+  /*
+    The half of the rule the previous commit missed, in a rendered tree. At a large OS text size the
+    action label plus its padding, gap and chevron is wider than the 52% column for the three long
+    labels — so those heroes take the whole card and drop their artwork, while Family, whose label is
+    short, keeps both. Same configuration for all four, so the difference is the copy and nothing else.
+  */
+  const LONG_LABEL = ['finance', 'learning', 'goals'] as const;
+
+  beforeEach(() => {
+    // A phone at the top of Android's text-size range, where the long pills no longer fit a column.
+    pinModuleWindow({ fontScale: 1.5 });
+  });
+
+  it.each(LONG_LABEL)('%s drops its artwork and keeps its whole label', async (id) => {
+    const definition = SHARED.find((module) => module.id === id);
+    expect(definition).toBeDefined();
+
+    await render(<ModuleHomeScreen moduleId={id} />);
+    await waitFor(() => expect(screen.getByTestId(`${id}-hero`)).toBeTruthy());
+
+    expect(screen.queryByTestId(`${id}-hero-artwork`)).toBeNull();
+    expect(screen.getByText(definition!.hero.headline)).toBeTruthy();
+    expect(screen.getByText(definition!.hero.eyebrow)).toBeTruthy();
+    expect(screen.getByText(definition!.hero.support!)).toBeTruthy();
+    expect(screen.getByLabelText(definition!.hero.actionLabel)).toBeTruthy();
+    // Still one line: the fix is a column the label fits in, not a two-line button.
+    expect(screen.getByText(definition!.hero.actionLabel).props.numberOfLines).toBe(1);
+  });
+
+  it('leaves Family alone at the same text size', async () => {
+    // "Invite family" clears the column by 17% even at 1.5, so nothing about Family changes.
+    const family = SHARED.find((module) => module.id === 'family');
+    await render(<ModuleHomeScreen moduleId="family" />);
+    await waitFor(() => expect(screen.getByTestId('family-hero')).toBeTruthy());
+
+    expect(screen.getByTestId('family-hero-artwork')).toBeTruthy();
+    expect(screen.getByLabelText(family!.hero.actionLabel)).toBeTruthy();
+  });
 });

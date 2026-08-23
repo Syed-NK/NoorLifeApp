@@ -41,6 +41,24 @@ export type ModuleHeroCardProps = {
 };
 
 /**
+ * The pill's own width, around whatever label it holds.
+ *
+ * These were inline literals in the button's style. The fit rule has to know them — the reason
+ * "Add your first goal" ellipsised is that the label *plus this chrome* is wider than the copy
+ * column — and a rule reading a number the style could change independently is a rule that drifts.
+ * So the style below and `heroActionChromeWidth` read the same three constants, and
+ * `__tests__/hero-copy-fit.test.ts` asserts that they do.
+ */
+const HERO_ACTION_PADDING_H = 11;
+const HERO_ACTION_GAP = 5;
+const HERO_ACTION_CHEVRON = 13;
+
+/** Total width the pill adds to its label, at the current layout scale. */
+function heroActionChromeWidth(dp: (value: number) => number): number {
+  return dp(HERO_ACTION_PADDING_H) * 2 + dp(HERO_ACTION_GAP) + dp(HERO_ACTION_CHEVRON);
+}
+
+/**
  * The shared hero: locked artwork behind, approved concise copy in front.
  *
  * Used by every module except Faith, whose reference centres its copy, and Noor AI, whose
@@ -94,25 +112,32 @@ export function ModuleHeroCard({
   const showAction = !hideAction && hero.actionLabel !== '';
 
   /*
-    ── When the column cannot hold a word, the copy takes the card ────────────
-    The second half of issue #50. Three lines and a growing card removed the ellipsis; they could not
-    help a *single word* wider than the line it has to sit on, and Android splits such a word between
-    letters. `shouldWidenHeroCopy` measures this card's own approved headline against this column at
-    this scale, and says whether that is about to happen — see `hero-copy-fit.ts` for the derivation
-    and for why the threshold is nowhere near an edge.
+    ── When the column cannot hold the copy, the copy takes the card ───────────
+    The second half of issue #50, in two conditions with one outcome.
 
-    Where it is about to happen the artwork is omitted and the copy takes the available card width.
-    Artwork is decorative and the headline is not. Everything else is untouched: same tokens, palette,
-    radius, spacing, `minHeight`, the approved strings exactly as registered, and no shrinking,
-    hyphenation or word-splitting anywhere.
+    A headline whose widest word is wider than its line has nowhere to break, so Android splits it
+    between letters. A pill whose single-line label plus its own chrome is wider than the column has
+    nowhere to go either, so the label ellipsises. Both are the same defect — approved copy in a
+    column too narrow for it — and both are answered the same way: `shouldWidenHeroCopy` measures
+    this card's own registered headline *and* action label against this column at this scale, and
+    where either does not clear it the artwork is omitted and the copy takes the available card width.
+
+    See `hero-copy-fit.ts` for where the two thresholds come from and why neither sits near an edge.
+    Artwork is decorative and copy is not. Everything else is untouched: same tokens, palette, radius,
+    spacing, `minHeight`, the approved strings exactly as registered, the label still on one line, and
+    no shrinking, hyphenation or word-splitting anywhere.
   */
   const widenCopy =
     !section &&
     shouldWidenHeroCopy({
       headline: resolvedHeadline,
+      // An empty label means no pill, so there is nothing for the action condition to fit.
+      actionLabel: showAction ? hero.actionLabel : '',
       columnWidth:
         contentWidth * moduleLayout.heroTextColumnRatio - dp(moduleLayout.heroPadding) * 2,
-      fontSize: type('heroDisplay').fontSize,
+      headlineFontSize: type('heroDisplay').fontSize,
+      actionFontSize: type('cardAction').fontSize,
+      actionChromeWidth: heroActionChromeWidth(dp),
       fontScale,
     });
 
@@ -273,8 +298,8 @@ export function ModuleHeroCard({
                 marginTop: dp(6),
                 minHeight: dp(moduleLayout.heroButtonHeight),
                 borderRadius: dp(moduleLayout.radiusSmall),
-                paddingHorizontal: dp(11),
-                columnGap: dp(5),
+                paddingHorizontal: dp(HERO_ACTION_PADDING_H),
+                columnGap: dp(HERO_ACTION_GAP),
               },
             ]}
             testID={`${testID ?? 'module-hero'}-action`}
@@ -282,7 +307,11 @@ export function ModuleHeroCard({
             <ModuleText token="cardAction" color={module.theme.ink} numberOfLines={1}>
               {hero.actionLabel}
             </ModuleText>
-            <AppIcon name="chevron-forward" size={dp(13)} color={module.theme.ink} />
+            <AppIcon
+              name="chevron-forward"
+              size={dp(HERO_ACTION_CHEVRON)}
+              color={module.theme.ink}
+            />
           </PressableScale>
         ) : null}
       </View>

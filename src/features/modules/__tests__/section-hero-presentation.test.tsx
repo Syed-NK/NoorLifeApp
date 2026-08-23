@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { render, screen, waitFor } from '@testing-library/react-native';
 
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+import { pinModuleWindow } from '@/test-support/module-window';
 
 import { ModuleHomeScreen } from '../screens/module-home-screen';
 import { ModuleSectionScreen } from '../screens/module-section-screen';
@@ -141,6 +142,9 @@ describe('the module home hero is untouched', () => {
       The rule that decides this, and the per-module outcome across every tested width and text size,
       are pinned in `hero-copy-fit.test.ts`.
     */
+    // Pinned to an ordinary phone: at the Jest mock's font scale 2 every hero drops its artwork so
+    // that its approved copy stays whole, which is the opposite of what this case is about.
+    pinModuleWindow();
     await render(<ModuleHomeScreen moduleId="finance" />);
     await waitFor(() => expect(screen.getByTestId('finance-hero')).toBeTruthy());
     // The home hero keeps its locked artwork layer.
