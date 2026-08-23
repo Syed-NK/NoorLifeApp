@@ -12,10 +12,36 @@ import { assertRemoteAccess } from '@services/network/remote-access';
  * ── Why an explicit "unconfigured" state ────────────────────────────────────
  * The migration that adds those columns is written but **not applied**. Until it is, the query
  * fails with an undefined-column error, and the brief is explicit about what must happen then:
- * fail safely and report configuration, *not* silently route new users to Home. So the three
- * outcomes are distinguished — completed, pending, and unconfigured — and the caller decides.
- * Collapsing "we cannot tell" into "completed" is exactly the bug that sends a new account straight
- * past the subscription introduction.
+ * fail safely and report configuration, *not* silently route new users to Home. So the outcomes are
+ * distinguished rather than collapsed, and the caller decides. Collapsing "we cannot tell" into
+ * "completed" is exactly the bug that sends a new account straight past the subscription
+ * introduction.
+ *
+ * ── Why "unconfigured" and "unavailable" are not the same answer ────────────
+ * They were, and that was a defect: this type reported both "the columns do not exist" and "the
+ * request could not complete" as `unconfigured`, and the caller mapped the pair to *has not chosen a
+ * plan*. One of those is a definitive fact about the deployment; the other is an outage. Treating an
+ * outage as a verdict routed a paying account to the subscription chooser because the network was
+ * slow — issue #46, measured on both targets.
+ *
+ * So they are separate members now:
+ *
+ *   • `unconfigured` — this deployment **cannot record** a plan choice. The migration has not run, or
+ *     the build has no backend at all. Nothing is wrong with the request; there is nowhere for the
+ *     answer to live.
+ *   • `unavailable` — the request **could not be completed**: no route, a captive portal, a server
+ *     that never answered, a transport failure, or a bound elapsing at the caller.
+ *
+ * ── Both are unknown, and neither may route ────────────────────────────────
+ * They are kept apart because the *diagnosis* differs — one names a migration to apply, the other a
+ * network to fix — and a caller that could not tell them apart could not report either usefully. But
+ * neither says anything about this account, so neither may produce a routing verdict.
+ *
+ * `unconfigured` briefly did, on the reasoning that a deployment with nowhere to store the answer has
+ * no accounts that chose a plan, so showing the chooser was harmless. It is not harmless: it invents a
+ * purchase decision to preserve availability, and it does so for exactly the person it hurts most — a
+ * subscriber whose backend is mis-deployed, shown a plan chooser as though they had never chosen.
+ * Absence of a place to record the answer is not the answer.
  */
 
 /** The approved plan codes. Paid codes are written by server-side verification only. */
@@ -28,8 +54,21 @@ export type AccountJourneyState =
   | { readonly status: 'completed'; readonly planCode: InitialPlanCode }
   /** The account still owes the plan introduction. */
   | { readonly status: 'pending' }
-  /** The columns do not exist yet, or the backend is unreachable. Reported, never assumed. */
-  | { readonly status: 'unconfigured'; readonly reason: string };
+  /**
+   * This deployment cannot record a plan choice: the migration has not run, or there is no backend.
+   *
+   * A statement about the *installation*, not about the account and not about the network. Reported,
+   * never assumed, and **never routable** — the reason string names the migration so the deployment
+   * can be fixed, which is the honest response to a build that cannot answer.
+   */
+  | { readonly status: 'unconfigured'; readonly reason: string }
+  /**
+   * The request could not be completed, so nothing was learned.
+   *
+   * **Not a verdict, and never routable as one.** A caller that maps this to "has not chosen a plan"
+   * reintroduces #46. It may hold a launch; it may not conclude anything about the account.
+   */
+  | { readonly status: 'unavailable'; readonly reason: string };
 
 /** Postgres error codes meaning "this schema does not have that". */
 const MISSING_SCHEMA_CODES = new Set(['42703', '42P01', 'PGRST204', 'PGRST205']);
@@ -45,8 +84,9 @@ function describeMissingSchema(error: { code?: string; message?: string }): stri
 /**
  * Reads journey state for a user.
  *
- * Never throws. Every failure resolves to `unconfigured` with a reason, so a caller cannot mistake
- * a backend problem for a completed journey.
+ * Never throws. Every failure resolves to a reported state with a reason, so a caller cannot mistake
+ * a backend problem for a completed journey — and cannot mistake an outage for a definitive answer
+ * about the account either.
  */
 export async function readAccountJourney(userId: string): Promise<AccountJourneyState> {
   if (supabase === null) {
@@ -65,7 +105,12 @@ export async function readAccountJourney(userId: string): Promise<AccountJourney
       if (code !== undefined && MISSING_SCHEMA_CODES.has(code)) {
         return { status: 'unconfigured', reason: describeMissingSchema(error) };
       }
-      return { status: 'unconfigured', reason: error.message ?? 'Profile read failed.' };
+      /*
+        The query reached a server and the server refused for a reason that is not "no such column" —
+        a transient failure, a policy error, a timeout at the edge. Nothing about the account was
+        established, so this is an outage rather than a configuration fact.
+      */
+      return { status: 'unavailable', reason: error.message ?? 'Profile read failed.' };
     }
 
     if (data === null) {
@@ -100,8 +145,13 @@ export async function readAccountJourney(userId: string): Promise<AccountJourney
       planCode: (row.initial_plan_code as InitialPlanCode | null) ?? 'free',
     };
   } catch (error) {
+    /*
+      A rejection rather than a resolved error: a DNS failure, a dropped socket, an abort. The request
+      did not complete, so there is no answer to interpret — which is the definition of unavailable
+      and emphatically not of "has not chosen a plan".
+    */
     return {
-      status: 'unconfigured',
+      status: 'unavailable',
       reason: error instanceof Error ? error.message : 'Profile read failed.',
     };
   }

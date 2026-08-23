@@ -33,6 +33,27 @@ import Index from '../../../app/index';
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
+/*
+  ── The journey read is scripted, because this suite is not about the journey ──
+  This file drives the whole gate through `AppProviders`, so before it was mocked here the *real*
+  `readAccountJourney` ran against the global Supabase double and answered `unconfigured` — the
+  migration is not applied in the test environment.
+
+  For as long as `unconfigured` routed to the plan chooser, that resolved the launch by accident and
+  this suite passed on it. It no longer routes anywhere: a deployment that cannot record a plan choice
+  has not given an answer, so the launch holds the splash — which looks exactly like the #30 regression
+  this file exists to catch, while being nothing of the kind.
+
+  So the answer is scripted to a definitive one. The subject here is whether the containment verdict
+  still reaches the machine, and that question needs the *other* inputs answered rather than
+  incidental.
+*/
+jest.mock('@services/account/account-journey', () => ({
+  readAccountJourney: async () => ({ status: 'completed', planCode: 'free' }),
+  completeAccountJourney: async () => ({ ok: true }),
+  CURRENT_ACCOUNT_JOURNEY_VERSION: 1,
+}));
+
 beforeEach(() => {
   // Microtasks stay real: promise resolution runs on them and faking them deadlocks the auth double.
   jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });

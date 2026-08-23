@@ -26,6 +26,23 @@ import { AUTH_CALLBACK_ROUTE_PATHS } from '../auth-callback-routes';
  * Microtasks stay real, because promise resolution runs on them and faking them deadlocks anything
  * awaiting the Supabase double.
  */
+/*
+  ── The journey read is scripted, because this suite is not about the journey ──
+  This file drives the whole gate through `AppProviders`, so without this the *real*
+  `readAccountJourney` runs against the global Supabase double and answers `unconfigured` — the
+  migration is not applied in the test environment.
+
+  For as long as `unconfigured` routed to the plan chooser, that resolved the launch by accident and
+  this suite passed on it. It no longer routes anywhere: a deployment that cannot record a plan choice
+  has not given an answer, so the launch holds the splash. The subject here is where a callback URL
+  sends the app, which needs the *other* startup inputs answered rather than incidental.
+*/
+jest.mock('@services/account/account-journey', () => ({
+  readAccountJourney: async () => ({ status: 'completed', planCode: 'free' }),
+  completeAccountJourney: async () => ({ ok: true }),
+  CURRENT_ACCOUNT_JOURNEY_VERSION: 1,
+}));
+
 beforeEach(() => {
   jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
 });
