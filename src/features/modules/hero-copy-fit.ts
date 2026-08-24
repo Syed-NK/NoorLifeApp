@@ -6,8 +6,10 @@
  * Issue #50 in two halves. The first let the headline wrap to three lines and the card grow, which
  * removed the ellipsis. That exposed the second: a word wider than the line it sits on has nowhere
  * to break, so Android splits it between letters. "manageable" is 6.611 em, 158.7 dp at the
- * `heroDisplay` token, against a copy column of 130.9 dp at 320 dp and 159.7 dp at the reference
- * width — measured on a phone as "manageabl / e" at font scale 1.0 and "today man / ageable" at 1.3.
+ * `heroDisplay` token, against a copy column that was then 130.9 dp at 320 dp and 159.7 dp at the
+ * reference width — measured on a phone as "manageabl / e" at font scale 1.0 and "today man /
+ * ageable" at 1.3. The shared column has since been widened to `heroCopyColumnRatio` so that word
+ * fits beside its artwork on an ordinary phone; it still does not fit at 320 dp or above scale 1.0.
  *
  * Then measuring the call to action found the same shape of defect in the other direction. The pill
  * carries its label on one line by design, and the label plus its padding, gap and chevron is wider
@@ -409,21 +411,34 @@ export function widestWordEm(text: string): number {
 /**
  * How much wider than its widest word a copy column must be to keep the artwork beside it.
  *
- * ── Derived from the registry, and deliberately not near an edge ────────────
- * Headroom is `columnWidth / widestWordWidth`: above 1 the word fits, below 1 it is split between
- * letters. Measured across three widths and three OS text sizes, the five shared headlines fall into
- * two populations with nothing in between:
+ * ── A rendering margin, derived from what the devices disagreed about ───────
+ * Headroom is `columnWidth / widestWordWidth`: above 1 the word fits, below 1 Android splits it
+ * between letters. This arithmetic predicts the boundary at exactly 1, and two device observations
+ * bracket how far off that prediction can be. At the old 52% column, 411 dp and text scale 1.0 gave
+ * a headroom of 1.0067 and the emulator rendered "manageable" **intact**; 384 dp and 1.0 gave 0.998
+ * and the phone **split** it. So the true boundary lies inside (0.998, 1.0067] and the model's error
+ * is under **0.67%**.
  *
- *   Planner ("manageable")                    0.907 … 1.015
- *   Finance, Learning, Family, Goals          1.539 … 2.135
+ * 1.02 is three times that error. It is a rendering margin — room for a device whose shaping differs
+ * slightly from the `hmtx` advances — and nothing more; it deliberately does not reserve space for
+ * copy that merely "almost fits".
  *
- * Planner straddles 1 by less than two percent — 0.998 at 384 dp and 1.007 at 411 dp, both confirmed
- * on hardware — so "does it exceed 1" is exactly the rounding edge a layout decision must not rest
- * on. 1.25 is the geometric centre of the empty band, so every decision clears its nearest boundary
- * by at least eleven percent and a ±10% perturbation of either the column or the word changes no
- * outcome.
+ * ── Why it replaced a 25% reserve ──────────────────────────────────────────
+ * 1.25 was the geometric centre of the gap between two populations of *headlines*, which made it
+ * stable but far larger than any measurement justified. Its cost was concrete: Planner's headline was
+ * treated as unfittable at 384 dp and 411 dp at text scale 1.0, so an ordinary phone at the default
+ * text size permanently lost that module's locked artwork. Widening the shared copy column to 0.545
+ * and reserving only the measured error keeps the artwork on those layouts and still gives the copy
+ * the whole card at 320 dp and at every scale above 1.0, where the word genuinely does not fit.
+ *
+ * The pair (0.545, 1.02) is the smallest such change. The admissible margin window at that ratio is
+ * (0.9748, 1.0546] — bounded below by the widest cell that must widen and above by the tightest cell
+ * that must keep its artwork — and 1.02 clears the floor by 4.6% and the ceiling by 3.4%. Every
+ * outcome in that window, and the boundary either side of it, is asserted in
+ * `__tests__/hero-copy-fit.test.ts` against the presentation each cell must get, not against this
+ * number.
  */
-export const heroCopyColumnHeadroom = 1.25;
+export const heroCopyColumnHeadroom = 1.02;
 
 /**
  * How much wider than its complete pill a copy column must be to keep the artwork beside it.

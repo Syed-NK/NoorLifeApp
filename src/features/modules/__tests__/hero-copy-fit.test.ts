@@ -97,7 +97,7 @@ function contentWidth(width: number): number {
 /** Text width inside the 52% copy column — the ordinary presentation. */
 function columnBox(width: number): number {
   return (
-    contentWidth(width) * moduleLayout.heroTextColumnRatio -
+    contentWidth(width) * moduleLayout.heroCopyColumnRatio -
     scaledDp(width)(moduleLayout.heroPadding) * 2
   );
 }
@@ -412,10 +412,14 @@ describe('the measurement both conditions rest on', () => {
 describe('the combined predicate', () => {
   it('activates on headline overflow alone', () => {
     /*
-      Planner at OS scale 1.0: the widest word does not clear the column, the pill clears it by more
-      than half. Exactly one condition fires, and the outcome is full width.
+      Planner at OS scale 1.3: the widest word no longer clears the column, while its short pill
+      clears it by more than half. Exactly one condition fires, and the outcome is full width.
+
+      This case used to be Planner at scale 1.0. It moved because that cell is now the requirement in
+      the other direction — Planner keeps its artwork on an ordinary phone at the default text size,
+      asserted below — so 1.3 is the nearest cell where the headline alone still constrains it.
     */
-    const input = inputFor(moduleNamed('planner'), 384, 1);
+    const input = inputFor(moduleNamed('planner'), 384, 1.3);
     expect(headlineOverflowsColumn(input)).toBe(true);
     expect(actionOverflowsColumn(input)).toBe(false);
     expect(shouldWidenHeroCopy(input)).toBe(true);
@@ -477,30 +481,49 @@ describe('the combined predicate', () => {
     expect(shouldWidenHeroCopy(inputFor(goals, 320, 1.5))).toBe(true);
   });
 
-  it('reproduces what the devices actually did', () => {
+  it('reproduces what the devices actually did, at the column each was measured with', () => {
     /*
-      Six observations across two devices, asked as the raw questions the rule exists to answer.
-      Without the rule the column is all the copy gets, so these are "does it fit the column".
+      The device observations are the calibration for all of this, so they are asserted against the
+      column that was in force when each was taken. The first six were measured at the original 52%
+      column; the last two at the refined one, which is why the same question gets the opposite answer
+      at 384 dp and scale 1.0 — that reversal *is* this refinement.
     */
-    const headlineFits = (width: number, fontScale: number): boolean =>
-      headlineNeed(moduleNamed('planner').hero.headline, width, fontScale) <= columnBox(width);
-    const pillFits = (width: number, fontScale: number): boolean =>
-      actionNeed(moduleNamed('goals').hero.actionLabel, width, fontScale) <= columnBox(width);
+    const columnAt = (ratio: number, width: number): number =>
+      contentWidth(width) * ratio - scaledDp(width)(moduleLayout.heroPadding) * 2;
+    const ORIGINAL_RATIO = 0.52;
 
-    expect(headlineFits(411, 1)).toBe(true); //   emulator: "Make today / manageable", intact
-    expect(headlineFits(384, 1)).toBe(false); //  phone:    "manageabl / e"
-    expect(headlineFits(384, 1.3)).toBe(false); // phone:   "today man / ageable"
-    expect(pillFits(320, 1)).toBe(true); //       emulator: full label
-    expect(pillFits(320, 1.5)).toBe(false); //    emulator: "Add your first g…"
-    expect(pillFits(384, 1.3)).toBe(false); //    phone:    pill 160 dp against a 155 dp column
+    const headlineFitsOriginal = (width: number, fontScale: number): boolean =>
+      headlineNeed(moduleNamed('planner').hero.headline, width, fontScale) <=
+      columnAt(ORIGINAL_RATIO, width);
+    const pillFitsOriginal = (width: number, fontScale: number): boolean =>
+      actionNeed(moduleNamed('goals').hero.actionLabel, width, fontScale) <=
+      columnAt(ORIGINAL_RATIO, width);
+
+    expect(headlineFitsOriginal(411, 1)).toBe(true); //   emulator: "Make today / manageable", intact
+    expect(headlineFitsOriginal(384, 1)).toBe(false); //  phone:    "manageabl / e"
+    expect(headlineFitsOriginal(384, 1.3)).toBe(false); // phone:   "today man / ageable"
+    expect(pillFitsOriginal(320, 1)).toBe(true); //       emulator: full label
+    expect(pillFitsOriginal(320, 1.5)).toBe(false); //    emulator: "Add your first g…"
+    expect(pillFitsOriginal(384, 1.3)).toBe(false); //    phone:   pill 160 dp, 155 dp column
+
+    // The refined column, which is what the two protected cells are measured against now.
+    const headlineFitsNow = (width: number, fontScale: number): boolean =>
+      headlineNeed(moduleNamed('planner').hero.headline, width, fontScale) <= columnBox(width);
+    expect(headlineFitsNow(384, 1)).toBe(true); //  phone:    intact, beside its artwork
+    expect(headlineFitsNow(411, 1)).toBe(true); //  emulator: intact, beside its artwork
   });
 
   it('names every cell that enters full width, and why', () => {
     /*
       The whole decision surface in one assertion, so a change to either threshold, any font or any
       approved string has to be seen and re-approved rather than merely re-passing. At OS scale 1.0
-      only Planner's headline overflows; from 1.3 the three long pills join it, because the action
-      label — unlike the headline — has no multiplier cap.
+      every hero keeps its column and its artwork; from 1.3 the copy no longer fits, and four of the
+      five widen — Planner because "manageable" exceeds the column once the type grows, and Finance,
+      Learning and Goals because their pills do. Family's copy fits everywhere, so Family never widens.
+
+      The 1.0 row is the outcome this refinement exists for: at the previous 52% column and 25%
+      reserve, Planner widened here too and lost its locked artwork on an ordinary phone at the
+      default text size.
     */
     const surface = CELLS.map(({ width, fontScale }) => ({
       cell: `${width}dp x${fontScale}`,
@@ -509,16 +532,16 @@ describe('the combined predicate', () => {
         .sort(),
     }));
 
-    const HEADLINE_ONLY = ['planner'];
+    const NONE: string[] = [];
     const HEADLINE_AND_ACTION = ['finance', 'goals', 'learning', 'planner'];
     expect(surface).toEqual([
-      { cell: '320dp x1', widened: HEADLINE_ONLY },
+      { cell: '320dp x1', widened: NONE },
       { cell: '320dp x1.3', widened: HEADLINE_AND_ACTION },
       { cell: '320dp x1.5', widened: HEADLINE_AND_ACTION },
-      { cell: '384dp x1', widened: HEADLINE_ONLY },
+      { cell: '384dp x1', widened: NONE },
       { cell: '384dp x1.3', widened: HEADLINE_AND_ACTION },
       { cell: '384dp x1.5', widened: HEADLINE_AND_ACTION },
-      { cell: '411dp x1', widened: HEADLINE_ONLY },
+      { cell: '411dp x1', widened: NONE },
       { cell: '411dp x1.3', widened: HEADLINE_AND_ACTION },
       { cell: '411dp x1.5', widened: HEADLINE_AND_ACTION },
     ]);
@@ -604,34 +627,108 @@ describe('every approved string renders complete, in whichever presentation it g
   });
 });
 
-describe('neither threshold sits near an edge', () => {
+describe('both thresholds are derived, and neither sits near an edge', () => {
   const headlineHeadroom = (module: SharedModule, width: number, fontScale: number) =>
     columnBox(width) / headlineNeed(module.hero.headline, width, fontScale);
   const actionHeadroom = (module: SharedModule, width: number, fontScale: number) =>
     columnBox(width) / actionNeed(module.hero.actionLabel, width, fontScale);
 
-  it('separates the headlines into two populations with a wide empty band', () => {
-    const constrained: number[] = [];
-    const roomy: number[] = [];
+  /** Planner must keep its artwork here: an ordinary phone at the default text size. */
+  const PROTECTED: readonly { readonly width: number; readonly fontScale: number }[] = [
+    { width: 384, fontScale: 1 },
+    { width: 411, fontScale: 1 },
+  ];
+
+  it('puts the headline margin inside the window the required outcomes leave open', () => {
+    /*
+      ── The derivation, as a test rather than as a comment ────────────────────
+      The margin is not free to be anything. Two kinds of cell bound it:
+
+        • a cell whose word genuinely does not fit its column **must** widen, so the margin has to
+          exceed that cell's headroom — otherwise the rule keeps a column that clips;
+        • the two protected cells **must not** widen, so the margin cannot exceed their headroom —
+          otherwise Planner loses its artwork on an ordinary phone, which is the outcome this
+          refinement exists to prevent.
+
+      That leaves a window, and this asserts the margin is inside it with real clearance either side.
+      Nothing here hard-codes the number: change the column ratio or an approved string and the window
+      moves, and the assertion still says the same thing.
+    */
+    let floor = 0;
     for (const { width, fontScale } of CELLS) {
       for (const module of SHARED) {
-        (module.id === 'planner' ? constrained : roomy).push(
-          headlineHeadroom(module, width, fontScale),
-        );
+        const headroom = headlineHeadroom(module, width, fontScale);
+        if (headroom < 1) floor = Math.max(floor, headroom);
       }
     }
-    expect(Math.max(...constrained)).toBeLessThan(1.02);
-    expect(Math.min(...roomy)).toBeGreaterThan(1.5);
-    expect(heroCopyColumnHeadroom).toBeGreaterThan(Math.max(...constrained));
-    expect(heroCopyColumnHeadroom).toBeLessThan(Math.min(...roomy));
+    // Planner at 320 dp and scale 1.5 must widen even though its word is only marginally too wide.
+    floor = Math.max(floor, headlineHeadroom(moduleNamed('planner'), 320, 1.5));
+
+    const ceiling = Math.min(
+      ...PROTECTED.map(({ width, fontScale }) =>
+        headlineHeadroom(moduleNamed('planner'), width, fontScale),
+      ),
+    );
+
+    expect(floor).toBeLessThan(ceiling);
+    expect(heroCopyColumnHeadroom).toBeGreaterThan(floor);
+    expect(heroCopyColumnHeadroom).toBeLessThanOrEqual(ceiling);
+    // At least 3% either side, so a device that shapes slightly differently cannot flip an outcome.
+    expect(heroCopyColumnHeadroom / floor).toBeGreaterThan(1.03);
+    expect(ceiling / heroCopyColumnHeadroom).toBeGreaterThan(1.03);
   });
 
-  it('separates the pills into two populations with a narrower band, and names it', () => {
+  it('reserves the measured model error and not a great deal more', () => {
     /*
-      The action band is genuinely tighter than the headline band, because label width and OS text
-      size together are nearly continuous. The one real gap is 0.987 → 1.147, and the threshold is
-      inside it — recorded here so a future label landing in the gap fails rather than silently
-      redefining the rule.
+      The margin's size has to come from something. Two device observations at the previous 52% column
+      bracket how wrong this arithmetic can be: a headroom of 1.0067 rendered "manageable" intact on
+      the emulator, and 0.998 split it on the phone, so the true boundary is inside (0.998, 1.0067]
+      and the model's error is under 0.67%. A few times that is a rendering allowance; the 25% reserve
+      this replaced was large enough to declare an ordinary layout unfittable.
+    */
+    const measuredError = 0.0067;
+    expect(heroCopyColumnHeadroom).toBeGreaterThan(1 + measuredError);
+    expect(heroCopyColumnHeadroom).toBeLessThan(1 + measuredError * 6);
+  });
+
+  it('keeps Planner beside its artwork at both ordinary widths', () => {
+    /*
+      The product requirement, stated directly against the predicate. Both conditions must be quiet:
+      the headline fits the wider column, and Planner's short pill was never the problem.
+    */
+    for (const { width, fontScale } of PROTECTED) {
+      const input = inputFor(moduleNamed('planner'), width, fontScale);
+      expect({
+        width,
+        headline: headlineOverflowsColumn(input),
+        action: actionOverflowsColumn(input),
+        widened: shouldWidenHeroCopy(input),
+      }).toEqual({ width, headline: false, action: false, widened: false });
+    }
+  });
+
+  it('still constrains Planner at the narrow width and above the default text size', () => {
+    // The other half of the same requirement: the refinement must not weaken the rule.
+    for (const { width, fontScale } of [
+      { width: 320, fontScale: 1.5 },
+      { width: 320, fontScale: 1.3 },
+      { width: 384, fontScale: 1.3 },
+      { width: 411, fontScale: 1.3 },
+    ]) {
+      const input = inputFor(moduleNamed('planner'), width, fontScale);
+      expect({ width, fontScale, headline: headlineOverflowsColumn(input) }).toEqual({
+        width,
+        fontScale,
+        headline: true,
+      });
+    }
+  });
+
+  it('keeps a gap around the action threshold, and the threshold inside it', () => {
+    /*
+      The pill band is computed rather than pinned, because widening the shared column moves every
+      pill headroom with it. What must survive is the shape: a gap between the pills that overflow and
+      the pills that fit, with the threshold inside it and clearance on both sides.
     */
     const below: number[] = [];
     const above: number[] = [];
@@ -641,49 +738,61 @@ describe('neither threshold sits near an edge', () => {
         (value < heroActionColumnHeadroom ? below : above).push(value);
       }
     }
-    expect(+Math.max(...below).toFixed(3)).toBe(0.987);
-    expect(+Math.min(...above).toFixed(3)).toBe(1.147);
-    expect(heroActionColumnHeadroom).toBeGreaterThan(Math.max(...below));
-    expect(heroActionColumnHeadroom).toBeLessThan(Math.min(...above));
+    const top = Math.max(...below);
+    const bottom = Math.min(...above);
+    expect(bottom / top).toBeGreaterThan(1.1);
+    expect(heroActionColumnHeadroom).toBeGreaterThan(top);
+    expect(heroActionColumnHeadroom).toBeLessThan(bottom);
+    expect(heroActionColumnHeadroom / top).toBeGreaterThan(1.03);
+    expect(bottom / heroActionColumnHeadroom).toBeGreaterThan(1.03);
   });
 
-  it('keeps a fitting pill fitting even if this arithmetic understated it by a tenth', () => {
+  it('gives every ordinary cell at least its documented margin of slack', () => {
     /*
-      The guarantee the action threshold is chosen for, and why it sits at the top of its band rather
-      than the middle. The two ways of being wrong are not symmetric: keeping the column when the pill
-      does not fit clips an approved label, while widening when it would have fitted costs a
-      decorative image. So a hero that keeps its column must still fit a pill that turns out to be
-      10% wider than measured — which is exactly what a threshold of 1.1 buys.
+      What the two margins *mean*, asserted rather than described: a hero that keeps its column has a
+      headline with at least `heroCopyColumnHeadroom` of room and a pill with at least
+      `heroActionColumnHeadroom`. That is the perturbation tolerance — a device whose shaping differs
+      from the `hmtx` advances by less than the margin still renders both without clipping.
     */
     for (const { width, fontScale } of CELLS) {
       for (const module of SHARED) {
         if (shouldWidenHeroCopy(inputFor(module, width, fontScale))) continue;
-        const understated = actionNeed(module.hero.actionLabel, width, fontScale) * 1.1;
         expect({
           module: module.id,
           width,
           fontScale,
-          stillFits: understated <= columnBox(width),
-        }).toEqual({ module: module.id, width, fontScale, stillFits: true });
+          headlineSlack:
+            headlineNeed(module.hero.headline, width, fontScale) * heroCopyColumnHeadroom <=
+            columnBox(width),
+          actionSlack:
+            actionNeed(module.hero.actionLabel, width, fontScale) * heroActionColumnHeadroom <=
+            columnBox(width),
+        }).toEqual({
+          module: module.id,
+          width,
+          fontScale,
+          headlineSlack: true,
+          actionSlack: true,
+        });
       }
     }
   });
 
-  it.each([0.9, 0.95, 1.05, 1.1])(
-    'never clips under a ×%s perturbation of the column',
+  it.each([0.98, 0.9, 0.8])(
+    'never clips when the column turns out ×%s narrower than measured',
     (perturbation) => {
       /*
-        The ±10% evidence for both branches, stated as the property that matters rather than as "the
-        decision set never moves": the action band is 16% wide, so a ±10% swing can legitimately move
-        a marginal cell. What must never happen is a cell ending up in a presentation whose box
-        cannot hold its copy — and that holds in both directions, for both conditions.
+        A narrower-than-measured column can only push a cell *into* full width, which is the safe
+        direction — so this holds far beyond the margin. Asserted against the perturbed column, since
+        that is the box the copy would actually get.
       */
       for (const { width, fontScale } of CELLS) {
         for (const module of SHARED) {
-          const perturbed = shouldWidenHeroCopy(
-            inputFor(module, width, fontScale, { columnWidth: columnBox(width) * perturbation }),
+          const narrowed = columnBox(width) * perturbation;
+          const widened = shouldWidenHeroCopy(
+            inputFor(module, width, fontScale, { columnWidth: narrowed }),
           );
-          const box = perturbed ? fullBox(width) : columnBox(width);
+          const box = widened ? fullBox(width) : narrowed;
           expect({
             module: module.id,
             width,
@@ -704,20 +813,19 @@ describe('neither threshold sits near an edge', () => {
     },
   );
 
-  it.each([0.9, 0.95, 1.05, 1.1])(
-    'never clips under a ×%s perturbation of the measured need',
+  it.each([1.01, 1.02])(
+    'never clips when the measured need turns out ×%s wider than modelled',
     (perturbation) => {
-      // The other side: the measurement itself, not the space it is measured in.
+      /*
+        The dangerous direction: an understated measurement could let a hero keep a column it cannot
+        fill. The headline margin is exactly the tolerance for that, so anything within the margin is
+        safe — asserted at the margin itself rather than at an arbitrary ten percent.
+      */
+      expect(perturbation).toBeLessThanOrEqual(heroCopyColumnHeadroom);
       for (const { width, fontScale } of CELLS) {
         for (const module of SHARED) {
-          const perturbed = shouldWidenHeroCopy(
-            inputFor(module, width, fontScale, {
-              headlineFontSize: layoutSize('heroDisplay', width) * perturbation,
-              actionFontSize: layoutSize('cardAction', width) * perturbation,
-              actionChromeWidth: actionChrome(width) * perturbation,
-            }),
-          );
-          const box = perturbed ? fullBox(width) : columnBox(width);
+          const widened = shouldWidenHeroCopy(inputFor(module, width, fontScale));
+          const box = widened ? fullBox(width) : columnBox(width);
           expect({
             module: module.id,
             width,
@@ -739,16 +847,14 @@ describe('neither threshold sits near an edge', () => {
     },
   );
 
-  it.each([0.97, 1, 1.03])(
+  it.each([0.98, 1, 1.02])(
     'reaches the same decisions under a ×%s perturbation',
     (perturbation) => {
       /*
-        Within ±3% the decision surface itself is stable, on both conditions. It is stated at three
-        percent rather than ten because the action band is only 16% wide, and claiming more than the
-        measurements support would be the same mistake as the estimate that started this issue: the
-        narrowest fitting pill clears the threshold by 4.3%, so a ±5% swing legitimately moves it.
-        What a ±10% swing can never do is land a hero in a presentation that clips its copy, and that
-        is asserted above — it is the property that matters, and it is the stronger of the two.
+        The decision surface is stable across the headline margin's own width, on both conditions.
+        Stated at the margin rather than at a round ten percent: the margin is what the measurements
+        support, and claiming more would be the same mistake as the character-count estimate this
+        issue started with.
       */
       for (const { width, fontScale } of CELLS) {
         for (const module of SHARED) {
@@ -783,6 +889,109 @@ describe('neither threshold sits near an edge', () => {
   });
 });
 
+describe('the boundary around the real fit margin', () => {
+  /*
+    The margin is a boundary, so it gets boundary cases: a column a hair inside it must widen, a column
+    at or above it must not. Both are expressed against the margin rather than against a literal, so
+    they keep meaning if the derivation moves.
+  */
+  const plannerNeedAt = (width: number, fontScale: number) =>
+    headlineNeed(moduleNamed('planner').hero.headline, width, fontScale);
+
+  it.each([
+    { width: 384, fontScale: 1 },
+    { width: 411, fontScale: 1 },
+  ])('widens at $width dp just below the margin', ({ width, fontScale }) => {
+    // One part in a thousand under the required room: the rule must still take the whole card.
+    const justUnder = plannerNeedAt(width, fontScale) * heroCopyColumnHeadroom * 0.999;
+    expect(
+      headlineOverflowsColumn(
+        inputFor(moduleNamed('planner'), width, fontScale, { columnWidth: justUnder }),
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    { width: 384, fontScale: 1 },
+    { width: 411, fontScale: 1 },
+  ])('stays ordinary at $width dp at exactly the margin', ({ width, fontScale }) => {
+    // Exactly the required room, and one part in a thousand over it: the ordinary layout stands.
+    const exactly = plannerNeedAt(width, fontScale) * heroCopyColumnHeadroom;
+    expect(
+      headlineOverflowsColumn(
+        inputFor(moduleNamed('planner'), width, fontScale, { columnWidth: exactly }),
+      ),
+    ).toBe(false);
+    expect(
+      headlineOverflowsColumn(
+        inputFor(moduleNamed('planner'), width, fontScale, { columnWidth: exactly * 1.001 }),
+      ),
+    ).toBe(false);
+  });
+
+  it('has the real column on the ordinary side of that boundary at both protected cells', () => {
+    /*
+      The two cases above prove the predicate respects its boundary. This proves the *shipped* column
+      is on the right side of it — which is the product requirement, and the thing a ratio change
+      would break.
+    */
+    for (const { width, fontScale } of [
+      { width: 384, fontScale: 1 },
+      { width: 411, fontScale: 1 },
+    ]) {
+      expect({
+        width,
+        room: columnBox(width) >= plannerNeedAt(width, fontScale) * heroCopyColumnHeadroom,
+      }).toEqual({ width, room: true });
+    }
+  });
+
+  it('still widens on CTA overflow independently of the headline', () => {
+    /*
+      The refinement widened the column, which relaxes both conditions — so the CTA branch has to be
+      shown still to fire on its own. Goals at scale 1.5: the headline clears the wider column
+      comfortably, the pill does not.
+    */
+    for (const width of WIDTHS) {
+      const input = inputFor(moduleNamed('goals'), width, 1.5);
+      expect({
+        width,
+        headline: headlineOverflowsColumn(input),
+        action: actionOverflowsColumn(input),
+        widened: shouldWidenHeroCopy(input),
+      }).toEqual({ width, headline: false, action: true, widened: true });
+    }
+  });
+
+  it('leaves Noor AI’s own column exactly where it was', () => {
+    /*
+      Noor AI draws its own hero and reads `heroTextColumnRatio`; the shared card now reads
+      `heroCopyColumnRatio`. Widening one must not move the other, so both the value and the wiring
+      are asserted — otherwise "Noor AI is unchanged" would rest on nobody having edited the wrong
+      token.
+    */
+    expect(moduleLayout.heroTextColumnRatio).toBe(0.52);
+    expect(moduleLayout.heroCopyColumnRatio).toBeGreaterThan(moduleLayout.heroTextColumnRatio);
+
+    const noorAiHero = code(join(MODULES_ROOT, 'noor-ai', 'noor-ai-hero.tsx'));
+    expect(noorAiHero).toContain('contentWidth * moduleLayout.heroTextColumnRatio');
+    expect(noorAiHero).not.toContain('heroCopyColumnRatio');
+
+    const card = code(CARD);
+    expect(card).not.toContain('heroTextColumnRatio');
+  });
+
+  it('widens the shared column only modestly', () => {
+    /*
+      A bound on the refinement itself. The artwork decides where the copy may go, and the approved
+      assets leave a quiet band on the copy side — so the column may grow enough to hold the widest
+      approved word and no further. 0.60 would put copy over the subject of several assets.
+    */
+    expect(moduleLayout.heroCopyColumnRatio).toBeGreaterThan(0.52);
+    expect(moduleLayout.heroCopyColumnRatio).toBeLessThanOrEqual(0.56);
+  });
+});
+
 describe('the constrained presentation gives the copy the card', () => {
   const source = code(CARD);
 
@@ -793,7 +1002,7 @@ describe('the constrained presentation gives the copy the card', () => {
   it('stretches the copy instead of holding it to the column', () => {
     expect(source).toContain('...(fullWidthCopy');
     expect(source).toContain("{ alignSelf: 'stretch' as const }");
-    expect(source).toContain('{ width: contentWidth * moduleLayout.heroTextColumnRatio }');
+    expect(source).toContain('{ width: contentWidth * moduleLayout.heroCopyColumnRatio }');
   });
 
   it('grows the card rather than clipping it', () => {
@@ -827,7 +1036,7 @@ describe('the constrained presentation gives the copy the card', () => {
 
   it('reads the same column and type arithmetic the tests do', () => {
     expect(source).toMatch(
-      /columnWidth:\s*contentWidth \* moduleLayout\.heroTextColumnRatio - dp\(moduleLayout\.heroPadding\) \* 2/,
+      /columnWidth:\s*contentWidth \* moduleLayout\.heroCopyColumnRatio - dp\(moduleLayout\.heroPadding\) \* 2/,
     );
     expect(source).toContain("headlineFontSize: type('heroDisplay').fontSize");
     expect(source).toContain("actionFontSize: type('cardAction').fontSize");

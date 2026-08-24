@@ -118,14 +118,19 @@ describe('the module home hero is untouched', () => {
           floor, so copy that fits still renders at the height it always did;
         • the home headline went from one line to three, which is the fix.
 
-      The two that still matter are asserted unchanged: the copy column keeps its 52% ratio, so text
-      does not move over the busy part of the locked artwork, and the two presentations keep distinct
-      type tokens. Those are what "the home hero is still the home hero" actually rests on.
+      The two that still matter are asserted unchanged in shape: the copy column is still a ratio of
+      the content width, so text does not move over the busy part of the locked artwork, and the two
+      presentations keep distinct type tokens. Those are what "the home hero is still the home hero"
+      actually rests on.
+
+      The ratio itself moved from 0.52 to `heroCopyColumnRatio` in #50's final refinement, so that
+      Planner's headline fits beside its artwork on an ordinary phone rather than displacing it. The
+      value, its derivation and Noor AI's untouched 0.52 are pinned in `hero-copy-fit.test.ts`.
     */
     const card = code(CARD);
     expect(card).toContain('minHeight: dp(moduleLayout.heroHeight)');
     expect(card).not.toContain('{ height: dp(moduleLayout.heroHeight) }');
-    expect(card).toContain('{ width: contentWidth * moduleLayout.heroTextColumnRatio }');
+    expect(card).toContain('{ width: contentWidth * moduleLayout.heroCopyColumnRatio }');
     expect(card).toMatch(/token=\{section \? 'cardHeading' : 'heroDisplay'\}/);
     expect(card).toMatch(/numberOfLines=\{section \? 2 : 3\}/);
   });

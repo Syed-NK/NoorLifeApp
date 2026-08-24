@@ -134,7 +134,7 @@ export function ModuleHeroCard({
       // An empty label means no pill, so there is nothing for the action condition to fit.
       actionLabel: showAction ? hero.actionLabel : '',
       columnWidth:
-        contentWidth * moduleLayout.heroTextColumnRatio - dp(moduleLayout.heroPadding) * 2,
+        contentWidth * moduleLayout.heroCopyColumnRatio - dp(moduleLayout.heroPadding) * 2,
       headlineFontSize: type('heroDisplay').fontSize,
       actionFontSize: type('cardAction').fontSize,
       actionChromeWidth: heroActionChromeWidth(dp),
@@ -190,7 +190,7 @@ export function ModuleHeroCard({
             paddingVertical: dp(moduleLayout.heroCopyPaddingV),
             ...(fullWidthCopy
               ? { alignSelf: 'stretch' as const }
-              : { width: contentWidth * moduleLayout.heroTextColumnRatio }),
+              : { width: contentWidth * moduleLayout.heroCopyColumnRatio }),
             rowGap: dp(section ? 3 : 2),
           },
         ]}

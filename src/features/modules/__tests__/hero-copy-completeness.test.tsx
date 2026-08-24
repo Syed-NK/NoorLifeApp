@@ -27,8 +27,8 @@ import { ModuleHomeScreen } from '../screens/module-home-screen';
  * width assertion in the suite and fail here.
  *
  * Planner is reached through its own composition rather than the generic home, because that is how
- * the app reaches it — and Planner is the one module whose *headline* constrains it, so testing it
- * through the wrong entry point would test the wrong tree.
+ * the app reaches it — and Planner is the module whose headline decides its presentation, so testing
+ * it through the wrong entry point would test the wrong tree.
  *
  * ── Every case names its device ─────────────────────────────────────────────
  * React Native's Jest mock reports a 750 dp window at font scale 2. That is not a phone, and at that
@@ -59,18 +59,24 @@ async function renderPlannerHero() {
   );
 }
 
-describe('the widened hero keeps every approved string', () => {
+describe('Planner keeps its artwork on an ordinary phone', () => {
+  /*
+    ── What #50's final refinement changed here ──────────────────────────────
+    This block used to assert the opposite: that Planner's hero dropped its artwork and stretched its
+    copy. That was true, and it was the wrong outcome — "manageable" is wider than a 52% column, so
+    the one module with a long word in its headline lost its locked artwork on every device at the
+    default text size.
+
+    The shared column is now `heroCopyColumnRatio`, wide enough to hold that word with the measured
+    rendering margin, so an ordinary phone gets the ordinary hero: artwork present, copy in its
+    column, every approved string complete. The constrained presentation is still there for the cells
+    where the copy genuinely does not fit, asserted in the block below.
+  */
   beforeEach(() => {
-    // An ordinary phone: Planner is constrained here by its headline alone.
     pinModuleWindow();
   });
 
   it('renders Planner’s eyebrow, headline, support and call to action', async () => {
-    /*
-      The module the rule constrains, and therefore the one where "the copy takes the card" has to be
-      shown to cost nothing. Each string is asserted by its registered value, so a truncation, a
-      substitution or a quietly shortened headline all fail.
-    */
     const planner = SHARED.find((module) => module.id === 'planner');
     expect(planner).toBeDefined();
 
@@ -83,18 +89,17 @@ describe('the widened hero keeps every approved string', () => {
     expect(screen.getByLabelText(planner!.hero.actionLabel)).toBeTruthy();
   });
 
-  it('drops Planner’s decorative artwork and nothing else', async () => {
-    // The one thing the constrained presentation is allowed to remove.
+  it('keeps its decorative artwork', async () => {
+    // The requirement this refinement exists for.
     await renderPlannerHero();
     await waitFor(() => expect(screen.getByTestId('planner-hero')).toBeTruthy());
-    expect(screen.queryByTestId('planner-hero-artwork')).toBeNull();
+    expect(screen.getByTestId('planner-hero-artwork')).toBeTruthy();
   });
 
-  it('gives Planner’s copy the whole card rather than the column', async () => {
+  it('still lets the card grow rather than clipping', async () => {
     const view = await renderPlannerHero();
     await waitFor(() => expect(view.getByTestId('planner-hero')).toBeTruthy());
 
-    // The copy view is the hero's only child that carries a layout width decision.
     const hero = view.getByTestId('planner-hero');
     const flattened = (styles: unknown): Record<string, unknown> =>
       (Array.isArray(styles) ? styles : [styles])
@@ -103,10 +108,36 @@ describe('the widened hero keeps every approved string', () => {
         )
         .reduce<Record<string, unknown>>((all, entry) => ({ ...all, ...entry }), {});
 
-    // Requirement 6: a floor, so the card grows with the copy instead of clipping it.
+    // A floor, not a fixed box — unchanged by the refinement.
     const card = flattened(hero.props.style);
     expect(card.height).toBeUndefined();
     expect(typeof card.minHeight).toBe('number');
+  });
+});
+
+describe('Planner is still constrained where its headline genuinely will not fit', () => {
+  /*
+    The other side of the refinement. At a large OS text size the headline outgrows even the wider
+    column, so the copy takes the whole card and the artwork steps aside — and every approved string
+    is still there, which is the property the constrained presentation must not buy its readability
+    with.
+  */
+  beforeEach(() => {
+    pinModuleWindow({ fontScale: 1.5 });
+  });
+
+  it('drops its artwork and keeps every approved string', async () => {
+    const planner = SHARED.find((module) => module.id === 'planner');
+    expect(planner).toBeDefined();
+
+    await renderPlannerHero();
+    await waitFor(() => expect(screen.getByTestId('planner-hero')).toBeTruthy());
+
+    expect(screen.queryByTestId('planner-hero-artwork')).toBeNull();
+    expect(screen.getByText('Make today manageable')).toBeTruthy();
+    expect(screen.getByText(planner!.hero.eyebrow)).toBeTruthy();
+    expect(screen.getByText(planner!.hero.support!)).toBeTruthy();
+    expect(screen.getByLabelText(planner!.hero.actionLabel)).toBeTruthy();
   });
 });
 

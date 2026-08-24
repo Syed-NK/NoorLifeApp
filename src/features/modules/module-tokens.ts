@@ -548,14 +548,40 @@ export const moduleLayout = {
    */
   heroArtSize: 88,
   /**
-   * Share of the card width given to the hero copy.
+   * Share of the card width given to the hero copy — **Noor AI's hero only**.
    *
    * 0.52, matching the quiet band the locked artwork leaves on the copy side. It was 0.62
    * while the hero was a flat gradient with a pictogram, and at that width Finance's body
    * copy ran straight over the wallet. The brief is explicit that copy must not cover the
    * main artwork, and the artwork decides where the room is.
+   *
+   * Noor AI draws its own hero, with the copy on the *right* beside the robot, so its column is
+   * measured against a different asset and a different subject position. The shared module-home
+   * card reads `heroCopyColumnRatio` below; this value stays 0.52 so that widening the shared card
+   * cannot move Noor AI, and `hero-copy-fit.test.ts` asserts both halves of that.
    */
   heroTextColumnRatio: 0.52,
+  /**
+   * Share of the card width given to the copy in the **shared** module-home hero.
+   *
+   * ── Why this is 0.545 and not 0.52 ───────────────────────────────────────
+   * Issue #50, final refinement. At 0.52 the copy column is 155.0 dp at 384 dp and 159.7 dp at the
+   * reference width, and "manageable" is 158.7 dp on its own at the `heroDisplay` token — so
+   * Planner's headline could not be laid out beside its artwork on an ordinary phone at the default
+   * text size, and the responsive rule correctly gave it the whole card. Correct, and still the
+   * wrong outcome: one of eight modules then lost its locked artwork permanently.
+   *
+   * 0.545 is the smallest ratio that gives that word measured room at both ordinary widths while
+   * leaving every other required outcome intact — the copy still takes the whole card at 320 dp and
+   * at every text size above 1.0, where it genuinely does not fit. Derived rather than chosen: see
+   * `heroCopyColumnHeadroom` in `hero-copy-fit.ts` for the window this sits in, and
+   * `hero-copy-fit.test.ts` for the boundary cases that pin it.
+   *
+   * The copy's right edge moves from 0.480 to 0.505 of the card width, which stays well inside the
+   * scrim ramp — `ModuleHeroArtwork` holds its strength to 0.396 and reaches zero at 0.720 — and was
+   * confirmed against artwork bounds on both Android targets.
+   */
+  heroCopyColumnRatio: 0.545,
   /** Cards. */
   cardPadding: 11,
   /** Padding inside a half-width card, where every dp of inner width counts. */
