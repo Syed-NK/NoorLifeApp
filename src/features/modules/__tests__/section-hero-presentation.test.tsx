@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { render, screen, waitFor } from '@testing-library/react-native';
 
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
+import { pinModuleWindow } from '@/test-support/module-window';
 
 import { ModuleHomeScreen } from '../screens/module-home-screen';
 import { ModuleSectionScreen } from '../screens/module-section-screen';
@@ -106,24 +107,53 @@ describe('the module home hero is untouched', () => {
     expect(optIn.map((path) => path.split(/[\\/]/).pop())).toEqual(['module-section-screen.tsx']);
   });
 
-  it('keeps the home geometry on the default path', () => {
+  it('keeps the home column and the home type token', () => {
     /*
-      Asserted as a conditional rather than a constant: `height` still applies unless section mode is
-      on, and the copy column keeps its 52% ratio. If either became unconditional the home hero would
-      have changed shape.
+      ── Updated for issue #50, and what it still guards ──────────────────────
+      This began as #37's guard that adding the section presentation had not disturbed the home hero.
+      Two of its four assertions have been deliberately overtaken:
+
+        • `height` became `minHeight` **unconditionally**, because a fixed box cannot honour wrapping —
+          it is exactly what turned "this headline needs a second line" into an ellipsis. It is a
+          floor, so copy that fits still renders at the height it always did;
+        • the home headline went from one line to three, which is the fix.
+
+      The two that still matter are asserted unchanged in shape: the copy column is still a ratio of
+      the content width, so text does not move over the busy part of the locked artwork, and the two
+      presentations keep distinct type tokens. Those are what "the home hero is still the home hero"
+      actually rests on.
+
+      The ratio itself moved from 0.52 to `heroCopyColumnRatio` in #50's final refinement, so that
+      Planner's headline fits beside its artwork on an ordinary phone rather than displacing it. The
+      value, its derivation and Noor AI's untouched 0.52 are pinned in `hero-copy-fit.test.ts`.
     */
     const card = code(CARD);
-    expect(card).toContain('{ height: dp(moduleLayout.heroHeight) }');
-    expect(card).toContain('{ width: contentWidth * moduleLayout.heroTextColumnRatio }');
+    expect(card).toContain('minHeight: dp(moduleLayout.heroHeight)');
+    expect(card).not.toContain('{ height: dp(moduleLayout.heroHeight) }');
+    expect(card).toContain('{ width: contentWidth * moduleLayout.heroCopyColumnRatio }');
     expect(card).toMatch(/token=\{section \? 'cardHeading' : 'heroDisplay'\}/);
-    expect(card).toMatch(/numberOfLines=\{section \? 2 : 1\}/);
+    expect(card).toMatch(/numberOfLines=\{section \? 2 : 3\}/);
   });
 
   it('still draws the artwork on a module home', async () => {
-    await render(<ModuleHomeScreen moduleId="planner" />);
-    await waitFor(() => expect(screen.getByTestId('planner-hero')).toBeTruthy());
+    /*
+      ── Why this moved from Planner to Finance (issue #50) ────────────────────
+      It used to render Planner, on the reasonable assumption that any module home would do. Planner
+      is now the one module that will not: its headline contains "manageable", which is wider on its
+      own than the 52% column, so its hero gives the copy the whole card and the decorative artwork
+      steps aside. Finance's widest word clears the column by more than double, so it is the honest
+      witness for "an ordinary module home still draws its artwork".
+
+      The rule that decides this, and the per-module outcome across every tested width and text size,
+      are pinned in `hero-copy-fit.test.ts`.
+    */
+    // Pinned to an ordinary phone: at the Jest mock's font scale 2 every hero drops its artwork so
+    // that its approved copy stays whole, which is the opposite of what this case is about.
+    pinModuleWindow();
+    await render(<ModuleHomeScreen moduleId="finance" />);
+    await waitFor(() => expect(screen.getByTestId('finance-hero')).toBeTruthy());
     // The home hero keeps its locked artwork layer.
-    expect(screen.getByTestId('planner-hero-artwork')).toBeTruthy();
+    expect(screen.getByTestId('finance-hero-artwork')).toBeTruthy();
   });
 });
 
@@ -183,9 +213,17 @@ describe('the section presentation makes the copy readable', () => {
     expect(typeof flat.minHeight).toBe('number');
   });
 
-  it('gives the body room to wrap', () => {
-    // Four lines in section mode against two on a home, because a sentence needs more than a phrase.
-    expect(code(CARD)).toMatch(/numberOfLines=\{section \? 4 : 2\}/);
+  it('gives the body four lines in both presentations', () => {
+    /*
+      This asserted four in section mode against two on a home. Issue #50 measured the home at 320 dp
+      and OS scale 1.5 — where the support line, which carries no multiplier cap, needs four — so the
+      two limits converged on the larger number.
+
+      That is not a loss of distinction. The presentations still differ in type token, in whether the
+      artwork is drawn, and in how many lines the *headline* may take, and each of those is asserted
+      elsewhere in this file. A sentence needs the same room whichever card it is in.
+    */
+    expect(code(CARD)).toMatch(/numberOfLines=\{4\}/);
   });
 });
 
