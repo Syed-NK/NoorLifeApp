@@ -340,11 +340,18 @@ describe('the authentication boundary is unchanged and still first', () => {
       Issue #31's wait is untouched: the authentication branch returns before `children` is
       referenced, exactly as before, and the recovery gate is not reached at all in that state.
     */
-    const authWait = boundary.slice(
-      boundary.indexOf("if (access === 'wait')"),
-      boundary.indexOf("if (access === 'redirect')"),
+    /* Comments stripped: the guarantee is about the code, not the prose explaining it. */
+    const stripped = boundary.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    const authWait = stripped.slice(
+      stripped.indexOf("if (access === 'wait')"),
+      stripped.indexOf("if (access === 'redirect')"),
     );
-    expect(authWait).toContain('return null');
+    /*
+      #31's wait now shows #58's identity-free notice past the ceiling instead of a blank canvas.
+      What is untouched is the part that matters here: the authentication branch still returns before
+      the protected tree is referenced, and the recovery gate is still not reached in that state.
+    */
+    expect(authWait).toContain('<StartupWaitPresentation />');
     expect(authWait).not.toContain('children');
   });
 
