@@ -3,6 +3,7 @@ import { Text } from 'react-native';
 
 import type { AuthState } from '@application/providers/auth-provider';
 import { useStartupRouting } from '../use-startup-routing';
+import { StartupPresentationProvider } from '@application/startup/startup-presentation-provider';
 
 /**
  * Where an **offline** launch is routed, through the real hook rather than the pure machine.
@@ -68,9 +69,23 @@ function state(over: Partial<AuthState> = {}): AuthState {
   } as AuthState;
 }
 
-function Probe() {
+function ProbeInner() {
   const { state: current, destination } = useStartupRouting();
   return <Text testID="probe">{`${destination ?? current}`}</Text>;
+}
+
+/**
+ * The launch clock is owned by a provider now, not by the hook — issue #58.
+ *
+ * With no provider above it the context default reports a launch that has only just begun and never
+ * advances, so any case whose subject is elapsed time has to declare the owner.
+ */
+function Probe() {
+  return (
+    <StartupPresentationProvider>
+      <ProbeInner />
+    </StartupPresentationProvider>
+  );
 }
 
 async function launch() {
