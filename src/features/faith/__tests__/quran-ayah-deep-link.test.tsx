@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react-native';
 import React from 'react';
 
 import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
+import { settleUntilLoaded } from '@/test-support/settle-until-loaded';
 import { seedTranslationPreference } from '@/test-support/faith-preferences-fixtures';
 
 import { mockAudio, setRouteParams } from '../../../../jest.setup';
@@ -101,30 +102,61 @@ function paginateByOffset<T>(items: readonly T[], page?: FaithPageRequest): Fait
 /** Every request this repository received, so a test can assert page sizes and cursor echoes. */
 type RequestLog = { readonly surah: number; readonly page?: FaithPageRequest }[];
 
-function createPaginatedQuran(log: RequestLog): QuranContentRepository {
-  const base = createMockFaithRepositories().quran;
+/*
+  ── Built once per surah, not once per read (issue #55) ─────────────────────
+  These arrays used to be rebuilt inside every `listAyahs` and `listTranslations` call, so a single
+  deep-link case allocated Al-Baqarah's 286 verses twelve times over and threw away all but the fifty
+  rows it sliced. Across the file that is tens of thousands of objects created to be discarded, in a
+  worker whose heap already carries nine 286-row React trees.
 
-  const textFor = (surah: number): readonly AyahText[] =>
-    Array.from({ length: ayahCountOf(surah) }, (_, index) => ({
-      surah: surahNumber(surah),
-      ayah: ayahNumber(index + 1),
-      /* A distinct, non-Arabic marker per verse, so a rendered verse is identifiable by number. */
-      arabic: `verse-${surah}-${index + 1}`,
-      source: SOURCE,
-    }));
+  The content is immutable and depends only on the surah — and on the translation id, which the reader
+  only ever asks for one of — so it is memoised. Nothing about what the repository *returns* changes;
+  a caller still gets a fresh slice from `paginateByOffset`, so a test cannot mutate another test's
+  data through it.
+*/
+const textBySurah = new Map<number, readonly AyahText[]>();
+const translationsBySurah = new Map<string, readonly AyahTranslation[]>();
 
-  const translationsFor = (
-    surah: number,
-    translationId: TranslationId,
-  ): readonly AyahTranslation[] =>
-    Array.from({ length: ayahCountOf(surah) }, (_, index) => ({
+function textFor(surah: number): readonly AyahText[] {
+  const cached = textBySurah.get(surah);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const built: readonly AyahText[] = Array.from({ length: ayahCountOf(surah) }, (_, index) => ({
+    surah: surahNumber(surah),
+    ayah: ayahNumber(index + 1),
+    /* A distinct, non-Arabic marker per verse, so a rendered verse is identifiable by number. */
+    arabic: `verse-${surah}-${index + 1}`,
+    source: SOURCE,
+  }));
+  textBySurah.set(surah, built);
+  return built;
+}
+
+function translationsFor(surah: number, translationId: TranslationId): readonly AyahTranslation[] {
+  const key = `${surah}:${String(translationId)}`;
+  const cached = translationsBySurah.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const built: readonly AyahTranslation[] = Array.from(
+    { length: ayahCountOf(surah) },
+    (_, index) => ({
       surah: surahNumber(surah),
       ayah: ayahNumber(index + 1),
       translationId,
       text: `meaning-${surah}-${index + 1}`,
       source: { ...SOURCE, attribution: 'A Translator' },
-    }));
+    }),
+  );
+  translationsBySurah.set(key, built);
+  return built;
+}
 
+function createPaginatedQuran(
+  log: RequestLog,
+  base: QuranContentRepository,
+): QuranContentRepository {
   return {
     ...base,
     source: SOURCE,
@@ -156,34 +188,32 @@ function createPaginatedQuran(log: RequestLog): QuranContentRepository {
 
 async function openReader(params: Record<string, string>, log: RequestLog = []) {
   setRouteParams(params);
-  const repositories = { ...createMockFaithRepositories(), quran: createPaginatedQuran(log) };
+  /*
+    One mock repository set per open, not two. This built `createMockFaithRepositories()` twice — once
+    to spread and once inside `createPaginatedQuran` — for a double whose Quran methods are all
+    replaced anyway.
+  */
+  const base = createMockFaithRepositories();
+  const repositories = { ...base, quran: createPaginatedQuran(log, base.quran) };
   await render(
     <FaithRepositoryProvider repositories={repositories}>
       <ReaderScreen />
     </FaithRepositoryProvider>,
   );
-  /*
-    ── Drained by hand, and never through a findBy* query ────────────────────
-    This project has no React act environment, so RNTL's asynchronous queries — which wrap in act —
-    are only safe when nothing else is pending. The reader mounts and immediately begins a chain of up
-    to six sequential page reads, so an asynchronous query here overlaps them, React logs
-    "overlapping act() calls", and its internal queue is corrupted for the **rest of the file**: every
-    later render yields an empty tree and unrelated tests fail on elements that are rendered
-    unconditionally.
-
-    The symptom is diagnostic and this file produced it exactly: a clean run up to one test, then
-    every test after it failing on a *different* missing element, each of them passing in isolation.
-
-    So the loop is advanced explicitly here and every assertion below queries synchronously. Twelve
-    turns covers one summary read plus six page reads with room to spare.
-  */
-  for (let turn = 0; turn < 12; turn += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
+  await settleUntilLoaded('faith-reader-body-loading');
   return screen;
 }
 
-warmUpFirstMount(() => openReader({ surah: '1' }));
+/*
+  Warmed on the *expensive* path, not the cheap one.
+
+  This warmed `{ surah: '1' }` — seven verses — which compiled the provider stack but never the long
+  list. Nine cases in this file open a target inside Al-Baqarah and render up to 286 verse rows, and
+  the reader renders them with `items.map` inside a `ScrollView`, so every row mounts. Warming that
+  path here pays its one-off compile cost under `beforeAll`'s own budget instead of charging it to
+  whichever heavy case happens to run first.
+*/
+warmUpFirstMount(() => openReader({ surah: '2', ayah: '286' }));
 
 beforeEach(async () => {
   await AsyncStorage.clear();
