@@ -401,3 +401,123 @@ describe('an answer inside the bound is unchanged by any of this', () => {
     expect(mockResolveSession).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A failed attempt is not the same thing as a bound that fired
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('a reachable network that could not complete the request', () => {
+  it('presents the entry gate when the failure finds no receipt to fall back to', async () => {
+    /*
+      `retryable-offline` inside the bound, with nothing stored. The platform said the internet was
+      reachable and the request still could not complete — a captive portal, a flapping link, a server
+      that never answered.
+
+      This is deliberately *not* the `unknown` that the bound's own no-receipt case produces, and the
+      difference is which of them still has an answer coming. When the bound fires the request is
+      still running, so staying unresolved costs nothing and the late answer can resolve it. Here the
+      attempt has already finished and failed: nothing further will arrive, so remaining `unknown`
+      would hold the launch on the splash for the life of the process.
+
+      `signed-out` is therefore the honest state rather than a revocation — this device holds no
+      session and no receipt, so no authority is being taken away from anyone. The assertion that
+      keeps it honest is the one below it.
+    */
+    mockResolveSession.mockResolvedValue({ kind: 'retryable-offline' });
+    mockSecureGet.mockResolvedValue(null);
+
+    await launch();
+    await settle();
+
+    expect(current()?.status).toBe('signed-out');
+    expect(current()?.authority).toBe('none');
+    /* Resolved by the attempt's own failure, so it must not have waited out the bound to get there. */
+    expect(current()?.at).toBeLessThan(SESSION_RESOLUTION_TIMEOUT_MS);
+  });
+
+  it('resolves rather than hanging when the record it found turns out to be unusable', async () => {
+    /*
+      The same stored record as the bound's own unusable-receipt case above, and the opposite outcome —
+      which is the point of having both. There, the request is still in flight, so `unknown` is
+      correct and the late answer resolves it. Here the request has already failed, so nothing else is
+      coming and `unknown` would be a permanent splash.
+
+      The deletion that happens on this path is `readOfflineReceipt` quarantining a record it refuses
+      to interpret, not a revocation of anything: there was no access to withdraw. What must not
+      happen is the launch stalling because the fallback it reached for was not there.
+    */
+    mockResolveSession.mockResolvedValue({ kind: 'retryable-offline' });
+    mockSecureGet.mockResolvedValue(receiptJson({ version: 99 }));
+
+    await launch();
+    await settle();
+
+    expect(current()?.status).toBe('signed-out');
+    expect(seen.map((s) => s.status)).not.toContain('signed-in');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The late answer meets an account that replaced the one it was asked about
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('a late answer that has been overtaken', () => {
+  it('cannot install the account it asked about over the one that signed in since', async () => {
+    /*
+      The stale-write case the bound makes reachable. The launch times out and adopts account A's
+      receipt; the user then signs in as account B, which the server validated, so B holds online
+      authority. A's answer finally arrives.
+
+      It must be discarded. `publish`'s predicate refuses to overwrite anything better-informed than
+      the conclusion the launch reached without it, and online authority for a different account is
+      strictly better-informed than a receipt. Applying it would put account A's identity — its
+      greeting, its account-scoped storage — under the session that actually belongs to B.
+
+      Asserted through the rule's consequence rather than the predicate, so a refactor that keeps the
+      staleness guard but reaches it differently still passes, and one that drops it fails.
+    */
+    const OTHER = {
+      id: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb',
+      email: 'b@example.com',
+      fullName: 'Other Person',
+      avatarUrl: null,
+      emailConfirmed: true,
+    };
+    const session = deferred<{ kind: 'authenticated'; user: typeof USER }>();
+    mockResolveSession.mockReturnValue(session.promise);
+    mockSecureGet.mockResolvedValue(receiptJson());
+
+    const view = await launch();
+    await settle(SESSION_RESOLUTION_TIMEOUT_MS);
+    expect(current()?.authority).toBe('offline');
+
+    await act(async () => {
+      emitAuthEvent?.({ event: 'SIGNED_IN', user: OTHER as unknown as typeof USER });
+      await Promise.resolve();
+    });
+    await settle();
+    expect(current()?.authority).toBe('online');
+
+    /* Which account the receipt names, at any moment — the only identity this tree exposes. */
+    const receiptOwner = () => {
+      const writes = mockSecureSet.mock.calls;
+      if (writes.length === 0) return null;
+      return JSON.parse(String(writes[writes.length - 1]?.[1])).userId as string;
+    };
+    expect(receiptOwner()).toBe(OTHER.id);
+    const writesBeforeTheLateAnswer = mockSecureSet.mock.calls.length;
+
+    session.settle({ kind: 'authenticated', user: USER });
+    await settle();
+
+    expect(current()?.status).toBe('signed-in');
+    expect(current()?.authority).toBe('online');
+    expect(view.getByTestId('probe').props.children).toBe('signed-in:online');
+    /*
+      The assertion that separates "still online" from "still B". Authority alone cannot tell the two
+      accounts apart, and the failure being guarded against keeps the authority and swaps the person.
+    */
+    expect(receiptOwner()).toBe(OTHER.id);
+    expect(mockSecureSet).toHaveBeenCalledTimes(writesBeforeTheLateAnswer);
+  });
+});
