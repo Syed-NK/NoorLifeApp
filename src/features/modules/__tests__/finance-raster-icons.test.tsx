@@ -3,7 +3,13 @@ import { join } from 'node:path';
 
 import { render } from '@testing-library/react-native';
 
-import { inspectRasterIcon, isBrandNeutral } from '@/test-support/raster-icon-contract';
+import {
+  COMMISSIONED_CANVAS,
+  commissionedAssetViolations,
+  inspectOpticalBounds,
+  inspectRasterIcon,
+  isBrandNeutral,
+} from '@/test-support/raster-icon-contract';
 import { pinModuleWindow } from '@/test-support/module-window';
 
 import { ModuleFeatureGrid } from '../components/module-feature-grid';
@@ -75,10 +81,14 @@ describe('the installed Finance assets', () => {
     /*
       The same validator #66 introduced, unmodified. An earlier 1254 px delivery failed it — two
       masters carried one bottom-left pixel at alpha 1/255 — and the fix was on the asset side.
+
+      The canvas is 256 as of #70. This batch first shipped at 512, which the header rules could not
+      see was wrong because there was no canvas rule yet; there is one now, and these five were
+      mechanically re-exported from their preserved masters to satisfy it.
     */
     const report = inspectRasterIcon(join(ASSET_DIR, file));
-    expect(report.width).toBe(512);
-    expect(report.height).toBe(512);
+    expect(report.width).toBe(COMMISSIONED_CANVAS);
+    expect(report.height).toBe(COMMISSIONED_CANVAS);
     expect(report.bitDepth).toBe(8);
     expect(report.colourType).toBe(6);
     expect(report.hasAlpha).toBe(true);
@@ -89,12 +99,31 @@ describe('the installed Finance assets', () => {
     expect(isBrandNeutral(join('assets/images/modules/finance/pictograms', file))).toBe(true);
   });
 
-  it('declares its expected size explicitly rather than inheriting an older batch’s', () => {
-    /* #66's contract records existing pictograms' real dimensions and asks new batches to declare. */
+  it.each(FINANCE_ASSET_FILES)('%s satisfies the full commissioned standard', (file) => {
+    /*
+      The whole contract in one call — issue #70. Canvas, colour type, depth, interlace, corners,
+      metadata, optical box, safety margin and centring, as one list of reasons that must be empty.
+
+      This is the assertion the first delivery would have failed, and it is deliberately the *same*
+      call every future batch will make, so no batch gets its own softer rules.
+    */
+    expect(commissionedAssetViolations(join(ASSET_DIR, file))).toEqual([]);
+  });
+
+  it('carries a real safety margin on every side, not just on average', () => {
+    /*
+      Measured per side. A mark pushed into one corner can hold a compliant box ratio and a compliant
+      *mean* margin while touching an edge, which is how the staged `planner-today` asset reads at
+      5 px. Reported here as the actual numbers so a regression names itself.
+    */
     for (const file of FINANCE_ASSET_FILES) {
-      const { width, height } = inspectRasterIcon(join(ASSET_DIR, file));
-      expect(width).toBe(height);
-      expect(width).toBe(512);
+      const optical = inspectOpticalBounds(join(ASSET_DIR, file));
+      expect(optical.canvas).toBe(COMMISSIONED_CANVAS);
+      expect(optical.boxWidth).toBe(optical.boxWidth); // measured, not assumed square
+      expect(optical.minMargin).toBeGreaterThanOrEqual(19);
+      expect(optical.boxRatio).toBeLessThanOrEqual(0.85);
+      /* Non-vacuous: there is artwork, and it is not a single pixel. */
+      expect(optical.boxRatio).toBeGreaterThan(0.5);
     }
   });
 });

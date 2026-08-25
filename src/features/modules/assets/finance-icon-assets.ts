@@ -26,15 +26,19 @@ import type { IconName } from '@shared/models/icon';
  * `module-raster-icons.ts`, and every future batch gets its own.
  *
  * ── Delivery exports, not the masters ──────────────────────────────────────
- * These are 512×512 exports derived from preserved 1254×1254 commissioned masters, mechanically
- * resampled with no artwork regenerated, and with all four corner pixels normalised to transparent
- * black. That normalisation was necessary: the Track and Transactions masters each carried one
- * bottom-left pixel at alpha 1/255, which the repository's raster contract correctly rejected. The
- * installed bytes are therefore *not* byte-identical to the masters, and should not be described as
- * such.
+ * These are 256×256 exports derived from preserved 1254×1254 commissioned masters, mechanically
+ * resampled with no artwork regenerated: cropped to their visible bounds, uniformly rescaled with an
+ * alpha-aware area average, recentred on a transparent canvas, and with all four corner pixels
+ * normalised to transparent black. That last step was necessary from the start — the Track and
+ * Transactions masters each carried one bottom-left pixel at alpha 1/255, which the repository's
+ * raster contract correctly rejected. The installed bytes are therefore *not* byte-identical to the
+ * masters and should not be described as such.
  *
- * 512 also happens to be far above what any icon well needs — the largest is a 40 dp feature
- * pictogram — which leaves headroom without carrying the masters' ~1.2 MB each.
+ * 256 is the delivery standard, and this batch is the reason there is one. It first shipped at 512,
+ * which no rule then in force could see was wrong; #70 added the canvas, optical-box, safety-margin
+ * and centring rules, and re-exported these five from the masters to satisfy them. The largest well
+ * they land in is a 40 dp feature pictogram, so 256 is ample, and the batch went from 1.51 MB to
+ * 0.31 MB on the way.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 export const financeIconAssets: Partial<Record<IconName, RasterIconSource>> = {
