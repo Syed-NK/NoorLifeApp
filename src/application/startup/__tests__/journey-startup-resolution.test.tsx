@@ -5,6 +5,7 @@ import { AppState, Text } from 'react-native';
 import type { AuthState } from '@application/providers/auth-provider';
 import { STARTUP_PRESENTATION_CEILING_MS } from '../startup-machine';
 import { JOURNEY_READ_TIMEOUT_MS, useStartupRouting } from '../use-startup-routing';
+import { StartupPresentationProvider } from '@application/startup/startup-presentation-provider';
 
 /**
  * Where each journey state routes a launch — issue #46.
@@ -84,7 +85,7 @@ function state(over: Partial<AuthState> = {}, userId = USER_A): AuthState {
 
 const seen: string[] = [];
 
-function Probe() {
+function ProbeInner() {
   const { state: current, destination } = useStartupRouting();
   const value = `${current}|${destination ?? 'none'}`;
   if (seen.at(-1) !== value) {
@@ -93,6 +94,21 @@ function Probe() {
   return <Text testID="probe">{value}</Text>;
 }
 
+/**
+ * The launch clock is owned by a provider now, not by the hook — issue #58.
+ *
+ * `useStartupRouting` reads `elapsedMs` from `StartupPresentationProvider` so the authentication
+ * boundary can read the same number on a deep-linked launch that never mounts the entry gate. With
+ * no provider the context default reports a launch that has only just begun and never advances, so
+ * the owner has to be declared here for any case whose subject is elapsed time.
+ */
+function Probe() {
+  return (
+    <StartupPresentationProvider>
+      <ProbeInner />
+    </StartupPresentationProvider>
+  );
+}
 function tree(strict = false) {
   return strict ? (
     <StrictMode>

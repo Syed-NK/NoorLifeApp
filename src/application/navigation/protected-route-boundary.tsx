@@ -6,6 +6,7 @@ import { useAuthCallback } from '@application/providers/auth-callback-provider';
 import { useAuth } from '@application/providers/auth-provider';
 import { useRecoveryContainmentState } from '@application/providers/recovery-containment-provider';
 import { SET_NEW_PASSWORD_ROUTE } from '@features/auth-callback/auth-callback-routes';
+import { StartupWaitPresentation } from '@application/startup/startup-wait-presentation';
 
 import { protectedRouteAccess } from './protected-routes';
 import { recoveryRouteAccess } from './recovery-route-access';
@@ -55,12 +56,23 @@ export function ProtectedRouteBoundary({ children }: { readonly children: ReactN
 
   if (access === 'wait') {
     /*
-      Nothing — not a spinner. The entry gate owns the branded splash and is still on screen for an
-      ordinary launch; a second loading affordance here would flash over it. On a cold deep link
-      there is no splash to protect, and a blank frame for the few hundred milliseconds a session
-      takes to resolve is the honest representation of "we have not finished asking".
+      Nothing yet — and, past the presentation ceiling, something true.
+
+      For the few hundred milliseconds an ordinary launch takes, this still renders nothing: the
+      entry gate owns the branded splash and is on screen, and a second loading affordance would
+      flash over it. That was the whole of this branch, and on a launcher launch it still is.
+
+      What it missed is the launch that has no gate behind it. Expo Router makes a deep-linked route
+      the initial route, so on a cold link this `null` is not sitting under a splash — it *is* the
+      screen, for as long as authority takes. Measured at nine to eleven seconds on both Android
+      targets, which is a blank canvas with nothing to say for itself (issue #58).
+
+      `StartupWaitPresentation` renders nothing below the ceiling and the identity-free notice at or
+      past it, from the same clock the gate uses. It decides nothing and navigates nowhere:
+      `children` is still not referenced, so no protected provider mounts and no account-scoped read
+      is issued while we do not know.
     */
-    return null;
+    return <StartupWaitPresentation />;
   }
   if (access === 'redirect') {
     return <Redirect href={authRoutes.welcome} />;
@@ -109,11 +121,16 @@ function RecoveryContainmentGate({ children }: { readonly children: ReactNode })
 
   if (access === 'wait') {
     /*
-      The launch-time marker read has not answered. Nothing — for the same reason as the branch
-      above, and with the same guarantee: `children` is not referenced, so no protected provider
-      mounts and no account-scoped read is issued while we do not know.
+      The launch-time marker read has not answered. The same surface as the branch above, for the
+      same reason and with the same guarantee: `children` is not referenced, so no protected
+      provider mounts and no account-scoped read is issued while we do not know.
+
+      It matters that this branch gets it too. A cold deep link waits here as well as above — the
+      containment marker is read once per launch, and on a slow launch it can be the outstanding
+      answer after authority has already landed. A notice on one branch and a blank on the other
+      would make the same wait look like two different things.
     */
-    return null;
+    return <StartupWaitPresentation />;
   }
   if (access === 'contain') {
     /*

@@ -322,11 +322,23 @@ describe('what the boundary decides, per authority state', () => {
       repository is constructed. A test that rendered it could only observe the absence.
     */
     const boundary = readFileSync(join(__dirname, '..', 'protected-route-boundary.tsx'), 'utf8');
-    const waitBranch = boundary.slice(
-      boundary.indexOf("if (access === 'wait')"),
-      boundary.indexOf("if (access === 'redirect')"),
+    /*
+      Comments stripped before the check — issue #58 gave this branch a rendered surface and a
+      paragraph explaining why, and the guarantee is about the code rather than the prose. Asserting
+      against the raw text would fail on a comment that merely names what it is not doing.
+    */
+    const stripped = boundary.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    const waitBranch = stripped.slice(
+      stripped.indexOf("if (access === 'wait')"),
+      stripped.indexOf("if (access === 'redirect')"),
     );
-    expect(waitBranch).toContain('return null');
+    /*
+      What it renders is a presentation surface that reads a clock — issue #58. It is rendered
+      *instead of* the protected tree, on a branch that had already decided to withhold it, so the
+      guarantee below is unchanged in substance: the wait branch returns before the protected tree
+      is referenced, so no protected provider mounts and no repository is constructed.
+    */
+    expect(waitBranch).toContain('<StartupWaitPresentation />');
     expect(waitBranch).not.toContain('children');
   });
 

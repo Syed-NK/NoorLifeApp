@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { useAuth } from '@application/providers/auth-provider';
@@ -9,12 +9,9 @@ import { WAIT_EXPIRED, waitAtMost } from '@shared/utils/bounded-wait';
 
 import { useRecoveryContainmentState } from '@application/providers/recovery-containment-provider';
 
-import {
-  STARTUP_PRESENTATION_CEILING_MS,
-  isDestination,
-  nextStartupState,
-  type StartupState,
-} from './startup-machine';
+import { useStartupPresentation } from './startup-presentation-provider';
+
+import { isDestination, nextStartupState, type StartupState } from './startup-machine';
 
 /**
  * Drives the startup sequence and produces exactly one routing decision.
@@ -33,9 +30,6 @@ export type StartupRouting = {
   readonly destination: StartupState | null;
   readonly isFirstLaunch: boolean;
 };
-
-/** Ticks often enough to hit the minimums precisely without busy-waiting. */
-const TICK_MS = 100;
 
 /**
  * How long the launch waits for the account-journey read before deciding without it.
@@ -138,7 +132,16 @@ export function useStartupRouting(): StartupRouting {
    */
   const recovery = useRecoveryContainmentState();
 
-  const [elapsedMs, setElapsedMs] = useState(0);
+  /*
+    The launch clock, read rather than owned — issue #58.
+
+    It used to be a `useState` and a `setInterval` in this hook, which meant only `src/app/index.tsx`
+    ever ran one. The authentication boundary needs the same number on a deep-linked launch that
+    never mounts the gate, and two clocks would be two launches; see
+    `startup-presentation-provider.tsx`. The machine below is unchanged and still receives
+    `elapsedMs` exactly as it did.
+  */
+  const { elapsedMs } = useStartupPresentation();
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [isFirstLaunch, setIsFirstLaunch] = useState(true);
   /*
@@ -156,16 +159,6 @@ export function useStartupRouting(): StartupRouting {
    * asking again.
    */
   const [journeyAttempt, setJourneyAttempt] = useState(0);
-
-  /**
-   * The moment the branded splash mounted.
-   *
-   * A ref set during the first render rather than in an effect: an effect runs after paint, which
-   * would start the clock late and make the splash outlast its minimum by a frame or two on every
-   * launch.
-   */
-  const mountedAt = useRef<number | null>(null);
-  mountedAt.current ??= Date.now();
 
   // Read onboarding state concurrently with fonts and session — none of the three depends on the
   // others, so resolving them in series would add their latencies together.
@@ -189,28 +182,6 @@ export function useStartupRouting(): StartupRouting {
     );
     return () => {
       cancelled = true;
-    };
-  }, []);
-
-  /*
-    The clock. Stops as soon as the ceiling is reached, so a stuck startup does not tick forever.
-
-    Stopping is still correct now that the ceiling no longer decides anything: past it the machine
-    reports `still_resolving` whatever the elapsed value is, and when authority finally lands the
-    re-render recomputes with the frozen elapsed time — which is already beyond both the ceiling and
-    the brand minimum, so the real destination is named immediately rather than after another tick.
-  */
-  useEffect(() => {
-    const started = mountedAt.current ?? Date.now();
-    const timer = setInterval(() => {
-      const next = Date.now() - started;
-      setElapsedMs(next);
-      if (next >= STARTUP_PRESENTATION_CEILING_MS) {
-        clearInterval(timer);
-      }
-    }, TICK_MS);
-    return () => {
-      clearInterval(timer);
     };
   }, []);
 

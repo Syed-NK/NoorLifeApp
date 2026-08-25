@@ -6,6 +6,7 @@ import type { AuthState } from '@application/providers/auth-provider';
 
 import { STARTUP_PRESENTATION_CEILING_MS } from '../startup-machine';
 import { useStartupRouting } from '../use-startup-routing';
+import { StartupPresentationProvider } from '@application/startup/startup-presentation-provider';
 
 /**
  * **A slow launch still arrives** — issue #31, through the real hook rather than the pure machine.
@@ -94,7 +95,7 @@ const SIGNED_OUT: AuthState = {
 };
 
 /** Reports the hook's two outputs as text, so a test reads them rather than inferring them. */
-function Probe() {
+function ProbeInner() {
   const { state, destination } = useStartupRouting();
   return (
     <>
@@ -104,6 +105,21 @@ function Probe() {
   );
 }
 
+/**
+ * The launch clock is owned by a provider now, not by the hook — issue #58.
+ *
+ * `useStartupRouting` reads `elapsedMs` from `StartupPresentationProvider` so the authentication
+ * boundary can read the same number on a deep-linked launch that never mounts the entry gate. With
+ * no provider the context default reports a launch that has only just begun and never advances, so
+ * the owner has to be declared here for any case whose subject is elapsed time.
+ */
+function Probe() {
+  return (
+    <StartupPresentationProvider>
+      <ProbeInner />
+    </StartupPresentationProvider>
+  );
+}
 beforeEach(() => {
   mockAuth.current = UNRESOLVED;
   mockRecovery.current = { pending: false, containment: null };
