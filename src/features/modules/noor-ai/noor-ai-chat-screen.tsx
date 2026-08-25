@@ -17,7 +17,7 @@ import { ModuleText } from '../components/module-text';
 import { getModuleDefinition } from '../module-registry';
 import { moduleLayout } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
-import { noorAIChatCopy } from './noor-ai-chat-copy';
+import { noorAIChatCopy, noorAIModulePrivacyLine } from './noor-ai-chat-copy';
 import { NOOR_AI_CHAT_PATH } from './noor-ai-chat-routes';
 import { NoorAIComposer } from './noor-ai-composer';
 import { evaluateNoorAIDraft, type NoorAIDraftProblem } from './noor-ai-message-draft';
@@ -81,7 +81,7 @@ export function NoorAIChatScreen({ port = noorAIService }: NoorAIChatScreenProps
       title={noorAIChatCopy.title}
       testID="noor-ai-chat"
     >
-      <NoorAIChatBody port={port} />
+      <NoorAIChatBody port={port} surfacePath={NOOR_AI_CHAT_PATH} />
     </ModuleScaffold>
   );
 }
@@ -89,8 +89,30 @@ export function NoorAIChatScreen({ port = noorAIService }: NoorAIChatScreenProps
 /** No grants exist: there is no grant store, and `AI_GRANT_EDITING_AVAILABLE` is false. */
 const NO_GRANTED_MODULES: readonly ModuleId[] = Object.freeze([]);
 
+export type NoorAIChatBodyProps = {
+  readonly port: NoorAIPort;
+  /**
+   * The screen the request reports as its surface.
+   *
+   * Passed in rather than fixed, so a module entry can report *its own* allow-listed home path and
+   * the module a question came from travels as `surface` — the one field §C.5 permits for this
+   * purpose, mirrored from the server's own allow-list and drift-tested against it. A value not on
+   * that list is omitted from the body entirely and the server applies its default, so an
+   * unrecognised path degrades to today's behaviour rather than leaking a route name.
+   */
+  readonly surfacePath: string;
+  /**
+   * The module this conversation was opened from, for framing only.
+   *
+   * A display string. It changes a privacy line and nothing else, and it reaches no request: the
+   * module's records, storage and account-scoped state are not read here, and there is no code path
+   * on this screen that could reach them.
+   */
+  readonly originLabel?: string;
+};
+
 /** Split out so it renders inside the scaffold's `ModuleProvider`. */
-function NoorAIChatBody({ port }: { readonly port: NoorAIPort }) {
+export function NoorAIChatBody({ port, surfacePath, originLabel }: NoorAIChatBodyProps) {
   const router = useRouter();
   const { dp } = useModuleMetrics();
   const { entitlement } = useEntitlement();
@@ -143,8 +165,8 @@ function NoorAIChatBody({ port }: { readonly port: NoorAIPort }) {
    * travels.
    */
   const context = useMemo(
-    () => noorAIRequestContext(entitlement, NOOR_AI_CHAT_PATH, NO_GRANTED_MODULES),
-    [entitlement],
+    () => noorAIRequestContext(entitlement, surfacePath, NO_GRANTED_MODULES),
+    [entitlement, surfacePath],
   );
   const limited = isNoorAILimited(entitlement);
 
@@ -219,6 +241,24 @@ function NoorAIChatBody({ port }: { readonly port: NoorAIPort }) {
   return (
     <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
       <NoorAIScopeNote context={context} limited={limited} testID="noor-ai-chat-scope" />
+
+      {originLabel === undefined ? null : (
+        /*
+          Said plainly, and only where it is needed.
+
+          A conversation opened from a module is the one place a user could reasonably assume the
+          assistant has already looked at that module's data. It has not, and there is no path here
+          that could: this screen reaches `NoorAIPort.ask` and nothing else, and the request body is
+          four fields of which one is the text the user typed.
+
+          Deliberately not phrased as a permission or a setting. There is no grant store and no
+          revocation, so wording implying either would be the same class of false claim this entry
+          exists to remove.
+        */
+        <ModuleText token="caption" testID="noor-ai-chat-module-privacy">
+          {noorAIModulePrivacyLine(originLabel)}
+        </ModuleText>
+      )}
 
       <NoorAIComposer
         value={draft}

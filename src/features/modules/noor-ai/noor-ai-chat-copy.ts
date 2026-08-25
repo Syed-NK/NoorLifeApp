@@ -147,6 +147,17 @@ export const noorAIChatCopy = {
   singleTurn: 'Noor AI answers one question at a time. Nothing here is saved.',
 
   /**
+   * Shown only on a conversation opened from a module — see `noorAIModulePrivacyLine`.
+   *
+   * A template rather than eight sentences, so the eight modules cannot drift into eight different
+   * promises about the same behaviour.
+   */
+  modulePrivacy: {
+    prefix: 'Noor AI does not read your ',
+    suffix: ' data automatically. Share only what you choose to type.',
+  },
+
+  /**
    * Policy refusals — a *successful* request whose answer is "no" (§C.4).
    *
    * Kept visually and verbally apart from the failures below. A refusal is Noor AI declining, and
@@ -250,3 +261,21 @@ export const noorAIChatCopy = {
     back: 'Back to Noor AI',
   },
 } as const;
+
+/**
+ * The privacy line for a conversation opened from a module.
+ *
+ * ── Why a function over one template ────────────────────────────────────────
+ * Eight modules could easily become eight sentences that each promise something slightly different
+ * about the same behaviour, and the one a reviewer checks would not be the one a user reads. Composed
+ * from a single prefix and suffix so the promise is written once and only the module's name varies.
+ *
+ * ── What it deliberately does not say ───────────────────────────────────────
+ * Nothing about permissions, granting, allowing, revoking or settings. There is no grant store, no
+ * preview of what would be shared and no way to withdraw anything, so language implying any of those
+ * exist would be a false claim — the same kind, in the same place, as the "not connected yet" copy
+ * this entry replaced. It states the present fact and the user's one lever: what they type.
+ */
+export function noorAIModulePrivacyLine(moduleLabel: string): string {
+  return `${noorAIChatCopy.modulePrivacy.prefix}${moduleLabel}${noorAIChatCopy.modulePrivacy.suffix}`;
+}

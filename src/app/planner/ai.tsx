@@ -1,6 +1,6 @@
-import { ModuleAIScreen } from '@features/modules/screens/module-ai-screen';
+import { ModuleNoorAIScreen } from '@features/modules/noor-ai/module-noor-ai-screen';
 
-/** Planner module AI (workflow §3.3: the centre slot opens AI inside the module). */
+/** `/planner/ai` — Noor AI, opened from planner (issue #64, Stage 1). */
 export default function Screen() {
-  return <ModuleAIScreen moduleId="planner" />;
+  return <ModuleNoorAIScreen moduleId="planner" />;
 }
