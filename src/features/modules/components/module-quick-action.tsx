@@ -6,6 +6,7 @@ import { AppIcon, PressableScale } from '@ds/components';
 import { useModule, useModuleTheme } from '../module-context';
 import type { ModuleQuickActionSpec } from '../module-definition';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import { moduleRasterIcon } from '../module-raster-icons';
 import { quickActionColumns } from '../quick-action-fit';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
@@ -63,6 +64,14 @@ export type ModuleQuickActionProps = {
  */
 export function ModuleQuickAction({ action, onPress, testID }: ModuleQuickActionProps) {
   const router = useRouter();
+  /*
+    The module, for the artwork lookup — and read through the hook rather than assumed.
+
+    Without this, `module` here resolves to Node's own module global, which is typed and therefore
+    compiles: `module.id` becomes a file path, the artwork lookup misses, and every tile silently
+    keeps its glyph. The test caught it; the compiler could not.
+  */
+  const module = useModule();
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
 
@@ -102,11 +111,29 @@ export function ModuleQuickAction({ action, onPress, testID }: ModuleQuickAction
           },
         ]}
       >
-        <AppIcon
-          name={action.icon}
-          size={dp(moduleLayout.quickActionIcon * 0.75)}
-          color={theme.ink}
-        />
+        {/*
+          Commissioned artwork where this module has it, the glyph everywhere else — issue #68.
+
+          The size and the icon well are unchanged, so a tile with artwork occupies exactly the box a
+          tile with a glyph did. Artwork carries no tint: `theme.ink` is the glyph's colour and has
+          no meaning for a pictogram that was drawn in the module's palette already.
+        */}
+        {(() => {
+          const art = moduleRasterIcon(module.id, action.icon);
+          return art === null ? (
+            <AppIcon
+              name={action.icon}
+              size={dp(moduleLayout.quickActionIcon * 0.75)}
+              color={theme.ink}
+            />
+          ) : (
+            <AppIcon
+              source={art}
+              size={dp(moduleLayout.quickActionIcon * 0.75)}
+              testID={testID === undefined ? undefined : `${testID}-art`}
+            />
+          );
+        })()}
       </View>
       <ModuleText token="quickAction" numberOfLines={LABEL_LINES} style={styles.label}>
         {action.label}

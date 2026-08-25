@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { AppIcon, PressableScale } from '@ds/components';
 
 import { useModule } from '../module-context';
+import { moduleRasterIcon } from '../module-raster-icons';
 import type { ModuleCapability } from '../module-definition';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
@@ -47,13 +48,30 @@ export function ModuleFeatureGrid({ items, onSelect, testID }: ModuleFeatureGrid
       {tiles.map((item) => {
         const disabled = !item.available;
 
+        /*
+          Artwork only where the tile is usable — issue #68.
+
+          An unavailable tile greys its icon to `textTertiary`, and commissioned artwork cannot be
+          tinted. `moduleRasterIcon` refuses artwork for anything unavailable, so a disabled tile
+          keeps the glyph and keeps the grey.
+        */
+        const art = moduleRasterIcon(module.id, item.icon, item.available);
+
         const inner = (
           <>
-            <AppIcon
-              name={item.icon}
-              size={dp(moduleLayout.featurePictogram * 0.6)}
-              color={disabled ? moduleNeutrals.textTertiary : module.theme.ink}
-            />
+            {art === null ? (
+              <AppIcon
+                name={item.icon}
+                size={dp(moduleLayout.featurePictogram * 0.6)}
+                color={disabled ? moduleNeutrals.textTertiary : module.theme.ink}
+              />
+            ) : (
+              <AppIcon
+                source={art}
+                size={dp(moduleLayout.featurePictogram * 0.6)}
+                testID={`${prefix}-${item.key}-art`}
+              />
+            )}
             <ModuleText
               token="tileLabel"
               align="center"
