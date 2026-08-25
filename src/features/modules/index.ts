@@ -64,7 +64,6 @@ export {
 } from './services/mock-module-repository';
 export { ModuleHomeScreen } from './screens/module-home-screen';
 export { ModuleSectionScreen } from './screens/module-section-screen';
-export { ModuleAIScreen } from './screens/module-ai-screen';
 export { ModuleGalleryScreen, ModuleHeroAuditScreen } from './screens/module-gallery-screen';
 export {
   AA_LARGE_TEXT,

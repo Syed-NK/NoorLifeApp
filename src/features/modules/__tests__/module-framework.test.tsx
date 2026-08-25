@@ -7,7 +7,6 @@ import { moduleRegistry } from '../module-registry';
 import { hasApprovedComposition } from '../module-compositions';
 import { FRAMEWORK_MODULE_IDS, type FrameworkModuleId } from '../module-tokens';
 import { ModuleHomeScreen } from '../screens/module-home-screen';
-import { ModuleAIScreen } from '../screens/module-ai-screen';
 import { ModuleSectionScreen } from '../screens/module-section-screen';
 import { createMockModuleRepository, type MockScenario } from '../services/mock-module-repository';
 import type { ModuleRepositoryProvider } from '../services/module-data.contract';
@@ -186,44 +185,20 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   });
 });
 
-describe.each(FRAMEWORK_MODULE_IDS)('module AI screen: %s', (moduleId) => {
-  const definition = moduleRegistry[moduleId];
+/*
+    The module AI screen's own cases lived here and are gone with it — issue #64.
 
-  it('is honest that the assistant is not connected', async () => {
-    await render(<ModuleAIScreen moduleId={moduleId} />);
-    const banner = screen.getByTestId(`${moduleId}-ai-banner`);
-    expect(String(banner.props.accessibilityLabel)).toMatch(/not connected yet/i);
-  });
+    They asserted a placeholder: a banner reading "not connected yet", and capability chips rendered
+    disabled because there was nothing to send to. All three were true when written and all three
+    describe a screen that no longer exists; the six module AI routes now open the real conversation
+    surface, covered by `module-noor-ai-entry.test.tsx`.
 
-  it('shows every capability as a chip', async () => {
-    await render(<ModuleAIScreen moduleId={moduleId} />);
-    for (const capability of definition.ai.capabilities) {
-      expect(screen.getByTestId(`${moduleId}-ai-chip-${capability.key}`)).toBeTruthy();
-    }
-  });
-
-  it('marks the chips disabled, since there is nothing to send to', async () => {
-    await render(<ModuleAIScreen moduleId={moduleId} />);
-    const first = definition.ai.capabilities[0]!;
-    const chip = screen.getByTestId(`${moduleId}-ai-chip-${first.key}`);
-    expect(chip.props.accessibilityState).toMatchObject({ disabled: true });
-  });
-});
-
-describe('standing disclaimers appear on the AI screen', () => {
-  it.each(['health', 'finance'] as const)('%s shows its disclaimer', async (moduleId) => {
-    await render(<ModuleAIScreen moduleId={moduleId} />);
-    const disclaimer = screen.getByTestId(`${moduleId}-ai-disclaimer`);
-    expect(String(disclaimer.props.accessibilityLabel)).toContain(
-      moduleRegistry[moduleId].ai.standingDisclaimer,
-    );
-  });
-
-  it('faith shows none, so the ones that matter stand out', async () => {
-    await render(<ModuleAIScreen moduleId="faith" />);
-    expect(screen.queryByTestId('faith-ai-disclaimer')).toBeNull();
-  });
-});
+    The standing-disclaimer cases went the same way and their guarantee did not. They checked that
+    Health and Finance each showed `ai.standingDisclaimer`; the shared scope note above the composer
+    now states the professional boundary — not a scholar, imam, doctor, therapist, lawyer or
+    financial adviser — on **every** module conversation rather than on two, and the new suite
+    asserts it there.
+  */
 
 describe('module sub-screen', () => {
   it('says plainly that the destination is not built yet', async () => {
