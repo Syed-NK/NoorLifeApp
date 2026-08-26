@@ -47,7 +47,9 @@ function repository(store: Map<string, string>, ownerId: string = OWNER): Planne
 
 async function renderCalendar(repo: PlannerTaskRepository) {
   /*
-    Exactly what `src/app/planner/calendar.tsx` renders — a `PlannerProvider` and the screen. No
+    The screen under one task owner. `src/app/planner/calendar.tsx` mounts no provider of its own —
+    since issue #73 the owner is `TodayAgendaProvider`, app-wide — so this supplies the equivalent
+    boundary with an injected repository. No
     `ModuleProvider`: the screen owns its scaffold, and supplying the module context here is the
     mistake that let a release-crashing Tasks screen pass its tests.
   */

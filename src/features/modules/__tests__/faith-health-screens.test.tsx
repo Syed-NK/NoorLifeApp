@@ -3,6 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react-native';
 import { COMPOSED_MODULE_IDS, hasApprovedComposition } from '../module-compositions';
 import { moduleRegistry } from '../module-registry';
 import { FRAMEWORK_MODULE_IDS, moduleColorThemes, moduleLayout } from '../module-tokens';
+import { PlannerOwners } from '@/test-support/planner-owners';
+
 import { ModuleHomeScreen } from '../screens/module-home-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -27,7 +29,13 @@ import { faithAddress } from '@/test-support/faith-storage-address';
  * Mounts whole module homes, whose repository sleeps 350 ms per read, and pays a first-mount
  * compile cost of several seconds on a loaded machine. Both are taken out of the tests themselves.
  */
-installMockLatencyTimers(() => render(<ModuleHomeScreen moduleId="planner" />));
+installMockLatencyTimers(() =>
+  render(
+    <PlannerOwners>
+      <ModuleHomeScreen moduleId="planner" />
+    </PlannerOwners>,
+  ),
+);
 
 describe('the architecture correction holds', () => {
   it('composes Noor AI, Faith, Health and Planner to their references', () => {
@@ -47,14 +55,22 @@ describe('the architecture correction holds', () => {
     'keeps %s rendering and unchanged',
     async (moduleId) => {
       // The brief requires the five untouched routes stay functional.
-      await render(<ModuleHomeScreen moduleId={moduleId} />);
+      await render(
+        <PlannerOwners>
+          <ModuleHomeScreen moduleId={moduleId} />
+        </PlannerOwners>,
+      );
       expect(screen.getByTestId(`${moduleId}-hero`)).toBeTruthy();
       expect(screen.getByTestId(`${moduleId}-quick-actions`)).toBeTruthy();
     },
   );
 
   it('gives Planner its own truthful task composition', async () => {
-    await render(<ModuleHomeScreen moduleId="planner" />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="planner" />
+      </PlannerOwners>,
+    );
     expect(screen.getByTestId('planner-hero')).toBeTruthy();
     expect(screen.queryByTestId('planner-quick-actions')).toBeNull();
   });
@@ -308,7 +324,11 @@ describe('Faith home sections that depend on real activity', () => {
 
 describe('Faith home with no data available', () => {
   it('states its failure rather than inventing a verse', async () => {
-    await render(<ModuleHomeScreen moduleId="faith" />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="faith" />
+      </PlannerOwners>,
+    );
 
     expect(await screen.findByText(/Today’s verse could not be loaded/)).toBeTruthy();
     // The screen still stands: the grid, the hero and the AI card do not depend on the network.
@@ -318,7 +338,11 @@ describe('Faith home with no data available', () => {
   });
 
   it('offers to set a location rather than naming a prayer time', async () => {
-    await render(<ModuleHomeScreen moduleId="faith" />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="faith" />
+      </PlannerOwners>,
+    );
 
     /*
       With no permission granted the hero has no time to show, and the honest rendering is the one
@@ -331,7 +355,11 @@ describe('Faith home with no data available', () => {
   });
 
   it('shows no Arabic it did not receive', async () => {
-    await render(<ModuleHomeScreen moduleId="faith" />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="faith" />
+      </PlannerOwners>,
+    );
     await screen.findByText(/Today’s verse could not be loaded/);
 
     // The verse that used to be a string literal in the bundle must not appear from anywhere.
@@ -353,7 +381,11 @@ describe('Health home — no fabricated health claim survives', () => {
     say.
   */
   beforeEach(async () => {
-    await render(<ModuleHomeScreen moduleId="health" />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="health" />
+      </PlannerOwners>,
+    );
   });
 
   it('renders the hero, the real actions and an honest state — and none of the fabricated cards', async () => {

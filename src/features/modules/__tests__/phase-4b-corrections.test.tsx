@@ -6,6 +6,8 @@ import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
 import { moduleRegistry } from '../module-registry';
 import { FRAMEWORK_MODULE_IDS } from '../module-tokens';
+import { PlannerOwners } from '@/test-support/planner-owners';
+
 import { ModuleHomeScreen } from '../screens/module-home-screen';
 
 // Mounts screens backed by simulated-latency mocks. Advancing those timers rather than
@@ -88,7 +90,11 @@ describe('2 — all eight heroes resolve to the locked hero PNGs', () => {
 
 describe('3 — Noor AI renders no placeholder copy', () => {
   it('shows the approved screen, not a phase notice', async () => {
-    await render(<ModuleHomeScreen moduleId="noor-ai" />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="noor-ai" />
+      </PlannerOwners>,
+    );
 
     // The exact strings the placeholder used.
     expect(screen.queryByText(/arrives in Phase/i)).toBeNull();
@@ -109,7 +115,11 @@ describe('3 — Noor AI renders no placeholder copy', () => {
    * full; this row only records that the phase-4b placeholder removal still holds without them.
    */
   it('offers the ask entry and the access card, and no capability grid', async () => {
-    await render(<ModuleHomeScreen moduleId="noor-ai" />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="noor-ai" />
+      </PlannerOwners>,
+    );
 
     expect(screen.getByTestId('noor-ai-ask-field')).toBeTruthy();
     expect(screen.getByTestId('noor-ai-ask-send')).toBeTruthy();
@@ -129,7 +139,11 @@ describe('3 — Noor AI renders no placeholder copy', () => {
 
 describe.each(EXPECTED_MODULES)('4 & 5 — header order: %s', (moduleId) => {
   it('renders Back, a centred title, then Help then Profile', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} />
+      </PlannerOwners>,
+    );
     const prefix = `${moduleId}-home-header`;
 
     const back = screen.getByTestId(`${prefix}-back`);
@@ -159,7 +173,11 @@ describe.each(EXPECTED_MODULES)('4 & 5 — header order: %s', (moduleId) => {
   });
 
   it('does not place the profile beside Back', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} />
+      </PlannerOwners>,
+    );
     const prefix = `${moduleId}-home-header`;
     const back = screen.getByTestId(`${prefix}-back`);
     const profile = screen.getByTestId(`${prefix}-profile`);
@@ -170,7 +188,11 @@ describe.each(EXPECTED_MODULES)('4 & 5 — header order: %s', (moduleId) => {
   });
 
   it('centres the title across the whole header rather than the leftover space', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} />
+      </PlannerOwners>,
+    );
     const layer = screen.getByTestId(`${moduleId}-home-header-title-band`);
     const style = Object.assign(
       {},
@@ -208,7 +230,11 @@ describe('6 — every raised centre control uses Main Home’s Noor AI asset', (
      * `noorLifeAssets.entryAuth.noorAiRobot` — a different file showing the same character —
      * which is why the centre robot differed between screens.
      */
-    await render(<ModuleHomeScreen moduleId={moduleId} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} />
+      </PlannerOwners>,
+    );
     const mark = screen.getByTestId(`${moduleId}-home-nav-ai-mark`);
     expect(mark.props.source).toBe(MAIN_HOME_MARK);
     // Fitted rather than cropped, and never tinted.
@@ -229,7 +255,11 @@ describe('6 — every raised centre control uses Main Home’s Noor AI asset', (
 
 describe('7 — Faith renders the prayer and time as one unit', () => {
   it('holds them in a single string, so they cannot be split across fields', async () => {
-    await render(<ModuleHomeScreen moduleId="faith" />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="faith" />
+      </PlannerOwners>,
+    );
     const line = screen.getByTestId('faith-hero-prayer');
 
     /**

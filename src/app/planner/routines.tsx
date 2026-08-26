@@ -1,11 +1,6 @@
-import { PlannerRoutineProvider } from '@features/planner/di/planner-routine-provider';
 import { PlannerRoutinesScreen } from '@features/planner/screens/planner-routines-screen';
 
-/** Planner → Routines. */
+/** Planner → Routines. Reads the routine owner mounted in `_layout.tsx`; see issue #73. */
 export default function Screen() {
-  return (
-    <PlannerRoutineProvider>
-      <PlannerRoutinesScreen />
-    </PlannerRoutineProvider>
-  );
+  return <PlannerRoutinesScreen />;
 }

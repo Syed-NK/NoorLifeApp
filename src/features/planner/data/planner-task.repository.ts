@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 
+import { serializePlannerWrite } from './planner-write-queue';
 import {
   PLANNER_TASK_SCHEMA_VERSION,
   createPlannerTask,
@@ -62,7 +63,6 @@ export function createPlannerTaskRepository(
   const now = deps.now ?? (() => new Date());
   const id = deps.id ?? (() => `task.${Crypto.randomUUID()}`);
   const address = plannerTaskAddress(deps.ownerId);
-  let mutationQueue: Promise<void> = Promise.resolve();
 
   async function read(): Promise<PlannerTaskRepositoryResult> {
     if (address === null) {
@@ -103,13 +103,20 @@ export function createPlannerTaskRepository(
     }
   }
 
+  /**
+   * Serializes one write against every other write to this account's task key — issue #72.
+   *
+   * The queue used to be declared inside this factory, so each repository instance ordered only
+   * against itself. Two instances for one account — a screen-per-provider tree produces exactly that
+   * — interleaved their read-modify-writes and the later full-array write silently discarded the
+   * earlier change. `serializePlannerWrite` is module state keyed by the storage address, so the
+   * ordering holds no matter how many repositories exist.
+   *
+   * With no address there is nothing to serialize and nothing to write; the operation runs directly
+   * and returns `unavailable` on its own.
+   */
   function mutate(operation: () => Promise<PlannerTaskMutation>): Promise<PlannerTaskMutation> {
-    const result = mutationQueue.then(operation, operation);
-    mutationQueue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    return address === null ? operation() : serializePlannerWrite(address, operation);
   }
 
   return {

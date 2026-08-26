@@ -6,6 +6,8 @@ import { ModuleProvider } from '../module-context';
 import { moduleRegistry } from '../module-registry';
 import { hasApprovedComposition } from '../module-compositions';
 import { FRAMEWORK_MODULE_IDS, type FrameworkModuleId } from '../module-tokens';
+import { PlannerOwners } from '@/test-support/planner-owners';
+
 import { ModuleHomeScreen } from '../screens/module-home-screen';
 import { ModuleSectionScreen } from '../screens/module-section-screen';
 import { createMockModuleRepository, type MockScenario } from '../services/mock-module-repository';
@@ -20,7 +22,13 @@ import {
 
 // Mounts screens backed by simulated-latency mocks. Advancing those timers rather than
 // sleeping through them is what keeps this suite inside Jest's default per-test budget.
-installMockLatencyTimers(() => render(<ModuleHomeScreen moduleId="planner" />));
+installMockLatencyTimers(() =>
+  render(
+    <PlannerOwners>
+      <ModuleHomeScreen moduleId="planner" />
+    </PlannerOwners>,
+  ),
+);
 
 /**
  * The framework, rendered.
@@ -83,7 +91,11 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   const definition = moduleRegistry[moduleId];
 
   it('renders the header, hero and five-slot navigation', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />
+      </PlannerOwners>,
+    );
 
     expect(screen.getByTestId(`${moduleId}-home-header`)).toBeTruthy();
     expect(screen.getByTestId(`${moduleId}-hero`)).toBeTruthy();
@@ -97,7 +109,11 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   });
 
   it('gives the header Back, profile and module Help', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />
+      </PlannerOwners>,
+    );
 
     expect(screen.getByTestId(`${moduleId}-home-header-back`)).toBeTruthy();
     expect(screen.getByTestId(`${moduleId}-home-header-profile`)).toBeTruthy();
@@ -121,7 +137,11 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
      * asserted, at the configurations where it is the right answer, in `hero-copy-fit.test.ts`.
      */
     pinModuleWindow();
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />
+      </PlannerOwners>,
+    );
 
     const art = screen.getByTestId(`${moduleId}-hero-artwork`);
     expect(art.props.source).toBe(definition.heroArtwork);
@@ -145,7 +165,11 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   });
 
   it('names the AI centre control after this module’s assistant', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />
+      </PlannerOwners>,
+    );
 
     const ai = screen.getByTestId(`${moduleId}-home-nav-ai`);
     // Even with no visible caption, the control must announce which AI it opens.
@@ -153,7 +177,11 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   });
 
   it('shows the module’s content once loaded', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={populatedProvider()} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} provider={populatedProvider()} />
+      </PlannerOwners>,
+    );
 
     await waitFor(() => {
       expect(screen.getByTestId(`${moduleId}-summary`)).toBeTruthy();
@@ -163,13 +191,21 @@ describe.each(GENERIC_MODULE_IDS)('generic module home: %s', (moduleId) => {
   });
 
   it('shows a loading state before the data settles', async () => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider('empty')} />
+      </PlannerOwners>,
+    );
     // Derived from the request key, so it is present on the first render.
     expect(screen.getByTestId('module-loading-state')).toBeTruthy();
   });
 
   it.each(['empty', 'offline', 'error'] as const)('handles the %s outcome', async (scenario) => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider(scenario)} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} provider={scenarioProvider(scenario)} />
+      </PlannerOwners>,
+    );
 
     const expected = {
       empty: 'module-empty-state',

@@ -36,7 +36,9 @@ function repository(): PlannerTaskRepository {
 
 async function renderPlanner(repo: PlannerTaskRepository) {
   /*
-    Exactly the tree `src/app/planner/tasks.tsx` renders — a `PlannerProvider` and nothing else.
+    The screen under one task owner. `src/app/planner/tasks.tsx` mounts no provider of its own —
+    since issue #73 the owner is `TodayAgendaProvider`, app-wide — so this supplies the equivalent
+    boundary with an injected repository.
 
     This harness once wrapped the screen in a `ModuleProvider` of its own, and that wrapper was the
     reason a release build crashed on this screen while all three tests passed: the screen read the
