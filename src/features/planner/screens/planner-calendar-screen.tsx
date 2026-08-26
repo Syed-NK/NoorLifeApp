@@ -24,7 +24,7 @@ import {
   plannerTasksForDay,
   previousMonth,
 } from '../data/planner-calendar';
-import { localDateKey, offsetLocalDate } from '../data/planner-task';
+import { usePlannerDay } from '../di/planner-day-source';
 import { usePlanner } from '../di/planner-provider';
 import { PlannerMonthGrid } from '../components/planner-month-grid';
 import { PlannerTaskList } from './planner-task-list';
@@ -67,12 +67,11 @@ function PlannerCalendarBody() {
   const { dp } = useModuleMetrics();
 
   /*
-    Today is captured once per mount rather than read on every render, so a day cell cannot change
-    which day it thinks is "today" midway through a render pass. The Tasks composer does the same.
+    Today comes from the shared day source, so a day cell cannot change which day it thinks is
+    "today" midway through a render pass *and* cannot disagree with the Planner home once midnight
+    passes. Capturing it per mount achieved only the first.
   */
-  const now = useMemo(() => new Date(), []);
-  const today = useMemo(() => localDateKey(now), [now]);
-  const tomorrow = useMemo(() => offsetLocalDate(now, 1), [now]);
+  const { today, tomorrow } = usePlannerDay();
   const [selected, setSelected] = useState<string>(today);
   const [visibleMonth, setVisibleMonth] = useState(() => monthForSelection(today, today));
 

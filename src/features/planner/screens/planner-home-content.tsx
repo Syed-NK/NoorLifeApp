@@ -13,7 +13,7 @@ import { moduleLayout } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { routinesScheduledOn } from '../data/planner-routine';
-import { localDateKey, offsetLocalDate } from '../data/planner-task';
+import { usePlannerDay } from '../di/planner-day-source';
 import { usePlanner } from '../di/planner-provider';
 import { usePlannerRoutines } from '../di/planner-routine-provider';
 import { PlannerTaskList } from './planner-task-list';
@@ -23,9 +23,12 @@ export function PlannerHomeContent() {
   const planner = usePlanner();
   const routinesState = usePlannerRoutines();
   const { dp } = useModuleMetrics();
-  const now = new Date();
-  const today = localDateKey(now);
-  const tomorrow = offsetLocalDate(now, 1);
+  /*
+    One reading of the calendar, shared with Tasks, Calendar, Routines and Main Home. This line used
+    to construct its own date on every render, so a re-render across midnight rolled this surface over
+    while the memoised ones stayed on yesterday — issue #76.
+  */
+  const { today, tomorrow } = usePlannerDay();
   const dueToday = planner.tasks.filter((task) => task.status === 'open' && task.dueDate === today);
   const open = planner.tasks.filter((task) => task.status === 'open');
   const completed = planner.tasks.filter((task) => task.status === 'completed');

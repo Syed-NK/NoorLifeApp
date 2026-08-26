@@ -12,8 +12,8 @@ import {
   plannerOpenTasksDueOn,
   type PlannerAgendaItem,
 } from '@features/planner/data/planner-agenda';
-import { localDateKey } from '@features/planner/data/planner-task';
 import type { PlannerTaskRepository } from '@features/planner/data/planner-task.repository';
+import { usePlannerDay } from '@features/planner/di/planner-day-source';
 import { PlannerProvider, usePlanner } from '@features/planner/di/planner-provider';
 
 /**
@@ -133,11 +133,13 @@ function TodayAgendaPublisher({ children }: TodayAgendaProviderProps) {
   const planner = usePlanner();
 
   /*
-    The day is read once per mount. Main Home is long-lived, so a date that recomputed on every render
-    would be a different value across a midnight boundary mid-render; refreshing on focus is what
-    picks up the new day, which is the same moment the user would expect the list to change.
+    The day comes from Planner's shared day source — issue #76. Reading it once per mount was correct
+    within a render pass but wrong across one: Main Home is long-lived, so a session held past
+    midnight kept publishing yesterday's agenda while the Planner home had already rolled over. The
+    source re-reads on its own midnight timer and on foreground, so this surface changes at the moment
+    the user would expect it to rather than at the next remount.
   */
-  const today = useMemo(() => localDateKey(new Date()), []);
+  const { today } = usePlannerDay();
 
   const items = useMemo(
     () => (planner.fault === null ? plannerOpenTasksDueOn(planner.tasks, today) : []),

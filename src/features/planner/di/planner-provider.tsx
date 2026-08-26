@@ -12,6 +12,7 @@ import { AppState } from 'react-native';
 
 import { isLocallyAuthenticated, useAuth } from '@application/providers/auth-provider';
 
+import { refreshPlannerDay } from './planner-day-source';
 import type { PlannerTask, PlannerTaskDraft } from '../data/planner-task';
 import {
   createPlannerTaskRepository,
@@ -139,6 +140,19 @@ export function PlannerProvider({ children, repository: injected }: PlannerProvi
   if (owned.repository !== repository) {
     setOwned({ repository, tasks: [], loading: true, fault: null });
   }
+
+  /*
+    An account change re-reads the calendar — issue #76.
+
+    A session can sit idle across midnight and then switch account. Without this, the new account's
+    first render would inherit the day snapshot the previous session was holding, and its "Due today"
+    would count a day that has already passed. Placed beside the repository effect because the
+    repository identity *is* the account identity here; the refresh publishes only if the day actually
+    moved, so an ordinary sign-in on the same day costs one comparison and no re-render.
+  */
+  useEffect(() => {
+    refreshPlannerDay();
+  }, [repository]);
 
   useEffect(() => {
     let active = true;

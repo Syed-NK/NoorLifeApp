@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import {
@@ -28,7 +28,7 @@ import {
   type RoutineSchedule,
   type RoutineWeekday,
 } from '../data/planner-routine';
-import { localDateKey } from '../data/planner-task';
+import { usePlannerDay } from '../di/planner-day-source';
 import { usePlannerRoutines } from '../di/planner-routine-provider';
 
 /**
@@ -84,10 +84,10 @@ function PlannerRoutinesBody() {
   const { dp } = useModuleMetrics();
 
   /*
-    Today is captured once per mount, so a row cannot change which day it is ticking midway through a
-    render pass. The Tasks composer and the calendar do the same.
+    Today comes from the shared day source, so a row cannot change which day it is ticking midway
+    through a render pass, and the day it ticks is the same one the Planner home counts.
   */
-  const today = useMemo(() => localDateKey(new Date()), []);
+  const { today } = usePlannerDay();
 
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
