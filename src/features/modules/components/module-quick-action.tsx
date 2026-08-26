@@ -123,13 +123,16 @@ export function ModuleQuickAction({ action, onPress, testID }: ModuleQuickAction
           return art === null ? (
             <AppIcon
               name={action.icon}
+              /* The glyph inset stays. See `module-feature-grid.tsx` for why the two paths differ. */
               size={dp(moduleLayout.quickActionIcon * 0.75)}
               color={theme.ink}
+              testID={testID === undefined ? undefined : `${testID}-glyph`}
             />
           ) : (
             <AppIcon
               source={art}
-              size={dp(moduleLayout.quickActionIcon * 0.75)}
+              /* The full token — issue #70, class A. See `module-feature-grid.tsx` for why. */
+              size={dp(moduleLayout.quickActionIcon)}
               testID={testID === undefined ? undefined : `${testID}-art`}
             />
           );

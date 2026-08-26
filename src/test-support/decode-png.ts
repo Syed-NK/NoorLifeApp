@@ -9,9 +9,16 @@ import { inflateSync } from 'node:zlib';
  * inside the wrappers were not. Nothing short of reading the pixels can tell a centred control from
  * a centred picture inside it, so the bytes are read here.
  *
- * Supports exactly what the Faith assets are delivered in — 8-bit RGB or RGBA, non-interlaced.
- * Anything else throws rather than being silently mishandled: a decoder that guessed at a palette
- * would produce confident numbers about the wrong pixels.
+ * Supports 8-bit RGB, RGBA and indexed-palette (with optional `tRNS`) PNGs, non-interlaced.
+ * Anything else throws rather than being silently mishandled: a decoder that guessed at a bit depth
+ * or de-interlaced by eye would produce confident numbers about the wrong pixels.
+ *
+ * ── Why palette support was added ───────────────────────────────────────────
+ * All fifteen legacy Faith pictograms are indexed-palette PNGs, so before issue #70 this decoder
+ * threw on every one of them and their optical bounds could not be audited at all. Reading them is
+ * strictly additive: their bytes are never rewritten, and being able to *read* palette encoding does
+ * not make it acceptable for a *new* commission. That line is drawn in
+ * `commissionedAssetViolations`, which requires colour type 6 — not here.
  */
 
 export type DecodedPng = {
@@ -31,17 +38,28 @@ export function decodePng(buf: Buffer): DecodedPng {
   const bitDepth = buf[24] ?? 0;
   const colorType = buf[25] ?? 0;
   const interlace = buf[28] ?? 0;
-  if (bitDepth !== 8 || (colorType !== 2 && colorType !== 6) || interlace !== 0) {
+  const paletted = colorType === 3;
+  if (bitDepth !== 8 || (colorType !== 2 && colorType !== 6 && !paletted) || interlace !== 0) {
     throw new Error(`unsupported PNG: depth ${bitDepth}, colorType ${colorType}`);
   }
 
   const parts: Buffer[] = [];
+  /** Palette entries, three bytes each. Colour type 3 only. */
+  let palette: Buffer | null = null;
+  /** Per-entry alpha, one byte each. May be shorter than the palette (§11.3.2). */
+  let transparency: Buffer | null = null;
   let offset = 8;
   while (offset < buf.length) {
     const length = buf.readUInt32BE(offset);
     const type = buf.slice(offset + 4, offset + 8).toString('latin1');
     if (type === 'IDAT') {
       parts.push(buf.slice(offset + 8, offset + 8 + length));
+    }
+    if (type === 'PLTE') {
+      palette = buf.slice(offset + 8, offset + 8 + length);
+    }
+    if (type === 'tRNS') {
+      transparency = buf.slice(offset + 8, offset + 8 + length);
     }
     if (type === 'IEND') {
       break;
@@ -50,7 +68,12 @@ export function decodePng(buf: Buffer): DecodedPng {
   }
   const raw = inflateSync(Buffer.concat(parts));
 
-  const channels = colorType === 6 ? 4 : 3;
+  /*
+    A palette image stores one *index* per pixel, so unfiltering runs at one byte per pixel and the
+    expansion to RGBA happens afterwards. Filtering at 3 or 4 would read neighbours that do not
+    exist and produce plausible noise instead of an error.
+  */
+  const channels = paletted ? 1 : colorType === 6 ? 4 : 3;
   const stride = width * channels;
   const data = Buffer.alloc(height * stride);
   let pos = 0;
@@ -98,7 +121,43 @@ export function decodePng(buf: Buffer): DecodedPng {
     }
   }
 
-  return { width, height, channels, data };
+  if (!paletted) {
+    return { width, height, channels, data };
+  }
+
+  if (palette === null) {
+    /*
+      Honest failure. A colour-type-3 image with no PLTE is malformed, and inventing a greyscale
+      ramp would report confident numbers about the wrong pixels — the same reason an interlaced
+      file throws above rather than being mishandled.
+    */
+    throw new Error('unsupported PNG: colorType 3 with no PLTE chunk');
+  }
+  if (palette.length % 3 !== 0) {
+    throw new Error(`malformed PLTE: ${palette.length} bytes is not a whole number of entries`);
+  }
+  const entries = palette.length / 3;
+  if (transparency !== null && transparency.length > entries) {
+    throw new Error(`malformed tRNS: ${transparency.length} alphas for ${entries} palette entries`);
+  }
+
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let i = 0, j = 0; i < data.length; i += 1, j += 4) {
+    const index = data[i] ?? 0;
+    if (index >= entries) {
+      throw new Error(`palette index ${index} out of range (${entries} entries)`);
+    }
+    const at = index * 3;
+    rgba[j] = palette[at] ?? 0;
+    rgba[j + 1] = palette[at + 1] ?? 0;
+    rgba[j + 2] = palette[at + 2] ?? 0;
+    /*
+      §11.3.2: tRNS may be shorter than the palette, and the entries it omits are fully opaque. A
+      missing tRNS altogether means an opaque image — legal, and not the same thing as malformed.
+    */
+    rgba[j + 3] = transparency === null ? 255 : (transparency[index] ?? 255);
+  }
+  return { width, height, channels: 4, data: rgba };
 }
 
 export function pixelAt(png: DecodedPng, x: number, y: number): readonly [number, number, number] {

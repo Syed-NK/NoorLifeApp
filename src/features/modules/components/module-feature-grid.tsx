@@ -62,13 +62,31 @@ export function ModuleFeatureGrid({ items, onSelect, testID }: ModuleFeatureGrid
             {art === null ? (
               <AppIcon
                 name={item.icon}
+                /*
+                  The glyph inset stays — issue #70, class A.
+
+                  A MaterialCommunityIcons mark fills its em box edge to edge, so it needs insetting
+                  inside the well. Commissioned artwork does not: it carries its own transparent
+                  margin, and is drawn at the full token in the branch below. Two paths, two rules,
+                  and the same rendered optical weight.
+                */
                 size={dp(moduleLayout.featurePictogram * 0.6)}
                 color={disabled ? moduleNeutrals.textTertiary : module.theme.ink}
+                testID={`${prefix}-${item.key}-glyph`}
               />
             ) : (
               <AppIcon
                 source={art}
-                size={dp(moduleLayout.featurePictogram * 0.6)}
+                /*
+                  The full token — issue #70, class A.
+
+                  `* 0.6` insets a *glyph*, whose mark fills its em box. Commissioned artwork carries
+                  its own transparent margin, so applying the glyph inset shrank it twice: measured,
+                  Finance's optical mark was 63% of Main Home's in an identically-sized 74 dp tile.
+                  `FaithPictogram` already draws PNGs at the full box and insets only its glyph
+                  fallback; this is that rule, here.
+                */
+                size={dp(moduleLayout.featurePictogram)}
                 testID={`${prefix}-${item.key}-art`}
               />
             )}
