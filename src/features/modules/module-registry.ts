@@ -439,18 +439,23 @@ const planner: ModuleDefinition = {
       unavailableReason: 'Focus sessions arrive with the Planner module’s full release.',
     },
   ],
+  /*
+    Calendar only.
+
+    Planner used to declare a second, `notifications` permission whose title and rationale promised
+    that a task would alert the user at a time they set. Planner schedules nothing:
+    `planner-routine.ts` records a routine's preferred time as "never a reminder — nothing
+    notifies", and no Planner code requests a notification permission or reads a prayer time. The
+    entry was a promise the module cannot keep, so it is removed rather than reworded — the honest
+    form of an unbuilt permission is its absence, not softer wording. Nothing may re-declare it
+    before Planner actually schedules something.
+  */
   permissions: [
     {
       key: 'calendar',
       title: 'Your device calendar',
       rationale:
         'To show your existing events beside NoorLife tasks. Read-only unless you add an event.',
-      required: false,
-    },
-    {
-      key: 'notifications',
-      title: 'Task and event reminders',
-      rationale: 'So a task can remind you at the time you set.',
       required: false,
     },
   ],
