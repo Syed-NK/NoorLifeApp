@@ -1,5 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ReactNode } from 'react';
+import { AppState } from 'react-native';
 
 import { isLocallyAuthenticated, useAuth } from '@application/providers/auth-provider';
 
@@ -16,19 +25,28 @@ import {
 } from '../data/planner-routine.repository';
 
 /**
- * **The routines a signed-in account owns**, held once per composition and read through one
- * repository.
+ * **The routines a signed-in account owns**, held once for the Planner stack — issue #73.
  *
  * ═══════════════════════════════════════════════════════════════════════════
+ * ── Why there is exactly one of these, on the Planner stack ────────────────
+ * The Routines screen and the Planner home each used to mount their own provider, so completing a
+ * routine on one left the other showing whatever it had read when it mounted. Both now read a single
+ * owner mounted in `app/planner/_layout.tsx`, inside the entitlement gate.
+ *
+ * The Planner stack is the narrowest boundary covering every routine consumer, and unlike tasks there
+ * is no consumer outside it: Main Home shows today's *tasks* through the agenda port and never reads
+ * a routine. Mounting this at app scope would open two more keys on every route that will never
+ * display them. The layout stays mounted for the whole module, so moving between Planner routes does
+ * not remount it, and leaving Planner correctly disposes of it.
+ *
  * ── Why this mirrors `PlannerProvider` rather than extending it ────────────
- * Tasks and routines are separate stores with separate envelopes, and a provider that held both
- * would make every routine tick re-render every task list. Keeping them apart also means the
- * Routines screen mounts only what it needs: a route that never shows a routine never reads the
- * routine keys.
+ * Tasks and routines are separate stores with separate envelopes, and a provider that held both would
+ * make every routine tick re-render every task list.
  *
  * The shape is deliberately the same, though — `{ data, loading, fault, reload, …mutations }` — so
  * anyone who has read `planner-provider.tsx` already knows how this behaves, including that a fault
- * is surfaced rather than swallowed.
+ * is surfaced rather than swallowed, and that a repository change clears what is published before the
+ * next read resolves.
  *
  * ── The account boundary is the repository's, not a second copy ────────────
  * `ownerId` comes from the signed-in session and the repository is rebuilt whenever it changes, so a
@@ -67,6 +85,46 @@ export type PlannerRoutineState = {
 
 const PlannerRoutineContext = createContext<PlannerRoutineState | null>(null);
 
+/**
+ * What is published, and which repository produced it.
+ *
+ * They travel together so that an account change makes stale data recognisable in the same instant it
+ * becomes stale — a comparison rather than a race. See `PlannerProvider`.
+ */
+type Owned = {
+  readonly repository: PlannerRoutineRepository;
+  readonly routines: readonly PlannerRoutine[];
+  readonly completions: PlannerRoutineCompletions;
+  readonly loading: boolean;
+  readonly fault: PlannerRoutineState['fault'];
+};
+
+function absorb(
+  repository: PlannerRoutineRepository,
+  result: Awaited<ReturnType<PlannerRoutineRepository['list']>>,
+): Owned {
+  if (result.kind === 'ok') {
+    return {
+      repository,
+      routines: result.routines,
+      completions: result.completions,
+      loading: false,
+      fault: null,
+    };
+  }
+  /*
+    Nothing is displayed on a fault. Showing the last good list beside an error would let the user act
+    on data the store has already refused to confirm.
+  */
+  return {
+    repository,
+    routines: [],
+    completions: emptyCompletions,
+    loading: false,
+    fault: result.kind === 'corrupt' ? 'corrupt-data' : 'storage-unavailable',
+  };
+}
+
 export type PlannerRoutineProviderProps = {
   readonly children: ReactNode;
   /** Injected in tests, exactly as `PlannerProvider` takes one. Production passes nothing. */
@@ -85,32 +143,29 @@ export function PlannerRoutineProvider({
     [injected, ownerId],
   );
 
-  const [routines, setRoutines] = useState<readonly PlannerRoutine[]>([]);
-  const [completions, setCompletions] = useState<PlannerRoutineCompletions>(emptyCompletions);
-  const [loading, setLoading] = useState(true);
-  const [fault, setFault] = useState<PlannerRoutineState['fault']>(null);
+  const [owned, setOwned] = useState<Owned>(() => ({
+    repository,
+    routines: [],
+    completions: emptyCompletions,
+    loading: true,
+    fault: null,
+  }));
 
-  const absorb = useCallback((result: Awaited<ReturnType<PlannerRoutineRepository['list']>>) => {
-    if (result.kind === 'ok') {
-      setRoutines(result.routines);
-      setCompletions(result.completions);
-      setFault(null);
-      return;
-    }
-    /*
-      Nothing is displayed on a fault. Showing the last good list beside an error would let the user
-      act on data the store has already refused to confirm.
-    */
-    setRoutines([]);
-    setCompletions(emptyCompletions);
-    setFault(result.kind === 'corrupt' ? 'corrupt-data' : 'storage-unavailable');
-  }, []);
-
-  const reload = useCallback(async () => {
-    setLoading(true);
-    absorb(await repository.list());
-    setLoading(false);
-  }, [absorb, repository]);
+  /*
+    Synchronously drop the previous account's routines when the repository is replaced. Adjusting
+    state during render is React's documented answer for state derived from a changed input, and it is
+    the only one that is synchronous: an effect would publish the old routines under the new
+    repository for one frame first.
+  */
+  if (owned.repository !== repository) {
+    setOwned({
+      repository,
+      routines: [],
+      completions: emptyCompletions,
+      loading: true,
+      fault: null,
+    });
+  }
 
   useEffect(() => {
     let active = true;
@@ -118,32 +173,82 @@ export function PlannerRoutineProvider({
       if (!active) {
         return;
       }
-      absorb(result);
-      setLoading(false);
+      /* `active` covers the unmount; the identity check covers a read that outlived its account. */
+      setOwned((current) =>
+        current.repository === repository ? absorb(repository, result) : current,
+      );
     });
     return () => {
       active = false;
     };
-  }, [absorb, repository]);
+  }, [repository]);
 
-  const apply = useCallback(async (operation: () => Promise<PlannerRoutineMutation>) => {
-    const result = await operation();
-    if (result.kind === 'saved' || result.kind === 'removed' || result.kind === 'completion') {
-      setRoutines(result.routines);
-      setCompletions(result.completions);
-      setFault(null);
-    } else if (result.kind === 'unavailable') {
-      setFault('storage-unavailable');
-    }
-    return result;
+  const reload = useCallback(async () => {
+    setOwned((current) =>
+      current.repository === repository ? { ...current, loading: true } : current,
+    );
+    const result = await repository.list();
+    setOwned((current) =>
+      current.repository === repository ? absorb(repository, result) : current,
+    );
+  }, [repository]);
+
+  /* A stable handle on the current reload, so the foreground listener never re-arms. */
+  const reloadRef = useRef(reload);
+  useEffect(() => {
+    reloadRef.current = reload;
+  }, [reload]);
+
+  /*
+    Foreground reconciliation, owned by the owner of the state. Only the `active` transition reads;
+    `inactive` and `background` do not, so an app-switcher pass costs nothing.
+  */
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        void reloadRef.current();
+      }
+    });
+    return () => subscription.remove();
   }, []);
+
+  const apply = useCallback(
+    async (operation: () => Promise<PlannerRoutineMutation>) => {
+      const result = await operation();
+      setOwned((current) => {
+        /*
+          A mutation that resolves after the account changed belongs to the account that started it.
+          Its write went to that account's keys; the only thing left to refuse is publishing the
+          result into somebody else's session.
+        */
+        if (current.repository !== repository) {
+          return current;
+        }
+        if (result.kind === 'saved' || result.kind === 'removed' || result.kind === 'completion') {
+          return {
+            ...current,
+            routines: result.routines,
+            completions: result.completions,
+            fault: null,
+          };
+        }
+        if (result.kind === 'unavailable') {
+          /* The write did not land, so only the fault is published — never an optimistic list. */
+          return { ...current, fault: 'storage-unavailable' };
+        }
+        return current;
+      });
+      return result;
+    },
+    [repository],
+  );
 
   const value = useMemo<PlannerRoutineState>(
     () => ({
-      routines,
-      completions,
-      loading,
-      fault,
+      routines: owned.routines,
+      completions: owned.completions,
+      loading: owned.loading,
+      fault: owned.fault,
       reload,
       createRoutine: (draft) => apply(() => repository.create(draft)),
       updateRoutine: (id, draft) => apply(() => repository.update(id, draft)),
@@ -152,7 +257,7 @@ export function PlannerRoutineProvider({
         apply(() => repository.setCompleted(id, day, completed)),
       removeRoutine: (id) => apply(() => repository.remove(id)),
     }),
-    [apply, completions, fault, loading, reload, repository, routines],
+    [apply, owned.completions, owned.fault, owned.loading, owned.routines, reload, repository],
   );
 
   return <PlannerRoutineContext.Provider value={value}>{children}</PlannerRoutineContext.Provider>;

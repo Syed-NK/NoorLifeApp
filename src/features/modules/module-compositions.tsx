@@ -2,8 +2,6 @@ import { FaithHomeContent } from './faith/faith-home-content';
 import { NoorAIHomeContent } from './noor-ai/noor-ai-home-content';
 import { HealthHomeContent } from './health/health-home-content';
 import type { UseModuleOverview } from './use-module-overview';
-import { PlannerProvider } from '@features/planner/di/planner-provider';
-import { PlannerRoutineProvider } from '@features/planner/di/planner-routine-provider';
 import { PlannerHomeContent } from '@features/planner/screens/planner-home-content';
 import type { FrameworkModuleId } from './module-tokens';
 
@@ -18,7 +16,7 @@ import type { FrameworkModuleId } from './module-tokens';
  *
  * So the shell stays shared and the arrangement becomes per module. A module handled below
  * renders its own composition; the rest fall back to the generic layout, which is what
- * Planner, Finance, Learning, Family and Goals still use.
+ * Finance, Learning, Family and Goals still use.
  *
  * ── Why a switch rather than a lookup map ───────────────────────────────────
  * A `Record<id, ComponentType>` read during render produces a component *value*, and the
@@ -46,20 +44,20 @@ export function ModuleHomeComposition({
     case 'health':
       return <HealthHomeContent state={state} />;
     case 'planner':
-      return (
-        <PlannerProvider>
-          {/*
-            Both Planner stores, because the home shows a count from each. Two providers rather than
-            one that holds both: tasks and routines are separate envelopes, and a shared provider
-            would re-render every task list whenever a routine was ticked.
-          */}
-          <PlannerRoutineProvider>
-            <PlannerHomeContent />
-          </PlannerRoutineProvider>
-        </PlannerProvider>
-      );
+      /*
+        No providers here — issue #73.
+
+        This used to mount both Planner stores, which shadowed the app-scoped task owner and the
+        Planner stack's routine owner. A task added on the Tasks screen therefore never reached this
+        home: pressing back revealed a copy that had read storage once, when the composition mounted.
+
+        Tasks are owned by `TodayAgendaProvider` (app scope, because Main Home consumes them) and
+        routines by `app/planner/_layout.tsx` (the Planner stack, because nothing outside it does).
+        Both are above this component, so it reads them and re-renders with them.
+      */
+      return <PlannerHomeContent />;
     default:
-      // Planner, Finance, Learning, Family, Goals — awaiting their own reference passes.
+      // Finance, Learning, Family, Goals — awaiting their own reference passes.
       return null;
   }
 }

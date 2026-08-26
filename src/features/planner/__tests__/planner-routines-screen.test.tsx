@@ -56,7 +56,9 @@ function repository(
 
 async function renderRoutines(repo: PlannerRoutineRepository) {
   /*
-    Exactly the tree `src/app/planner/routines.tsx` renders — a `PlannerRoutineProvider` and the
+    The screen under one routine owner. `src/app/planner/routines.tsx` mounts no provider of its own
+    — since issue #73 the owner is `app/planner/_layout.tsx` — so this supplies the equivalent
+    boundary with an injected repository. It is the
     screen. No `ModuleProvider`: the screen owns its scaffold, and supplying the module context here
     is the mistake that let a release-crashing Tasks screen pass its tests.
   */

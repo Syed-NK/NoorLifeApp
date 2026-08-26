@@ -18,6 +18,7 @@ import {
   type PlannerRoutineDraft,
   type PlannerRoutineFault,
 } from './planner-routine';
+import { serializePlannerWrite } from './planner-write-queue';
 
 /**
  * **Where one account's routines live** — two keys under Planner's own namespace, and nothing
@@ -126,11 +127,13 @@ export function plannerRoutineCompletionsAddress(ownerId: string | null): string
 }
 
 /*
-  One queue for the whole module, matching the task repository. Two repository instances for the same
-  account — the routines screen and Planner home, say — must not interleave their read-modify-writes,
-  and a queue held per instance would not stop them.
+  Serialization moved to `planner-write-queue.ts` — issue #72.
+
+  This file used to hold its own module-scope queue, with a comment claiming it matched the task
+  repository. It did not: the task repository's queue was declared inside its factory, so the two
+  files disagreed about the invariant one of them documented. Both now reach the same lane, keyed by
+  the storage address, and neither has a local queue left to drift back to.
 */
-let mutationQueue: Promise<void> = Promise.resolve();
 
 export function createPlannerRoutineRepository(
   deps: PlannerRoutineRepositoryDeps,
@@ -206,15 +209,17 @@ export function createPlannerRoutineRepository(
     }
   }
 
+  /**
+   * Serializes one write against every other write to this account's routine keys — issue #72.
+   *
+   * The lane is the routine address, and the completion log writes on it too: both live behind the
+   * same `write` call, so a completion and a routine edit must not interleave even though they
+   * touch two keys. Naming the routine address for both is what keeps that pair atomic.
+   */
   function mutate(
     operation: () => Promise<PlannerRoutineMutation>,
   ): Promise<PlannerRoutineMutation> {
-    const result = mutationQueue.then(operation, operation);
-    mutationQueue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    return address === null ? operation() : serializePlannerWrite(address, operation);
   }
 
   return {

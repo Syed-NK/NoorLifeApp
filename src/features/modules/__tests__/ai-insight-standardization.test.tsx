@@ -10,6 +10,8 @@ import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 import { ModuleProvider } from '../module-context';
 import { moduleColorThemes, FRAMEWORK_MODULE_IDS, type FrameworkModuleId } from '../module-tokens';
 import { ModuleAIInsightCard } from '../components/module-ai-insight-card';
+import { PlannerOwners } from '@/test-support/planner-owners';
+
 import { ModuleHomeScreen } from '../screens/module-home-screen';
 import type { ModuleRepositoryProvider } from '../services/module-data.contract';
 
@@ -38,7 +40,13 @@ const insightProvider: ModuleRepositoryProvider = (moduleId) => ({
 // Two costs this removes: the simulated latency the mock data sources sleep through on every
 // mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
 // individual test is charged for it.
-installMockLatencyTimers(() => render(<ModuleHomeScreen moduleId="planner" />));
+installMockLatencyTimers(() =>
+  render(
+    <PlannerOwners>
+      <ModuleHomeScreen moduleId="planner" />
+    </PlannerOwners>,
+  ),
+);
 
 /**
  * Every module's AI Insight card is the same card.
@@ -151,7 +159,11 @@ describe('every module home renders the shared card', () => {
   const GENERIC: readonly FrameworkModuleId[] = ['finance', 'learning', 'family', 'goals'];
 
   it.each(GENERIC)('%s home renders it at the locked height', async (moduleId) => {
-    await render(<ModuleHomeScreen moduleId={moduleId} provider={insightProvider} />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId={moduleId} provider={insightProvider} />
+      </PlannerOwners>,
+    );
     await screen.findByTestId(`${moduleId}-insight`);
     const style = styleOf(`${moduleId}-insight`);
     expect(style.height).toBe(AI_INSIGHT_GEOMETRY.height);
@@ -177,7 +189,11 @@ describe('every module home renders the shared card', () => {
   });
 
   it('health home renders no AI insight card at all', async () => {
-    await render(<ModuleHomeScreen moduleId="health" />);
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="health" />
+      </PlannerOwners>,
+    );
     expect(screen.queryByTestId('health-insight')).toBeNull();
   });
 
