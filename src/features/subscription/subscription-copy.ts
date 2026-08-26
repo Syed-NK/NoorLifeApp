@@ -265,10 +265,18 @@ export const expiredCopy = {
  * the feature *is* the module: a module tile has nothing extra to say, a feature inside one does.
  */
 export const lockedModuleCopy = {
-  /** One short, specific line per module. Never a generic "unlock premium". */
+  /**
+   * One short, specific line per module. Never a generic "unlock premium".
+   *
+   * These are read by a free user *before* paying, which makes them the strictest truthfulness
+   * surface in the app: a line here is a purchase decision. Planner's line used to sell
+   * "reminders that respect prayer times" — Planner schedules no notifications at all and reads no
+   * prayer times, so the sentence sold two capabilities that do not exist. It now names only what
+   * Planner actually does. Nothing may be added to a line here before the capability ships.
+   */
   valueStatements: {
     health: 'Track wellness, activity and habits with a private health assistant.',
-    planner: 'Plan your day and week, with reminders that respect prayer times.',
+    planner: 'Plan your days with tasks and recurring routines that work offline.',
     finance: 'Budgets, spending and savings goals, kept entirely private.',
     learning: 'Structured Islamic learning with progress you can see.',
     family: 'A shared calendar, goals and memories for up to six accounts.',

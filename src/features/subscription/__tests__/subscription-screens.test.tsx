@@ -325,15 +325,18 @@ describe('the locked module sheet copy', () => {
     // Kept because there is room, and demoted because it is a reason to want Planner rather than an
     // answer to "why did nothing happen".
     expect(
-      screen.getByText('Plan your day and week, with reminders that respect prayer times.'),
+      screen.getByText('Plan your days with tasks and recurring routines that work offline.'),
     ).toBeTruthy();
+
+    // The superseded line sold notifications and prayer-time awareness that Planner does not have.
+    expect(screen.queryByText(/reminders that respect prayer times/i)).toBeNull();
 
     const tree = JSON.stringify(screen.toJSON());
     expect(tree.indexOf('Unlock this feature')).toBeLessThan(
       tree.indexOf('Add Task is available with Planner'),
     );
     expect(tree.indexOf('Add Task is available with Planner')).toBeLessThan(
-      tree.indexOf('Plan your day and week'),
+      tree.indexOf('Plan your days with tasks'),
     );
   });
 
