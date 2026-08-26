@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import {
@@ -17,13 +17,12 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import {
   isLocalDate,
-  localDateKey,
-  offsetLocalDate,
   type PlannerTask,
   type PlannerTaskDraft,
   type PlannerTaskFault,
   type PlannerTaskPriority,
 } from '../data/planner-task';
+import { usePlannerDay } from '../di/planner-day-source';
 import { usePlanner } from '../di/planner-provider';
 import { PlannerTaskList } from './planner-task-list';
 
@@ -93,9 +92,12 @@ function PlannerTasksBody() {
   const planner = usePlanner();
   const params = useLocalSearchParams<{ date?: string | string[] }>();
   const prefilled = prefilledDueDate(params.date);
-  const now = useMemo(() => new Date(), []);
-  const today = localDateKey(now);
-  const tomorrow = offsetLocalDate(now, 1);
+  /*
+    Today and tomorrow come from the shared day source rather than a date captured once per mount. A
+    composer that opened before midnight used to keep labelling the previous day "Today" for as long
+    as it stayed mounted, and disagree with the Planner home the moment that re-rendered.
+  */
+  const { today, tomorrow } = usePlannerDay();
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
   const [title, setTitle] = useState('');
