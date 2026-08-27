@@ -38,20 +38,31 @@ installMockLatencyTimers(() =>
 );
 
 describe('the architecture correction holds', () => {
-  it('composes Noor AI, Faith, Health and Planner to their references', () => {
-    expect([...COMPOSED_MODULE_IDS].sort()).toEqual(['faith', 'health', 'noor-ai', 'planner']);
+  it('composes Noor AI, Faith, Health, Planner and Finance', () => {
+    /*
+      Finance joined in #93. Its composition is not a redesign — it renders the generic arrangement
+      with the summary read from its own ledger instead of the shared mock, which is what a module
+      with a real repository needs and what the mock deliberately will not provide (#23).
+    */
+    expect([...COMPOSED_MODULE_IDS].sort()).toEqual([
+      'faith',
+      'finance',
+      'health',
+      'noor-ai',
+      'planner',
+    ]);
   });
 
-  it('leaves the other four modules on the generic layout', () => {
+  it('leaves the other three modules on the generic layout', () => {
     for (const id of FRAMEWORK_MODULE_IDS) {
-      if (id === 'faith' || id === 'health' || id === 'noor-ai' || id === 'planner') {
+      if (COMPOSED_MODULE_IDS.includes(id)) {
         continue;
       }
       expect(hasApprovedComposition(id)).toBe(false);
     }
   });
 
-  it.each(['finance', 'learning', 'family', 'goals'] as const)(
+  it.each(['learning', 'family', 'goals'] as const)(
     'keeps %s rendering and unchanged',
     async (moduleId) => {
       // The brief requires the five untouched routes stay functional.

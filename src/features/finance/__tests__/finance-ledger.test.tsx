@@ -741,11 +741,13 @@ describe('one owner, at the app boundary', () => {
     }
   });
 
-  it('is consumed by no screen yet', () => {
+  it('is consumed only by Finance surfaces', () => {
     /*
-      #92 is the foundation and nothing else. Spending is #93; the three section routes are still the
-      honest placeholders. Asserted so "Finance works now" cannot be claimed from a store existing.
-      */
+      #92 asserted this store had no consumer at all, which was true of the foundation and is no
+      longer true now that #93 built Spending. What must still hold is the boundary: only Finance's
+      own screens read the ledger, and Main Home reaches it through the optional variant rather than
+      importing a Finance screen.
+    */
     const consumers: string[] = [];
     const walk = (dir: string): void => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -757,13 +759,22 @@ describe('one owner, at the app boundary', () => {
         }
         if (!entry.name.endsWith('.tsx') && !entry.name.endsWith('.ts')) continue;
         if (full.includes(`${path.sep}finance${path.sep}di${path.sep}`)) continue;
-        if (fs.readFileSync(full, 'utf8').includes('useFinance(')) {
+        const source = fs.readFileSync(full, 'utf8');
+        if (source.includes('useFinance(') || source.includes('useOptionalFinance(')) {
           consumers.push(path.relative(process.cwd(), full).split(path.sep).join('/'));
         }
       }
     };
     walk(path.join(process.cwd(), 'src'));
-    expect(consumers).toEqual([]);
+
+    expect(consumers.sort()).toEqual([
+      /* Reads a summary; degrades to "nothing recorded" without an owner. */
+      'src/features/finance/screens/finance-home-content.tsx',
+      /* Writes, so it requires the owner and throws without one. */
+      'src/features/finance/screens/finance-spending-screen.tsx',
+      /* Main Home's aggregate row — a count only, through the optional read. */
+      'src/features/home/hooks/use-finance-timeline-entries.ts',
+    ]);
   });
 });
 

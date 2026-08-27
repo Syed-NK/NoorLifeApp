@@ -525,7 +525,20 @@ const finance: ModuleDefinition = {
     artworkAccessibilityLabel: '',
   },
   quickActions: [
-    { key: 'add-expense', label: 'Add expense', icon: 'add-circle', href: '/finance/transactions' },
+    /*
+      Opens Spending with the expense direction preselected — issue #93.
+
+      A typed route parameter rather than a second route or a global flag: the destination is the
+      same screen either way, and `intent` is read once as initial state so it cannot snap the form
+      back while somebody is filling it in. Ordinary Transactions navigation carries no parameter and
+      opens the list without forcing create mode.
+    */
+    {
+      key: 'add-expense',
+      label: 'Add expense',
+      icon: 'add-circle',
+      href: '/finance/transactions?intent=add-expense',
+    },
     { key: 'budgets', label: 'Budgets', icon: 'budgets', href: '/finance/budgets' },
     { key: 'ask-money-ai', label: 'Ask Money AI', icon: 'robot', href: '/finance/ai' },
   ],

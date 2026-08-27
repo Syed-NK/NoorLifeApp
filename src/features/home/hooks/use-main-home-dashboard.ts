@@ -7,6 +7,7 @@ import { mockMainHomeDashboard } from '@mocks/main-home';
 import type { MainHomeDashboard } from '@shared/models/dashboard';
 import type { AsyncState } from '@shared/states/app-state';
 
+import { useFinanceTimelineEntries } from './use-finance-timeline-entries';
 import { usePlannerTimelineEntries } from './use-planner-timeline-entries';
 import { usePrayerTimelineEntry } from './use-prayer-timeline-entry';
 
@@ -78,6 +79,19 @@ export function useMainHomeDashboard(options?: {
     `today-agenda-provider.tsx` for why the boundary sits there.
   */
   const plannerRows = usePlannerTimelineEntries();
+
+  /*
+    Finance's row, through the same seam — issue #93.
+
+    A count of today's entries and nothing else: no amount, no category, no note. Main Home is seen
+    by whoever is looking at the phone, not only by whoever unlocked it, and free text somebody typed
+    about their own spending does not belong on it. The figures are one tap away on the Finance home,
+    behind the module's own entitlement gate.
+
+    It reads the app-scoped provider from #92, so a transaction saved on Spending shows up here with
+    no relaunch and no event bus.
+  */
+  const financeRows = useFinanceTimelineEntries();
   const agenda = useTodayAgenda();
 
   /*
@@ -165,7 +179,7 @@ export function useMainHomeDashboard(options?: {
           */
           data: {
             ...resolved.data,
-            timeline: [prayerRow, ...plannerRows, ...resolved.data.timeline],
+            timeline: [prayerRow, ...plannerRows, ...financeRows, ...resolved.data.timeline],
           },
         }
       : resolved;

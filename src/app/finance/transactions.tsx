@@ -1,14 +1,11 @@
-import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
+import { FinanceSpendingScreen } from '@features/finance/screens/finance-spending-screen';
 
-/** Finance → Spending. */
+/**
+ * Finance → Spending.
+ *
+ * The placeholder this replaced said "Entries planned. Not built yet." — truthful, and all it was.
+ * The screen behind it is the first Finance surface that records anything; issue #93.
+ */
 export default function Screen() {
-  return (
-    <ModuleSectionScreen
-      moduleId="finance"
-      activeKey="transactions"
-      title="Spending"
-      heroTitle="Entries planned"
-      heroBody="Not built yet. What you record will appear in order."
-    />
-  );
+  return <FinanceSpendingScreen />;
 }

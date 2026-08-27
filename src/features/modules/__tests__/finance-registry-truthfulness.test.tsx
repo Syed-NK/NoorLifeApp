@@ -255,7 +255,8 @@ describe('the superseded Finance strings', () => {
 describe('every live Finance surface is preserved', () => {
   it('keeps all three quick actions and their destinations', () => {
     expect(finance.quickActions.map((a) => [a.key, a.href])).toEqual([
-      ['add-expense', '/finance/transactions'],
+      // Carries the typed intent since #93 built Spending; the destination is unchanged.
+      ['add-expense', '/finance/transactions?intent=add-expense'],
       ['budgets', '/finance/budgets'],
       ['ask-money-ai', '/finance/ai'],
     ]);
@@ -308,8 +309,14 @@ describe('every live Finance surface is preserved', () => {
     expect(fs.existsSync(path.join(process.cwd(), file))).toBe(true);
   });
 
-  it('keeps the three placeholders honest about not being built', () => {
-    for (const file of ['transactions', 'budgets', 'goals']) {
+  it('keeps the two remaining placeholders honest about not being built', () => {
+    /*
+      Spending is built (#93), so it is no longer a placeholder — the route renders
+      `FinanceSpendingScreen`. Budgets and Savings are still honest placeholders and stay that way
+      until #94 and #95; asserting them here is what stops this change quietly making one of them
+      look finished.
+    */
+    for (const file of ['budgets', 'goals']) {
       const source = fs.readFileSync(
         path.join(process.cwd(), `src/app/finance/${file}.tsx`),
         'utf8',
@@ -317,6 +324,13 @@ describe('every live Finance surface is preserved', () => {
       expect(source).toContain('ModuleSectionScreen');
       expect(source).toContain('Not built yet');
     }
+
+    const spending = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/finance/transactions.tsx'),
+      'utf8',
+    );
+    expect(spending).toContain('FinanceSpendingScreen');
+    expect(spending).not.toContain('ModuleSectionScreen');
   });
 });
 

@@ -296,6 +296,8 @@ describe('the dev gallery cannot justify production metadata', () => {
       .sort();
 
     expect(mounts).toEqual([
+      /* Finance's composition since #93 — it renders the grid Finance already had. */
+      'src/features/finance/screens/finance-home-content.tsx',
       'src/features/modules/health/health-home-content.tsx',
       'src/features/modules/screens/module-gallery-screen.tsx',
       'src/features/modules/screens/module-home-screen.tsx',
@@ -370,13 +372,15 @@ describe('the composition file describes Planner correctly', () => {
     );
 
     expect(compositions).toMatch(
-      /which is what\s+\*?\s*Finance, Learning, Family and Goals still use/,
+      // Finance left the fallback list in #93 when it gained its own composition.
+      /which is what\s+\*?\s*Learning, Family and Goals still use/,
     );
     expect(compositions).not.toMatch(/Planner, Finance, Learning, Family and Goals/);
     // And Planner is named in its own branch, not in the fallback's comment.
     expect(compositions).toMatch(/case 'planner':/);
     expect(compositions).toMatch(
-      /\/\/ Finance, Learning, Family, Goals — awaiting their own reference passes\./,
+      // Finance left this list in #93; the fallback comment names the three still on it.
+      /\/\/ Learning, Family, Goals — awaiting their own reference passes\./,
     );
   });
 });
