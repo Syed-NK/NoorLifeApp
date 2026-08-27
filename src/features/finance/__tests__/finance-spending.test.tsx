@@ -118,6 +118,11 @@ async function type(testID: string, value: string): Promise<void> {
   });
 }
 
+/** The rendered ledger rows, scoped away from the month totals that repeat the same amounts. */
+function inList() {
+  return within(screen.getByTestId('finance-list'));
+}
+
 async function settle(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
@@ -388,9 +393,9 @@ describe('recording a transaction', () => {
     await renderConfigured(storage);
     await compose('12.34', { category: 'Food' });
 
-    expect(screen.getByText('12.34 AED')).toBeTruthy();
-    expect(screen.getByText('Expense')).toBeTruthy();
-    expect(within(screen.getByTestId('finance-list')).getByText('Food')).toBeTruthy();
+    expect(inList().getByText('12.34 AED')).toBeTruthy();
+    expect(inList().getByText('Expense')).toBeTruthy();
+    expect(inList().getByText('Food')).toBeTruthy();
 
     const stored = await repo(storage).read();
     const record = stored.kind === 'ok' ? stored.ledger.transactions[0] : null;
@@ -409,7 +414,7 @@ describe('recording a transaction', () => {
       A word, because two hues alone leave a colour-blind reader unable to tell a refund from a
       purchase — and this is the one distinction on the screen that changes what a number means.
     */
-    expect(screen.getByText('Income')).toBeTruthy();
+    expect(inList().getByText('Income')).toBeTruthy();
     const stored = await repo(storage).read();
     expect(stored.kind === 'ok' && stored.ledger.transactions[0]?.direction).toBe('income');
   });
@@ -682,7 +687,7 @@ describe('filtering from the screen', () => {
 
     await press(screen.getByTestId('finance-filters-clear'));
     expect(screen.queryByText('Nothing matches these filters')).toBeNull();
-    expect(screen.getByText('1.00 AED')).toBeTruthy();
+    expect(inList().getByText('1.00 AED')).toBeTruthy();
   });
 
   it('filters by a category taken from the ledger itself', async () => {
@@ -690,7 +695,7 @@ describe('filtering from the screen', () => {
 
     expect(screen.getByTestId('finance-filters-category-Food')).toBeTruthy();
     await press(screen.getByTestId('finance-filters-category-Food'));
-    expect(screen.getByText('1.00 AED')).toBeTruthy();
+    expect(inList().getByText('1.00 AED')).toBeTruthy();
   });
 
   it('says so when it has read a reversed range as a range', async () => {
@@ -700,7 +705,7 @@ describe('filtering from the screen', () => {
     await type('finance-filters-to', '2026-08-01');
 
     expect(screen.getByText(/the other way round, so they have been read as a range/)).toBeTruthy();
-    expect(screen.getByText('1.00 AED')).toBeTruthy();
+    expect(inList().getByText('1.00 AED')).toBeTruthy();
   });
 
   it('says nothing recorded when the ledger really is empty', async () => {
@@ -755,7 +760,7 @@ describe('faults are stated, never presented as empty', () => {
     await first.createTransaction({ direction: 'expense', amountMinor: 4200, occurredOn: TODAY });
 
     const view = await renderSpending(storage, OWNER);
-    expect(screen.getByText('42.00 AED')).toBeTruthy();
+    expect(inList().getByText('42.00 AED')).toBeTruthy();
 
     await act(async () => {
       view.rerender(
@@ -844,7 +849,7 @@ describe('one ledger, every surface', () => {
     });
     await settle();
 
-    expect(screen.getByText('7.50 AED')).toBeTruthy();
+    expect(inList().getByText('7.50 AED')).toBeTruthy();
   });
 });
 

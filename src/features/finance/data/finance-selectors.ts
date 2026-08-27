@@ -1,5 +1,12 @@
 import type { FinanceLedger, FinanceTransaction } from './finance-ledger';
 import { sortFinanceTransactions } from './finance-ledger';
+import {
+  dayIsInMonth,
+  monthOfDay,
+  nextMonth,
+  previousMonth,
+  type FinanceMonth,
+} from './finance-month';
 
 /**
  * **Reading the ledger: grouping, filtering and the derived summary** — issue #93.
@@ -31,6 +38,21 @@ export function hasActiveFilters(filters: FinanceFilters): boolean {
   return filters.category !== null || filters.from !== null || filters.to !== null;
 }
 
+export function hasCustomRange(filters: FinanceFilters): boolean {
+  return filters.from !== null || filters.to !== null;
+}
+
+/**
+ * What the list is scoped to: one month, or a range the user typed.
+ *
+ * Two modes rather than one set of overlapping controls. A month stepper and an inclusive custom
+ * range answer different questions — "how did August go" and "what happened between these two
+ * days" — and a screen that silently intersected them would give an answer to neither. Choosing a
+ * month clears the range; typing a range leaves the month, and the screen says which is in force.
+ */
+export type FinanceScope =
+  { readonly kind: 'month'; readonly month: FinanceMonth } | { readonly kind: 'range' };
+
 /**
  * The date range, with a reversed pair normalised rather than refused.
  *
@@ -58,13 +80,20 @@ export function financeCategories(ledger: FinanceLedger): readonly string[] {
   return [...present].sort((left, right) => left.localeCompare(right));
 }
 
-/** Applies every filter. Composed by construction: each clause narrows what the last one left. */
+/**
+ * Applies the scope and every filter. Composed by construction: each clause narrows what the last
+ * one left, and the category composes with either scope.
+ */
 export function filterFinanceTransactions(
   ledger: FinanceLedger,
   filters: FinanceFilters,
+  scope: FinanceScope = { kind: 'range' },
 ): readonly FinanceTransaction[] {
   const { category, from, to } = normaliseRange(filters);
   return ledger.transactions.filter((transaction) => {
+    if (scope.kind === 'month' && !dayIsInMonth(transaction.occurredOn, scope.month)) {
+      return false;
+    }
     if (category !== null && transaction.category !== category) {
       return false;
     }
@@ -138,4 +167,96 @@ export function summariseFinance(ledger: FinanceLedger, todayKey: string): Finan
     }
   }
   return { count: ledger.transactions.length, todayCount, expenseMinor, incomeMinor };
+}
+
+export type FinanceTotals = {
+  readonly count: number;
+  readonly expenseMinor: number;
+  readonly incomeMinor: number;
+  /** Income minus expense. Signed, because a month that spent more than it took in is a real answer. */
+  readonly netMinor: number;
+};
+
+/**
+ * Income, expense and net over exactly the transactions given.
+ *
+ * Takes a list rather than a ledger so the month view and the custom range share one implementation
+ * — a second totalling function is a second thing to disagree with the first. Integer addition
+ * throughout, and nothing is stored: a written-down total can contradict the records it totals.
+ */
+export function totalFinance(transactions: readonly FinanceTransaction[]): FinanceTotals {
+  let expenseMinor = 0;
+  let incomeMinor = 0;
+  for (const transaction of transactions) {
+    if (transaction.direction === 'expense') {
+      expenseMinor += transaction.amountMinor;
+    } else {
+      incomeMinor += transaction.amountMinor;
+    }
+  }
+  return {
+    count: transactions.length,
+    expenseMinor,
+    incomeMinor,
+    netMinor: incomeMinor - expenseMinor,
+  };
+}
+
+/** Every month the ledger has a transaction in, ascending. */
+export function financeMonths(ledger: FinanceLedger): readonly FinanceMonth[] {
+  const present = new Set<FinanceMonth>();
+  for (const transaction of ledger.transactions) {
+    present.add(monthOfDay(transaction.occurredOn));
+  }
+  return [...present].sort();
+}
+
+export type FinanceMonthBounds = {
+  readonly earliest: FinanceMonth;
+  readonly latest: FinanceMonth;
+};
+
+/**
+ * How far the month stepper may travel.
+ *
+ * Forward stops at the current month **unless the ledger already holds something later** — a
+ * back-dated ledger should not hide a record the user themselves entered, and a stepper that walked
+ * indefinitely into an empty future would be offering months that cannot contain anything. Backward
+ * stops at the earliest month that has a transaction, for the same reason in the other direction.
+ *
+ * Empty months *between* those bounds stay reachable, and say so honestly — a gap in someone's
+ * records is information, not an error.
+ */
+export function financeMonthBounds(
+  ledger: FinanceLedger,
+  currentMonth: FinanceMonth,
+): FinanceMonthBounds {
+  const months = financeMonths(ledger);
+  const earliest = months[0];
+  const latest = months[months.length - 1];
+  return {
+    earliest: earliest !== undefined && earliest < currentMonth ? earliest : currentMonth,
+    latest: latest !== undefined && latest > currentMonth ? latest : currentMonth,
+  };
+}
+
+export function canStepBack(month: FinanceMonth, bounds: FinanceMonthBounds): boolean {
+  return previousMonth(month) >= bounds.earliest;
+}
+
+export function canStepForward(month: FinanceMonth, bounds: FinanceMonthBounds): boolean {
+  return nextMonth(month) <= bounds.latest;
+}
+
+/**
+ * Keeps a selected month inside the bounds the ledger allows.
+ *
+ * Needed because the bounds move underneath the selection: deleting the last transaction of the
+ * only future month must not leave the screen parked on a month it can no longer reach.
+ */
+export function clampMonth(month: FinanceMonth, bounds: FinanceMonthBounds): FinanceMonth {
+  if (month < bounds.earliest) {
+    return bounds.earliest;
+  }
+  return month > bounds.latest ? bounds.latest : month;
 }

@@ -26,14 +26,29 @@ import {
   searchCurrencies,
 } from '../data/finance-format';
 import type { FinanceDirection, FinanceTransaction } from '../data/finance-ledger';
+import type { FinanceCurrency } from '../data/finance-money';
+import {
+  currentMonthOf,
+  formatMonth,
+  nextMonth,
+  previousMonth,
+  type FinanceMonth,
+} from '../data/finance-month';
 import {
   NO_FINANCE_FILTERS,
+  canStepBack,
+  canStepForward,
+  clampMonth,
   filterFinanceTransactions,
   financeCategories,
+  financeMonthBounds,
   groupFinanceByDay,
   hasActiveFilters,
+  hasCustomRange,
   normaliseRange,
+  totalFinance,
   type FinanceFilters,
+  type FinanceScope,
 } from '../data/finance-selectors';
 import { useFinance } from '../di/finance-provider';
 
@@ -114,6 +129,21 @@ function SpendingBody() {
   const [filters, setFilters] = useState<FinanceFilters>(NO_FINANCE_FILTERS);
 
   /*
+    The month the list is showing, or `null` for "whichever month it currently is".
+
+    That distinction is the whole design. A screen that stored the current month as a value would
+    stop following the shared day source the instant it mounted, so a phone left open across midnight
+    on the 31st would still be showing last month in the morning — and the user has no way to know
+    the figure is stale. `null` means the month is *derived*, so a midnight roll-over, a timezone
+    change and a foreground reconciliation all move it, with no second clock and no effect.
+
+    Stepping away records a real choice, which is then kept: yanking somebody back out of July
+    because the calendar turned over would be worse than the staleness it avoided. Stepping back onto
+    the current month returns to following it.
+  */
+  const [chosenMonth, setChosenMonth] = useState<FinanceMonth | null>(null);
+
+  /*
     The duplicate-submit guard is a ref, not the `saving` state, and that distinction is the whole
     point. A real double tap delivers both presses inside one React batch, so the second handler
     still closes over `saving === false` and the guard it was supposed to hit never fires. A ref is
@@ -124,8 +154,32 @@ function SpendingBody() {
 
   const ledger = finance.ledger;
   const categories = useMemo(() => financeCategories(ledger), [ledger]);
-  const visible = useMemo(() => filterFinanceTransactions(ledger, filters), [ledger, filters]);
+
+  const currentMonth = currentMonthOf(today);
+  const bounds = useMemo(() => financeMonthBounds(ledger, currentMonth), [ledger, currentMonth]);
+  /*
+    The bounds move underneath the selection — deleting the last record of the only future month, or
+    the day rolling into a new one, both change what is reachable. Clamping on read rather than in an
+    effect means the screen can never render a month it would refuse to step to.
+  */
+  const month = clampMonth(chosenMonth ?? currentMonth, bounds);
+
+  /* Landing back on the current month resumes following it, rather than pinning it as a choice. */
+  const goToMonth = (next: FinanceMonth): void => {
+    setChosenMonth(next === currentMonth ? null : next);
+  };
+  const ranging = hasCustomRange(filters);
+  const scope = useMemo<FinanceScope>(
+    () => (ranging ? { kind: 'range' } : { kind: 'month', month }),
+    [ranging, month],
+  );
+
+  const visible = useMemo(
+    () => filterFinanceTransactions(ledger, filters, scope),
+    [ledger, filters, scope],
+  );
   const groups = useMemo(() => groupFinanceByDay(visible), [visible]);
+  const totals = useMemo(() => totalFinance(visible), [visible]);
   const filtering = hasActiveFilters(filters);
 
   if (finance.loading) {
@@ -252,6 +306,27 @@ function SpendingBody() {
     setPendingRemoval(null);
     setMessage(result.kind === 'ok' ? 'Transaction deleted' : 'That could not be deleted.');
   }
+
+  /*
+    Four different kinds of nothing, and they are not interchangeable. "You have not started" and
+    "August was quiet" and "your filters exclude everything" are three different facts about the
+    user's money, and showing the first when the third is true would be a lie about their records.
+  */
+  const emptyReason =
+    ledger.transactions.length === 0
+      ? {
+          title: 'Nothing recorded yet',
+          body: 'Add what you spent or received. Everything stays on this device.',
+        }
+      : filtering
+        ? {
+            title: 'Nothing matches these filters',
+            body: 'Your entries are still here. Clear the filters to see them again.',
+          }
+        : {
+            title: `Nothing recorded in ${formatMonth(month)}`,
+            body: 'Your other entries are still here. Step to another month to see them.',
+          };
 
   return (
     <View style={{ rowGap: dp(moduleLayout.sectionGap) }}>
@@ -392,6 +467,71 @@ function SpendingBody() {
         </ModuleCard>
       )}
 
+      <ModuleSection title="This month" testID="finance-month">
+        <ModuleCard testID="finance-month-card">
+          <View style={{ rowGap: dp(10) }}>
+            <View style={[styles.row, styles.spread, { columnGap: dp(8) }]}>
+              <StepButton
+                label="Previous month"
+                glyph="‹"
+                disabled={ranging || !canStepBack(month, bounds)}
+                onPress={() => goToMonth(previousMonth(month))}
+                testID="finance-month-previous"
+              />
+              <ModuleText token="cardTitle" accessibilityRole="header" testID="finance-month-label">
+                {formatMonth(month)}
+              </ModuleText>
+              <StepButton
+                label="Next month"
+                glyph="›"
+                disabled={ranging || !canStepForward(month, bounds)}
+                onPress={() => goToMonth(nextMonth(month))}
+                testID="finance-month-next"
+              />
+            </View>
+
+            {ranging ? (
+              <ModuleText
+                token="caption"
+                color={moduleNeutrals.textSecondary}
+                testID="finance-month-superseded"
+              >
+                {`A date range is in force, so these figures cover it instead of ${formatMonth(month)}. Clear it to go back to months.`}
+              </ModuleText>
+            ) : null}
+
+            {/*
+              Totals for whatever is in scope, derived on every read. Nothing here is stored, so no
+              figure can disagree with the records it adds up.
+            */}
+            <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
+              {`${totals.count} ${totals.count === 1 ? 'entry' : 'entries'}`}
+            </ModuleText>
+            <View style={{ rowGap: dp(4) }} testID="finance-month-totals">
+              <Total
+                label="Received"
+                minor={totals.incomeMinor}
+                currency={currency}
+                testID="finance-total-income"
+              />
+              <Total
+                label="Spent"
+                minor={totals.expenseMinor}
+                currency={currency}
+                testID="finance-total-expense"
+              />
+              <Total
+                label="Net"
+                minor={totals.netMinor}
+                currency={currency}
+                testID="finance-total-net"
+                signed
+              />
+            </View>
+          </View>
+        </ModuleCard>
+      </ModuleSection>
+
       <Filters
         filters={filters}
         categories={categories}
@@ -401,7 +541,9 @@ function SpendingBody() {
 
       <ModuleSection
         title={
-          filtering ? `Filtered (${visible.length})` : `All entries (${ledger.transactions.length})`
+          ranging
+            ? `Selected range (${visible.length})`
+            : `${formatMonth(month)} (${visible.length})`
         }
         testID="finance-list"
       >
@@ -409,12 +551,10 @@ function SpendingBody() {
           <ModuleCard testID="finance-empty">
             <View style={{ rowGap: dp(6) }}>
               <ModuleText token="cardTitle" accessibilityRole="header">
-                {filtering ? 'Nothing matches these filters' : 'Nothing recorded yet'}
+                {emptyReason.title}
               </ModuleText>
               <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
-                {filtering
-                  ? 'Your entries are still here. Clear the filters to see them again.'
-                  : 'Add what you spent or received. Everything stays on this device.'}
+                {emptyReason.body}
               </ModuleText>
             </View>
           </ModuleCard>
@@ -582,7 +722,11 @@ function Filters({
   const active = hasActiveFilters(filters);
 
   return (
-    <ModuleSection title="Filter" testID={testID}>
+    <ModuleSection
+      title="Filter"
+      subtitle="A date range replaces the month above. A category narrows whichever is in force."
+      testID={testID}
+    >
       <ModuleCard>
         <View style={{ rowGap: dp(10) }}>
           <ChoiceRow
@@ -611,7 +755,9 @@ function Filters({
           />
           {active ? (
             <ModuleButton
-              label="Clear filters"
+              label={
+                hasCustomRange(filters) ? 'Clear filters and return to months' : 'Clear filters'
+              }
               variant="tertiary"
               onPress={() => onChange(NO_FINANCE_FILTERS)}
               testID={`${testID}-clear`}
@@ -732,9 +878,100 @@ function ChoiceRow({
   );
 }
 
+/**
+ * One month backwards or forwards.
+ *
+ * Disabled rather than hidden at a bound, so the control does not move under the thumb as the ledger
+ * grows — and disabled state is announced, because a button that silently does nothing is worse than
+ * one that says why it cannot.
+ */
+function StepButton({
+  label,
+  glyph,
+  disabled,
+  onPress,
+  testID,
+}: {
+  readonly label: string;
+  readonly glyph: string;
+  readonly disabled: boolean;
+  readonly onPress: () => void;
+  readonly testID: string;
+}) {
+  const theme = useModuleTheme();
+  const surfaces = useModuleSurfaces();
+  const { dp } = useModuleMetrics();
+  return (
+    <Pressable
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      style={[
+        styles.choice,
+        {
+          /* The accessibility minimum, unscaled — a bound, not a dimension. */
+          minHeight: moduleLayout.minTouchTarget,
+          minWidth: moduleLayout.minTouchTarget,
+          borderRadius: dp(12),
+          borderColor: surfaces.border,
+          backgroundColor: disabled ? surfaces.well : surfaces.card,
+          opacity: disabled ? 0.5 : 1,
+          paddingHorizontal: dp(10),
+        },
+      ]}
+      testID={testID}
+    >
+      <ModuleText token="button" color={disabled ? moduleNeutrals.textTertiary : theme.ink}>
+        {glyph}
+      </ModuleText>
+    </Pressable>
+  );
+}
+
+/**
+ * One derived figure, labelled.
+ *
+ * The net carries an explicit sign rather than a colour, because "you spent more than you received"
+ * has to survive a colour-blind reader and a greyscale screenshot. Nothing here is judgemental: a
+ * negative month is stated, not scored.
+ */
+function Total({
+  label,
+  minor,
+  currency,
+  testID,
+  signed = false,
+}: {
+  readonly label: string;
+  readonly minor: number;
+  readonly currency: FinanceCurrency;
+  readonly testID: string;
+  readonly signed?: boolean;
+}) {
+  const { dp } = useModuleMetrics();
+  const magnitude = formatAmount(Math.abs(minor), currency);
+  const text = signed && minor !== 0 ? `${minor < 0 ? '−' : '+'}${magnitude}` : magnitude;
+  return (
+    <View
+      style={[styles.row, styles.spread, { columnGap: dp(8) }]}
+      accessibilityLabel={`${label}, ${text}`}
+      accessible
+      testID={testID}
+    >
+      <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
+        {label}
+      </ModuleText>
+      <ModuleText token="cardTitle">{text}</ModuleText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   input: { borderWidth: 1 },
   row: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  spread: { justifyContent: 'space-between' },
   choices: { flexDirection: 'row', flexWrap: 'wrap' },
   choice: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 });
