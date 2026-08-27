@@ -175,13 +175,8 @@ describe('the other modules’ permission entries are untouched', () => {
         ['notifications', 'Habit reminders'],
       ],
     ],
-    [
-      'finance',
-      [
-        ['notifications', 'Budget alerts'],
-        ['photos', 'Receipt photos'],
-      ],
-    ],
+    // Emptied by #90 — Finance schedules nothing and its Receipts capability is unavailable.
+    ['finance', []],
     ['learning', [['notifications', 'Study reminders']]],
     [
       'family',
@@ -202,7 +197,7 @@ describe('the other modules’ permission entries are untouched', () => {
   });
 
   it('leaves Planner as the only module whose permission set changed', () => {
-    // Eight modules, and exactly one of them declares none.
+    // Eight modules; Planner (#75) and Finance (#90) declare none.
     const counts = Object.fromEntries(
       Object.entries(moduleRegistry).map(([id, definition]) => [id, definition.permissions.length]),
     );
@@ -212,7 +207,7 @@ describe('the other modules’ permission entries are untouched', () => {
       faith: 2,
       health: 2,
       planner: 0,
-      finance: 2,
+      finance: 0,
       learning: 1,
       family: 3,
       goals: 1,
