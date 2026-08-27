@@ -4,8 +4,9 @@ import { AppIcon, PressableScale } from '@ds/components';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { useModule } from '../module-context';
+import { useModuleSurfaces } from '../module-surfaces';
 import { shouldWidenHeroCopy } from '../hero-copy-fit';
-import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import { moduleLayout } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleProgressBar } from './module-chart';
 import { ModuleHeroArtwork } from './module-hero-artwork';
@@ -102,6 +103,7 @@ export function ModuleHeroCard({
   testID,
 }: ModuleHeroCardProps) {
   const module = useModule();
+  const surfaces = useModuleSurfaces();
   const { dp, contentWidth, fontScale, type } = useModuleMetrics();
   const hero = module.hero;
 
@@ -152,6 +154,7 @@ export function ModuleHeroCard({
     <View
       style={[
         styles.root,
+        { backgroundColor: surfaces.card },
         {
           /*
             ── `minHeight` in **both** presentations ────────────────────────────
@@ -340,6 +343,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: moduleNeutrals.surface,
+    /* Overridden per module — issue #91. */
   },
 });

@@ -4,6 +4,7 @@ import { AppIcon, PressableScale } from '@ds/components';
 import type { IconName } from '@shared/models/icon';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
+import { useStatusInkBorder } from '../module-surfaces';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
@@ -83,6 +84,17 @@ export function ModuleStatusBanner({
 }: ModuleStatusBannerProps) {
   const { dp } = useModuleMetrics();
   const spec = TONE[tone];
+  /*
+    On an opted-in module the banner draws its semantic ink as a full border — issue #91.
+
+    Finance's `pageSurface` `#FFF3E6` and `warningSurface` `#FFF6E6` are 1.02:1 apart: the same
+    colour to any eye. A banner there cannot be identified by its fill, so the fill stays and the
+    ink carries the edge — #86 asserts that ink clears the 3:1 non-text bar on every module page.
+
+    Neutral pages are untouched. Their fills are already distinguishable, and bordering them would
+    change seven modules' appearance for no reason. Outside a module provider this is `false`.
+  */
+  const inkBorder = useStatusInkBorder();
 
   return (
     <View
@@ -92,6 +104,7 @@ export function ModuleStatusBanner({
           backgroundColor: spec.surface,
           borderRadius: dp(moduleLayout.radiusSmall),
           borderLeftColor: spec.color,
+          ...(inkBorder ? { borderWidth: 1, borderColor: spec.color } : null),
           paddingVertical: dp(9),
           paddingHorizontal: dp(10),
           columnGap: dp(8),
