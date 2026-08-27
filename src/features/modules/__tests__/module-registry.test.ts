@@ -110,7 +110,14 @@ describe.each(FRAMEWORK_MODULE_IDS)('module definition: %s', (moduleId) => {
   });
 
   it('explains every permission it asks for', () => {
-    expect(definition.permissions.length).toBeGreaterThan(0);
+    /*
+      Not "declares at least one" — that was an accident of the fixtures, asserted as a rule.
+
+      Planner asks the user for nothing (issue #75): it schedules no notification and reads no
+      external calendar, so an empty array is its truthful declaration. A floor of one would have
+      forced a module to name a permission it does not request, which is the defect this file exists
+      to catch, inverted. What must hold is that whatever *is* declared is explained.
+    */
     for (const permission of definition.permissions) {
       expect(permission.title.length).toBeGreaterThan(0);
       // A permission whose rationale is a stub should not be requested at all.

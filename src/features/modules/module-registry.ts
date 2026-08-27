@@ -440,40 +440,65 @@ const planner: ModuleDefinition = {
     },
   ],
   /*
-    Calendar only.
+    None. Planner asks the user for nothing — issue #75.
 
-    Planner used to declare a second, `notifications` permission whose title and rationale promised
-    that a task would alert the user at a time they set. Planner schedules nothing:
-    `planner-routine.ts` records a routine's preferred time as "never a reminder — nothing
-    notifies", and no Planner code requests a notification permission or reads a prayer time. The
-    entry was a promise the module cannot keep, so it is removed rather than reworded — the honest
-    form of an unbuilt permission is its absence, not softer wording. Nothing may re-declare it
-    before Planner actually schedules something.
+    Two entries used to live here. The `notifications` one promised that a task would alert the user
+    at a time they set; #74 removed it, because Planner schedules nothing. The `calendar` one said it
+    would show the device's existing events beside NoorLife tasks, read-only unless the user added
+    an event — and nothing in Planner reads an external calendar. `planner-calendar.ts` says so in
+    its own words: there are no holidays, no observances, no prayer events, no routines, no
+    suggestions and no sample days. The month grid is built from the user's own tasks and nothing
+    else.
+
+    An empty array is the truthful declaration, not a gap to be filled. The registry type has always
+    allowed none and `module-gallery-screen.tsx` already renders its permission section only when
+    there is one to show, so this needs no new branch anywhere. Nothing may be added back before
+    Planner actually requests that permission from the OS.
   */
-  permissions: [
-    {
-      key: 'calendar',
-      title: 'Your device calendar',
-      rationale:
-        'To show your existing events beside NoorLife tasks. Read-only unless you add an event.',
-      required: false,
-    },
-  ],
+  permissions: [],
   ai: moduleAIPolicies.planner,
   stateCopy: {
+    /*
+      Declared because `ModuleStateCopy` requires it, dormant because Planner never renders it.
+
+      Planner has an approved composition, so `ModuleHomeScreen`'s generic empty branch is not on its
+      path; emptiness is expressed by `PlannerTaskList`'s own "Nothing scheduled" card. The previous
+      wording said today would "fill itself in" once the user brought in their calendar — an import
+      Planner does not have — so a dead string was also a false one, waiting for a future surface to
+      pick it up. It now says only what Planner does, and matches the words the task list already
+      uses, so rendering it later would need no rewrite. No surface is added here to make it show.
+    */
     empty: {
-      title: 'Your day is clear',
-      body: 'Add a task or bring in your calendar and today will fill itself in.',
-      action: 'Add your first task',
+      title: 'Nothing scheduled',
+      body: 'Add a task and it will appear here. NoorLife will not invent a schedule for you.',
+      action: 'Add a task',
     },
+    /*
+      Rendered, unlike the two around it — and it was the one false claim here that a user could
+      actually see. `PlannerHomeContent` shows this whenever `planner.fault` is set, and both faults
+      are local: `storage-unavailable` is a failed AsyncStorage read, `corrupt-data` is an envelope
+      that would not parse. "A request failed on our side" named a server Planner does not have, and
+      "your tasks are still saved" is not something a failed read can promise — on the corrupt branch
+      it is the claim least likely to be true. What a read failure *can* promise is that it changed
+      nothing.
+    */
     error: {
       title: 'Couldn’t load your Planner',
-      body: 'A request failed on our side. Your tasks are still saved.',
+      body: 'Planner could not read your saved plan on this device. Nothing was changed.',
       action: 'Try again',
     },
+    /*
+      Also dormant, and previously false twice over.
+
+      "Changes sync later" described a server Planner does not have: tasks and routines live in this
+      device's AsyncStorage and are never uploaded. And no Planner surface has an offline branch at
+      all — the composition renders loading, error and content, because a local store has no network
+      state to report. The body now states the truth a user would need if it ever did render, which
+      is that nothing here depends on a connection.
+    */
     offline: {
       title: 'You’re offline',
-      body: 'Today’s plan is available and you can still add tasks. Changes sync later.',
+      body: 'Planner works the same offline. Your tasks and routines are stored on this device.',
     },
     loading: 'Loading your Planner module',
   },
