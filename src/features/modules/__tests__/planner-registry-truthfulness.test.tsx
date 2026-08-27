@@ -181,7 +181,9 @@ describe('Planner’s state copy claims only what Planner does', () => {
     */
     expect(planner.stateCopy.empty.action).toBe('Add a task');
     expect(planner.hero.actionLabel).toBe(planner.stateCopy.empty.action);
-    expect(planner.quickActions.map((action) => action.href)).toContain('/planner/tasks');
+    // `/planner/tasks` is a bottom-navigation destination. It was also a quick-action href until
+    // #77 removed those; the bar is where the route's existence is now recorded.
+    expect(planner.navigation.map((item) => item.href)).toContain('/planner/tasks');
   });
 
   it('error describes a local read failure, not a server one', () => {
@@ -345,20 +347,10 @@ describe('nothing about Planner’s behaviour moved', () => {
     expect(planner.hero.support).toBe('Nothing enters your plan until you add it.');
   });
 
-  it('keeps its quick actions and capabilities exactly as issue #77 will find them', () => {
-    // #75 corrects copy. The dead quick-action and capability *surfaces* are #77's scope, and this
-    // pins them so that work starts from an unchanged baseline.
-    expect(planner.quickActions.map((action) => action.key)).toEqual([
-      'add-task',
-      'calendar',
-      'ask-plan-ai',
-    ]);
-    expect(planner.capabilities.map((capability) => capability.key)).toEqual([
-      'today',
-      'calendar',
-      'tasks',
-      'routines',
-      'focus',
-    ]);
+  it('declares no quick actions or capabilities, since #77 removed the dead ones', () => {
+    // Pinned here too, because #75's own rule — a declaration with no consumer is a claim waiting
+    // for a surface — is the rule #77 applied to these two lists.
+    expect(planner.quickActions).toEqual([]);
+    expect(planner.capabilities).toEqual([]);
   });
 });

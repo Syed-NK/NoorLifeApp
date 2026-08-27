@@ -89,6 +89,17 @@ const renderedSize = (width: number, fontScale: number) =>
 
 type Registered = (typeof allModuleDefinitions)[number];
 
+/*
+  The modules this rule can speak about.
+
+  `quickActionColumns` is a statement about a row of tiles, and a module that registers none renders
+  no row — Planner, since issue #77 removed its dead declarations. Its natural answer from the
+  helper is the floor of 1, which is neither right nor wrong for a row that does not exist, so it is
+  excluded here rather than given a column count it never uses. Every module that *does* register
+  actions is still covered.
+*/
+const REGISTERS_A_ROW = allModuleDefinitions.filter((module) => module.quickActions.length > 0);
+
 function inputFor(
   module: Registered,
   width: number,
@@ -117,15 +128,16 @@ describe('the audit this rule is built on', () => {
   it('counts the registered actions and names the widest labels', () => {
     /*
       Recorded because issue #52 estimated "~40 labels across the eight modules" and the repository
-      says otherwise. Every module registers quick actions, but only the four on the generic home
-      branch render them through this row; Noor AI, Faith, Health and Planner draw their own
-      compositions. The rule is still evaluated per row, so all of them are covered — but the count
-      that matters for production is the smaller one, and a report that said forty would be wrong.
+      says otherwise. Seven of the eight modules register quick actions — Planner registers none
+      since issue #77 removed declarations nothing rendered — and only the four on the generic home
+      branch render them through this row; Noor AI, Faith and Health draw their own compositions.
+      The rule is still evaluated per row, so all of them are covered — but the count that matters
+      for production is the smaller one, and a report that said forty would be wrong.
     */
     const total = allModuleDefinitions.reduce((sum, m) => sum + m.quickActions.length, 0);
     const production = PRODUCTION.reduce((sum, m) => sum + m.quickActions.length, 0);
     expect({ total, production, productionModules: PRODUCTION.map((m) => m.id).sort() }).toEqual({
-      total: 22,
+      total: 19,
       production: 12,
       productionModules: ['family', 'finance', 'goals', 'learning'],
     });
@@ -254,7 +266,7 @@ describe('the ordinary layout survives wherever it fits', () => {
       the overwhelming majority of users.
     */
     for (const width of WIDTHS) {
-      for (const module of allModuleDefinitions) {
+      for (const module of REGISTERS_A_ROW) {
         expect({
           module: module.id,
           width,
@@ -273,7 +285,7 @@ describe('the ordinary layout survives wherever it fits', () => {
     */
     for (const { width, fontScale } of CELLS) {
       const rendered = renderedSize(width, fontScale);
-      for (const module of allModuleDefinitions) {
+      for (const module of REGISTERS_A_ROW) {
         const columns = quickActionColumns(inputFor(module, width, fontScale));
         if (columns === module.quickActions.length) continue;
         /*
@@ -302,12 +314,12 @@ describe('the ordinary layout survives wherever it fits', () => {
       Every cell in one assertion, so any change to the threshold, the chrome, the token or an
       approved label has to be seen and re-approved rather than merely re-passing. Faith and Goals
       keep three columns everywhere because their labels are short; Health registers one action, so
-      one column is its natural row.
+      one column is its natural row. Planner is absent because it registers no actions at all.
     */
     const surface = CELLS.map(({ width, fontScale }) => ({
       cell: `${width}dp x${fontScale}`,
       columns: Object.fromEntries(
-        allModuleDefinitions.map((module) => [
+        REGISTERS_A_ROW.map((module) => [
           module.id,
           quickActionColumns(inputFor(module, width, fontScale)),
         ]),
@@ -318,7 +330,6 @@ describe('the ordinary layout survives wherever it fits', () => {
       'noor-ai': 3,
       faith: 3,
       health: 1,
-      planner: 3,
       finance: 3,
       learning: 3,
       family: 3,
@@ -328,7 +339,6 @@ describe('the ordinary layout survives wherever it fits', () => {
       'noor-ai': 2,
       faith: 3,
       health: 1,
-      planner: 2,
       finance: 2,
       learning: 2,
       family: 2,
