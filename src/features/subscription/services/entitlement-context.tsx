@@ -176,6 +176,21 @@ export function useEntitlement(): EntitlementState {
   return value;
 }
 
+/**
+ * The entitlement, or `null` outside the provider.
+ *
+ * `useEntitlement` throws, deliberately — a screen that gates on a missing entitlement would be
+ * gating on nothing. But a surface that must **fail closed** needs to distinguish "no provider" from
+ * "free plan" so it can treat both as unentitled rather than crashing, and a thrown error on Main
+ * Home would take down the app first screen over a subscription lookup.
+ *
+ * Read it through `useOptionalModuleAccess`, which applies the closed default in one place, rather
+ * than each caller inventing its own.
+ */
+export function useOptionalEntitlement(): EntitlementState | null {
+  return useContext(StateContext);
+}
+
 export function useEntitlementActions(): EntitlementActions {
   const value = useContext(ActionsContext);
   if (value === null) {

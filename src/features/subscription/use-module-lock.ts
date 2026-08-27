@@ -2,7 +2,7 @@ import type { ModuleId } from '@ds/tokens';
 import type { FrameworkModuleId } from '@features/modules/module-tokens';
 
 import { canAccessModule, isPremiumModule } from './domain/entitlement';
-import { useEntitlement } from './services/entitlement-context';
+import { useEntitlement, useOptionalEntitlement } from './services/entitlement-context';
 
 /**
  * The one place presentation asks "is this locked?".
@@ -82,4 +82,36 @@ export function usePaidContentLock(): { readonly isLocked: boolean } {
   const { entitlement } = useEntitlement();
   // Any premium module answers the question; `health` stands in for "paid content".
   return { isLocked: !canAccessModule(entitlement, 'health') };
+}
+
+export type ModuleAccess = {
+  /** True only when the entitlement has resolved **and** it grants this module. */
+  readonly isEntitled: boolean;
+  /** False until the first resolve completes, and outside the provider. */
+  readonly isResolved: boolean;
+};
+
+/**
+ * Whether a surface may read a module's private data yet — the closed-by-default question.
+ *
+ * `useModuleLock` answers "should this look locked?", which is a presentation question and is
+ * allowed to be optimistic while things settle. This answers "may I touch the records?", and the
+ * two are not the same question: a surface that showed a figure during the half-second before the
+ * entitlement resolved would have disclosed it, and no later correction takes that back.
+ *
+ * So every uncertain answer is `false`. No provider, an unresolved entitlement, a free plan, an
+ * expired subscription — all of them mean *not yet*. The grant is the only affirmative case, and it
+ * resolves through `canAccessModule`, the same function the route gate uses, so a Main Home row and
+ * the module behind it can never disagree about who is entitled.
+ */
+export function useOptionalModuleAccess(moduleId: FrameworkModuleId): ModuleAccess {
+  const state = useOptionalEntitlement();
+
+  if (state === null) {
+    return { isEntitled: false, isResolved: false };
+  }
+  return {
+    isEntitled: state.isResolved && canAccessModule(state.entitlement, moduleId),
+    isResolved: state.isResolved,
+  };
 }
