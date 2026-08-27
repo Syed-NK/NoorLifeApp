@@ -58,11 +58,11 @@ export function ModuleSection({
       style={[
         tinted
           ? {
-              backgroundColor: theme.lightSurface,
+              backgroundColor: theme.wellSurface,
               borderRadius: dp(moduleLayout.cardRadius),
               padding: dp(moduleLayout.cardPadding),
               borderWidth: 1,
-              borderColor: theme.lightSurface,
+              borderColor: theme.wellSurface,
             }
           : null,
       ]}

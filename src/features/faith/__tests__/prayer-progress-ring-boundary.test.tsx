@@ -3,6 +3,9 @@ import { join } from 'node:path';
 
 import { render, screen } from '@testing-library/react-native';
 
+import { modulePalettes } from '@ds/tokens';
+import { moduleColorThemes } from '@features/modules/module-tokens';
+
 import { PrayerProgressRing } from '../components/prayer-progress-ring';
 
 /**
@@ -210,7 +213,14 @@ describe('nothing else about the ring moved', () => {
     const source = code();
     // The locked Faith hues, by name — never a literal.
     expect(source).toContain('const GOLD = modulePalettes.faith.supporting;');
-    expect(source).toContain('const MINT = modulePalettes.faith.soft;');
+    /*
+      The same hue, now named by the role that owns it — issue #86. The palette's `soft` value and
+      `ModuleColorTheme.pageSurface` are asserted equal in `module-surface-contract.test.ts`, so this
+      is a rename of the access path and not a change of colour; the value assertion below is what
+      actually holds the ring's tint.
+    */
+    expect(source).toContain('const MINT = moduleColorThemes.faith.pageSurface;');
+    expect(moduleColorThemes.faith.pageSurface).toBe(modulePalettes.faith.soft);
     // The overlap that stops the ring reading as a dotted line, and the track's measured weight.
     expect(source).toContain('2 * radius * Math.sin(Math.PI / SEGMENTS) + 1');
     expect(source).toContain('withAlpha(MINT, 0.35)');

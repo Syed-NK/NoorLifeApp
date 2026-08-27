@@ -63,7 +63,7 @@ export function ModuleActivityCard({ items, testID }: ModuleActivityCardProps) {
   };
   const statusSurface: Readonly<Record<ModuleActivityStatus, string>> = {
     done: moduleNeutrals.successSurface,
-    due: theme.lightSurface,
+    due: theme.wellSurface,
     upcoming: moduleNeutrals.surfaceMuted,
     missed: moduleNeutrals.warningSurface,
   };
@@ -111,7 +111,7 @@ export function ModuleActivityCard({ items, testID }: ModuleActivityCardProps) {
                     width: dp(30),
                     height: dp(30),
                     borderRadius: dp(8),
-                    backgroundColor: theme.lightSurface,
+                    backgroundColor: theme.wellSurface,
                   },
                 ]}
               >

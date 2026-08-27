@@ -9,7 +9,28 @@
  * in the application must come from this file (directly, or via a ModuleTheme).
  */
 
-/** §2.1 Neutral foundation — the application canvas is neutral, never tinted. */
+/**
+ * §2.1 Neutral foundation — every **shared** canvas is neutral.
+ *
+ * ── Amended for the module surface contract — issue #86 ────────────────────
+ * This rule used to read "the application canvas is neutral, never tinted", and that absolute is
+ * what left every module screen on one grey while Faith quietly tinted six of its own surfaces
+ * outside the token system.
+ *
+ * The rule now distinguishes *whose* canvas it is:
+ *
+ * - A **shared or global** canvas stays neutral. Main Home is explicitly exempt from module tinting
+ *   and keeps `canvas`, because it combines eight module identities at once and tinting it would
+ *   mean choosing one of them. Entry/auth, subscription and profile keep their own grounds.
+ * - A **module-owned screen** may use that module's approved `pageSurface` from
+ *   `ModuleColorTheme`, which is the locked palette's own `soft` value under an explicit name.
+ *
+ * The Qur'an reader (`readerPageBackground`) and Tasbih (`tasbihStageSurface`) keep their special
+ * grounds; both are reading and photographic surfaces with recorded reasons of their own.
+ *
+ * Nothing here permits a colour that is not in this file, and nothing permits sampling one from
+ * artwork.
+ */
 export const neutralColors = {
   /** Main application background. */
   canvas: '#F7F8FA',

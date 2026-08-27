@@ -76,7 +76,7 @@ export function ModuleStateView({
             width: dp(62),
             height: dp(62),
             borderRadius: dp(31),
-            backgroundColor: theme.lightSurface,
+            backgroundColor: theme.wellSurface,
             borderColor: theme.border,
             marginBottom: dp(4),
           },

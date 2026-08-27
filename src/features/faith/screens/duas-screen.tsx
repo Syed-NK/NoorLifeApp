@@ -10,6 +10,7 @@ import {
   moduleLayout,
   moduleNeutrals,
   readerPageBackground,
+  moduleColorThemes,
 } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
@@ -68,7 +69,14 @@ import { recentSelections } from '../storage/faith-quran-selections';
 
 const EMERALD = modulePalettes.faith.primary;
 const EMERALD_DEEP = modulePalettes.faith.dark;
-const MINT = modulePalettes.faith.soft;
+/*
+  Faith's page tint, from the shared contract — issue #86.
+
+  This was the palette’s soft value, hand-declared here and in five other Faith files. The value
+  is unchanged; what changes is that it now comes from the role that owns it, so a future page
+  ground and this tint cannot drift apart.
+*/
+const MINT = moduleColorThemes.faith.pageSurface;
 
 export function DuasScreen() {
   const { dp, type, fontScale, twoColumnWidth, stackTwoColumns } = useModuleMetrics();

@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { modulePalettes } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
-import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
+import { moduleLayout, moduleNeutrals, moduleColorThemes } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { QURAN_CONTENT_ATTRIBUTION } from '../data/dhikr/quran-content-attribution';
@@ -214,7 +214,7 @@ export function SelectionOriginBadge({
           paddingHorizontal: dp(8),
           paddingVertical: dp(3),
           borderColor: personal ? moduleNeutrals.border : EMERALD_DEEP,
-          backgroundColor: personal ? moduleNeutrals.surface : modulePalettes.faith.soft,
+          backgroundColor: personal ? moduleNeutrals.surface : moduleColorThemes.faith.pageSurface,
         },
       ]}
       testID={testID}

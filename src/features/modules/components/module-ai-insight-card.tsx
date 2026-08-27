@@ -72,7 +72,7 @@ export function ModuleAIInsightCard({ message, title, onPress, testID }: ModuleA
           paddingVertical: dp(AI_INSIGHT_GEOMETRY.paddingVertical),
           borderWidth: AI_INSIGHT_GEOMETRY.borderWidth,
           // The only per-module variation: tint and border.
-          backgroundColor: module.theme.lightSurface,
+          backgroundColor: module.theme.wellSurface,
           borderColor: module.theme.border,
         },
       ]}

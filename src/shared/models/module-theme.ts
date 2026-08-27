@@ -61,7 +61,14 @@ export type ModuleTheme = {
   readonly primary: string;
   /** Module dark — hero gradient start. */
   readonly dark: string;
-  /** Soft background — grouped controls and tinted chips only. */
+  /**
+   * Soft background — grouped controls and tinted chips only.
+   *
+   * @deprecated For a module *surface*, read `ModuleColorTheme.pageSurface`, which carries this
+   * exact value under the role it fills — issue #86. This field stays because `modulePalettes` is
+   * the locked spec's own shape, but a screen that reaches for it is choosing between two
+   * near-identical tints with no rule to guide it, which is the defect the contract removes.
+   */
   readonly soft: string;
   /** Supporting accent — small highlights only, never a large area. */
   readonly supporting: string;
