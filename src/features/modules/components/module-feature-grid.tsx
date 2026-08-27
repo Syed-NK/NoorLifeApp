@@ -110,6 +110,14 @@ export function ModuleFeatureGrid({ items, onSelect, testID }: ModuleFeatureGrid
             width: featureTileWidth,
             height: dp(moduleLayout.featureTileHeight),
             borderRadius: dp(moduleLayout.radiusSmall),
+            /*
+              The disabled branch stays neutral, deliberately — issue #91.
+
+              `surfaceMuted` means *unavailable* here, not "a nested row", so it must not take the
+              module tint when a module opts into the surface roles. Finance's Bank sync and Receipts
+              tiles have to keep reading as unavailable, which is exactly what #90 spent its effort
+              asserting; a decorative tint would undo it silently.
+            */
             backgroundColor: disabled ? moduleNeutrals.surfaceMuted : module.theme.wellSurface,
             borderColor: disabled ? moduleNeutrals.border : module.theme.wellSurface,
             rowGap: dp(6),

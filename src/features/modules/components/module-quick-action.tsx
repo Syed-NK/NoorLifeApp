@@ -4,8 +4,9 @@ import { StyleSheet, View } from 'react-native';
 import { AppIcon, PressableScale } from '@ds/components';
 
 import { useModule, useModuleTheme } from '../module-context';
+import { useModuleSurfaces } from '../module-surfaces';
 import type { ModuleQuickActionSpec } from '../module-definition';
-import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import { moduleLayout } from '../module-tokens';
 import { moduleRasterIcon } from '../module-raster-icons';
 import { quickActionColumns } from '../quick-action-fit';
 import { useModuleMetrics } from '../use-module-metrics';
@@ -72,6 +73,7 @@ export function ModuleQuickAction({ action, onPress, testID }: ModuleQuickAction
     keeps its glyph. The test caught it; the compiler could not.
   */
   const module = useModule();
+  const surfaces = useModuleSurfaces();
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
 
@@ -89,10 +91,11 @@ export function ModuleQuickAction({ action, onPress, testID }: ModuleQuickAction
       accessibilityLabel={action.accessibilityLabel ?? action.label}
       style={[
         styles.card,
+        { backgroundColor: surfaces.card },
         {
           minHeight: dp(moduleLayout.quickActionHeight),
           borderRadius: dp(moduleLayout.radiusSmall),
-          borderColor: moduleNeutrals.border,
+          borderColor: surfaces.border,
           columnGap: dp(TILE_INNER_GAP),
           paddingHorizontal: dp(TILE_PADDING_H),
           paddingVertical: dp(TILE_PADDING_H),
@@ -210,7 +213,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: moduleNeutrals.surface,
+    /* Overridden per module — issue #91. */
     borderWidth: TILE_BORDER,
   },
   iconWell: {

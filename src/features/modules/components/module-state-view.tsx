@@ -5,7 +5,8 @@ import { AppIcon, PressableScale } from '@ds/components';
 import type { IconName } from '@shared/models/icon';
 
 import { useModuleTheme } from '../module-context';
-import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import { useModuleSurfaces } from '../module-surfaces';
+import { moduleLayout } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
 
@@ -59,11 +60,15 @@ export function ModuleStateView({
   testID,
 }: ModuleStateViewProps) {
   const theme = useModuleTheme();
+  const surfaces = useModuleSurfaces();
   const { dp } = useModuleMetrics();
 
   return (
     <View
-      style={[styles.root, { paddingVertical: dp(24), rowGap: dp(10) }]}
+      style={[
+        styles.root,
+        { backgroundColor: surfaces.page, paddingVertical: dp(24), rowGap: dp(10) },
+      ]}
       accessible
       accessibilityLiveRegion="polite"
       accessibilityLabel={announcement ?? `${title}. ${body}`}
@@ -155,6 +160,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
-    backgroundColor: moduleNeutrals.pageBackground,
+    /* Overridden per module at the call site — issue #91. */
   },
 });

@@ -4,6 +4,7 @@ import { AppIcon } from '@ds/components';
 import type { IconName } from '@shared/models/icon';
 
 import { useModuleTheme } from '../module-context';
+import { useModuleSurfaces } from '../module-surfaces';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
@@ -50,12 +51,14 @@ const TREND_ICON: Readonly<Record<ModuleTrend, IconName>> = {
  */
 export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
   const theme = useModuleTheme();
+  const surfaces = useModuleSurfaces();
   const { dp } = useModuleMetrics();
 
   return (
     <View
       style={[
         styles.card,
+        { backgroundColor: surfaces.card, borderColor: surfaces.border },
         {
           borderRadius: dp(moduleLayout.cardRadius),
           padding: dp(moduleLayout.cardPadding),
@@ -140,9 +143,9 @@ export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
 const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
-    backgroundColor: moduleNeutrals.surface,
+    /* Overridden per module — issue #91. */
     borderWidth: 1,
-    borderColor: moduleNeutrals.border,
+    /* Overridden per module — issue #91. */
   },
   metric: {
     flex: 1,

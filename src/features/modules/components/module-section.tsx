@@ -5,7 +5,8 @@ import { AppIcon, PressableScale } from '@ds/components';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { useModuleTheme } from '../module-context';
-import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import { useOptionalModuleSurfaces } from '../module-surfaces';
+import { moduleLayout } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
 
@@ -122,12 +123,15 @@ const styles = StyleSheet.create({
 
 /** Hairline used between rows inside a card. Exported so cards stay visually consistent. */
 export function ModuleDivider() {
-  return <View style={dividerStyles.line} accessible={false} />;
+  const surfaces = useOptionalModuleSurfaces();
+  return (
+    <View style={[dividerStyles.line, { backgroundColor: surfaces.divider }]} accessible={false} />
+  );
 }
 
 const dividerStyles = StyleSheet.create({
   line: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: moduleNeutrals.divider,
+    /* Overridden per module — issue #91. */
   },
 });

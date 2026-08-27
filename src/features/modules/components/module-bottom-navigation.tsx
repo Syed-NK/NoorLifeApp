@@ -6,6 +6,7 @@ import { AppIcon, PressableScale } from '@ds/components';
 import { AI_NAV_INDEX, type NavItem } from '@shared/models/module-theme';
 
 import { useModule } from '../module-context';
+import { moduleSurfaces } from '../module-surfaces';
 import { moduleLayout, moduleNavigationHeight, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleAICenterButton } from './module-ai-center-button';
@@ -60,6 +61,7 @@ export function ModuleBottomNavigation({
   */
   const aiSize = Math.max(dp(moduleLayout.navAIButton), moduleLayout.minTouchTarget);
   const prefix = testID ?? `${module.id}-nav`;
+  const surfaces = moduleSurfaces(module.id);
 
   const navigate = (item: NavItem) => {
     if (onNavigate !== undefined) {
@@ -162,7 +164,18 @@ export function ModuleBottomNavigation({
             const tint = isActive ? module.theme.ink : moduleNeutrals.navInactive;
 
             return (
-              <View key={item.key} style={styles.slot}>
+              <View
+                key={item.key}
+                style={[
+                  styles.slot,
+                  /*
+                  The selected slot takes the module's own ground on an opted-in module — issue #91.
+                  For the seven that have not opted in this resolves to `navBackground`, the bar's
+                  own white, so nothing moves: the marker and the ink still carry the state there.
+                */
+                  isActive ? { backgroundColor: surfaces.navSelected } : null,
+                ]}
+              >
                 {/*
                 Active state is carried by a marker as well as by colour, so it is never
                 communicated by colour alone.

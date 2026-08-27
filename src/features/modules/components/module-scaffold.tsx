@@ -8,6 +8,7 @@ import type { NavItem } from '@shared/models/module-theme';
 import { resolveBackDestination } from '@application/navigation/module-navigation';
 
 import { ModuleProvider, useModule } from '../module-context';
+import { moduleSurfaces } from '../module-surfaces';
 import {
   moduleDockClearance,
   moduleLayout,
@@ -216,6 +217,7 @@ function ModuleScaffoldBody({
 }: Omit<ModuleScaffoldProps, 'moduleId'>) {
   const insets = useSafeAreaInsets();
   const module = useModule();
+  const surfaces = moduleSurfaces(module.id);
   // `contentWidth` is the capped column minus both page paddings, so centring a view of
   // that width reproduces the page margins without applying padding a second time.
   const { dp, contentWidth } = useModuleMetrics();
@@ -264,7 +266,11 @@ function ModuleScaffoldBody({
     <View
       style={[
         styles.root,
-        { paddingTop: insets.top },
+        /*
+          The module's own ground — issue #91. `moduleSurfaces` returns today's neutral for the
+          seven modules that have not opted in, so only Finance changes colour here.
+        */
+        { backgroundColor: surfaces.page, paddingTop: insets.top },
         background === undefined ? null : { backgroundColor: background },
       ]}
       testID={testID}

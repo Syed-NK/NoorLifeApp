@@ -5,7 +5,8 @@ import { PressableScale } from '@ds/components';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
 import { useModuleTheme } from '../module-context';
-import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import { useModuleSurfaces } from '../module-surfaces';
+import { moduleLayout } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
 
@@ -60,12 +61,17 @@ export function ModuleCard({
   testID,
 }: ModuleCardProps) {
   const theme = useModuleTheme();
+  const surfaces = useModuleSurfaces();
   const { dp } = useModuleMetrics();
   const [measuredHeight, setMeasuredHeight] = useState(0);
 
   const base: ViewStyle = {
-    backgroundColor: tinted ? theme.wellSurface : moduleNeutrals.surface,
-    borderColor: accentBorder ? theme.border : moduleNeutrals.border,
+    /*
+      The card's own ground and edge — issue #91. `surfaces` resolves to today's neutrals for the
+      seven modules that have not opted in, so only Finance moves.
+    */
+    backgroundColor: tinted ? theme.wellSurface : surfaces.card,
+    borderColor: accentBorder ? theme.border : surfaces.border,
     borderWidth: 1,
     borderRadius: dp(moduleLayout.cardRadius),
     padding: dp(padding ?? moduleLayout.cardPadding),
