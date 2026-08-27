@@ -124,6 +124,115 @@ Shadows:
 
 Do not use heavy glassmorphism. Surfaces should remain readable on inexpensive devices.
 
+### 2.6 Iconography and commissioned pictograms
+
+Locked by issue #104. The machine-checkable half of this section is
+`src/features/modules/assets/pictogram-manifest.ts` and
+`src/features/modules/__tests__/pictogram-system-lock.test.ts`. **Any exception to this section
+requires an explicit reviewed amendment to that manifest — a new optical policy, a new governed
+directory or a changed class boundary is a diff somebody approves, never a local decision at a call
+site.**
+
+#### Three visual classes
+
+NoorLife draws marks in exactly three classes. A mark belongs to one of them and nothing may move
+between classes without an amendment.
+
+**Class 1 — coloured raster pictograms.** Available module destinations and feature concepts: Main
+Home's module tiles, module feature-grid tiles, module quick actions, and Faith's submenu and
+dimensional slots. These are commissioned artwork, rendered as delivered.
+
+**Class 2 — vector glyphs.** Controls, wayfinding and status. `back`, `help`, `close`, `add`,
+`minus`, `check`, `check-circle`, the four chevrons, `search`, `settings`, `more`, `retry`,
+`warning`, `error`, `info`, `info-outline`, `download`, `downloading`, the media transport
+(`play`, `pause`, `skip-next`, `skip-previous`), `share`, `edit`, `delete`, `send`, `microphone`,
+`notification`, `lock`, `bookmark`; **every bottom-navigation slot**; and trend arrows.
+
+These stay glyphs because they mean the same thing everywhere. Commissioning them per module would
+make "back" look like eight different actions, and a coloured pictogram on a destructive control
+reads as decoration rather than as a warning. **A control, a status marker or a navigation slot must
+never be reclassified as a pictogram in order to raise PNG coverage.** Coverage is not a goal; the
+right mark for the surface is.
+
+**Class 3 — hero illustrations.** Large artwork behind hero copy. A separate class with its own
+contract: full-bleed field, its own scrim, no optical-box rule, no 256 px canvas. Hero files live in
+`assets/images/modules/heroes/` and `assets/images/modules/faith/hero/` and **may not enter the
+pictogram manifest** — a hero rendered at 40 dp in a feature tile is an unreadable smudge.
+
+#### Canonical style
+
+**Faith and Main Home are the reference family.** A new delivery is judged by whether it looks like
+part of that set at the same rendered size.
+
+- Dimensional, softly rounded 3D/clay treatment.
+- Consistent three-quarter perspective.
+- Upper-left soft studio lighting.
+- Moderate gloss, tactile materials, mid-saturation.
+- Compact single-object or tightly grouped silhouette.
+- The module's own palette, with restrained cream, gold and navy supporting accents.
+- **No** text, letters, numbers, Arabic script, currency symbols, logos, emoji, watermarks,
+  trademarks or third-party branding.
+- **No** baked canvas and no external drop shadow. The artwork sits on a transparent field; the
+  surface behind it belongs to the screen.
+
+New **Finance** artwork must move toward Faith's softer visual weight rather than becoming more
+photorealistic. Finance is deliberately not flagged as a canonical reference in the manifest for
+this reason.
+
+#### Mechanical delivery
+
+Enforced by `commissionedAssetViolations` and the manifest guard:
+
+| Property | Required |
+| --- | --- |
+| Preserved source master | 1024 × 1024 or larger, kept outside the installed set |
+| Installed file | exactly 256 × 256 |
+| Format | PNG, 8-bit RGBA (colour type 6), non-interlaced |
+| Corners | all four alpha values exactly 0 |
+| Safety margin | ≥ 19 px transparent on every side |
+| Optical box | ≤ 85% of the canvas on the longer edge |
+| Optical centre | within 1 px of the canvas centre |
+| Metadata | no `tEXt`, `iTXt`, `zTXt`, `eXIf`, `tIME` |
+| Resolution | static literal Metro `require` only |
+| Tint | none — `AppIcon`'s raster branch types `color` as `never` |
+| Theme colour | never sampled from artwork |
+
+Twenty-three of the thirty-six assets in the governed module directories predate these rules and
+carry a **legacy optical policy**.
+Those policies are a closed set, frozen by asset id. They exist so approved artwork is not re-exported
+to satisfy a rule written after it was drawn; they are **not** available to new work. The only policy
+open to a new delivery is `commissioned-256`.
+
+#### Usage
+
+- An **unavailable** capability always draws its neutral glyph and never full-colour artwork.
+  `moduleRasterIcon` refuses artwork when `available` is false, by construction.
+- **No asset is installed without a named production consumer.** A file on disk that nothing renders
+  is either staged with a recorded reason or it does not belong in the repository.
+- Mapping is keyed on **module plus semantic icon**, never on icon name alone. `add-circle` belongs
+  to four modules and `robot` to seven; a name-only lookup would put Finance's wallet on Planner's
+  add button.
+- One asset may serve several consumers **only when their meaning is identical**.
+
+Standing decisions, each machine-checked:
+
+- **Receipts** artwork stays staged and unmapped until #101 makes Receipts available.
+- **Bank sync** remains a disabled glyph.
+- **`finance-track`** remains unused until an honest consumer exists.
+- **`p3-reminder-bell`** remains held until notification delivery exists and is separately approved.
+
+#### What CI cannot do
+
+Every property above is mechanical, and a green build says only that the bytes and the wiring are
+right. **CI cannot judge artistic quality**, and this specification does not claim it can: no test
+can tell a drawing that belongs to the family from a competent drawing that does not.
+
+A delivery is therefore gated on **a reference-sheet review by a person** — the new artwork placed
+beside the canonical Faith and Main Home assets at the same rendered size, and accepted or rejected
+as a set. A batch is integrated in one pass or not at all; half a batch puts approved artwork beside
+stand-ins on the same screen, which reads as a design decision rather than as an unfinished state.
+
+
 ## 3. Application shell
 
 ### 3.0 Home-screen content-density rule
