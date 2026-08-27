@@ -85,7 +85,8 @@ describe('the placeholder routes are discovered, not listed', () => {
       placeholder is normal, and the cases below hold it to the rule. Dropping below nineteen would
       mean a screen became real or disappeared, which is worth a deliberate look.
     */
-    expect(ROUTES.length).toBeGreaterThanOrEqual(19);
+    /* Eighteen since #93 built Spending. A floor, so a new placeholder still inherits the rule. */
+    expect(ROUTES.length).toBeGreaterThanOrEqual(18);
   });
 
   it('gives every one of them a headline and a supporting line to check', () => {

@@ -13,6 +13,13 @@ import type { PurchaseAdapter } from '@features/subscription/services/purchase-a
 import { lockedModuleCopy } from '@features/subscription/subscription-copy';
 import { installMockLatencyTimers } from '@/test-support/mock-latency-timers';
 
+import {
+  createFinanceLedgerRepository,
+  type FinanceLedgerRepository,
+  type FinanceStorage,
+} from '@features/finance/data/finance-ledger.repository';
+import { FinanceProvider } from '@features/finance/di/finance-provider';
+
 import { LOCKED } from '../main-home-metrics';
 import { TodayAgendaProvider, todayAgenda } from '@application/providers/today-agenda-provider';
 import { MainHomeScreen } from '../screens/main-home-screen';
@@ -75,12 +82,45 @@ const neverResolves: PurchaseAdapter = {
 };
 
 /**
+ * A Finance ledger for the account, seeded through the real repository.
+ *
+ * `AppProviders` mounts `FinanceProvider` app-wide, so a harness that mirrors it needs the option —
+ * and Finance is the one timeline row whose *content* depends on entitlement rather than only its
+ * surface, which is exactly what the cases below check.
+ *
+ * The returned repository is a second instance over the same storage, so the render starts from the
+ * stored bytes rather than from anything the seeding left in memory.
+ */
+async function financeLedger(entries: readonly string[]): Promise<FinanceLedgerRepository> {
+  const rows = new Map<string, string>();
+  const storage: FinanceStorage = {
+    getItem: async (key) => rows.get(key) ?? null,
+    setItem: async (key, value) => {
+      rows.set(key, value);
+    },
+  };
+  const make = (): FinanceLedgerRepository =>
+    createFinanceLedgerRepository({
+      ownerId: FINANCE_OWNER,
+      storage,
+      now: () => new Date('2026-08-27T09:00:00.000Z'),
+    });
+
+  const seed = make();
+  await seed.setCurrency('AED');
+  for (const day of entries) {
+    await seed.createTransaction({ direction: 'expense', amountMinor: 4250, occurredOn: day });
+  }
+  return make();
+}
+
+/**
  * The real provider stack with the entitlement adapter injected.
  *
  * Mirrors `AppProviders` in the same order; only the adapter differs, since `AppProviders` takes
  * the default one and these tests need a known plan.
  */
-async function renderMainHome(adapter: PurchaseAdapter) {
+async function renderMainHome(adapter: PurchaseAdapter, finance?: FinanceLedgerRepository) {
   // RNTL 14's `render` is asynchronous; awaiting it is what commits the tree.
   const view = await render(
     <SafeAreaProvider>
@@ -96,7 +136,13 @@ async function renderMainHome(adapter: PurchaseAdapter) {
                   account key or timing a storage read.
                 */}
                 <TodayAgendaProvider state={todayAgenda(TODAY_TASKS)}>
-                  <MainHomeScreen />
+                  {finance === undefined ? (
+                    <MainHomeScreen />
+                  ) : (
+                    <FinanceProvider repository={finance}>
+                      <MainHomeScreen />
+                    </FinanceProvider>
+                  )}
                 </TodayAgendaProvider>
               </EntitlementProvider>
             </AuthProvider>
@@ -111,6 +157,8 @@ async function renderMainHome(adapter: PurchaseAdapter) {
   await screen.findByTestId('main-home-hero');
   return view;
 }
+
+const FINANCE_OWNER = '3f6d2c18-9a4b-4c7e-8f21-5b7d0e9a1c42';
 
 const onPlan = (plan: Entitlement['plan']) =>
   renderMainHome(new MockPurchaseAdapter({ initialEntitlement: entitlement(plan) }));
@@ -142,7 +190,7 @@ const PROTECTED_ROWS = [
 ] as const;
 
 /** Every route a locked Main Home surface must not reach without an explicit confirmation. */
-const PROTECTED_ROUTES = ['/planner', '/family', '/goals'];
+const PROTECTED_ROUTES = ['/planner', '/family', '/goals', '/finance'];
 
 function expectNoProtectedRouteEntered() {
   for (const route of PROTECTED_ROUTES) {
@@ -314,8 +362,14 @@ describe('the timeline on a free plan', () => {
       Three rows now, not four: the live prayer row plus the user's two real tasks. It was four while
       the section carried three invented rows; the count follows the data rather than a fixture, which
       is the point of the change.
+
+      Plus Finance's row since #93, which is here for the reason this test exists. On a free plan it
+      is present and locked, and it says "Track what you spend" — an invitation that reports nothing.
+      Its presence is deliberately *not* conditional on the ledger: a locked row that appeared only
+      when something had been recorded today would disclose that fact by existing, which is most of
+      what the count itself would have said.
     */
-    expect(screen.getAllByTestId(/^timeline-row-/)).toHaveLength(1 + TODAY_TASKS.length);
+    expect(screen.getAllByTestId(/^timeline-row-/)).toHaveLength(2 + TODAY_TASKS.length);
   });
 });
 
@@ -533,5 +587,132 @@ describe('locked geometry survives both states', () => {
     expect(ring?.width).toBe(LOCKED.summary.ring);
     expect(ring?.height).toBe(LOCKED.summary.ring);
     expect(ring?.borderWidth).toBe(LOCKED.summary.ringStroke);
+  });
+});
+
+/**
+ * Finance's row is the one whose *content* the entitlement decides, not just its surface — so it
+ * gets its own section here, rendered through the whole screen rather than through the hook.
+ *
+ * A count can hide in a label, a hint, a testID or a prop nobody draws, and only the committed tree
+ * shows all of them at once. That is what these assert against.
+ */
+describe("Finance's timeline row across the entitlement boundary", () => {
+  const TODAY = '2026-08-27';
+  const ROW = 'timeline-row-finance-today';
+  const NEUTRAL = 'Track what you spend';
+
+  /*
+    The row as committed, taken from the rendered JSON rather than from the host element's props.
+    Props carry React internals and are circular; the rendered tree is plain data, and it is also the
+    thing that actually reaches the screen reader.
+  */
+  function rowSubtree(): unknown {
+    const walk = (node: unknown): unknown => {
+      if (node === null || typeof node !== 'object') {
+        return null;
+      }
+      const element = node as { props?: Record<string, unknown>; children?: unknown[] };
+      if (element.props?.testID === ROW) {
+        return element;
+      }
+      for (const child of element.children ?? []) {
+        const found = walk(child);
+        if (found !== null) {
+          return found;
+        }
+      }
+      return null;
+    };
+    const found = walk(screen.toJSON());
+    expect(found).not.toBeNull();
+    return found;
+  }
+
+  it('reports nothing to a free account, however full the ledger is', async () => {
+    await renderMainHome(
+      new MockPurchaseAdapter({ initialEntitlement: entitlement('free') }),
+      await financeLedger([TODAY, TODAY, TODAY]),
+    );
+
+    const row = screen.getByTestId(ROW);
+    expect(row.props.accessibilityLabel).toBe(`Today, ${NEUTRAL}, Premium feature`);
+    expect(screen.getByTestId('timeline-lock-finance-today')).toBeTruthy();
+
+    /*
+      The whole committed tree. Three transactions, so a leak of the number would be unmistakable —
+      and serializing catches it in a hint or a value as readily as in the visible title.
+    */
+    const tree = JSON.stringify(screen.toJSON());
+    for (const leak of ['entries recorded', 'entry recorded', '3 entries', '42.50', '4250']) {
+      expect(tree).not.toContain(leak);
+    }
+  });
+
+  it('is indistinguishable between an empty ledger and a full one while locked', async () => {
+    /*
+      The property the whole design rests on. If the locked row varied at all with the ledger — in
+      its wording, or merely in whether it appeared — its presence would be the disclosure, and
+      anyone glancing at the phone would learn that this person spent money today.
+    */
+    await renderMainHome(
+      new MockPurchaseAdapter({ initialEntitlement: entitlement('free') }),
+      await financeLedger([]),
+    );
+    const empty = JSON.stringify(rowSubtree());
+
+    await renderMainHome(
+      new MockPurchaseAdapter({ initialEntitlement: entitlement('free') }),
+      await financeLedger([TODAY, TODAY]),
+    );
+    const full = JSON.stringify(rowSubtree());
+
+    expect(full).toBe(empty);
+  });
+
+  it('reports nothing before the entitlement has resolved', async () => {
+    await renderMainHome(neverResolves, await financeLedger([TODAY]));
+
+    expect(screen.getByTestId(ROW).props.accessibilityLabel).toBe(
+      `Today, ${NEUTRAL}, Premium feature`,
+    );
+    expect(JSON.stringify(screen.toJSON())).not.toContain('entry recorded');
+  });
+
+  it('reports nothing when no Finance ledger is mounted at all', async () => {
+    await free();
+    expect(screen.getByTestId(ROW).props.accessibilityLabel).toBe(
+      `Today, ${NEUTRAL}, Premium feature`,
+    );
+  });
+
+  it('states the count to a paid account', async () => {
+    await renderMainHome(
+      new MockPurchaseAdapter({ initialEntitlement: entitlement('premium_family') }),
+      await financeLedger([TODAY]),
+    );
+
+    const row = screen.getByTestId(ROW);
+    /* No "Premium feature" suffix and no padlock: the row is the user's own record now. */
+    expect(row.props.accessibilityLabel).toBe('Today, 1 entry recorded');
+    expect(screen.queryByTestId('timeline-lock-finance-today')).toBeNull();
+  });
+
+  it('keeps the locked row a focusable button that raises the upgrade sheet', async () => {
+    const user = userEvent.setup();
+    await renderMainHome(
+      new MockPurchaseAdapter({ initialEntitlement: entitlement('free') }),
+      await financeLedger([TODAY]),
+    );
+
+    const row = screen.getByTestId(ROW);
+    expect(row.props.accessibilityRole).toBe('button');
+    expect(row.props.accessibilityState?.disabled).toBeFalsy();
+
+    await user.press(row);
+
+    /* The sheet names the row and its module; Finance itself is never pushed. */
+    expect(screen.getByText(sheetBodyFor(NEUTRAL, 'Finance'))).toBeTruthy();
+    expectNoProtectedRouteEntered();
   });
 });

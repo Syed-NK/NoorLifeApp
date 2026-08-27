@@ -2,6 +2,7 @@ import { FaithHomeContent } from './faith/faith-home-content';
 import { NoorAIHomeContent } from './noor-ai/noor-ai-home-content';
 import { HealthHomeContent } from './health/health-home-content';
 import type { UseModuleOverview } from './use-module-overview';
+import { FinanceHomeContent } from '@features/finance/screens/finance-home-content';
 import { PlannerHomeContent } from '@features/planner/screens/planner-home-content';
 import type { FrameworkModuleId } from './module-tokens';
 
@@ -16,7 +17,7 @@ import type { FrameworkModuleId } from './module-tokens';
  *
  * So the shell stays shared and the arrangement becomes per module. A module handled below
  * renders its own composition; the rest fall back to the generic layout, which is what
- * Finance, Learning, Family and Goals still use.
+ * Learning, Family and Goals still use.
  *
  * ── Why a switch rather than a lookup map ───────────────────────────────────
  * A `Record<id, ComponentType>` read during render produces a component *value*, and the
@@ -56,8 +57,20 @@ export function ModuleHomeComposition({
         Both are above this component, so it reads them and re-renders with them.
       */
       return <PlannerHomeContent />;
+    case 'finance':
+      /*
+        Finance reads its own ledger — issue #93.
+
+        The generic branch resolves `empty` from the shared mock, which is correct for a module with
+        no repository and wrong for one that now has a real store. This composition renders the same
+        arrangement the generic branch does — hero, quick actions, "At a glance", capability grid —
+        with the figures derived live instead of fixed. Nothing Finance had is dropped: unlike
+        Planner, its quick actions and capability grid do render, and removing them here would be a
+        regression dressed as a rewrite.
+      */
+      return <FinanceHomeContent state={state} />;
     default:
-      // Finance, Learning, Family, Goals — awaiting their own reference passes.
+      // Learning, Family, Goals — awaiting their own reference passes.
       return null;
   }
 }
@@ -74,6 +87,7 @@ export const COMPOSED_MODULE_IDS: readonly FrameworkModuleId[] = [
   'faith',
   'health',
   'planner',
+  'finance',
 ];
 
 export function hasApprovedComposition(moduleId: FrameworkModuleId): boolean {

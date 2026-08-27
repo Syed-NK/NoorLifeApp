@@ -190,29 +190,34 @@ describe('unavailable and failed are not presented as empty or successful', () =
     Three different truths. "You have nothing yet" invites the user to add something; "we could not
     reach it" and "it failed" do not, and collapsing them is how a fault gets presented as an empty
     account.
+
+    Learning is the subject rather than Finance since #93. The property is the *generic* home's, and
+    Finance left that branch when it gained a composition reading its own ledger — a local store with
+    no network has no offline state to distinguish, and its loading and error states now come from
+    the store rather than the overview. Learning is still generic, so it exercises the same rule.
   */
   it('renders the offline state, and not the empty state', async () => {
-    await render(<ModuleHomeScreen moduleId="finance" provider={scenarioProvider('offline')} />);
+    await render(<ModuleHomeScreen moduleId="learning" provider={scenarioProvider('offline')} />);
 
     await waitFor(() => {
       expect(screen.getByTestId('module-offline-state')).toBeTruthy();
     });
     expect(screen.queryByTestId('module-empty-state')).toBeNull();
-    expect(screen.queryByTestId('finance-summary')).toBeNull();
+    expect(screen.queryByTestId('learning-summary')).toBeNull();
   });
 
   it('renders the error state, and not the empty state', async () => {
-    await render(<ModuleHomeScreen moduleId="finance" provider={scenarioProvider('error')} />);
+    await render(<ModuleHomeScreen moduleId="learning" provider={scenarioProvider('error')} />);
 
     await waitFor(() => {
       expect(screen.getByTestId('module-error-state')).toBeTruthy();
     });
     expect(screen.queryByTestId('module-empty-state')).toBeNull();
-    expect(screen.queryByTestId('finance-summary')).toBeNull();
+    expect(screen.queryByTestId('learning-summary')).toBeNull();
   });
 
   it('shows a loading state before anything settles, rather than an empty claim', async () => {
-    await render(<ModuleHomeScreen moduleId="finance" provider={scenarioProvider('empty')} />);
+    await render(<ModuleHomeScreen moduleId="learning" provider={scenarioProvider('empty')} />);
 
     expect(screen.getByTestId('module-loading-state')).toBeTruthy();
     expect(screen.queryByTestId('module-empty-state')).toBeNull();
@@ -357,7 +362,11 @@ describe('no protected design file changed', () => {
     expect(hasApprovedComposition('health')).toBe(true);
     expect(hasApprovedComposition('planner')).toBe(true);
     expect(hasApprovedComposition('noor-ai')).toBe(true);
-    // ...and the four generic homes still generic, so this fix changed no screen's nature.
-    expect(GENERIC_MODULE_IDS.slice().sort()).toEqual(['family', 'finance', 'goals', 'learning']);
+    /*
+      Finance joined them in #93, so it reads its own ledger rather than the shared mock. The three
+      still on the generic branch are the three with no repository of their own.
+    */
+    expect(hasApprovedComposition('finance')).toBe(true);
+    expect(GENERIC_MODULE_IDS.slice().sort()).toEqual(['family', 'goals', 'learning']);
   });
 });

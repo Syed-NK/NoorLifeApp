@@ -1099,6 +1099,8 @@ describe('Faith, Noor AI and Health stay outside this rule', () => {
     walk(join(MODULES_ROOT, '..'));
 
     expect(callSites.sort()).toEqual([
+      /* Finance's composition since #93 — it renders the shared hero it already had. */
+      'finance-home-content.tsx',
       'module-gallery-screen.tsx',
       'module-home-screen.tsx',
       'module-section-screen.tsx',

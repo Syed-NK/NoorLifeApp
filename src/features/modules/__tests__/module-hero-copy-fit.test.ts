@@ -316,6 +316,8 @@ describe('every production module-home call site inherits the fix', () => {
     expect(sites.length).toBeGreaterThanOrEqual(4);
     const names = sites.map((s) => s.file.replace(process.cwd(), '').replace(/\\/g, '/')).sort();
     expect(names).toEqual([
+      /* Finance's composition since #93 — measured like every other hero call site. */
+      '/src/features/finance/screens/finance-home-content.tsx',
       '/src/features/modules/screens/module-gallery-screen.tsx',
       '/src/features/modules/screens/module-home-screen.tsx',
       '/src/features/modules/screens/module-section-screen.tsx',

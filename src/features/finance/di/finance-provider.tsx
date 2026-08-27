@@ -242,3 +242,17 @@ export function useFinance(): FinanceState {
   }
   return value;
 }
+
+/**
+ * The ledger, or `null` outside the provider.
+ *
+ * `useFinance` throws, deliberately — a Finance surface reading a private copy is the defect #73
+ * removed from Planner. But Main Home is a *consumer*, not a Finance surface, and
+ * `today-agenda-provider` records why that distinction matters: "a missing provider on Main Home
+ * would otherwise take down the app's first screen". So the fan-in reads this instead and
+ * contributes no row when there is no owner, which is the same safe-empty shape the agenda port
+ * uses for the same reason.
+ */
+export function useOptionalFinance(): FinanceState | null {
+  return useContext(FinanceContext);
+}

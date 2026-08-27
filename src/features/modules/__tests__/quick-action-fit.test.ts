@@ -64,8 +64,18 @@ const FONT_SCALES = [1, 1.3, 1.5] as const;
 const CELLS = WIDTHS.flatMap((width) => FONT_SCALES.map((fontScale) => ({ width, fontScale })));
 
 /** Modules whose home renders `ModuleQuickActionRow` — the generic branch. */
+/*
+  The modules whose home actually renders this row.
+
+  It used to be "everything not composed", which was a correct proxy right up until #93: Finance is
+  composed now *and still renders the row*, because its composition reproduces the generic
+  arrangement with a live summary rather than replacing it. Keeping the old proxy would have quietly
+  dropped Finance's three labels out of the fit rule — the labels would still be on screen, just no
+  longer measured.
+*/
+const RENDERS_THE_ROW: readonly string[] = ['finance'];
 const PRODUCTION = allModuleDefinitions.filter(
-  (module) => !COMPOSED_MODULE_IDS.includes(module.id),
+  (module) => !COMPOSED_MODULE_IDS.includes(module.id) || RENDERS_THE_ROW.includes(module.id),
 );
 
 const scaledDp = (width: number) => (value: number) => Math.round(value * moduleScale(width));
@@ -129,10 +139,11 @@ describe('the audit this rule is built on', () => {
     /*
       Recorded because issue #52 estimated "~40 labels across the eight modules" and the repository
       says otherwise. Seven of the eight modules register quick actions — Planner registers none
-      since issue #77 removed declarations nothing rendered — and only the four on the generic home
-      branch render them through this row; Noor AI, Faith and Health draw their own compositions.
-      The rule is still evaluated per row, so all of them are covered — but the count that matters
-      for production is the smaller one, and a report that said forty would be wrong.
+      since issue #77 removed declarations nothing rendered — and five render them: the four on the
+      generic home branch, plus Finance, whose composition (#93) reproduces the generic arrangement
+      rather than replacing it. Noor AI, Faith and Health draw their own and show no row. The rule is
+      still evaluated per row, so all of them are covered — but the count that matters for production
+      is the smaller one, and a report that said forty would be wrong.
     */
     const total = allModuleDefinitions.reduce((sum, m) => sum + m.quickActions.length, 0);
     const production = PRODUCTION.reduce((sum, m) => sum + m.quickActions.length, 0);
@@ -614,7 +625,11 @@ describe('only the generic module home renders this row', () => {
           walk(full);
           continue;
         }
-        // Tests render it too; this counts production call sites.
+        /*
+          Tests render it too; this counts production call sites. Finance's composition is one since
+          #93 — it renders the same row the generic home does, which is why its labels are measured
+          above rather than exempted.
+        */
         if (
           entry.name.endsWith('.tsx') &&
           !entry.name.includes('.test.') &&
@@ -625,10 +640,24 @@ describe('only the generic module home renders this row', () => {
       }
     };
     walk(join(MODULES_ROOT, '..'));
-    expect(callSites.sort()).toEqual(['module-gallery-screen.tsx', 'module-home-screen.tsx']);
-    // The composed modules take the other branch of the home screen, so they never reach it.
+    expect(callSites.sort()).toEqual([
+      'finance-home-content.tsx',
+      'module-gallery-screen.tsx',
+      'module-home-screen.tsx',
+    ]);
+    /*
+      The composed modules take the other branch of the home screen. Three of them show no row at
+      all; Finance is composed *and* renders one, because #93 gave it a live summary without taking
+      away the surfaces it already had.
+    */
     expect(code(HOME)).toContain('hasApprovedComposition');
-    expect([...COMPOSED_MODULE_IDS].sort()).toEqual(['faith', 'health', 'noor-ai', 'planner']);
+    expect([...COMPOSED_MODULE_IDS].sort()).toEqual([
+      'faith',
+      'finance',
+      'health',
+      'noor-ai',
+      'planner',
+    ]);
   });
 });
 
