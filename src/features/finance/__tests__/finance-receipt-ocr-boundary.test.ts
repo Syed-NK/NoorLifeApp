@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { createMlKitReceiptOcr } from '../receipts/mlkit-receipt-ocr';
+import { createDeviceReceiptOcr } from '../receipts/device-receipt-ocr';
 import {
   MAX_RECEIPT_LINES,
   MAX_RECEIPT_LINE_LENGTH,
@@ -13,39 +13,43 @@ import {
  * **The boundary between Finance and a native text recogniser** — issue #101.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * ── Why the vendor module is replaced rather than loaded ───────────────────
- * `@react-native-ml-kit/text-recognition` ships TypeScript source as its entry point and is not in
- * this project's `transformIgnorePatterns` allow-list, so requiring it under Jest would fail before
- * any assertion ran. A factory mock is not a convenience here — it is the only way the adapter's own
- * logic can be tested at all, and it has the useful side effect that these cases prove what the
- * adapter does with a *stated* native response rather than with whatever a real one happened to be.
+ * ── Why the native module is replaced rather than loaded ───────────────────
+ * `requireNativeModule` throws outside a native runtime, so `modules/noorlife-text-recognition`
+ * cannot be loaded under Jest at all. A factory mock is not a convenience here — it is the only way
+ * the adapter's own logic can be tested, and it has the useful side effect that these cases prove
+ * what the adapter does with a *stated* native response rather than with whatever a real one
+ * happened to be.
  *
  * ── What is actually being protected ───────────────────────────────────────
- * Three properties, and none of them is about text recognition working. That the recogniser is
- * handed a local file and never a URL; that a native result which is not the shape the vendor
- * documents becomes a *failure* rather than a crash or an empty receipt; and that nothing behind
- * this port can reach a network, a log or a backend. The third is asserted from the source, because
- * it is a property of what the files import rather than of what they do when called.
+ * Four properties, and none of them is about text recognition working. That the recogniser is handed
+ * a local file and never a URL; that a native result which is not the documented shape becomes a
+ * *failure* rather than a crash or an empty receipt; that nothing behind this port can reach a
+ * network, a log or a backend; and that the module declares exactly one recogniser per platform, so
+ * the four OCR scripts NoorLife does not read are not in the app to be excluded. The last two are
+ * asserted from the source, because they are properties of what the files declare rather than of
+ * what they do when called.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 const mockRecognize = jest.fn();
 
-jest.mock('@react-native-ml-kit/text-recognition', () => ({
+/*
+  The repository's own native module, replaced with a double.
+
+  `requireNativeModule` throws outside a native runtime, so the real module cannot be loaded under
+  Jest at all — which is also the property that keeps every other suite free of it. Replacing the
+  module rather than the `expo-modules-core` lookup keeps the double at the same seam production
+  uses.
+*/
+jest.mock('../../../../modules/noorlife-text-recognition', () => ({
   __esModule: true,
-  default: { recognize: (...args: unknown[]) => mockRecognize(...args) },
-  TextRecognitionScript: {
-    LATIN: 'Latin',
-    CHINESE: 'Chinese',
-    DEVANAGARI: 'Devanagari',
-    JAPANESE: 'Japanese',
-    KOREAN: 'Korean',
-  },
+  default: { recognizeLatin: (...args: unknown[]) => mockRecognize(...args) },
 }));
 
 const LOCAL = 'file:///cache/finance-receipts/staging/abc.jpg';
 
 const RECEIPTS_DIR = path.join(process.cwd(), 'src', 'features', 'finance', 'receipts');
+const MODULE_DIR = path.join(process.cwd(), 'modules', 'noorlife-text-recognition');
 const SCREEN = path.join(
   process.cwd(),
   'src',
@@ -77,18 +81,18 @@ beforeEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('the adapter calls the recogniser with a local uri and the Latin script', () => {
-  it('passes the file uri through and asks for Latin', async () => {
+  it('passes the file uri through to the Latin-only recogniser', async () => {
     mockRecognize.mockResolvedValue({ text: 'TOTAL 12.34' });
 
-    const outcome = await createMlKitReceiptOcr().recognise({ uri: LOCAL });
+    const outcome = await createDeviceReceiptOcr().recognise({ uri: LOCAL });
 
     expect(mockRecognize).toHaveBeenCalledTimes(1);
-    expect(mockRecognize).toHaveBeenCalledWith(LOCAL, 'Latin');
+    expect(mockRecognize).toHaveBeenCalledWith(LOCAL);
     expect(outcome).toEqual({ kind: 'recognised', lines: ['TOTAL 12.34'] });
   });
 
   it('never calls the recogniser for a remote url', async () => {
-    const outcome = await createMlKitReceiptOcr().recognise({
+    const outcome = await createDeviceReceiptOcr().recognise({
       uri: 'https://example.test/receipt.jpg',
     });
 
@@ -107,7 +111,7 @@ describe('the adapter calls the recogniser with a local uri and the Latin script
     ['an empty string', ''],
     ['a data url', 'data:image/jpeg;base64,AAAA'],
   ])('refuses %s without calling the recogniser', async (_label, uri) => {
-    const outcome = await createMlKitReceiptOcr().recognise({ uri });
+    const outcome = await createDeviceReceiptOcr().recognise({ uri });
 
     expect(mockRecognize).not.toHaveBeenCalled();
     expect(outcome).toEqual({ kind: 'failed', reason: 'unavailable' });
@@ -116,7 +120,7 @@ describe('the adapter calls the recogniser with a local uri and the Latin script
   it('reports a recogniser that throws as unreadable, and lets nothing escape', async () => {
     mockRecognize.mockRejectedValue(new Error(`could not decode ${LOCAL}: MERCHANT LTD`));
 
-    const outcome = await createMlKitReceiptOcr().recognise({ uri: LOCAL });
+    const outcome = await createDeviceReceiptOcr().recognise({ uri: LOCAL });
 
     expect(outcome).toEqual({ kind: 'failed', reason: 'unreadable' });
     /* The vendor's message is not carried out of the adapter in any form. */
@@ -136,13 +140,13 @@ describe('the four outcomes are distinguished', () => {
       A photograph of a wall is not an error. Reporting it as one would offer a retry for something
       retrying cannot fix, and hide the one thing worth saying: nothing was readable in this picture.
     */
-    expect(await createMlKitReceiptOcr().recognise({ uri: LOCAL })).toEqual({ kind: 'empty' });
+    expect(await createDeviceReceiptOcr().recognise({ uri: LOCAL })).toEqual({ kind: 'empty' });
   });
 
   it('reports whitespace-only text as empty', async () => {
     mockRecognize.mockResolvedValue({ text: '   \n\n  \t \n' });
 
-    expect(await createMlKitReceiptOcr().recognise({ uri: LOCAL })).toEqual({ kind: 'empty' });
+    expect(await createDeviceReceiptOcr().recognise({ uri: LOCAL })).toEqual({ kind: 'empty' });
   });
 
   it.each([
@@ -161,7 +165,7 @@ describe('the four outcomes are distinguished', () => {
       read on this device" does not. Collapsing a malformed native payload into `empty` would tell
       the user their photograph was bad when the recogniser was.
     */
-    expect(await createMlKitReceiptOcr().recognise({ uri: LOCAL })).toEqual({
+    expect(await createDeviceReceiptOcr().recognise({ uri: LOCAL })).toEqual({
       kind: 'failed',
       reason: 'unreadable',
     });
@@ -177,7 +181,7 @@ describe('a withdrawn request', () => {
     const controller = new AbortController();
     controller.abort();
 
-    const outcome = await createMlKitReceiptOcr().recognise({
+    const outcome = await createDeviceReceiptOcr().recognise({
       uri: LOCAL,
       signal: controller.signal,
     });
@@ -194,7 +198,7 @@ describe('a withdrawn request', () => {
       return { text: 'TOTAL 84.20' };
     });
 
-    const outcome = await createMlKitReceiptOcr().recognise({
+    const outcome = await createDeviceReceiptOcr().recognise({
       uri: LOCAL,
       signal: controller.signal,
     });
@@ -211,7 +215,7 @@ describe('a withdrawn request', () => {
     });
 
     expect(
-      await createMlKitReceiptOcr().recognise({ uri: LOCAL, signal: controller.signal }),
+      await createDeviceReceiptOcr().recognise({ uri: LOCAL, signal: controller.signal }),
     ).toEqual({ kind: 'failed', reason: 'aborted' });
   });
 });
@@ -235,7 +239,7 @@ describe('the port returns lines and nothing else', () => {
       ],
     });
 
-    const outcome = await createMlKitReceiptOcr().recognise({ uri: LOCAL });
+    const outcome = await createDeviceReceiptOcr().recognise({ uri: LOCAL });
 
     /*
       Asserted as an exact object rather than by checking a few keys. "There is no geometry" is a
@@ -335,12 +339,37 @@ describe('nothing in the receipt workflow can reach a network, a log or a backen
     }
   });
 
-  it('imports the vendor recogniser in exactly one file', () => {
+  it('imports the recogniser in exactly one file', () => {
     const importing = workflowSources().filter(({ text }) =>
-      stripComments(text).includes('@react-native-ml-kit/text-recognition'),
+      stripComments(text).includes('modules/noorlife-text-recognition'),
     );
 
-    expect(importing.map(({ name }) => name)).toEqual(['mlkit-receipt-ocr.ts']);
+    expect(importing.map(({ name }) => name)).toEqual(['device-receipt-ocr.ts']);
+  });
+
+  it('has no trace of the community package it replaced, anywhere', () => {
+    /*
+      `@react-native-ml-kit/text-recognition` was removed because it declares all five OCR scripts on
+      both platforms with no way to ask for one. A stray import would quietly reinstate the
+      dependency — and, worse, would put the four extra Android script artifacts and the four extra
+      iOS pods back into the app without anyone choosing that.
+    */
+    for (const { name, text } of workflowSources()) {
+      expect([name, stripComments(text)]).not.toEqual([
+        name,
+        expect.stringMatching(/@react-native-ml-kit/),
+      ]);
+    }
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+
+    expect(Object.keys(manifest.dependencies ?? {})).not.toContain(
+      '@react-native-ml-kit/text-recognition',
+    );
+    expect(Object.keys(manifest.devDependencies ?? {})).not.toContain(
+      '@react-native-ml-kit/text-recognition',
+    );
   });
 
   it('imports the image picker in no feature file at all', () => {
@@ -356,14 +385,121 @@ describe('nothing in the receipt workflow can reach a network, a log or a backen
     expect(importing.map(({ name }) => name)).toEqual(['expo-receipt-source.ts']);
   });
 
-  it('asks the recogniser for the Latin script and no other', () => {
-    const adapter = stripComments(
-      fs.readFileSync(path.join(RECEIPTS_DIR, 'mlkit-receipt-ocr.ts'), 'utf8'),
+  it('exposes one recognition call, and it is Latin', () => {
+    const module = stripComments(fs.readFileSync(path.join(MODULE_DIR, 'index.ts'), 'utf8'));
+
+    /*
+      The script is fixed in the native module's *name*, not passed as an argument. A script
+      parameter would be a setting to explain, store and migrate — and it would only be meaningful
+      if the other four models were in the app, which is exactly what this module exists to avoid.
+    */
+    expect(module).toContain('recognizeLatin');
+    for (const script of ['Chinese', 'Devanagari', 'Japanese', 'Korean']) {
+      expect(module).not.toContain(script);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The native module declares one recogniser per platform
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the in-repository module bundles Latin recognition and nothing else', () => {
+  it('declares exactly one ML Kit artifact on Android, and it is the bundled Latin one', () => {
+    const gradle = fs
+      .readFileSync(path.join(MODULE_DIR, 'android', 'build.gradle'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const mlkit = [...gradle.matchAll(/com\.google\.mlkit:[\w-]+/g)].map((m) => m[0]);
+
+    expect(mlkit).toEqual(['com.google.mlkit:text-recognition']);
+  });
+
+  it('declares no unbundled recogniser, which would download its model on first use', () => {
+    const gradle = fs
+      .readFileSync(path.join(MODULE_DIR, 'android', 'build.gradle'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+    /*
+      `play-services-mlkit-text-recognition` fetches its model on demand. That would make the first
+      receipt on a new device fail with no network — and offline recognition is the property #101
+      requires evidence for.
+    */
+    expect(gradle).not.toContain('play-services-mlkit');
+  });
+
+  it('uses Apple Vision on iOS, with no third-party OCR pod', () => {
+    const podspec = fs.readFileSync(
+      path.join(MODULE_DIR, 'ios', 'NoorLifeTextRecognition.podspec'),
+      'utf8',
+    );
+    const swift = fs.readFileSync(
+      path.join(MODULE_DIR, 'ios', 'NoorLifeTextRecognitionModule.swift'),
+      'utf8',
     );
 
-    expect(adapter).toContain('TextRecognitionScript.LATIN');
-    for (const script of ['CHINESE', 'DEVANAGARI', 'JAPANESE', 'KOREAN']) {
-      expect(adapter).not.toContain(`TextRecognitionScript.${script}`);
-    }
+    expect(podspec).toContain('Vision');
+    expect(podspec).not.toContain('GoogleMLKit');
+    expect(podspec).not.toContain('MLKit');
+    expect(swift).toContain('VNRecognizeTextRequest');
+    /* One language, matching Android's one script. */
+    expect(swift).toContain('recognitionLanguages = ["en-US"]');
+  });
+
+  it('refuses a non-local uri in both native implementations, not only in TypeScript', () => {
+    const kotlin = fs.readFileSync(
+      path.join(
+        MODULE_DIR,
+        'android',
+        'src',
+        'main',
+        'java',
+        'com',
+        'noorlife',
+        'textrecognition',
+        'NoorLifeTextRecognitionModule.kt',
+      ),
+      'utf8',
+    );
+    const swift = fs.readFileSync(
+      path.join(MODULE_DIR, 'ios', 'NoorLifeTextRecognitionModule.swift'),
+      'utf8',
+    );
+
+    /*
+      The guard exists on both sides of the bridge deliberately. One that lives only in TypeScript is
+      one refactor away from being the only one, and the thing it prevents is a receipt being fetched
+      from a server.
+    */
+    expect(kotlin).toContain('file:///');
+    expect(swift).toContain('file:///');
+  });
+
+  it('logs nothing and returns no vendor message from either native implementation', () => {
+    const kotlin = fs.readFileSync(
+      path.join(
+        MODULE_DIR,
+        'android',
+        'src',
+        'main',
+        'java',
+        'com',
+        'noorlife',
+        'textrecognition',
+        'NoorLifeTextRecognitionModule.kt',
+      ),
+      'utf8',
+    );
+    const swift = fs.readFileSync(
+      path.join(MODULE_DIR, 'ios', 'NoorLifeTextRecognitionModule.swift'),
+      'utf8',
+    );
+
+    expect(kotlin).not.toMatch(/Log\.[dviwe]\s*\(|println\s*\(/);
+    expect(swift).not.toMatch(/\bprint\s*\(|NSLog\s*\(/);
+    /* The exception is never unwrapped into the rejection — see both files' notes. */
+    expect(kotlin).not.toMatch(/\.message|\.localizedMessage/);
+    expect(swift).not.toMatch(/localizedDescription/);
   });
 });

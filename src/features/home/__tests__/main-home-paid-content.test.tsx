@@ -591,6 +591,19 @@ describe('locked geometry survives both states', () => {
 });
 
 /**
+ * The local day key, from the shared Planner day source the timeline itself uses.
+ *
+ * Derived rather than stated, so a seeded "today" is the same day the row is asking about however
+ * long this suite runs and whenever it starts.
+ */
+function plannerToday(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/**
  * Finance's row is the one whose *content* the entitlement decides, not just its surface — so it
  * gets its own section here, rendered through the whole screen rather than through the hook.
  *
@@ -598,7 +611,19 @@ describe('locked geometry survives both states', () => {
  * shows all of them at once. That is what these assert against.
  */
 describe("Finance's timeline row across the entitlement boundary", () => {
-  const TODAY = '2026-08-27';
+  /*
+    Today, taken from the same day source the row itself reads — not a literal.
+
+    This constant used to be `'2026-08-27'`, which passed for as long as that happened to be the
+    date and failed the first time the clock rolled past midnight: a transaction seeded on a fixed
+    day is *yesterday's* transaction on any other day, so the count the row states goes to zero and
+    the assertion fails for a reason that has nothing to do with entitlement.
+
+    A test that only passes on one calendar day is a test that will fail in the night, on a branch
+    that did not touch it, and be diagnosed as a regression it is not. Reading the day source is what
+    makes it mean the same thing every day.
+  */
+  const TODAY = plannerToday();
   const ROW = 'timeline-row-finance-today';
   const NEUTRAL = 'Track what you spend';
 

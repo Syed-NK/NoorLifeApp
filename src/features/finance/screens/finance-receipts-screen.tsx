@@ -609,10 +609,15 @@ const AMOUNT_MESSAGE: Record<string, string> = {
  *
  * The third line is the one that took care. NoorLife does not upload the image or the recognised
  * text, and that is a promise this codebase keeps — there is no network client behind the OCR port
- * and a test asserts there is none. But Google's ML Kit is a Google SDK, and it may contact Google
- * for diagnostics, performance measurement and compatibility information. Saying "no network
- * activity" would be easier to read and would be untrue, and a privacy claim that is nearly true is
- * worse than a longer one that is exactly true.
+ * and a test asserts there is none. But on Android the reading is done by Google's ML Kit, and a
+ * Google SDK may contact Google for diagnostics, performance measurement and compatibility
+ * information. Saying "no network activity" would be easier to read and would be untrue, and a
+ * privacy claim that is nearly true is worse than a longer one that is exactly true.
+ *
+ * It names **Android** because iOS does not use ML Kit at all — `modules/noorlife-text-recognition`
+ * reads iOS receipts with Apple Vision, an operating-system API with no third-party SDK behind it. A
+ * disclosure describing a Google component on a platform that has none would be the same untruth in
+ * the other direction.
  */
 function Disclosure() {
   const { dp } = useModuleMetrics();
@@ -624,9 +629,10 @@ function Disclosure() {
         </ModuleText>
         <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
           Reading the receipt happens on this device. NoorLife does not upload the receipt image or
-          the text read from it. The Google ML Kit component that does the reading may contact
-          Google about itself — diagnostics, performance and compatibility — which NoorLife does not
-          control. Keeping the original image is optional and is off unless you turn it on.
+          the text read from it. On Android the reading is done by a Google ML Kit component, which
+          may contact Google about itself — diagnostics, performance and compatibility — and which
+          NoorLife does not control. Keeping the original image is optional and is off unless you
+          turn it on.
         </ModuleText>
       </View>
     </ModuleCard>

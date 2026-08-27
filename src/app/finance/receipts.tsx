@@ -1,6 +1,6 @@
 import { FinanceReceiptsScreen } from '@features/finance/screens/finance-receipts-screen';
 import { createExpoReceiptSource } from '@features/finance/receipts/expo-receipt-source';
-import { createMlKitReceiptOcr } from '@features/finance/receipts/mlkit-receipt-ocr';
+import { createDeviceReceiptOcr } from '@features/finance/receipts/device-receipt-ocr';
 
 /**
  * Finance → Receipts. **Not a reachable capability yet** — issue #101.
@@ -37,12 +37,17 @@ import { createMlKitReceiptOcr } from '@features/finance/receipts/mlkit-receipt-
  * imported by one file that no test renders — which is what keeps the Finance feature tree free of
  * native imports and lets every test drive the workflow with stated doubles instead of a mocked SDK.
  *
+ * The recogniser is `modules/noorlife-text-recognition`, this repository’s own Expo module: bundled
+ * Latin ML Kit on Android, Apple Vision on iOS. It replaced a community package that declared all
+ * five OCR scripts on both platforms with no way to ask for one — see the adapter for the
+ * measurements.
+ *
  * Built once at module scope rather than per render: they are stateless adapters, and a new object
  * every render would re-arm every effect that depends on them.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-const ocr = createMlKitReceiptOcr();
+const ocr = createDeviceReceiptOcr();
 const source = createExpoReceiptSource();
 
 export default function Screen() {

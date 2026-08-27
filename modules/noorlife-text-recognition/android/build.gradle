@@ -1,0 +1,31 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.noorlife.textrecognition'
+version = '1.0.0'
+
+android {
+  namespace 'com.noorlife.textrecognition'
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  /*
+    One artifact, and it is the *bundled* Latin recogniser — issue #101.
+
+    `com.google.mlkit:text-recognition` ships its Latin model inside the APK, so a receipt is read
+    with no download, no Play Services model dependency and no first-run wait. The unbundled
+    alternative (`com.google.android.gms:play-services-mlkit-text-recognition`) downloads its model
+    on demand, which would make the first receipt on a new device fail offline and would put a model
+    fetch on the path of a feature whose whole promise is that it works on the device.
+
+    The four other scripts — Chinese, Devanagari, Japanese, Korean — are simply not declared. There
+    is nothing to exclude, and no compiled code anywhere in this project refers to them.
+  */
+  implementation 'com.google.mlkit:text-recognition:16.0.1'
+}
