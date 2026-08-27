@@ -902,6 +902,23 @@ export const pictogramManifest: readonly PictogramManifestEntry[] = [
     canonicalReference: false,
   },
   {
+    id: 'finance/target',
+    module: 'finance',
+    icon: 'target',
+    file: 'assets/images/modules/finance/pictograms/finance-goals.png',
+    source: financeSource('target'),
+    consumers: [
+      'features/modules/components/module-feature-grid.tsx:ModuleFeatureGrid(finance/goals)',
+    ],
+    scope: 'module-specific',
+    sha256: '5e4804ffb513d45425d621783096c8f26cf4064409ce3d27c922191717ffa85a',
+    pixels: { width: 256, height: 256 },
+    optical: 'commissioned-256',
+    availability: 'available-only',
+    role: 'installed',
+    canonicalReference: false,
+  },
+  {
     id: 'finance/track',
     module: 'finance',
     icon: 'track',
