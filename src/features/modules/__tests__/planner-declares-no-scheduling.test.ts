@@ -80,10 +80,13 @@ function declaredCopy(definition: ModuleDefinition): string {
 }
 
 describe('the Planner permissions Planner actually asks for', () => {
-  it('is the device calendar, and nothing else', () => {
-    expect(moduleRegistry.planner.permissions).toHaveLength(1);
-    expect(moduleRegistry.planner.permissions[0]!.key).toBe('calendar');
-    expect(moduleRegistry.planner.permissions[0]!.title).toBe('Your device calendar');
+  it('is nothing at all', () => {
+    /*
+      Was "the device calendar, and nothing else" when #74 landed. Issue #75 removed that entry too:
+      nothing in Planner reads an external calendar, so declaring the permission was the same class
+      of claim as declaring the notification one. Planner now asks the user for nothing.
+    */
+    expect(moduleRegistry.planner.permissions).toEqual([]);
   });
 
   it('declares no notifications permission', () => {
@@ -99,10 +102,14 @@ describe('the Planner permissions Planner actually asks for', () => {
   });
 
   it('still satisfies the framework rule that a module explains what it asks for', () => {
-    // Removing an entry must not empty the array — `module-registry.test.ts` requires at least one,
-    // and the gallery's permission section renders `permissions[0]`.
-    expect(moduleRegistry.planner.permissions.length).toBeGreaterThan(0);
-    expect(moduleRegistry.planner.permissions[0]!.rationale.length).toBeGreaterThan(20);
+    /*
+      The rule is "explain whatever you declare", not "declare at least one" — `module-registry.test`
+      records why. An empty set explains nothing because it asks for nothing, and the gallery's
+      permission section already renders only when there is an entry to show.
+    */
+    for (const permission of moduleRegistry.planner.permissions) {
+      expect(permission.rationale.length).toBeGreaterThan(20);
+    }
   });
 });
 
@@ -195,7 +202,7 @@ describe('the other modules’ permission entries are untouched', () => {
   });
 
   it('leaves Planner as the only module whose permission set changed', () => {
-    // Eight modules, and exactly one of them now declares a single permission.
+    // Eight modules, and exactly one of them declares none.
     const counts = Object.fromEntries(
       Object.entries(moduleRegistry).map(([id, definition]) => [id, definition.permissions.length]),
     );
@@ -204,7 +211,7 @@ describe('the other modules’ permission entries are untouched', () => {
       'noor-ai': 2,
       faith: 2,
       health: 2,
-      planner: 1,
+      planner: 0,
       finance: 2,
       learning: 1,
       family: 3,
