@@ -151,6 +151,13 @@ export const ACCOUNT_HELD_DATA: readonly string[] = [
  */
 export const DEVICE_STORAGE_NAMESPACES: readonly string[] = [
   'noorlife.faith',
+  /*
+    The Finance ledger — issue #92. Account-scoped, on this device only: there is no Finance server
+    and nothing here is uploaded. Declared the moment the namespace existed, because this list is a
+    statement to the user about what is on their phone, and a store that shipped before its entry
+    would make the screen quietly wrong.
+  */
+  'noorlife.finance',
   'noorlife.onboarding',
   'noorlife.planner',
   'noorlife.preference',

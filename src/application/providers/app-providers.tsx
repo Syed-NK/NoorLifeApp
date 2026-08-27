@@ -13,6 +13,8 @@ import { DesignSystemProvider } from './design-system-provider';
 import { RecoveryContainmentProvider } from './recovery-containment-provider';
 import { FontProvider } from './font-provider';
 import { LocalizationProvider } from './localization-provider';
+import { FinanceProvider } from '@features/finance/di/finance-provider';
+
 import { TodayAgendaProvider } from './today-agenda-provider';
 
 /**
@@ -129,7 +131,25 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
                       user and fails closed with no owner, and above `children` because Main Home is
                       one of them.
                     */}
-                          <TodayAgendaProvider>{children}</TodayAgendaProvider>
+                          <TodayAgendaProvider>
+                            {/*
+                              The Finance ledger's one owner — issue #92.
+
+                              App scope for the same reason Planner's is: a provider mounted per
+                              route shadows the app-scoped one, so each screen would hold a private
+                              copy (#73), and two live repository instances lose an update (#72).
+                              Finance starts with both answers rather than repeating the discovery.
+
+                              It costs nothing where it is not wanted. Without a signed-in owner the
+                              ledger has no address, so the repository refuses every read before
+                              touching storage and this resolves `unavailable` in one microtask.
+                              It gates nothing and renders its children unconditionally; Finance's
+                              premium boundary is still `ModuleEntitlementGate`.
+
+                              Nothing consumes it yet, deliberately — Spending is #93.
+                            */}
+                            <FinanceProvider>{children}</FinanceProvider>
+                          </TodayAgendaProvider>
                         </EntitlementProvider>
                       </FaithScopeProvider>
                     </RecoveryContainmentProvider>
