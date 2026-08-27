@@ -210,7 +210,18 @@ const finance: ModuleAIPolicy = {
     { key: 'where-money-went', label: 'Where did my money go?', mutatesData: false },
     { key: 'budget-health', label: 'Am I on budget?', mutatesData: false },
     { key: 'explain-term', label: 'Explain a term', mutatesData: false },
-    { key: 'set-budget', label: 'Set a budget', mutatesData: true },
+    /*
+      `set-budget` was declared here with `mutatesData: true` — removed by issue #90.
+
+      It stated that Money AI writes to Finance. It cannot: `module-noor-ai-screen.tsx` imports no
+      repository, no storage boundary and no record type, and there is no budget to set. Of the five
+      untruths that issue removed this was the most consequential, because it is a claim about what
+      an assistant may do with the user's money.
+
+      It stays removed. If a decision ever restores it, an assistant writing to a ledger is its own
+      issue with its own confirmation flow — `requiresConfirmation` reads this flag — and not a line
+      added back to a list.
+    */
   ],
   standingDisclaimer:
     'Money AI is educational. It explains your own numbers and general concepts — it is not regulated financial advice.',

@@ -300,7 +300,8 @@ describe('the other modules’ registry copy is unchanged', () => {
     ['noor-ai', 2, 'Nothing asked yet'],
     ['faith', 2, 'Nothing recorded yet'],
     ['health', 2, 'No entries yet'],
-    ['finance', 2, 'No transactions yet'],
+    // Finance dropped both of its permissions in #90, for the same reason Planner dropped its.
+    ['finance', 0, 'No transactions yet'],
     ['learning', 1, 'Nothing started yet'],
     ['family', 3, 'No one here yet'],
     ['goals', 1, 'No goals yet'],
@@ -313,12 +314,19 @@ describe('the other modules’ registry copy is unchanged', () => {
     },
   );
 
-  it('leaves Planner as the only module that declares no permissions', () => {
+  it('lists every module that declares no permissions', () => {
+    /*
+      Planner emptied its set in #75; Finance emptied its own in #90 — a notifications entry for
+      budget alerts nothing schedules, and a photos entry for a capability the same file declares
+      unavailable. Both are modules that ask the user for nothing, and the list is asserted whole so
+      a third joining it is a decision rather than a drift.
+    */
     const empty = Object.entries(moduleRegistry)
       .filter(([, definition]) => definition.permissions.length === 0)
-      .map(([id]) => id);
+      .map(([id]) => id)
+      .sort();
 
-    expect(empty).toEqual(['planner']);
+    expect(empty).toEqual(['finance', 'planner']);
   });
 
   it('leaves every other module’s offline copy alone', () => {

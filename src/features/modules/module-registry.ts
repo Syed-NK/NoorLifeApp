@@ -562,20 +562,20 @@ const finance: ModuleDefinition = {
       unavailableReason: 'Receipt capture arrives with the Finance module’s full release.',
     },
   ],
-  permissions: [
-    {
-      key: 'notifications',
-      title: 'Budget alerts',
-      rationale: 'So NoorLife can tell you when a budget is close to its limit.',
-      required: false,
-    },
-    {
-      key: 'photos',
-      title: 'Receipt photos',
-      rationale: 'Only used when you attach a photo to a transaction yourself.',
-      required: false,
-    },
-  ],
+  /*
+    None. Finance asks the user for nothing — issue #90.
+
+    Two entries used to live here. `notifications` promised budget alerts: Finance schedules
+    nothing, and there are no budgets to be near the limit of. `photos` promised receipt capture,
+    for a capability declared `available: false` two lines above it — a permission for a feature the
+    same file says does not exist.
+
+    An empty array is the truthful declaration. The registry type has always allowed none and
+    `module-gallery-screen.tsx` renders its permission section only when there is an entry, so this
+    needs no new branch. Nothing may be added back before Finance actually requests it from the OS —
+    and budget alerts specifically are ruled out of the Budgets work (#94) for this reason.
+  */
+  permissions: [],
   ai: moduleAIPolicies.finance,
   stateCopy: {
     empty: {
@@ -583,14 +583,30 @@ const finance: ModuleDefinition = {
       body: 'Add what you spent today, or set a budget first and fill it in as you go.',
       action: 'Add a transaction',
     },
+    /*
+      Rendered on the generic home, and it named a server Finance does not have — issue #90.
+
+      "A request failed on our side" described a backend, and "your transactions are unaffected"
+      described stored records. Finance has neither: there is no `src/features/finance/`, no
+      repository and no storage key, and the module's overview resolves `empty` from the shared mock
+      because no data layer exists to read. What a failure here can honestly say is that the module
+      could not be prepared and that nothing was lost — because there is nothing yet to lose.
+    */
     error: {
-      title: 'Couldn’t load your Finance data',
-      body: 'A request failed on our side. Your transactions are unaffected.',
+      title: 'Couldn’t load your Finance module',
+      body: 'Finance could not be prepared on this device. Nothing was changed.',
       action: 'Try again',
     },
+    /*
+      Also false twice over. "Add transactions now" offered an action that does not exist, and
+      "they'll sync when you reconnect" described a server. Finance is not offline-capable — it is
+      not yet capable at all — so the honest line says what is true today and promises no upload.
+      When #92 gives Finance a local ledger, this becomes the Planner wording: works the same
+      offline, stored on this device.
+    */
     offline: {
       title: 'You’re offline',
-      body: 'You can add transactions now and they’ll sync when you reconnect.',
+      body: 'Finance is still being built. Nothing here needs a connection.',
     },
     loading: 'Loading your Finance module',
   },
