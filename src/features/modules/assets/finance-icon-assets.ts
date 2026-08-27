@@ -56,6 +56,21 @@ export const financeIconAssets: Partial<Record<IconName, RasterIconSource>> = {
    * surface actually means. Scoped, so Health's Overview keeps its glyph.
    */
   home: require('../../../../assets/images/modules/finance/pictograms/finance-money.png'),
+  /**
+   * Feature tile "Savings" → `/finance/goals` — issue #106.
+   *
+   * The coin pouch, not a dartboard. `target` is the icon name the registry gives Finance's Savings
+   * tile, and it is also **Goals'** primary tile icon: a bullseye here would read as Goals' mark
+   * wearing Finance's colours, and Finance's pouch on a Goals tile would be worse still. Scoped
+   * through `module-raster-icons.ts`, so Goals keeps its glyph and this stays the one surface that
+   * resolves it.
+   *
+   * Delivered at 256 from a preserved 1254 × 1254 master held outside the repository. Measured
+   * 78.1% optical box, 28 px minimum margin, 0.00 px off centre — inside #70's contract on every
+   * axis rather than at its edge, and softer and less busy than this module's first batch, which is
+   * the direction #104 fixed for new Finance artwork.
+   */
+  target: require('../../../../assets/images/modules/finance/pictograms/finance-goals.png'),
 };
 
 /**
@@ -75,7 +90,26 @@ export const FINANCE_UNASSIGNED_ASSETS: readonly string[] = ['finance-track.png'
 export const FINANCE_ASSET_FILES: readonly string[] = [
   'finance-add-circle.png',
   'finance-budgets.png',
+  'finance-goals.png',
   'finance-money.png',
   'finance-track.png',
   'finance-transactions.png',
 ];
+
+/**
+ * Receipts artwork exists, passes the contract, and is **not** installed here — issue #106.
+ *
+ * The delivery file was validated in the same pass as this one and reported no violations: 256²
+ * RGBA, 78.1% optical box, 28 px margins, 0.50 px off centre, no metadata. It is nevertheless held
+ * outside the repository, and this note is the reason it is not an oversight.
+ *
+ * Finance's Receipts capability is `available: false`. #104's rule is that an unavailable surface
+ * draws its neutral glyph, and `moduleRasterIcon` refuses artwork for one by construction — so an
+ * installed Receipts asset would resolve nowhere, fail the manifest's own no-orphan rule, and sit in
+ * the bundle as a file nothing renders. The alternative, flipping the tile to available so the
+ * artwork has somewhere to go, would promise a feature that does not exist.
+ *
+ * **#101 is the sole gate.** When Receipts is built and the capability becomes available, the asset
+ * is installed in the same pass — not before.
+ */
+export const FINANCE_HELD_ASSETS: readonly string[] = ['finance-receipts.png'];

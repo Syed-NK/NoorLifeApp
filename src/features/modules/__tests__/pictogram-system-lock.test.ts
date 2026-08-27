@@ -397,13 +397,14 @@ describe('module-scoped mapping', () => {
       'add-circle',
       'budgets',
       'home',
+      'target',
       'transactions',
     ]);
     for (const icon of financeIcons) {
       expect(moduleRasterIcon('finance', icon)).not.toBeNull();
       expect(moduleRasterIcon('finance', icon, false)).toBeNull();
     }
-    expect(moduleRasterIcon('finance', 'target')).toBeNull();
+    /* Bank sync and Receipts are `available: false`, and neither has artwork to resolve. */
     expect(moduleRasterIcon('finance', 'document')).toBeNull();
     expect(moduleRasterIcon('finance', 'money')).toBeNull();
   });
