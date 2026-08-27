@@ -409,36 +409,35 @@ const planner: ModuleDefinition = {
     actionLabel: 'Add a task',
     artworkAccessibilityLabel: '',
   },
-  quickActions: [
-    { key: 'add-task', label: 'Add task', icon: 'add-circle', href: '/planner/tasks' },
-    { key: 'calendar', label: 'Calendar', icon: 'calendar', href: '/planner/calendar' },
-    { key: 'ask-plan-ai', label: 'Ask Plan AI', icon: 'robot', href: '/planner/ai' },
-  ],
-  capabilities: [
-    { key: 'today', label: 'Today', icon: 'today', href: '/planner', available: true },
-    {
-      key: 'calendar',
-      label: 'Calendar',
-      icon: 'calendar',
-      href: '/planner/calendar',
-      available: true,
-    },
-    { key: 'tasks', label: 'Tasks', icon: 'tasks', href: '/planner/tasks', available: true },
-    {
-      key: 'routines',
-      label: 'Routines',
-      icon: 'routines',
-      href: '/planner/routines',
-      available: true,
-    },
-    {
-      key: 'focus',
-      label: 'Focus',
-      icon: 'clock',
-      available: false,
-      unavailableReason: 'Focus sessions arrive with the Planner module’s full release.',
-    },
-  ],
+  /*
+    None. Planner's home renders no quick-action row — issue #77.
+
+    `ModuleHomeComposition` routes Planner to `PlannerHomeContent`, which draws a hero, three
+    summary sections and a button. It mounts neither `ModuleQuickActionRow` nor `ModuleFeatureGrid`,
+    so these three entries — Add task, Calendar, Ask Plan AI — reached a user through nothing at all.
+    Their only consumer was the `__DEV__`-only Module Gallery, and dev scaffolding is not a reason to
+    keep production metadata.
+
+    Nothing becomes unreachable. Every href they carried is already a Planner bottom-navigation
+    destination: `/planner`, `/planner/calendar`, `/planner/ai`, `/planner/tasks` and
+    `/planner/routines` are the five tabs `moduleThemes.planner.navigation` declares. The tiles were
+    a second, unrendered copy of the bar — which is also why the audit's "Calendar has no route from
+    the Planner home" is a gap in the composition, not something these entries were closing.
+
+    The route files stay. A dead tile is not evidence against the screen it pointed at.
+  */
+  quickActions: [],
+  /*
+    None. The capability grid is not on Planner's path either.
+
+    Today, Calendar, Tasks and Routines duplicated the bottom bar a third time. Focus was the one
+    entry that named something Planner does not have — `available: false` with a reason nothing ever
+    showed. Kept, it would have been a tile waiting for a surface: the day someone mounted the grid,
+    an unbuilt feature would have become user-visible without a line of copy being written or
+    reviewed. It is removed rather than retained for future artwork, which is the same rule #75
+    applied to dormant state copy.
+  */
+  capabilities: [],
   /*
     None. Planner asks the user for nothing — issue #75.
 
