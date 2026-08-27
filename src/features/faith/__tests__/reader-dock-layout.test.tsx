@@ -113,7 +113,15 @@ async function frames(width: number): Promise<{
   const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
 
   const dock = flatStyle(await view.findByTestId('faith-reader-docked'));
-  const nav = flatStyle(view.getByTestId('faith-reader-nav'));
+  /*
+    The *visible* bar, not the carrier around it — issue #84.
+
+    `faith-reader-nav` is the navigation's outer view, which since #84 is taller than the bar it
+    draws: it extends upward by `navAIRaise` so the raised centre control falls inside its parent's
+    bounds and can therefore receive a touch on Android. The bar the reader has to clear is the
+    inner one, which is the height `moduleNavigationHeight` has always described.
+  */
+  const nav = flatStyle(view.getByTestId('faith-reader-nav-bar'));
   const player = flatStyle(view.getByTestId('faith-reader-player'));
 
   const dp = dpAt(width);

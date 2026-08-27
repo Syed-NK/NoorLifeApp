@@ -49,7 +49,16 @@ export function ModuleBottomNavigation({
   const { dp } = useModuleMetrics();
 
   const barHeight = dp(moduleLayout.navHeight);
-  const aiSize = dp(moduleLayout.navAIButton);
+  /*
+    The centre control's diameter, floored at the touch minimum — issue #84.
+
+    `dp()` scales the 58 dp button down with the module scale, and on a narrow device that alone
+    could take it under 44 dp. The floor is applied outside `dp()` for the same reason the tabs'
+    is: the minimum is an accessibility bound, not a dimension to be scaled. On every device
+    measured the scaled value already wins, so this changes nothing today and cannot be undercut
+    tomorrow.
+  */
+  const aiSize = Math.max(dp(moduleLayout.navAIButton), moduleLayout.minTouchTarget);
   const prefix = testID ?? `${module.id}-nav`;
 
   const navigate = (item: NavItem) => {
@@ -67,34 +76,67 @@ export function ModuleBottomNavigation({
       style={[
         styles.root,
         {
-          // The same arithmetic everything that has to clear this bar uses — see the note on
-          // `moduleNavigationHeight`. The bar states its height through the shared helper rather
-          // than computing its own, so a panel docked above it cannot be told a different number.
-          height: moduleNavigationHeight(dp, insets.bottom),
-          paddingBottom: insets.bottom,
+          /*
+            Taller than the bar it draws, by exactly the centre control's raise — issue #84.
+
+            The AI button carries `marginTop: -navAIRaise`, so it stands 15 dp above the bar's top
+            edge. Android delivers no touch to a child rendered outside its parent's bounds, so that
+            raised portion was visually present and functionally dead: the button measured 58 dp but
+            only ~42 dp of it could be pressed.
+
+            This view is therefore the *carrier* — transparent, `box-none`, and tall enough to
+            contain the raised control — while `bar` below draws the background, the border and the
+            safe-area padding at the height it always had. Nothing moves on screen: the carrier is
+            bottom-anchored, so adding height upward leaves the bar exactly where it was.
+
+            `moduleNavigationHeight` is deliberately *not* changed. It answers "how much vertical
+            space must a docked panel clear", which is still the visible bar; the reader dock and the
+            prayer dashboard both depend on that meaning.
+          */
+          height: moduleNavigationHeight(dp, insets.bottom) + dp(moduleLayout.navAIRaise),
+          paddingTop: dp(moduleLayout.navAIRaise),
         },
       ]}
       accessibilityRole="tablist"
+      pointerEvents="box-none"
       testID={testID}
     >
-      <View style={[styles.row, { height: barHeight }]}>
-        {module.navigation.map((item, index) => {
-          const isActive = item.key === activeKey;
+      <View
+        style={[
+          styles.bar,
+          {
+            /*
+              Stated, not inferred from `flex`. This is the height `moduleNavigationHeight` has
+              always meant — the bar a docked panel must clear — and stating it here keeps that
+              answer readable from the rendered style rather than implied by the carrier's padding.
+            */
+            height: moduleNavigationHeight(dp, insets.bottom),
+            paddingBottom: insets.bottom,
+          },
+        ]}
+        testID={`${prefix}-bar`}
+      >
+        <View style={[styles.row, { height: barHeight }]}>
+          {module.navigation.map((item, index) => {
+            const isActive = item.key === activeKey;
 
-          if (index === AI_NAV_INDEX) {
-            return (
-              <View key={item.key} style={[styles.slot, styles.aiSlot]}>
-                <View style={{ marginTop: -dp(moduleLayout.navAIRaise) }} pointerEvents="box-none">
-                  <ModuleAICenterButton
-                    size={aiSize}
-                    imageSize={dp(moduleLayout.navAIImage)}
-                    onPress={() => navigate(item)}
-                    accessibilityLabel={item.accessibilityLabel ?? `Open ${item.label}`}
-                    selected={isActive}
-                    testID={`${prefix}-ai`}
-                  />
-                </View>
-                {/*
+            if (index === AI_NAV_INDEX) {
+              return (
+                <View key={item.key} style={[styles.slot, styles.aiSlot]}>
+                  <View
+                    style={{ marginTop: -dp(moduleLayout.navAIRaise) }}
+                    pointerEvents="box-none"
+                  >
+                    <ModuleAICenterButton
+                      size={aiSize}
+                      imageSize={dp(moduleLayout.navAIImage)}
+                      onPress={() => navigate(item)}
+                      accessibilityLabel={item.accessibilityLabel ?? `Open ${item.label}`}
+                      selected={isActive}
+                      testID={`${prefix}-ai`}
+                    />
+                  </View>
+                  {/*
                   Whether a caption appears is per module, read from the definition.
 
                   The approved Faith reference labels the centre control "Faith AI"; the
@@ -102,26 +144,26 @@ export function ModuleBottomNavigation({
                   none, which is why the framework originally hard-coded its absence — but
                   "no caption anywhere" turned out to be an assumption, not a rule.
                 */}
-                {module.showAICaption ? (
-                  <ModuleText
-                    token="navLabel"
-                    color={module.theme.ink}
-                    numberOfLines={1}
-                    maxFontSizeMultiplier={1.2}
-                    style={styles.aiCaption}
-                  >
-                    {item.label}
-                  </ModuleText>
-                ) : null}
-              </View>
-            );
-          }
+                  {module.showAICaption ? (
+                    <ModuleText
+                      token="navLabel"
+                      color={module.theme.ink}
+                      numberOfLines={1}
+                      maxFontSizeMultiplier={1.2}
+                      style={styles.aiCaption}
+                    >
+                      {item.label}
+                    </ModuleText>
+                  ) : null}
+                </View>
+              );
+            }
 
-          const tint = isActive ? module.theme.ink : moduleNeutrals.navInactive;
+            const tint = isActive ? module.theme.ink : moduleNeutrals.navInactive;
 
-          return (
-            <View key={item.key} style={styles.slot}>
-              {/*
+            return (
+              <View key={item.key} style={styles.slot}>
+                {/*
                 Active state is carried by a marker as well as by colour, so it is never
                 communicated by colour alone.
 
@@ -130,34 +172,35 @@ export function ModuleBottomNavigation({
                 shrink-wraps the icon and label — which is exactly what put a 2 dp line
                 straight through the word "Today" on the first build.
               */}
-              {isActive ? (
-                <View style={styles.activeBarRow} pointerEvents="none" accessible={false}>
-                  <View style={[styles.activeBar, { backgroundColor: module.theme.ink }]} />
-                </View>
-              ) : null}
-              <PressableScale
-                onPress={() => navigate(item)}
-                accessibilityRole="tab"
-                accessibilityLabel={item.accessibilityLabel ?? item.label}
-                accessibilityState={{ selected: isActive }}
-                style={styles.slotContent}
-                testID={`${prefix}-${item.key}`}
-              >
-                <AppIcon name={item.icon} size={dp(moduleLayout.navIcon)} color={tint} />
-                <ModuleText
-                  token="navLabel"
-                  color={tint}
-                  numberOfLines={1}
-                  // The bar is a fixed 68 dp, so labels cannot grow without clipping.
-                  maxFontSizeMultiplier={1.2}
-                  style={styles.label}
+                {isActive ? (
+                  <View style={styles.activeBarRow} pointerEvents="none" accessible={false}>
+                    <View style={[styles.activeBar, { backgroundColor: module.theme.ink }]} />
+                  </View>
+                ) : null}
+                <PressableScale
+                  onPress={() => navigate(item)}
+                  accessibilityRole="tab"
+                  accessibilityLabel={item.accessibilityLabel ?? item.label}
+                  accessibilityState={{ selected: isActive }}
+                  style={styles.slotContent}
+                  testID={`${prefix}-${item.key}`}
                 >
-                  {item.label}
-                </ModuleText>
-              </PressableScale>
-            </View>
-          );
-        })}
+                  <AppIcon name={item.icon} size={dp(moduleLayout.navIcon)} color={tint} />
+                  <ModuleText
+                    token="navLabel"
+                    color={tint}
+                    numberOfLines={1}
+                    // The bar is a fixed 68 dp, so labels cannot grow without clipping.
+                    maxFontSizeMultiplier={1.2}
+                    style={styles.label}
+                  >
+                    {item.label}
+                  </ModuleText>
+                </PressableScale>
+              </View>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -169,10 +212,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    zIndex: 10,
+  },
+  /** The bar the user sees. Every colour and edge that used to live on `root` is here. */
+  bar: {
     backgroundColor: moduleNeutrals.navBackground,
     borderTopWidth: 1,
     borderTopColor: moduleNeutrals.border,
-    zIndex: 10,
   },
   row: {
     flexDirection: 'row',
@@ -188,8 +234,24 @@ const styles = StyleSheet.create({
   aiSlot: {
     justifyContent: 'flex-start',
   },
+  /**
+   * Fills its slot rather than shrink-wrapping its contents — issue #84.
+   *
+   * `alignSelf: 'stretch'` only ever stretched the width. The height came from the icon plus the
+   * label, which at font scale 1.0 is 38–40 dp inside a 68 dp bar: a tap in the top third of a tab
+   * hit nothing. `flex: 1` makes the pressable the slot, so the whole intended target responds.
+   *
+   * The `minHeight` floor is deliberately **not** passed through `dp()`. 44 dp is an accessibility
+   * minimum, not a design dimension, so it must not shrink with the module scale on a narrow device
+   * — which is exactly where a shrunken target would hurt most.
+   *
+   * Nothing moves visually: the icon and label were centred in the slot before and are centred in
+   * the pressable now, and the pressable is the slot.
+   */
   slotContent: {
+    flex: 1,
     alignSelf: 'stretch',
+    minHeight: moduleLayout.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },
