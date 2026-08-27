@@ -770,6 +770,13 @@ describe('one owner, at the app boundary', () => {
     expect(consumers.sort()).toEqual([
       /* Reads a summary; degrades to "nothing recorded" without an owner. */
       'src/features/finance/screens/finance-home-content.tsx',
+      /*
+        Writes, and only from an explicit confirmation — issue #101. Receipts is the second writing
+        surface, and it reads the same app-scoped owner rather than mounting one of its own: a
+        provider inside a screen shadows the app's, which is the #73 defect that made three surfaces
+        disagree until relaunch. Its presence on this list is what shows it did not.
+      */
+      'src/features/finance/screens/finance-receipts-screen.tsx',
       /* Writes, so it requires the owner and throws without one. */
       'src/features/finance/screens/finance-spending-screen.tsx',
       /* Main Home's aggregate row — a count only, through the optional read. */

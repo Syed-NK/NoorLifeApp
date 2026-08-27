@@ -988,6 +988,28 @@ jest.mock('expo-file-system', () => {
      * that was already there threw, the caller reported a write failure, and the work restarted for
      * ever. Modelling the default is what makes that a failing test rather than a device finding.
      */
+    /**
+     * Copies a file, leaving the source where it is.
+     *
+     * Added for Finance Receipts (#101), which copies an acquired image into an app-owned staging
+     * file rather than moving it — the source may be the user's own photograph, and moving that
+     * would take it out of their library. A double that aliased the bytes instead of cloning them
+     * would let a test pass that deleted the staged copy and silently emptied the original too, so
+     * the array is copied here for the same reason the real API makes two files.
+     */
+    copySync(destination: MockFile, options?: { overwrite?: boolean }): void {
+      const entry = mockFsFiles.get(this.uri);
+      if (entry === undefined) {
+        throw new Error('ENOENT');
+      }
+      if (mockFsFiles.has(destination.uri) && options?.overwrite !== true) {
+        throw new Error('EEXIST: destination already exists');
+      }
+      mockFsFiles.set(destination.uri, {
+        bytes: new Uint8Array(entry.bytes),
+        lastModified: entry.lastModified,
+      });
+    }
     moveSync(destination: MockFile, options?: { overwrite?: boolean }): void {
       const entry = mockFsFiles.get(this.uri);
       if (entry === undefined) {

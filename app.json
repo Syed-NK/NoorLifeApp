@@ -8,7 +8,8 @@
     "scheme": "noorlifeapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.anonymous.NoorLifeApp"
     },
     "android": {
       "adaptiveIcon": {
@@ -64,6 +65,14 @@
           "locationWhenInUsePermission": "NoorLife uses your location to calculate prayer times and the direction of the Qibla for where you are. Your location stays on this device.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "NoorLife asks for your photos only when you choose to import a receipt, and only reads the one you pick. The image stays on this device.",
+          "cameraPermission": "NoorLife asks for your camera only when you choose to photograph a receipt. The photo stays on this device.",
+          "microphonePermission": false
         }
       ],
       "expo-asset",
