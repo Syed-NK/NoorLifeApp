@@ -456,14 +456,14 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
               when you choose Import.
             </ModuleText>
             <ModuleButton
-              label={staged === null ? 'Capture receipt' : 'Replace with a new photo'}
+              label={staged === null ? 'Capture receipt' : 'Take another photo'}
               onPress={() => void acquire('camera')}
               loading={acquiring === 'camera'}
               disabled={acquiring !== null || saving}
               testID="finance-receipts-capture"
             />
             <ModuleButton
-              label={staged === null ? 'Import receipt' : 'Replace from your photos'}
+              label={staged === null ? 'Import receipt' : 'Choose another photo'}
               variant="secondary"
               onPress={() => void acquire('library')}
               loading={acquiring === 'library'}
@@ -471,7 +471,7 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
               testID="finance-receipts-import"
             />
             <ModuleButton
-              label="Add this transaction by hand instead"
+              label="Enter it by hand"
               variant="tertiary"
               onPress={() => router.push('/finance/transactions?intent=add-expense')}
               testID="finance-receipts-manual"
@@ -538,7 +538,7 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
                   </ModuleText>
                 ) : (
                   <ModuleButton
-                    label={`Record it in ${currency} using the amount I entered`}
+                    label={`Record it in ${currency}`}
                     variant="secondary"
                     onPress={() => setMismatchResolved(true)}
                     testID="finance-receipts-mismatch-accept"
@@ -582,7 +582,7 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
                 testID="finance-receipts-confirm"
               />
               <ModuleButton
-                label="Cancel and delete the photo"
+                label="Cancel and delete"
                 variant="tertiary"
                 onPress={reset}
                 disabled={saving}
@@ -833,12 +833,18 @@ function ReviewFields({
             the ledger without being asked would store what they bought as well as what they spent.
           */}
           {lines.length === 0 || note.trim() !== '' ? null : (
-            <ModuleButton
-              label="Use the first line of the receipt as the note"
-              variant="tertiary"
-              onPress={() => onNote((lines[0] ?? '').slice(0, 280))}
-              testID="finance-receipts-note-from-text"
-            />
+            <>
+              <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
+                The text read from this receipt is not saved anywhere unless you put some of it in
+                the note yourself.
+              </ModuleText>
+              <ModuleButton
+                label="Use the first line"
+                variant="tertiary"
+                onPress={() => onNote((lines[0] ?? '').slice(0, 280))}
+                testID="finance-receipts-note-from-text"
+              />
+            </>
           )}
         </View>
       </ModuleCard>
