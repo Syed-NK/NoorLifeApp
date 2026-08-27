@@ -83,6 +83,12 @@
         }
       ]
     ],
+    "owner": "syed-nk",
+    "extra": {
+      "eas": {
+        "projectId": "e0b27804-fc98-4ed7-9568-e7b98fd400ab"
+      }
+    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
