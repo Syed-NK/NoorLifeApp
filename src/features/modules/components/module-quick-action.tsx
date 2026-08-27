@@ -107,7 +107,7 @@ export function ModuleQuickAction({ action, onPress, testID }: ModuleQuickAction
             width: dp(TILE_ICON_WELL),
             height: dp(TILE_ICON_WELL),
             borderRadius: dp(TILE_ICON_WELL / 2),
-            backgroundColor: theme.lightSurface,
+            backgroundColor: theme.wellSurface,
           },
         ]}
       >

@@ -64,7 +64,7 @@ export function ModuleCard({
   const [measuredHeight, setMeasuredHeight] = useState(0);
 
   const base: ViewStyle = {
-    backgroundColor: tinted ? theme.lightSurface : moduleNeutrals.surface,
+    backgroundColor: tinted ? theme.wellSurface : moduleNeutrals.surface,
     borderColor: accentBorder ? theme.border : moduleNeutrals.border,
     borderWidth: 1,
     borderRadius: dp(moduleLayout.cardRadius),

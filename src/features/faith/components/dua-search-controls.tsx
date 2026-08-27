@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppIcon, PressableScale } from '@ds/components';
 import { modulePalettes } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
-import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
+import { moduleLayout, moduleNeutrals, moduleColorThemes } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { minimumHitSlop } from '@shared/utils/a11y';
 
@@ -32,7 +32,14 @@ import { minimumHitSlop } from '@shared/utils/a11y';
 
 const EMERALD = modulePalettes.faith.primary;
 const EMERALD_DEEP = modulePalettes.faith.dark;
-const MINT = modulePalettes.faith.soft;
+/*
+  Faith's page tint, from the shared contract — issue #86.
+
+  This was the palette’s soft value, hand-declared here and in five other Faith files. The value
+  is unchanged; what changes is that it now comes from the role that owns it, so a future page
+  ground and this tint cannot drift apart.
+*/
+const MINT = moduleColorThemes.faith.pageSurface;
 
 /** The full phrase, used as the spoken name at every width and as the placeholder where it fits. */
 const FULL_PLACEHOLDER = 'Find a remembrance';

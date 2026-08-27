@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { modulePalettes } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
-import { withAlpha } from '@features/modules/module-tokens';
+import { withAlpha, moduleColorThemes } from '@features/modules/module-tokens';
 
 /**
  * The circular countdown on the approved next-prayer card.
@@ -39,7 +39,14 @@ const SEGMENTS = 60;
 
 /** NoorLife's own gold and its palest green, from the locked Faith palette. Never a new hue. */
 const GOLD = modulePalettes.faith.supporting;
-const MINT = modulePalettes.faith.soft;
+/*
+  Faith's page tint, from the shared contract — issue #86.
+
+  This was the palette’s soft value, hand-declared here and in five other Faith files. The value
+  is unchanged; what changes is that it now comes from the role that owns it, so a future page
+  ground and this tint cannot drift apart.
+*/
+const MINT = moduleColorThemes.faith.pageSurface;
 
 export type PrayerProgressRingProps = {
   /** Outer diameter, already scaled. */

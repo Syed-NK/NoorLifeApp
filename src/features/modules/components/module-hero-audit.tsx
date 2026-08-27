@@ -95,8 +95,8 @@ export function ModuleHeroAudit({ testID }: ModuleHeroAuditProps) {
     },
     {
       label: 'Ink on light surface',
-      value: formatRatio(contrastRatio(theme.ink, theme.lightSurface)),
-      pass: contrastRatio(theme.ink, theme.lightSurface) >= AA_TEXT,
+      value: formatRatio(contrastRatio(theme.ink, theme.wellSurface)),
+      pass: contrastRatio(theme.ink, theme.wellSurface) >= AA_TEXT,
     },
   ];
 
@@ -127,7 +127,7 @@ export function ModuleHeroAudit({ testID }: ModuleHeroAuditProps) {
       />
       <Fact
         label="Theme"
-        value={`${theme.gradientStart} → ${theme.gradientEnd} · ink ${theme.ink} · surface ${theme.lightSurface}`}
+        value={`${theme.gradientStart} → ${theme.gradientEnd} · ink ${theme.ink} · surface ${theme.wellSurface}`}
       />
 
       <View style={{ height: dp(4) }} />

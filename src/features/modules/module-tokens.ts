@@ -70,9 +70,38 @@ export type ModuleColorTheme = {
   readonly border: string;
   readonly gradientStart: string;
   readonly gradientEnd: string;
+  /**
+   * @deprecated Use `wellSurface`. Kept as an exact alias so the four shared components that
+   * already read it cannot change colour; new code must name the role it means — issue #86.
+   */
   readonly lightSurface: string;
   /** Text/icon colour on `fill` and on the hero gradient. */
   readonly onFill: string;
+
+  /* ── The surface roles — issue #86 ──────────────────────────────────────
+     One owner for a module screen's colour family, so a consumer names the role it wants instead
+     of choosing between two near-identical tints. Every value below is an explicit token derived
+     from the locked module palette. None is sampled from artwork, and no raster asset is tinted:
+     `moduleRasterIcon` is untouched by this contract and stays the only path to commissioned art.
+     ───────────────────────────────────────────────────────────────────── */
+
+  /**
+   * The module page's own ground.
+   *
+   * Exactly the locked palette's `soft`, so adopting it recolours nothing that already used that
+   * value — it renames an ambiguous field into the role it was always filling.
+   */
+  readonly pageSurface: string;
+  /** Card and sheet ground. White, deliberately: it is the contrast headroom every card relies on. */
+  readonly cardSurface: string;
+  /** A nested row inside a card — one step off white, still lighter than the page. */
+  readonly elevatedSurface: string;
+  /** Icon wells and feature tiles. Exactly today's `lightSurface`, so those surfaces do not move. */
+  readonly wellSurface: string;
+  /** Card border and divider on a tinted page. Clears the non-text threshold on page *and* card. */
+  readonly borderTint: string;
+  /** The selected navigation slot's ground, on the neutral bar. */
+  readonly navSelectedSurface: string;
 };
 
 /**
@@ -81,7 +110,12 @@ export type ModuleColorTheme = {
  * Measured ratios are recorded beside each value. They were computed, not
  * guessed — see the test for the assertions that keep them true.
  */
-const DERIVED: Readonly<Record<FrameworkModuleId, Omit<ModuleColorTheme, 'primary' | 'onFill'>>> = {
+type DerivedRoles = Pick<
+  ModuleColorTheme,
+  'ink' | 'fill' | 'border' | 'gradientStart' | 'gradientEnd' | 'lightSurface'
+>;
+
+const DERIVED: Readonly<Record<FrameworkModuleId, DerivedRoles>> = {
   'noor-ai': {
     ink: '#6556C8', //  4.95 on surface · 5.65 on white — already AA, no darkening needed
     fill: '#6556C8', //  5.65 white-on-fill
@@ -148,21 +182,110 @@ const DERIVED: Readonly<Record<FrameworkModuleId, Omit<ModuleColorTheme, 'primar
   },
 };
 
-/** The seven module colour themes. Brand hue from the locked palette, roles derived here. */
-export const moduleColorThemes: Readonly<Record<FrameworkModuleId, ModuleColorTheme>> = {
+/**
+ * The surface roles, one row per module — issue #86.
+ *
+ * ── Where each value comes from ────────────────────────────────────────────
+ * `pageSurface` is the locked palette's `soft`, unchanged. `wellSurface` is the `lightSurface`
+ * this file already derived, unchanged. Those two carry every colour that renders today, which is
+ * why adopting this contract moves no pixel: it gives two existing values their real names.
+ *
+ * The other three are new, and are stated here as explicit tokens rather than computed at runtime
+ * — a colour that is derived on each render cannot be reviewed, and the measured ratios beside each
+ * value are the review. They were produced by mixing locked palette values toward white or black in
+ * fixed steps and then recorded; nothing is sampled from an image.
+ *
+ * ── The ladder ─────────────────────────────────────────────────────────────
+ * `cardSurface` (white) → `elevatedSurface` → `wellSurface` → `pageSurface`, lightest to deepest.
+ * A card sits above its page, a nested row sits just off white, and a well reads as inset without
+ * competing with the page it sits on.
+ *
+ * `navSelectedSurface` is *lighter* than `pageSurface`, not deeper, and that is deliberate: it sits
+ * on the neutral navigation bar and has to carry `ink` at AA. Several modules' `ink` clears 4.5:1
+ * on `pageSurface` by only a few hundredths, so a deeper selected slot would have pushed the
+ * selected label under the bar it is meant to clear.
+ *
+ * Ratios recorded per row: `ink` on the surface, then `textPrimary` on it. `borderTint` records
+ * its separation from `pageSurface` and from `cardSurface`, both against the 3:1 non-text bar.
+ */
+const SURFACES: Readonly<
+  Record<
+    FrameworkModuleId,
+    Pick<ModuleColorTheme, 'pageSurface' | 'elevatedSurface' | 'borderTint' | 'navSelectedSurface'>
+  >
+> = {
   'noor-ai': {
-    primary: modulePalettes['noor-ai'].primary,
-    onFill: '#FFFFFF',
-    ...DERIVED['noor-ai'],
+    pageSurface: modulePalettes['noor-ai'].soft,
+    elevatedSurface: '#F8F7FF', //  5.31 · 13.41
+    borderTint: '#6556C8', //  4.91 on page · 5.65 on card
+    navSelectedSurface: '#F5F2FF', //  5.12 · 12.92
   },
-  faith: { primary: modulePalettes.faith.primary, onFill: '#FFFFFF', ...DERIVED.faith },
-  health: { primary: modulePalettes.health.primary, onFill: '#FFFFFF', ...DERIVED.health },
-  planner: { primary: modulePalettes.planner.primary, onFill: '#FFFFFF', ...DERIVED.planner },
-  finance: { primary: modulePalettes.finance.primary, onFill: '#FFFFFF', ...DERIVED.finance },
-  learning: { primary: modulePalettes.learning.primary, onFill: '#FFFFFF', ...DERIVED.learning },
-  family: { primary: modulePalettes.family.primary, onFill: '#FFFFFF', ...DERIVED.family },
-  goals: { primary: modulePalettes.goals.primary, onFill: '#FFFFFF', ...DERIVED.goals },
+  faith: {
+    pageSurface: modulePalettes.faith.soft,
+    elevatedSurface: '#F6FCF9', //  4.76 · 13.73
+    borderTint: '#23856D', //  4.07 · 4.52
+    navSelectedSurface: '#F0F9F5', //  4.61 · 13.30
+  },
+  health: {
+    pageSurface: modulePalettes.health.soft,
+    elevatedSurface: '#F6FCFF', //  4.70 · 13.78
+    borderTint: '#4492C7', //  3.09 · 3.40 — darker than `border`, which clears 3:1 only on white
+    navSelectedSurface: '#F0F9FD', //  4.55 · 13.36
+  },
+  planner: {
+    pageSurface: modulePalettes.planner.soft,
+    elevatedSurface: '#F8F8FF', //  4.83 · 13.49
+    borderTint: '#5A72C9', //  3.97 · 4.48
+    navSelectedSurface: '#F3F5FC', //  4.69 · 13.09
+  },
+  finance: {
+    pageSurface: modulePalettes.finance.soft,
+    elevatedSurface: '#FFFAF4', //  4.69 · 13.74
+    borderTint: '#C8792C', //  3.09 · 3.37 — darker than `border` for the same reason as Health
+    navSelectedSurface: '#FFF7EE', //  4.59 · 13.44
+  },
+  learning: {
+    pageSurface: modulePalettes.learning.soft,
+    elevatedSurface: '#F9F7FF', //  4.82 · 13.43
+    borderTint: '#7657D6', //  4.46 · 5.12
+    navSelectedSurface: '#F5F2FF', //  4.64 · 12.92
+  },
+  family: {
+    pageSurface: modulePalettes.family.soft,
+    elevatedSurface: '#FFF8FA', //  4.75 · 13.63
+    borderTint: '#D95B82', //  3.20 · 3.64
+    navSelectedSurface: '#FEF2F6', //  4.56 · 13.07
+  },
+  goals: {
+    pageSurface: modulePalettes.goals.soft,
+    elevatedSurface: '#F6FCFB', //  4.69 · 13.74
+    borderTint: '#269B94', //  3.07 · 3.39
+    navSelectedSurface: '#EFF9F8', //  4.54 · 13.30
+  },
 };
+
+/** Card and sheet ground. One value for every module — the contrast headroom cards depend on. */
+const CARD_SURFACE = '#FFFFFF';
+
+/** Builds one module's full colour theme from the locked palette and the rows above. */
+function themeFor(moduleId: FrameworkModuleId): ModuleColorTheme {
+  const derived = DERIVED[moduleId];
+  return {
+    primary: modulePalettes[moduleId].primary,
+    onFill: '#FFFFFF',
+    ...derived,
+    ...SURFACES[moduleId],
+    cardSurface: CARD_SURFACE,
+    /* The same value the wells already render. `lightSurface` stays as its deprecated alias. */
+    wellSurface: derived.lightSurface,
+  };
+}
+
+/** The seven module colour themes. Brand hue from the locked palette, roles derived here. */
+export const moduleColorThemes: Readonly<Record<FrameworkModuleId, ModuleColorTheme>> =
+  Object.fromEntries(FRAMEWORK_MODULE_IDS.map((id) => [id, themeFor(id)])) as Readonly<
+    Record<FrameworkModuleId, ModuleColorTheme>
+  >;
 
 /**
  * Neutrals shared by every module screen.
@@ -189,7 +312,16 @@ export const moduleNeutrals = {
   border: '#DCE2EC',
   /** Bottom-navigation bar. */
   navBackground: '#FFFFFF',
-  /** Inactive navigation label and icon. 4.6:1 on white. */
+  /**
+   * Inactive navigation label and icon.
+   *
+   * Measured 4.42:1 on `navBackground`, not the 4.6:1 this comment used to claim — recorded while
+   * building the surface contract (issue #86), which had to measure it to assert the selected slot
+   * reads as selection rather than as hue. That is 0.08 under AA for normal text and is a
+   * pre-existing shortfall in a rendered colour, so it is **not** changed here: this contract
+   * preserves every rendered value. It needs its own decision, because raising it darkens the
+   * inactive state on every module bar.
+   */
   navInactive: '#6B7896',
   /** Skeleton base and its highlight. */
   skeleton: '#E8ECF3',

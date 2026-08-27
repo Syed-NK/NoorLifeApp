@@ -59,7 +59,7 @@ export function ModuleInsightCard({
         {
           borderRadius: dp(moduleLayout.cardRadius),
           padding: dp(moduleLayout.cardPadding),
-          backgroundColor: module.theme.lightSurface,
+          backgroundColor: module.theme.wellSurface,
           borderColor: module.theme.border,
           rowGap: dp(8),
         },

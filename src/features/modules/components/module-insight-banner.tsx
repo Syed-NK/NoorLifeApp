@@ -68,7 +68,7 @@ export function ModuleInsightBanner({
         {
           borderRadius: dp(moduleLayout.cardRadius),
           padding: dp(moduleLayout.cardPadding),
-          backgroundColor: module.theme.lightSurface,
+          backgroundColor: module.theme.wellSurface,
           borderColor: module.theme.border,
           columnGap: dp(10),
         },
