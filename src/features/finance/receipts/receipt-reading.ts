@@ -89,7 +89,26 @@ const MONEY_TOKEN = /\d{1,3}(?:,\d{3})+(?:\.\d{1,3})?|\d+(?:[.,]\d{1,3})?/g;
 /** A token that is grouping, e.g. `1,234` or `12,345,678` — commas every three digits. */
 const GROUPED = /^\d{1,3}(?:,\d{3})+(?:\.\d{1,3})?$/;
 
-/** Lines whose value is the one being paid. */
+/**
+ * Lines whose value is the one being paid.
+ *
+ * ── What Android showed that no test could ─────────────────────────────────
+ * This fires only when the word and the number are on the *same* recognised line, and on a
+ * column-aligned receipt they frequently are not. ML Kit groups text spatially: where the labels run
+ * down one column and the amounts down another, it returns them as separate blocks, so the workflow
+ * sees `TOTAL` on one line and `8.14` on another and this pattern matches nothing.
+ *
+ * That is left alone deliberately. The obvious repair — treat the next number after a bare `TOTAL`
+ * as the total — is wrong on exactly the layout that motivates it: in a two-block reading the "next
+ * number" is the *first* amount in the amounts column, which is the first line item, not the total.
+ * It would replace "no emphasis" with a confident wrong answer, which is the failure this whole
+ * screen is built to avoid.
+ *
+ * So when the layout defeats the heuristic there is simply no emphasis, the candidates are offered
+ * largest-first, and the screen says "pick the one you paid". The largest number on a receipt is
+ * usually the total, the user is choosing from a visible list either way, and nothing claims the
+ * receipt established which one it was.
+ */
 const TOTAL_LINE =
   /\b(?:grand\s+total|total\s+due|amount\s+due|balance\s+due|amount\s+payable|total\s+to\s+pay|total)\b/i;
 
@@ -126,6 +145,37 @@ const LOOSE_DATE = /\b(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4}|\d{2})\b/;
 /** A three-letter word, so `AEDX` and `SAUDI` cannot be read as currency codes. */
 const CODE_TOKEN = /\b[A-Z]{3}\b/g;
 
+/**
+ * Every date-shaped run in a line, so its digits can be kept out of the money candidates.
+ *
+ * This exists because a real device said so. On the first Android run the workflow proposed
+ * **2026.00 AED** for a receipt whose total was 8.14: `DATE 2026-08-20` contains `2026`, `08` and
+ * `20`, all three of which match a money token, and 2026 is the largest number on the receipt so it
+ * sorted to the top and prefilled the amount field.
+ *
+ * The suggestion was wrong in the worst available way — confidently, plausibly, and in the field the
+ * user is most likely to accept without re-reading. A day of the month is not an amount of money, and
+ * the fix is to say so where the tokens are found rather than to hope the ranking hides it.
+ */
+const DATE_SPANS = /\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b|\b\d{1,2}[/.\-]\d{1,2}[/.\-](?:\d{4}|\d{2})\b/g;
+
+/** A time, whose digits are not money either — `14:32` is not fourteen of anything. */
+const TIME_SPANS = /\b\d{1,2}:\d{2}(?::\d{2})?\b/g;
+
+/** Character ranges in a line that a money token may not overlap. */
+function excludedSpans(line: string): readonly (readonly [number, number])[] {
+  const spans: [number, number][] = [];
+  for (const pattern of [DATE_SPANS, TIME_SPANS]) {
+    pattern.lastIndex = 0;
+    let match = pattern.exec(line);
+    while (match !== null) {
+      spans.push([match.index, match.index + match[0].length]);
+      match = pattern.exec(line);
+    }
+  }
+  return spans;
+}
+
 function pad(value: number): string {
   return String(value).padStart(2, '0');
 }
@@ -142,7 +192,16 @@ function dateKey(year: number, month: number, day: number): string | null {
  * all match a number pattern and none of them is an amount. The characters *around* the match are
  * what tell them apart, which is why this looks at the line rather than the token.
  */
-function isMonetaryContext(line: string, start: number, end: number): boolean {
+function isMonetaryContext(
+  line: string,
+  start: number,
+  end: number,
+  excluded: readonly (readonly [number, number])[],
+): boolean {
+  /* Inside a date or a time. See `DATE_SPANS` — this is the 2026.00 case, from a real device. */
+  if (excluded.some(([from, to]) => start < to && end > from)) {
+    return false;
+  }
   const before = line.slice(Math.max(0, start - 2), start);
   const after = line.slice(end, end + 2);
   if (/[:%]/.test(after.charAt(0)) || /[:%]/.test(before.slice(-1))) {
@@ -164,6 +223,7 @@ function collectAmounts(
   for (const line of lines) {
     const emphasis: ReceiptAmountCandidate['emphasis'] =
       !NOT_THE_TOTAL.test(line) && TOTAL_LINE.test(line) ? 'total' : 'plain';
+    const excluded = excludedSpans(line);
 
     MONEY_TOKEN.lastIndex = 0;
     let match = MONEY_TOKEN.exec(line);
@@ -173,7 +233,7 @@ function collectAmounts(
       const end = start + token.length;
       match = MONEY_TOKEN.exec(line);
 
-      if (!isMonetaryContext(line, start, end)) {
+      if (!isMonetaryContext(line, start, end, excluded)) {
         continue;
       }
       /*

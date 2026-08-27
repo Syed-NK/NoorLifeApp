@@ -178,6 +178,56 @@ describe('several monetary values on one receipt', () => {
 
     expect(reading.amounts.map((candidate) => candidate.minor)).toEqual([600]);
   });
+
+  it.each([
+    ['an ISO date', 'DATE 2026-08-20'],
+    ['a slashed date', 'DATE 20/08/2026'],
+    ['a dotted date', 'DATE 20.08.2026'],
+    ['a short year', 'DATE 20/08/26'],
+    ['a time', 'TIME 14:32:07'],
+  ])('offers no amount from %s', (_label, line) => {
+    /*
+      The defect a real Android run found, and the reason this file has a date-span exclusion at all.
+      `DATE 2026-08-20` contains `2026`, `08` and `20`; all three parse as money, and 2026 is larger
+      than any real amount on a household receipt, so it sorted first and *prefilled the amount
+      field* with 2026.00 AED. Confidently wrong, in the one field a user is most likely to accept
+      without re-reading it.
+    */
+    expect(readReceiptLines(lines(line), 'AED').amounts).toEqual([]);
+  });
+
+  it('suggests the total rather than the year on a dated receipt', () => {
+    const reading = readReceiptLines(lines('BREAD 3.50\nTOTAL 8.14\nDATE 2026-08-20'), 'AED');
+
+    expect(reading.amounts.map((candidate) => candidate.minor)).toEqual([814, 350]);
+    expect(reading.occurredOn).toBe('2026-08-20');
+  });
+
+  it('still reads a date it excluded from the amounts', () => {
+    /* Excluded from *money*, not from the reading. The date is still the date. */
+    const reading = readReceiptLines(lines('DATE 2026-08-20\nTOTAL 8.14'), 'AED');
+
+    expect(reading.occurredOn).toBe('2026-08-20');
+    expect(reading.amounts.map((candidate) => candidate.minor)).toEqual([814]);
+  });
+
+  it('offers the largest amount first when the layout hides which line was the total', () => {
+    /*
+      ML Kit groups text spatially, so a receipt whose labels and amounts are in two columns comes
+      back as two blocks: the words on their own lines, the numbers on theirs. `TOTAL` and `8.14`
+      are then never on the same line and no candidate can be emphasised — which is exactly what the
+      device produced. The reading must still be useful and must still not claim anything.
+    */
+    const reading = readReceiptLines(
+      lines(
+        'NOOR TEST MART\nBREAD\nMILK\nSUBTOTAL\nTOTAL\nDATE 2026-08-20\n3.50\n4.25\n7.75\n8.14',
+      ),
+      'AED',
+    );
+
+    expect(reading.amounts.map((candidate) => candidate.minor)).toEqual([814, 775, 425, 350]);
+    expect(reading.amounts.every((candidate) => candidate.emphasis === 'plain')).toBe(true);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
