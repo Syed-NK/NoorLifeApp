@@ -578,17 +578,24 @@ describe('nothing reaches the ledger before confirmation', () => {
       The #92 envelope, exactly. A receipt exposes a merchant, a tax number and an image path, and
       none of them belongs in a transaction — widening the envelope is a migration, not a
       convenience, and a stored record carrying an unknown key would fail that decoder outright.
+
+      `goalId` is on this list because #95 put it there deliberately, and Receipts writes it as
+      `null`: a receipt is a purchase, not a contribution to somebody's savings. Its presence here
+      is the guard, not a concession — if a receipt ever started attributing money to a goal, this
+      assertion is where it would show up.
     */
     expect(Object.keys((await mounted.ledger()).rows[0] as object).sort()).toEqual([
       'amountMinor',
       'category',
       'createdAt',
       'direction',
+      'goalId',
       'id',
       'note',
       'occurredOn',
       'updatedAt',
     ]);
+    expect((await mounted.ledger()).rows[0]).toMatchObject({ goalId: null });
   });
 
   it('refuses an amount the ledger cannot hold, and records nothing', async () => {

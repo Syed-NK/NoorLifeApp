@@ -12,16 +12,19 @@ import { AppState } from 'react-native';
 
 import { isLocallyAuthenticated, useAuth } from '@application/providers/auth-provider';
 
-import {
-  canChangeFinanceCurrency,
-  type FinanceBudget,
-  type FinanceBudgetDraft,
-} from '../data/finance-budget';
+import { type FinanceBudget, type FinanceBudgetDraft } from '../data/finance-budget';
 import {
   createFinanceBudgetRepository,
   type FinanceBudgetMutation,
   type FinanceBudgetRepository,
 } from '../data/finance-budget.repository';
+import { canChangeFinanceCurrency } from '../data/finance-currency-lock';
+import { type FinanceGoal, type FinanceGoalDraft } from '../data/finance-goal';
+import {
+  createFinanceGoalRepository,
+  type FinanceGoalMutation,
+  type FinanceGoalRepository,
+} from '../data/finance-goal.repository';
 import type { FinanceDraft, FinanceLedger } from '../data/finance-ledger';
 import { emptyFinanceLedger } from '../data/finance-ledger';
 import {
@@ -74,6 +77,18 @@ import {
  * been recorded; a budget is money recorded in that currency, so the refusal has to see both stores
  * at once. It is composed here, where both are already held, rather than teaching the ledger domain
  * to read a store it should know nothing about.
+ *
+ * ── Savings goals are the third store, and hold no money — issue #95 ───────
+ * The same arrangement again: their own address, their own version, their own fault, one owner. A
+ * malformed goal cannot quarantine the transactions or the budgets, and a goal target is an amount in
+ * the ledger currency, so it joins the currency lock — which now sees all three stores through one
+ * predicate in `finance-currency-lock.ts`.
+ *
+ * What the goal store deliberately does **not** hold is contributions. #95 makes a contribution a
+ * transaction, so `createTransaction` with a `goalId` is the whole of adding one and the ledger stays
+ * the single record of money moved. That is also why there is no `addContribution` here: a method
+ * that wrote to two stores could not be atomic, and every contribution mutation as it stands is one
+ * write to one address in one lane.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -81,6 +96,13 @@ export type FinanceState = {
   readonly ledger: FinanceLedger;
   /** The account's budgets — issue #94. Planning intent only; spend is never stored. */
   readonly budgets: readonly FinanceBudget[];
+  /**
+   * The account's savings goals — issue #95. Targets only.
+   *
+   * Progress is not here and never will be: contributions are transactions in `ledger`, and
+   * `goalsProgress` derives every figure from the two on each read.
+   */
+  readonly goals: readonly FinanceGoal[];
   /**
    * Whose ledger this is, normalised, or `null` outside a session — issue #101.
    *
@@ -101,7 +123,14 @@ export type FinanceState = {
    * planning record went bad.
    */
   readonly budgetFault: 'storage-unavailable' | 'corrupt-data' | null;
-  /** Whether the ledger currency may still be set or changed — transactions *and* budgets. */
+  /**
+   * The goal store's own fault, separate again — issue #95.
+   *
+   * Goals that cannot be read must not take the transactions or the budgets down with them, and
+   * Spending has no reason to stop working because a savings target went bad.
+   */
+  readonly goalFault: 'storage-unavailable' | 'corrupt-data' | null;
+  /** Whether the ledger currency may still be set or changed — transactions, budgets *and* goals. */
   readonly canChangeCurrency: boolean;
   readonly reload: () => Promise<void>;
   readonly setCurrency: (currency: string) => Promise<FinanceMutation>;
@@ -111,6 +140,16 @@ export type FinanceState = {
   readonly createBudget: (draft: FinanceBudgetDraft) => Promise<FinanceBudgetMutation>;
   readonly updateBudget: (id: string, draft: FinanceBudgetDraft) => Promise<FinanceBudgetMutation>;
   readonly removeBudget: (id: string) => Promise<FinanceBudgetMutation>;
+  readonly createGoal: (draft: FinanceGoalDraft) => Promise<FinanceGoalMutation>;
+  readonly updateGoal: (id: string, draft: FinanceGoalDraft) => Promise<FinanceGoalMutation>;
+  /**
+   * Removes the target. The contributions stay in the ledger — issue #95.
+   *
+   * Not a cascade, and deliberately not offered as one: the money moved, #95 makes the ledger the
+   * single record of that, and a delete that quietly erased transactions would be destroying
+   * financial history to tidy up a planning record. The confirmation copy says so.
+   */
+  readonly removeGoal: (id: string) => Promise<FinanceGoalMutation>;
 };
 
 const FinanceContext = createContext<FinanceState | null>(null);
@@ -119,6 +158,7 @@ export type FinanceProviderProps = {
   readonly children: ReactNode;
   readonly repository?: FinanceLedgerRepository;
   readonly budgetRepository?: FinanceBudgetRepository;
+  readonly goalRepository?: FinanceGoalRepository;
 };
 
 type Owned = {
@@ -176,10 +216,39 @@ function absorbBudgets(
   };
 }
 
+/** The goal half of the owned state. Its own fault, switched by the same owner. */
+type OwnedGoals = {
+  readonly repository: FinanceGoalRepository;
+  readonly goals: readonly FinanceGoal[];
+  readonly loading: boolean;
+  readonly fault: FinanceState['goalFault'];
+};
+
+function absorbGoals(
+  repository: FinanceGoalRepository,
+  result: Awaited<ReturnType<FinanceGoalRepository['read']>>,
+): OwnedGoals {
+  if (result.kind === 'ok') {
+    return { repository, goals: result.goals, loading: false, fault: null };
+  }
+  /*
+    An empty list beside an error would let somebody create a goal against a store that has already
+    refused to confirm itself — which, on the corrupt branch, is the write that would destroy the
+    retained bytes.
+  */
+  return {
+    repository,
+    goals: [],
+    loading: false,
+    fault: result.kind === 'corrupt' ? 'corrupt-data' : 'storage-unavailable',
+  };
+}
+
 export function FinanceProvider({
   children,
   repository: injected,
   budgetRepository: injectedBudgets,
+  goalRepository: injectedGoals,
 }: FinanceProviderProps) {
   const auth = useAuth();
   const ownerId = isLocallyAuthenticated(auth) ? (auth.user?.id ?? null) : null;
@@ -190,6 +259,10 @@ export function FinanceProvider({
   const budgetRepository = useMemo(
     () => injectedBudgets ?? createFinanceBudgetRepository({ ownerId }),
     [injectedBudgets, ownerId],
+  );
+  const goalRepository = useMemo(
+    () => injectedGoals ?? createFinanceGoalRepository({ ownerId }),
+    [injectedGoals, ownerId],
   );
 
   const [owned, setOwned] = useState<Owned>(() => ({
@@ -221,6 +294,33 @@ export function FinanceProvider({
   if (ownedBudgets.repository !== budgetRepository) {
     setOwnedBudgets({ repository: budgetRepository, budgets: [], loading: true, fault: null });
   }
+
+  const [ownedGoals, setOwnedGoals] = useState<OwnedGoals>(() => ({
+    repository: goalRepository,
+    goals: [],
+    loading: true,
+    fault: null,
+  }));
+
+  /* And again for the goals: no frame of one account's savings inside another's session. */
+  if (ownedGoals.repository !== goalRepository) {
+    setOwnedGoals({ repository: goalRepository, goals: [], loading: true, fault: null });
+  }
+
+  useEffect(() => {
+    let active = true;
+    void goalRepository.read().then((result) => {
+      if (!active) {
+        return;
+      }
+      setOwnedGoals((current) =>
+        current.repository === goalRepository ? absorbGoals(goalRepository, result) : current,
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [goalRepository]);
 
   useEffect(() => {
     let active = true;
@@ -264,12 +364,20 @@ export function FinanceProvider({
     setOwnedBudgets((current) =>
       current.repository === budgetRepository ? { ...current, loading: true } : current,
     );
+    setOwnedGoals((current) =>
+      current.repository === goalRepository ? { ...current, loading: true } : current,
+    );
     /*
-      Both stores, one reload. They are read together because a screen showing spent against
-      budgeted needs both to be current — refreshing one on foreground and leaving the other would
-      show this month's transactions against a stale plan.
+      All three stores, one reload. They are read together because every derived screen needs the
+      ledger beside its own store to be current — refreshing one on foreground and leaving another
+      would show this month's transactions against a stale plan, or a savings total against a target
+      that has since changed.
     */
-    const [result, budgetResult] = await Promise.all([repository.read(), budgetRepository.read()]);
+    const [result, budgetResult, goalResult] = await Promise.all([
+      repository.read(),
+      budgetRepository.read(),
+      goalRepository.read(),
+    ]);
     setOwned((current) =>
       current.repository === repository ? absorb(repository, result) : current,
     );
@@ -278,7 +386,10 @@ export function FinanceProvider({
         ? absorbBudgets(budgetRepository, budgetResult)
         : current,
     );
-  }, [budgetRepository, repository]);
+    setOwnedGoals((current) =>
+      current.repository === goalRepository ? absorbGoals(goalRepository, goalResult) : current,
+    );
+  }, [budgetRepository, goalRepository, repository]);
 
   /*
     A stable handle on the current reload, for listeners that must not re-arm. `reload` changes
@@ -357,28 +468,75 @@ export function FinanceProvider({
     [budgetRepository],
   );
 
+  /* The same late-owner refusal again, for the goal store's own mutations. */
+  const applyGoal = useCallback(
+    async (operation: () => Promise<FinanceGoalMutation>) => {
+      const result = await operation();
+      setOwnedGoals((current) => {
+        if (current.repository !== goalRepository) {
+          return current;
+        }
+        if (result.kind === 'ok') {
+          return { ...current, goals: result.goals, fault: null };
+        }
+        if (result.kind === 'corrupt') {
+          return { ...current, fault: 'corrupt-data' };
+        }
+        if (result.kind === 'unavailable') {
+          return { ...current, fault: 'storage-unavailable' };
+        }
+        return current;
+      });
+      return result;
+    },
+    [goalRepository],
+  );
+
   /*
-    The currency rule, composed across both stores — issue #94.
+    The currency rule, composed across all three stores — issues #94 and #95.
 
     #92 refuses a change once a transaction exists, because there is no honest conversion and
-    relabelling recorded money is not one. A budget is an amount in that currency, so it counts: a
-    ledger with no transactions but a 600.00 grocery budget must not silently reinterpret that as
-    600 yen. The predicate lives with the budget domain; the composition happens here, where both
-    stores are already held.
+    relabelling recorded money is not one. A budget is an amount in that currency and so is a savings
+    target, so both count: a ledger with no transactions but a 600.00 grocery budget or a 20,000.00
+    Hajj target must not silently reinterpret either as yen. The predicate lives in
+    `finance-currency-lock.ts`; the composition happens here, where all three stores are held.
   */
-  const canChange = canChangeFinanceCurrency(
-    owned.ledger.transactions.length > 0,
-    ownedBudgets.budgets,
+  const canChange = canChangeFinanceCurrency({
+    transactions: owned.ledger.transactions.length,
+    budgets: ownedBudgets.budgets.length,
+    goals: ownedGoals.goals.length,
+  });
+
+  /*
+    Referential integrity across the two stores, composed here for the same reason the currency lock
+    is — the ledger domain validates that an attribution is *shaped* like a goal id, and only this
+    layer can see whether a goal by that id exists.
+
+    Three-valued, exactly like the draft field it guards. `undefined` means "leave the attribution
+    alone", which is the path an ordinary Spending edit takes and which must therefore never be
+    refused — including for a transfer whose goal has since been deleted, where preserving the
+    orphaned id is the point. `null` detaches and needs no goal. Only an explicit id is checked, so a
+    new contribution can never be filed against a goal that is not there, while existing history is
+    never rewritten by a rule about new writes.
+  */
+  const attributionIsKnown = useCallback(
+    (goalId: string | null | undefined): boolean =>
+      goalId === undefined ||
+      goalId === null ||
+      ownedGoals.goals.some((goal) => goal.id === goalId),
+    [ownedGoals.goals],
   );
 
   const value = useMemo<FinanceState>(
     () => ({
       ledger: owned.ledger,
       budgets: ownedBudgets.budgets,
+      goals: ownedGoals.goals,
       ownerId: repository.ownerId,
-      loading: owned.loading || ownedBudgets.loading,
+      loading: owned.loading || ownedBudgets.loading || ownedGoals.loading,
       fault: owned.fault,
       budgetFault: ownedBudgets.fault,
+      goalFault: ownedGoals.fault,
       canChangeCurrency: canChange,
       reload,
       setCurrency: (currency) =>
@@ -390,24 +548,39 @@ export function FinanceProvider({
         canChange
           ? apply(() => repository.setCurrency(currency))
           : Promise.resolve({ kind: 'invalid', fault: 'currency-locked' } as const),
-      createTransaction: (draft) => apply(() => repository.createTransaction(draft)),
-      updateTransaction: (id, draft) => apply(() => repository.updateTransaction(id, draft)),
+      createTransaction: (draft) =>
+        attributionIsKnown(draft.goalId)
+          ? apply(() => repository.createTransaction(draft))
+          : Promise.resolve({ kind: 'invalid', fault: 'unknown-goal' } as const),
+      updateTransaction: (id, draft) =>
+        attributionIsKnown(draft.goalId)
+          ? apply(() => repository.updateTransaction(id, draft))
+          : Promise.resolve({ kind: 'invalid', fault: 'unknown-goal' } as const),
       removeTransaction: (id) => apply(() => repository.removeTransaction(id)),
       createBudget: (draft) => applyBudget(() => budgetRepository.createBudget(draft)),
       updateBudget: (id, draft) => applyBudget(() => budgetRepository.updateBudget(id, draft)),
       removeBudget: (id) => applyBudget(() => budgetRepository.removeBudget(id)),
+      createGoal: (draft) => applyGoal(() => goalRepository.createGoal(draft)),
+      updateGoal: (id, draft) => applyGoal(() => goalRepository.updateGoal(id, draft)),
+      removeGoal: (id) => applyGoal(() => goalRepository.removeGoal(id)),
     }),
     [
       apply,
       applyBudget,
+      applyGoal,
+      attributionIsKnown,
       budgetRepository,
       canChange,
+      goalRepository,
       owned.fault,
       owned.ledger,
       owned.loading,
       ownedBudgets.budgets,
       ownedBudgets.fault,
       ownedBudgets.loading,
+      ownedGoals.fault,
+      ownedGoals.goals,
+      ownedGoals.loading,
       reload,
       repository,
     ],

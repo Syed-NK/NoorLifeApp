@@ -7,6 +7,7 @@ import {
   previousMonth,
   type FinanceMonth,
 } from './finance-month';
+import { isConsumptionRecord, isSavingsTransfer } from './finance-record-kind';
 
 /**
  * **Reading the ledger: grouping, filtering and the derived summary** — issue #93.
@@ -21,6 +22,17 @@ import {
  * ── The day comes from the caller ──────────────────────────────────────────
  * `todayKey` is passed in, read once per operation from the shared day source. Nothing in this file
  * asks what day it is — issue #76's lesson, applied to a second module.
+ *
+ * ── Savings transfers are records here, but never consumption ──────────────
+ * #95 made a savings contribution an ordinary transaction. It is still listed, still filterable and
+ * still editable — but it is not money spent, and a withdrawal is not money earned, so every
+ * *monetary* aggregate below excludes it through `isConsumptionRecord`. The transfers are totalled
+ * separately instead, so the Spending screen can state them rather than hide them.
+ *
+ * The list itself is deliberately untouched: `filterFinanceTransactions` returns transfers like any
+ * other record. That is what makes the exclusion safe rather than a disappearing act — and it is why
+ * a filter cannot smuggle a transfer into a total, because the totals never consult the filtered
+ * rows for their inclusion policy, only for their scope.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -69,11 +81,19 @@ export function normaliseRange(filters: FinanceFilters): FinanceFilters {
   return filters;
 }
 
-/** Every category actually present, sorted, for a filter that cannot offer an empty result by construction. */
+/**
+ * Every category actually present, sorted, for a filter that cannot offer an empty result by
+ * construction.
+ *
+ * Savings transfers are skipped. A transfer normally carries no category at all, but one *can* —
+ * editing it from the Spending screen preserves the attribution while allowing a category — and
+ * offering that string as a spending filter would present a savings label as somewhere money was
+ * spent. The same reasoning applies to the budget category list, which reads this rule too.
+ */
 export function financeCategories(ledger: FinanceLedger): readonly string[] {
   const present = new Set<string>();
   for (const transaction of ledger.transactions) {
-    if (transaction.category !== null) {
+    if (transaction.category !== null && isConsumptionRecord(transaction)) {
       present.add(transaction.category);
     }
   }
@@ -140,10 +160,18 @@ export function groupFinanceByDay(
 }
 
 export type FinanceSummary = {
+  /** Every record in the ledger, transfers included. The label on screen is "Entries". */
   readonly count: number;
+  /** Every record occurring today, transfers included. A count, never an amount. */
   readonly todayCount: number;
+  /** Money spent. Savings contributions are excluded. */
   readonly expenseMinor: number;
+  /** Money received. Savings withdrawals are excluded. */
   readonly incomeMinor: number;
+  /** Money moved into goals. Reported separately so a surface can present it as savings. */
+  readonly savingsContributedMinor: number;
+  /** Money taken back out of goals. */
+  readonly savingsWithdrawnMinor: number;
 };
 
 /**
@@ -151,13 +179,26 @@ export type FinanceSummary = {
  *
  * Integer addition throughout — the amounts are minor units, and #92's bound is set so a full
  * ledger still sums inside the safe-integer range.
+ *
+ * `count` and `todayCount` deliberately include transfers: they are counts of *records*, and a
+ * contribution is a record. "3 entries recorded" stays true whatever those entries were, and it
+ * discloses no amount. The two monetary figures exclude transfers, because "Spent" and "Received"
+ * are claims about consumption and a transfer is neither.
  */
 export function summariseFinance(ledger: FinanceLedger, todayKey: string): FinanceSummary {
   let expenseMinor = 0;
   let incomeMinor = 0;
+  let savingsContributedMinor = 0;
+  let savingsWithdrawnMinor = 0;
   let todayCount = 0;
   for (const transaction of ledger.transactions) {
-    if (transaction.direction === 'expense') {
+    if (isSavingsTransfer(transaction)) {
+      if (transaction.direction === 'expense') {
+        savingsContributedMinor += transaction.amountMinor;
+      } else {
+        savingsWithdrawnMinor += transaction.amountMinor;
+      }
+    } else if (transaction.direction === 'expense') {
       expenseMinor += transaction.amountMinor;
     } else {
       incomeMinor += transaction.amountMinor;
@@ -166,15 +207,36 @@ export function summariseFinance(ledger: FinanceLedger, todayKey: string): Finan
       todayCount += 1;
     }
   }
-  return { count: ledger.transactions.length, todayCount, expenseMinor, incomeMinor };
+  return {
+    count: ledger.transactions.length,
+    todayCount,
+    expenseMinor,
+    incomeMinor,
+    savingsContributedMinor,
+    savingsWithdrawnMinor,
+  };
 }
 
 export type FinanceTotals = {
+  /** Every record given, transfers included — it matches the rows on screen. */
   readonly count: number;
+  /** Money spent. Savings contributions are excluded. */
   readonly expenseMinor: number;
+  /** Money received. Savings withdrawals are excluded. */
   readonly incomeMinor: number;
-  /** Income minus expense. Signed, because a month that spent more than it took in is a real answer. */
+  /**
+   * Income minus expense, over consumption only.
+   *
+   * Signed, because a month that spent more than it took in is a real answer — and now an accurate
+   * one: a month that set 500 aside no longer reports that as 500 of spending against its income.
+   */
   readonly netMinor: number;
+  /** Money moved into goals over these records. Stated, never folded into spending. */
+  readonly savingsContributedMinor: number;
+  /** Money taken back out of goals over these records. */
+  readonly savingsWithdrawnMinor: number;
+  /** How many of `count` were transfers, so a surface can say so without recounting. */
+  readonly savingsCount: number;
 };
 
 /**
@@ -183,11 +245,26 @@ export type FinanceTotals = {
  * Takes a list rather than a ledger so the month view and the custom range share one implementation
  * — a second totalling function is a second thing to disagree with the first. Integer addition
  * throughout, and nothing is stored: a written-down total can contradict the records it totals.
+ *
+ * The inclusion policy is `isConsumptionRecord`, stated once here and inherited by every caller —
+ * the Spending screen's totals, and #102's month comparison, which is built entirely from this.
  */
 export function totalFinance(transactions: readonly FinanceTransaction[]): FinanceTotals {
   let expenseMinor = 0;
   let incomeMinor = 0;
+  let savingsContributedMinor = 0;
+  let savingsWithdrawnMinor = 0;
+  let savingsCount = 0;
   for (const transaction of transactions) {
+    if (isSavingsTransfer(transaction)) {
+      savingsCount += 1;
+      if (transaction.direction === 'expense') {
+        savingsContributedMinor += transaction.amountMinor;
+      } else {
+        savingsWithdrawnMinor += transaction.amountMinor;
+      }
+      continue;
+    }
     if (transaction.direction === 'expense') {
       expenseMinor += transaction.amountMinor;
     } else {
@@ -199,6 +276,9 @@ export function totalFinance(transactions: readonly FinanceTransaction[]): Finan
     expenseMinor,
     incomeMinor,
     netMinor: incomeMinor - expenseMinor,
+    savingsContributedMinor,
+    savingsWithdrawnMinor,
+    savingsCount,
   };
 }
 

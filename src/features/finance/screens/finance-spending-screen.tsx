@@ -66,6 +66,11 @@ import {
   type FinanceScope,
 } from '../data/finance-selectors';
 import { useFinance } from '../di/finance-provider';
+import {
+  DELETED_SAVINGS_GOAL_LABEL,
+  isSavingsTransfer,
+  savingsTransferLabel,
+} from '../data/finance-record-kind';
 
 /**
  * **Spending — the first Finance screen that does anything** — issue #93.
@@ -169,6 +174,26 @@ function SpendingBody() {
 
   const ledger = finance.ledger;
   const categories = useMemo(() => financeCategories(ledger), [ledger]);
+
+  /*
+    Goal names, for labelling savings transfers in the list — the cross-feature audit.
+
+    A transfer is an ordinary ledger record and belongs in this history; what it must not do is read
+    as an ordinary purchase. So the row names the goal, and a transfer whose goal has been deleted
+    falls back to a neutral phrase rather than borrowing a name or losing its meaning. Resolved here,
+    where the goal list is already held, because `finance-record-kind` deliberately refuses to guess
+    a name it cannot see.
+  */
+  const goalNames = useMemo(
+    () => new Map(finance.goals.map((goal) => [goal.id, goal.name])),
+    [finance.goals],
+  );
+  const savingsDetail = (transaction: FinanceTransaction): string | null => {
+    if (!isSavingsTransfer(transaction)) {
+      return null;
+    }
+    return goalNames.get(transaction.goalId ?? '') ?? DELETED_SAVINGS_GOAL_LABEL;
+  };
 
   const currentMonth = currentMonthOf(today);
   const bounds = useMemo(() => financeMonthBounds(ledger, currentMonth), [ledger, currentMonth]);
@@ -613,19 +638,36 @@ function SpendingBody() {
                     <View style={{ rowGap: dp(6) }}>
                       <View style={[styles.row, { columnGap: dp(8) }]}>
                         {/*
-                          The direction is a word, not only a colour. Two hues alone would leave a
-                          colour-blind reader unable to tell a refund from a purchase.
+                          What the record *is*, as a word rather than only a colour — two hues alone
+                          would leave a colour-blind reader unable to tell a refund from a purchase.
+
+                          A savings transfer says so here instead of reading "Expense", which is what
+                          made it indistinguishable from a purchase before the cross-feature audit.
+                          It is still listed, and still counted in the row count above; it is simply
+                          no longer described as money spent, and the totals no longer add it.
                         */}
-                        <ModuleText token="caption" color={theme.ink}>
-                          {transaction.direction === 'expense' ? 'Expense' : 'Income'}
+                        <ModuleText
+                          token="caption"
+                          color={theme.ink}
+                          testID={`finance-kind-${transaction.id}`}
+                        >
+                          {isSavingsTransfer(transaction)
+                            ? savingsTransferLabel(transaction)
+                            : transaction.direction === 'expense'
+                              ? 'Expense'
+                              : 'Income'}
                         </ModuleText>
                         <ModuleText token="cardTitle">
                           {formatAmount(transaction.amountMinor, currency)}
                         </ModuleText>
                       </View>
-                      {transaction.category === null && transaction.note === null ? null : (
+                      {[savingsDetail(transaction), transaction.category, transaction.note].filter(
+                        Boolean,
+                      ).length === 0 ? null : (
                         <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
-                          {[transaction.category, transaction.note].filter(Boolean).join(' · ')}
+                          {[savingsDetail(transaction), transaction.category, transaction.note]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </ModuleText>
                       )}
                       <View style={[styles.row, { columnGap: dp(8) }]}>

@@ -783,6 +783,13 @@ describe('one owner, at the app boundary', () => {
         disagree until relaunch. Its presence on this list is what shows it did not.
       */
       'src/features/finance/screens/finance-receipts-screen.tsx',
+      /*
+        Writes goals, and writes the ledger — issue #95. A contribution *is* a transaction, so this
+        screen is a third writing surface on the same app-scoped owner: attribution lives on the
+        transaction, which is what keeps adding a contribution one atomic write to one lane instead
+        of two stores that could fall out of step.
+      */
+      'src/features/finance/screens/finance-savings-screen.tsx',
       /* Writes, so it requires the owner and throws without one. */
       'src/features/finance/screens/finance-spending-screen.tsx',
       /* Main Home's aggregate row — a count only, through the optional read. */

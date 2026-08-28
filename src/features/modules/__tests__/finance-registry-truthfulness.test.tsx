@@ -349,19 +349,17 @@ describe('every live Finance surface is preserved', () => {
     expect(fs.existsSync(path.join(process.cwd(), file))).toBe(true);
   });
 
-  it('keeps the one remaining placeholder honest about not being built', () => {
+  it('leaves no Finance section route on the placeholder screen', () => {
     /*
-      Spending is built (#93) and Budgets is built (#94), so neither route is a placeholder any
-      more. Savings is, and stays that way until #95 — asserting it here is what stops a change
-      quietly making it look finished.
+      Spending (#93), Budgets (#94) and now Savings (#95) are all built, so none of the three is a
+      placeholder any more. The assertion inverted rather than being deleted: what mattered before
+      was that Savings did not *look* finished, and what matters now is that none of the three
+      quietly regresses to the placeholder screen while the registry still calls it available.
     */
-    const savings = fs.readFileSync(path.join(process.cwd(), 'src/app/finance/goals.tsx'), 'utf8');
-    expect(savings).toContain('ModuleSectionScreen');
-    expect(savings).toContain('Not built yet');
-
     for (const [file, screen] of [
       ['transactions', 'FinanceSpendingScreen'],
       ['budgets', 'FinanceBudgetsScreen'],
+      ['goals', 'FinanceSavingsScreen'],
     ] as const) {
       const source = fs.readFileSync(
         path.join(process.cwd(), `src/app/finance/${file}.tsx`),
