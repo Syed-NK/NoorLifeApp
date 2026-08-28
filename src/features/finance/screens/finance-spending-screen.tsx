@@ -33,13 +33,7 @@ import {
   describeMovement,
   type ComparisonSubject,
 } from '../data/finance-comparison-copy';
-import {
-  FINANCE_CURRENCY_NAMES,
-  formatAmount,
-  formatMinor,
-  parseAmountToMinor,
-  searchCurrencies,
-} from '../data/finance-format';
+import { FINANCE_CURRENCY_NAMES, searchCurrencies } from '../data/finance-format';
 import type { FinanceDirection, FinanceTransaction } from '../data/finance-ledger';
 import type { FinanceCurrency } from '../data/finance-money';
 import {
@@ -66,6 +60,7 @@ import {
   type FinanceScope,
 } from '../data/finance-selectors';
 import { useFinance } from '../di/finance-provider';
+import { financeMoney, useFinanceLocale } from '../di/use-finance-money';
 import {
   DELETED_SAVINGS_GOAL_LABEL,
   isSavingsTransfer,
@@ -171,6 +166,9 @@ function SpendingBody() {
     render as busy — it is the *display* of the guard, not the guard.
   */
   const savingRef = useRef(false);
+
+  /* Read unconditionally: the early returns below run before the currency is known. */
+  const locale = useFinanceLocale();
 
   const ledger = finance.ledger;
   const categories = useMemo(() => financeCategories(ledger), [ledger]);
@@ -299,6 +297,7 @@ function SpendingBody() {
   }
 
   const currency = ledger.currency;
+  const money = financeMoney(currency, locale);
 
   function clearComposer(): void {
     setDirection('expense');
@@ -318,7 +317,7 @@ function SpendingBody() {
     if (savingRef.current) {
       return;
     }
-    const parsed = parseAmountToMinor(amount, currency);
+    const parsed = money.parse(amount);
     if (parsed.kind !== 'ok') {
       setMessage(AMOUNT_MESSAGE[parsed.reason] ?? 'That amount could not be read.');
       return;
@@ -515,7 +514,7 @@ function SpendingBody() {
               Delete this transaction?
             </ModuleText>
             <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
-              {`${formatAmount(pendingRemoval.amountMinor, currency)} will be permanently removed. This cannot be undone.`}
+              {`${money.amount(pendingRemoval.amountMinor)} will be permanently removed. This cannot be undone.`}
             </ModuleText>
             <ModuleButton
               label="Delete transaction"
@@ -658,7 +657,7 @@ function SpendingBody() {
                               : 'Income'}
                         </ModuleText>
                         <ModuleText token="cardTitle">
-                          {formatAmount(transaction.amountMinor, currency)}
+                          {money.amount(transaction.amountMinor)}
                         </ModuleText>
                       </View>
                       {[savingsDetail(transaction), transaction.category, transaction.note].filter(
@@ -679,7 +678,7 @@ function SpendingBody() {
                             setEditing(transaction);
                             setComposerOpen(true);
                             setDirection(transaction.direction);
-                            setAmount(formatMinor(transaction.amountMinor, currency));
+                            setAmount(money.plain(transaction.amountMinor));
                             setCategory(transaction.category ?? '');
                             setNote(transaction.note ?? '');
                             setOccurredOn(transaction.occurredOn);
@@ -1036,7 +1035,8 @@ function Total({
   readonly signed?: boolean;
 }) {
   const { dp } = useModuleMetrics();
-  const magnitude = formatAmount(Math.abs(minor), currency);
+  const money = financeMoney(currency, useFinanceLocale());
+  const magnitude = money.amount(Math.abs(minor));
   const text = signed && minor !== 0 ? `${minor < 0 ? '−' : '+'}${magnitude}` : magnitude;
   return (
     <View
@@ -1182,10 +1182,11 @@ function ChangeRow({
 }) {
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
-  const phrasing = describeChange(change, subject, currency, previous);
+  const money = financeMoney(currency, useFinanceLocale());
+  const phrasing = describeChange(change, subject, currency, previous, money.locale);
 
   const present = (minor: number): string => {
-    const magnitude = formatAmount(Math.abs(minor), currency);
+    const magnitude = money.amount(Math.abs(minor));
     return signed && minor !== 0 ? `${minor < 0 ? '−' : '+'}${magnitude}` : magnitude;
   };
   const current = present(change.currentMinor);

@@ -19,10 +19,10 @@ import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
 
-import { formatAmount, formatMinor, parseAmountToMinor } from '../data/finance-format';
 import type { FinanceDirection } from '../data/finance-ledger';
 import type { FinanceCurrency } from '../data/finance-money';
 import { useFinance } from '../di/finance-provider';
+import { financeMoney, useFinanceLocale } from '../di/use-finance-money';
 import {
   discardRetainedImage,
   discardStagedImage,
@@ -194,6 +194,8 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
 
   const ledger = finance.ledger;
   const currency = ledger.currency;
+  /* Read unconditionally; bound below wherever the currency has been narrowed. */
+  const locale = useFinanceLocale();
 
   const mismatch = useMemo(
     () => (reading === null || currency === null ? null : currencyMismatch(reading, currency)),
@@ -251,13 +253,13 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
       */
       const best = read.amounts[0];
       if (best !== undefined && currency !== null) {
-        setAmount(formatMinor(best.minor, currency));
+        setAmount(financeMoney(currency, locale).plain(best.minor));
       }
       if (read.occurredOn !== null) {
         setOccurredOn(read.occurredOn);
       }
     },
-    [ocr, currency],
+    [ocr, currency, locale],
   );
 
   const acquire = useCallback(
@@ -317,7 +319,7 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
     if (confirmingRef.current || currency === null) {
       return;
     }
-    const parsed = parseAmountToMinor(amount, currency);
+    const parsed = financeMoney(currency, locale).parse(amount);
     if (parsed.kind !== 'ok') {
       setMessage(AMOUNT_MESSAGE[parsed.reason] ?? 'That amount could not be read.');
       return;
@@ -727,6 +729,8 @@ function ReviewFields({
   readonly lines: readonly string[];
 }) {
   const { dp } = useModuleMetrics();
+  /* This component receives a narrowed currency, so it binds the contract itself. */
+  const money = financeMoney(currency, useFinanceLocale());
   const candidates = reading?.amounts ?? [];
   const dateEstablished = reading?.occurredOn ?? null;
 
@@ -775,9 +779,9 @@ function ReviewFields({
                 {candidates.map((candidate) => (
                   <Pressable
                     key={candidate.minor}
-                    onPress={() => onAmount(formatMinor(candidate.minor, currency))}
+                    onPress={() => onAmount(money.plain(candidate.minor))}
                     accessibilityRole="button"
-                    accessibilityLabel={`Use ${formatAmount(candidate.minor, currency)}${candidate.emphasis === 'total' ? ', read as the total' : ''}`}
+                    accessibilityLabel={`Use ${money.amount(candidate.minor)}${candidate.emphasis === 'total' ? ', read as the total' : ''}`}
                     style={[
                       styles.chip,
                       {
@@ -788,9 +792,7 @@ function ReviewFields({
                     ]}
                     testID={`finance-receipts-candidate-${candidate.minor}`}
                   >
-                    <ModuleText token="button">
-                      {formatAmount(candidate.minor, currency)}
-                    </ModuleText>
+                    <ModuleText token="button">{money.amount(candidate.minor)}</ModuleText>
                   </Pressable>
                 ))}
               </View>

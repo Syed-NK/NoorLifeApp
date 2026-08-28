@@ -18,7 +18,6 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
 
 import { formatPercentTenths } from '../data/finance-comparison-copy';
-import { formatAmount, formatMinor, parseAmountToMinor } from '../data/finance-format';
 import type { FinanceGoal } from '../data/finance-goal';
 import {
   contributionsForGoal,
@@ -29,6 +28,7 @@ import {
 import type { FinanceTransaction } from '../data/finance-ledger';
 import type { FinanceCurrency } from '../data/finance-money';
 import { useFinance } from '../di/finance-provider';
+import { financeMoney, useFinanceLocale, type FinanceMoney } from '../di/use-finance-money';
 
 /**
  * **Savings — a target, and the contributions actually recorded against it** — issue #95.
@@ -110,6 +110,9 @@ function SavingsBody() {
   */
   const savingRef = useRef(false);
 
+  /* Read unconditionally: the early returns below run before the currency is known. */
+  const locale = useFinanceLocale();
+
   const ledger = finance.ledger;
   /*
     Derived from the whole ledger, not from a filtered view of it. A goal measures deliberate
@@ -173,6 +176,7 @@ function SavingsBody() {
   }
 
   const currency = ledger.currency;
+  const money = financeMoney(currency, locale);
 
   function clearGoalComposer(): void {
     setName('');
@@ -194,7 +198,7 @@ function SavingsBody() {
     if (savingRef.current) {
       return;
     }
-    const parsed = parseAmountToMinor(target, currency);
+    const parsed = money.parse(target);
     if (parsed.kind !== 'ok') {
       setMessage(AMOUNT_MESSAGE[parsed.reason] ?? 'That amount could not be read.');
       return;
@@ -263,7 +267,7 @@ function SavingsBody() {
     if (savingRef.current) {
       return;
     }
-    const parsed = parseAmountToMinor(amount, currency);
+    const parsed = money.parse(amount);
     if (parsed.kind !== 'ok') {
       setMessage(AMOUNT_MESSAGE[parsed.reason] ?? 'That amount could not be read.');
       return;
@@ -361,7 +365,7 @@ function SavingsBody() {
                   setEditingGoal(entry.goal);
                   setGoalComposerOpen(true);
                   setName(entry.goal.name);
-                  setTarget(formatMinor(entry.goal.targetMinor, currency));
+                  setTarget(money.plain(entry.goal.targetMinor));
                   setTargetOn(entry.goal.targetOn ?? '');
                 }}
                 onDelete={() => setPendingGoalRemoval(entry.goal)}
@@ -402,7 +406,7 @@ function SavingsBody() {
                           setEditingContribution(transaction);
                           setContributionComposerFor(entry.goal.id);
                           setDirection(transaction.direction);
-                          setAmount(formatMinor(transaction.amountMinor, currency));
+                          setAmount(money.plain(transaction.amountMinor));
                           setOccurredOn(transaction.occurredOn);
                           setNote(transaction.note ?? '');
                         }}
@@ -418,7 +422,7 @@ function SavingsBody() {
                           Delete this transaction?
                         </ModuleText>
                         <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
-                          {`${formatAmount(pendingContributionRemoval.amountMinor, currency)} on ${pendingContributionRemoval.occurredOn} will be permanently removed from your ledger. This cannot be undone.`}
+                          {`${money.amount(pendingContributionRemoval.amountMinor)} on ${pendingContributionRemoval.occurredOn} will be permanently removed from your ledger. This cannot be undone.`}
                         </ModuleText>
                         <ModuleButton
                           label="Delete transaction"
@@ -634,18 +638,18 @@ const TRANSACTION_FAULT_MESSAGE: Record<string, string> = {
  * Every amount handed to the formatter is a magnitude — the sign lives in the wording, because
  * `formatMinor` is unsigned and a negative pushed through it renders nonsense.
  */
-export function goalStatusSentence(entry: FinanceGoalProgress, currency: FinanceCurrency): string {
+export function goalStatusSentence(entry: FinanceGoalProgress, money: FinanceMoney): string {
   switch (entry.status) {
     case 'nothing-recorded':
       return 'No contributions recorded';
     case 'in-progress':
-      return `${formatAmount(entry.remainingMinor, currency)} remaining`;
+      return `${money.amount(entry.remainingMinor)} remaining`;
     case 'target-reached':
       return 'Target reached';
     case 'above-target':
-      return `${formatAmount(entry.aboveTargetMinor, currency)} above the target`;
+      return `${money.amount(entry.aboveTargetMinor)} above the target`;
     case 'withdrawn-past-zero':
-      return `${formatAmount(-entry.setAsideMinor, currency)} more taken back out than set aside`;
+      return `${money.amount(-entry.setAsideMinor)} more taken back out than set aside`;
   }
 }
 
@@ -695,9 +699,10 @@ function GoalRow({
   const theme = useModuleTheme();
   const surfaces = useModuleSurfaces();
   const { dp } = useModuleMetrics();
+  const money = financeMoney(currency, useFinanceLocale());
 
-  const recorded = `${formatAmount(entry.contributedMinor, currency)} recorded toward ${formatAmount(entry.targetMinor, currency)}`;
-  const sentence = goalStatusSentence(entry, currency);
+  const recorded = `${money.amount(entry.contributedMinor)} recorded toward ${money.amount(entry.targetMinor)}`;
+  const sentence = goalStatusSentence(entry, money);
   const dateSentence = targetDateSentence(entry.goal.targetOn, today);
   const used = usedLabel(entry.percentTenths);
 
@@ -709,8 +714,8 @@ function GoalRow({
     entry.withdrawnMinor === 0
       ? null
       : entry.setAsideMinor >= 0
-        ? `${formatAmount(entry.withdrawnMinor, currency)} of that has been taken back out, leaving ${formatAmount(entry.setAsideMinor, currency)} set aside.`
-        : `${formatAmount(entry.withdrawnMinor, currency)} has been taken back out, which is more than was put in.`;
+        ? `${money.amount(entry.withdrawnMinor)} of that has been taken back out, leaving ${money.amount(entry.setAsideMinor)} set aside.`
+        : `${money.amount(entry.withdrawnMinor)} has been taken back out, which is more than was put in.`;
 
   const countSentence =
     entry.contributionCount === 1
@@ -841,7 +846,8 @@ function ContributionRow({
   readonly onDelete: () => void;
 }) {
   const { dp } = useModuleMetrics();
-  const amount = formatAmount(transaction.amountMinor, currency);
+  const money = financeMoney(currency, useFinanceLocale());
+  const amount = money.amount(transaction.amountMinor);
   const what = transaction.direction === 'expense' ? 'set aside' : 'taken back out';
   const sentence = `${amount} ${what} on ${transaction.occurredOn}`;
 

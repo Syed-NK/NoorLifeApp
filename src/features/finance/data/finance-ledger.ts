@@ -290,6 +290,17 @@ export function isFinanceTransaction(value: unknown): value is FinanceTransactio
       value nothing wrote, so it is refused.
     */
     (value.goalId === undefined || value.goalId === null || isFinanceGoalId(value.goalId)) &&
+    /*
+      A record may not carry a currency — issue #96: "a record whose currency does not match the
+      ledger's ... must be quarantined, never coerced."
+
+      The envelope owns the currency, once, for every amount inside it. A per-record code would be a
+      second answer to what an integer means, and the coercion it invites is the dangerous part: a
+      record stamped `JPY` inside an `AED` ledger has no honest reading — 1234 is either 12.34 or
+      1234 and nothing here can tell which. Refusing the whole envelope keeps the bytes intact for
+      something that does know, which is the same reason quarantine exists at all.
+    */
+    !('currency' in value) &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string'
   );

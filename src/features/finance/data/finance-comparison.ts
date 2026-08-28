@@ -141,6 +141,26 @@ export type FinanceMonthComparison = {
  *
  * Returns `null` when there is no baseline to be a percentage of. There is no fallback value,
  * deliberately: a caller must handle the absence, because inventing one is the defect.
+ *
+ * ── The rounding rule, chosen once — issue #96 ─────────────────────────────
+ * #96: "Where a derived figure needs rounding — a budget's remainder, a goal's percentage — the rule
+ * must be stated once and applied everywhere. Round-half-to-even or round-half-up, chosen and
+ * asserted, not left to `toFixed`."
+ *
+ * The rule is **half away from zero**, on the magnitude, which for the non-negative side is
+ * half-up. `floor((2000·|d| + p) / (2p))` is that rule written as one truncating integer division,
+ * and the sign is reapplied afterwards so −0.05% and +0.05% round to the same magnitude in opposite
+ * directions rather than both drifting toward positive infinity.
+ *
+ * This is the **only** rounding anywhere in Finance money, and it rounds a *ratio*. No amount is
+ * ever rounded: parsing refuses over-precision instead of rounding it away (#93), and formatting
+ * prints the stored integer's own digits (#96). A budget's remainder and a goal's remaining amount
+ * are integer subtractions, exact by construction, with nothing to round.
+ *
+ * The currency's minor-unit exponent has no part in this. Tenths of a percent is a fixed scale for
+ * every currency — a JPY ledger's percentages are not whole numbers and a KWD ledger's are not
+ * thousandths — and a test states that a ratio computed under all three exponent classes is
+ * identical.
  */
 export function percentTenthsOf(differenceMinor: number, previousMinor: number): number | null {
   if (previousMinor <= 0) {

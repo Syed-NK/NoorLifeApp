@@ -190,6 +190,11 @@ export function isFinanceBudget(value: unknown): value is FinanceBudget {
     value.category.trim().length > 0 &&
     value.category.length <= MAX_CATEGORY_LENGTH &&
     isStorableMinorAmount(value.limitMinor) &&
+    /*
+      No per-record currency — issue #96. The envelope owns it for every amount inside, and a record
+      carrying its own code is a second answer to what the integer means. Quarantined, never coerced.
+    */
+    !('currency' in value) &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string'
   );

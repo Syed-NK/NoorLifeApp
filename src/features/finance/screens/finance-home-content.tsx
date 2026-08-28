@@ -20,10 +20,10 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import type { UseModuleOverview } from '@features/modules/use-module-overview';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
 
-import { formatAmount } from '../data/finance-format';
 import type { FinanceLedger } from '../data/finance-ledger';
 import { summariseFinance } from '../data/finance-selectors';
 import { useOptionalFinance } from '../di/finance-provider';
+import { financeMoney, useFinanceLocale } from '../di/use-finance-money';
 
 /**
  * **The Finance home, reading the live ledger** — issue #93.
@@ -75,6 +75,7 @@ export function FinanceHomeContent({ state }: { readonly state: UseModuleOvervie
   const ledger = finance?.ledger ?? NO_LEDGER;
   const summary = useMemo(() => summariseFinance(ledger, today), [ledger, today]);
   const currency = ledger.currency;
+  const locale = useFinanceLocale();
   const loading = finance?.loading ?? false;
   const fault = finance?.fault ?? null;
 
@@ -123,13 +124,13 @@ export function FinanceHomeContent({ state }: { readonly state: UseModuleOvervie
                 {
                   key: 'spent',
                   label: 'Spent',
-                  value: formatAmount(summary.expenseMinor, currency),
+                  value: financeMoney(currency, locale).amount(summary.expenseMinor),
                   icon: 'budgets',
                 },
                 {
                   key: 'received',
                   label: 'Received',
-                  value: formatAmount(summary.incomeMinor, currency),
+                  value: financeMoney(currency, locale).amount(summary.incomeMinor),
                   icon: 'trends',
                 },
               ]}

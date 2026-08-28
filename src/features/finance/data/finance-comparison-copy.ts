@@ -100,9 +100,10 @@ export function describeChange(
   subject: ComparisonSubject,
   currency: FinanceCurrency,
   previous: FinanceMonth,
+  locale: string = 'en',
 ): ComparisonPhrasing {
   const previousName = formatMonth(previous);
-  const amount = formatAmount(Math.abs(change.differenceMinor), currency);
+  const amount = formatAmount(Math.abs(change.differenceMinor), currency, locale);
   const percent = percentClause(change, subject);
 
   switch (change.trend) {
@@ -115,7 +116,7 @@ export function describeChange(
       */
       return {
         glyph: '+',
-        sentence: `New ${subject.noun} activity this month — ${formatAmount(change.currentMinor, currency)}, with none in ${previousName}`,
+        sentence: `New ${subject.noun} activity this month — ${formatAmount(change.currentMinor, currency, locale)}, with none in ${previousName}`,
         percent: null,
       };
     case 'ceased-activity':
@@ -144,8 +145,9 @@ export function describeMovement(
   change: FinanceChange,
   subject: ComparisonSubject,
   currency: FinanceCurrency,
+  locale: string = 'en',
 ): ComparisonPhrasing {
-  const amount = formatAmount(Math.abs(change.differenceMinor), currency);
+  const amount = formatAmount(Math.abs(change.differenceMinor), currency, locale);
   const percent = percentClause(change, subject);
 
   switch (change.trend) {
@@ -154,7 +156,7 @@ export function describeMovement(
     case 'new-activity':
       return {
         glyph: '+',
-        sentence: `New — ${formatAmount(change.currentMinor, currency)}, none last month`,
+        sentence: `New — ${formatAmount(change.currentMinor, currency, locale)}, none last month`,
         percent: null,
       };
     case 'ceased-activity':
