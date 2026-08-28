@@ -349,28 +349,27 @@ describe('every live Finance surface is preserved', () => {
     expect(fs.existsSync(path.join(process.cwd(), file))).toBe(true);
   });
 
-  it('keeps the two remaining placeholders honest about not being built', () => {
+  it('keeps the one remaining placeholder honest about not being built', () => {
     /*
-      Spending is built (#93), so it is no longer a placeholder — the route renders
-      `FinanceSpendingScreen`. Budgets and Savings are still honest placeholders and stay that way
-      until #94 and #95; asserting them here is what stops this change quietly making one of them
-      look finished.
+      Spending is built (#93) and Budgets is built (#94), so neither route is a placeholder any
+      more. Savings is, and stays that way until #95 — asserting it here is what stops a change
+      quietly making it look finished.
     */
-    for (const file of ['budgets', 'goals']) {
+    const savings = fs.readFileSync(path.join(process.cwd(), 'src/app/finance/goals.tsx'), 'utf8');
+    expect(savings).toContain('ModuleSectionScreen');
+    expect(savings).toContain('Not built yet');
+
+    for (const [file, screen] of [
+      ['transactions', 'FinanceSpendingScreen'],
+      ['budgets', 'FinanceBudgetsScreen'],
+    ] as const) {
       const source = fs.readFileSync(
         path.join(process.cwd(), `src/app/finance/${file}.tsx`),
         'utf8',
       );
-      expect(source).toContain('ModuleSectionScreen');
-      expect(source).toContain('Not built yet');
+      expect(source).toContain(screen);
+      expect(source).not.toContain('ModuleSectionScreen');
     }
-
-    const spending = fs.readFileSync(
-      path.join(process.cwd(), 'src/app/finance/transactions.tsx'),
-      'utf8',
-    );
-    expect(spending).toContain('FinanceSpendingScreen');
-    expect(spending).not.toContain('ModuleSectionScreen');
   });
 });
 

@@ -375,12 +375,23 @@ function SpendingBody() {
             <ModuleText token="cardTitle" accessibilityRole="header">
               {`${FINANCE_CURRENCY_NAMES[currency]} (${currency})`}
             </ModuleText>
+            {/*
+              The lock now counts budgets as well as transactions — issue #94.
+
+              #92's reason applies to both without change: there is no honest conversion, so the
+              change is offered exactly while it costs nothing. A budget is an amount of money in
+              this currency, and a ledger with no transactions but a 600.00 grocery budget must not
+              be allowed to reinterpret that as 600 yen. The copy names whichever records are
+              holding it, so "why can I not change this" always has an answer on screen.
+            */}
             <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
-              {ledger.transactions.length === 0
-                ? 'You can still change this. Once you record a transaction it is fixed, because past amounts cannot be honestly relabelled.'
-                : 'Fixed now that you have recorded a transaction — past amounts cannot be honestly relabelled. Delete every entry to change it.'}
+              {finance.canChangeCurrency
+                ? 'You can still change this. Once you record a transaction or set a budget it is fixed, because past amounts cannot be honestly relabelled.'
+                : ledger.transactions.length > 0
+                  ? 'Fixed now that you have recorded a transaction — past amounts cannot be honestly relabelled. Delete every entry to change it.'
+                  : 'Fixed now that you have set a budget — a budgeted amount cannot be honestly relabelled. Delete every budget to change it.'}
             </ModuleText>
-            {ledger.transactions.length === 0 ? (
+            {finance.canChangeCurrency ? (
               <ModuleButton
                 label="Change currency"
                 variant="tertiary"

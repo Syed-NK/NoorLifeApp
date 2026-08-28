@@ -1,14 +1,6 @@
-import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
+import { FinanceBudgetsScreen } from '@features/finance/screens/finance-budgets-screen';
 
-/** Finance → Budgets. */
+/** Finance → Budgets — issue #94. */
 export default function Screen() {
-  return (
-    <ModuleSectionScreen
-      moduleId="finance"
-      activeKey="budgets"
-      title="Budgets"
-      heroTitle="Budgets planned"
-      heroBody="Not built yet. You will set an amount per category."
-    />
-  );
+  return <FinanceBudgetsScreen />;
 }

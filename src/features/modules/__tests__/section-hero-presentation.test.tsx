@@ -235,12 +235,12 @@ describe('every placeholder route gets the readable presentation', () => {
       passes `layout="section"`.
     */
     /*
-      Eighteen since #93, which built Spending and so removed one placeholder from the set. The
-      floor moves down as modules get built — that is the direction it is supposed to move — and it
-      stays a floor rather than an exact count so a *new* placeholder still inherits the fix without
-      anyone remembering to update a number.
+      Seventeen since #94, which built Budgets and so removed another placeholder from the set —
+      #93 had already removed Spending. The floor moves down as modules get built, which is the
+      direction it is supposed to move, and it stays a floor rather than an exact count so a *new*
+      placeholder still inherits the fix without anyone remembering to update a number.
     */
-    expect(PLACEHOLDER_ROUTES.length).toBeGreaterThanOrEqual(18);
+    expect(PLACEHOLDER_ROUTES.length).toBeGreaterThanOrEqual(17);
     expect(code(join(MODULES_ROOT, 'screens', 'module-section-screen.tsx'))).toContain(
       'layout="section"',
     );
