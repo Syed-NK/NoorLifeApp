@@ -8,7 +8,8 @@
     "scheme": "noorlifeapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.anonymous.NoorLifeApp"
     },
     "android": {
       "adaptiveIcon": {
@@ -66,6 +67,14 @@
           "isAndroidBackgroundLocationEnabled": false
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "NoorLife asks for your photos only when you choose to import a receipt, and only reads the one you pick. The image stays on this device.",
+          "cameraPermission": "NoorLife asks for your camera only when you choose to photograph a receipt. The photo stays on this device.",
+          "microphonePermission": false
+        }
+      ],
       "expo-asset",
       [
         "expo-notifications",
@@ -74,6 +83,12 @@
         }
       ]
     ],
+    "owner": "syed-nk",
+    "extra": {
+      "eas": {
+        "projectId": "e0b27804-fc98-4ed7-9568-e7b98fd400ab"
+      }
+    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

@@ -60,3 +60,7 @@ example
 # generated native folders
 /ios
 /android
+
+# Gradle output for in-repository Expo modules. The sources are tracked; the build is not.
+modules/*/android/build/
+modules/*/android/.cxx/

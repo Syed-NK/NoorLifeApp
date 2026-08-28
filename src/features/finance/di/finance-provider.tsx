@@ -58,6 +58,15 @@ import {
 
 export type FinanceState = {
   readonly ledger: FinanceLedger;
+  /**
+   * Whose ledger this is, normalised, or `null` outside a session — issue #101.
+   *
+   * Read from the repository rather than from the session a second time. The repository is what
+   * decides which address a write lands at, so anything that has to be scoped to the same account —
+   * Receipts' optional retained image is the first — must take the owner from there or risk being
+   * scoped to a different answer.
+   */
+  readonly ownerId: string | null;
   readonly loading: boolean;
   /** `corrupt-data` means quarantined: the stored bytes are intact and were not overwritten. */
   readonly fault: 'storage-unavailable' | 'corrupt-data' | null;
@@ -214,6 +223,7 @@ export function FinanceProvider({ children, repository: injected }: FinanceProvi
   const value = useMemo<FinanceState>(
     () => ({
       ledger: owned.ledger,
+      ownerId: repository.ownerId,
       loading: owned.loading,
       fault: owned.fault,
       reload,

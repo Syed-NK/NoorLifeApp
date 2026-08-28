@@ -72,6 +72,19 @@ export type FinanceMutation =
   | { readonly kind: 'corrupt' };
 
 export type FinanceLedgerRepository = {
+  /**
+   * The owner this repository writes for, normalised, or `null` when there is none it will trust.
+   *
+   * Exposed for issue #101. Receipts keeps an optional image in a directory named for the account,
+   * and the account it must be named for is *the one the transaction is written under* — not
+   * whatever a screen resolved from the session separately. Two independent answers to "whose is
+   * this" is exactly how a file ends up in one account's folder describing another's money.
+   *
+   * It is also what keeps `useAuth` out of the route files: `protected-route-boundary` is the only
+   * thing under `src/app` allowed to read the session, and a Finance screen that needed the owner
+   * would otherwise have had to break that rule to get it.
+   */
+  readonly ownerId: string | null;
   readonly read: () => Promise<FinanceReadResult>;
   /** Sets or changes the currency. Refused with `currency-locked` once a transaction exists. */
   readonly setCurrency: (currency: string) => Promise<FinanceMutation>;
@@ -95,11 +108,29 @@ export type FinanceRepositoryDeps = {
  * read is worth attempting at all.
  */
 export function financeLedgerAddress(ownerId: string | null): string | null {
+  const segment = financeOwnerSegment(ownerId);
+  return segment === null ? null : `${FINANCE_USER_NAMESPACE}.${segment}.ledger`;
+}
+
+/**
+ * The one derivation of "which account owns this", as an address segment.
+ *
+ * Extracted from `financeLedgerAddress` when Receipts gained an account-scoped directory for
+ * retained images (#101). Finance now partitions in two places — a storage key and a filesystem
+ * path — and a second copy of this rule would be a second partitioning scheme: one of them would
+ * eventually admit an id the other refuses, and the two would disagree about whose data a file is.
+ *
+ * The rule itself is unchanged and deliberately unforgiving. Only a v4-shaped uuid is accepted, and
+ * the accepted alphabet contains neither `.` nor `/` — so a segment can grow neither a key namespace
+ * nor a directory, and an id carrying a traversal, a wildcard or another account's id as a prefix is
+ * refused outright rather than escaped.
+ */
+export function financeOwnerSegment(ownerId: string | null): string | null {
   if (ownerId === null) {
     return null;
   }
   const trimmed = ownerId.trim().toLowerCase();
-  return USER_ID_PATTERN.test(trimmed) ? `${FINANCE_USER_NAMESPACE}.${trimmed}.ledger` : null;
+  return USER_ID_PATTERN.test(trimmed) ? trimmed : null;
 }
 
 function uuid(): string {
@@ -198,6 +229,9 @@ export function createFinanceLedgerRepository(
   }
 
   return {
+    /* The normalised segment, so the filesystem path and the storage key cannot disagree. */
+    ownerId: financeOwnerSegment(deps.ownerId),
+
     read: () => serializeFinanceWrite(address ?? 'finance.unavailable', readAt),
 
     setCurrency: (currency) =>

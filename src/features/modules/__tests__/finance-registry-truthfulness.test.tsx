@@ -147,15 +147,55 @@ describe('Finance asks the user for nothing', () => {
     expect(finance.permissions).toEqual([]);
   });
 
-  it('has no code that could request one', () => {
-    // The declaration and the behaviour must agree in both directions.
+  it('schedules nothing, so it can promise no notification', () => {
+    /*
+      The half of #90's rule that is unchanged, and always will be. Finance has no alerts, no
+      reminders and no budget warnings to schedule — #94 rules budget alerts out for this reason —
+      so a notifications import anywhere in the module would be code for a promise nothing keeps.
+    */
     const financeSource = productionSourceFiles().filter((file) =>
       file.includes(`${path.sep}finance${path.sep}`),
     );
     for (const file of financeSource) {
-      const contents = fs.readFileSync(file, 'utf8');
-      expect(contents).not.toMatch(/expo-notifications|expo-image-picker|requestPermissionsAsync/);
+      expect([file, fs.readFileSync(file, 'utf8')]).not.toEqual([
+        file,
+        expect.stringMatching(/expo-notifications/),
+      ]);
     }
+  });
+
+  it('asks the OS for the camera and photos from exactly one file, and only inside a press', () => {
+    /*
+      This case is #90's other half, rewritten by #101 rather than relaxed.
+
+      #90 removed Finance's `photos` permission entry because the module asked for nothing, and the
+      scan that backed it forbade the picker outright. Receipts changes the fact on the ground: the
+      module now *does* ask, for the camera when the user presses Capture and for the library when
+      they press Import. Leaving the old scan in place would have meant either a false declaration or
+      a deleted test, and the honest third option is a narrower rule that still forbids the thing
+      #90 was really protecting against — a permission prompt the user did not ask for.
+
+      Two properties carry that. Only the acquisition adapter may touch the picker at all, so no
+      screen can raise a prompt on its own; and the request lives inside the same call that opens the
+      camera, so it cannot be hoisted to mount, to module entry or to app launch. The registry entry
+      stays absent because a module-level declaration would describe *entering Finance*, which asks
+      for nothing, rather than pressing a button that does.
+    */
+    const financeSource = productionSourceFiles().filter((file) =>
+      file.includes(`${path.sep}finance${path.sep}`),
+    );
+    const asking = financeSource.filter((file) =>
+      /expo-image-picker|requestCameraPermissionsAsync|requestMediaLibraryPermissionsAsync/.test(
+        fs.readFileSync(file, 'utf8'),
+      ),
+    );
+
+    expect(asking.map((file) => path.basename(file))).toEqual(['expo-receipt-source.ts']);
+
+    const adapter = fs.readFileSync(asking[0] ?? '', 'utf8');
+    /* Requesting and launching are one call, which is what ties the prompt to the press. */
+    expect(adapter).toMatch(/acquire\(kind: ReceiptSourceKind\)/);
+    expect(adapter).not.toMatch(/useEffect|componentDidMount/);
   });
 });
 
