@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 import { render, screen, userEvent, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -19,6 +21,7 @@ import {
   type FinanceStorage,
 } from '@features/finance/data/finance-ledger.repository';
 import { FinanceProvider } from '@features/finance/di/finance-provider';
+import { localDateKey } from '@features/planner/data/planner-task';
 
 import { LOCKED } from '../main-home-metrics';
 import { TodayAgendaProvider, todayAgenda } from '@application/providers/today-agenda-provider';
@@ -591,19 +594,6 @@ describe('locked geometry survives both states', () => {
 });
 
 /**
- * The local day key, from the shared Planner day source the timeline itself uses.
- *
- * Derived rather than stated, so a seeded "today" is the same day the row is asking about however
- * long this suite runs and whenever it starts.
- */
-function plannerToday(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${month}-${day}`;
-}
-
-/**
  * Finance's row is the one whose *content* the entitlement decides, not just its surface — so it
  * gets its own section here, rendered through the whole screen rather than through the hook.
  *
@@ -623,9 +613,48 @@ describe("Finance's timeline row across the entitlement boundary", () => {
     that did not touch it, and be diagnosed as a regression it is not. Reading the day source is what
     makes it mean the same thing every day.
   */
-  const TODAY = plannerToday();
+  const TODAY = localDateKey(new Date());
   const ROW = 'timeline-row-finance-today';
   const NEUTRAL = 'Track what you spend';
+
+  /*
+    The guard on the guard.
+
+    Deriving the day fixes today's failure; this is what stops it coming back. A future edit that
+    re-pins the date would pass on the day it is written and fail that night, on somebody else's
+    branch, looking like an entitlement regression — which is exactly how the original cost a
+    debugging session. So both halves are asserted: the constant tracks the clock through
+    production's own function, and the block contains no date literal for anyone to pin it back to.
+  */
+  it('reads today from production rather than from a literal, on every calendar day', () => {
+    expect(TODAY).toBe(localDateKey(new Date()));
+    expect(TODAY).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    /*
+      `localDateKey` is the function the ledger, the agenda and this row all use. Asserting against
+      it rather than against a hand-rolled `getFullYear()` is what makes "the same day production
+      means" true by construction — a second derivation here could drift from it across a timezone
+      or a DST boundary and nothing would say so.
+    */
+    const arbitrary = new Date(2031, 0, 9, 23, 59, 59);
+    expect(localDateKey(arbitrary)).toBe('2031-01-09');
+
+    /*
+      Executable lines only. The comment above this block *names* the date that used to be pinned
+      here, and prose explaining a rule must not be the thing the scan for that rule trips over —
+      the same convention the Finance source scans follow.
+    */
+    const source = fs
+      .readFileSync(__filename, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const block = source.slice(source.indexOf('describe("Finance\'s timeline row'));
+    const literals = [...block.matchAll(/(?<!\d)(20\d{2}-\d{2}-\d{2})(?!\d)/g)]
+      .map((match) => match[1])
+      .filter((value) => value !== '2031-01-09');
+
+    expect(literals).toEqual([]);
+  });
 
   /*
     The row as committed, taken from the rendered JSON rather than from the host element's props.
