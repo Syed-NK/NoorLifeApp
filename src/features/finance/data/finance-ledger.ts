@@ -1,5 +1,6 @@
 import { isLocalDate } from '@features/planner/data/planner-task';
 
+import { isFinanceGoalId } from './finance-goal';
 import { isFinanceCurrency, isStorableMinorAmount, type FinanceCurrency } from './finance-money';
 
 /**
@@ -27,6 +28,26 @@ import { isFinanceCurrency, isStorableMinorAmount, type FinanceCurrency } from '
  *
  * `occurredOn` is a `YYYY-MM-DD` local date key, produced by the caller from the shared Planner day
  * source. This module never reads a clock; it validates the shape it is handed.
+ *
+ * ── One field was added, and it is user intent — issue #95 ─────────────────
+ * `goalId` marks a transaction as a contribution the user deliberately made toward a savings goal.
+ * #95 requires that "a contribution is a transaction, so the ledger stays the single record of money
+ * moved", and a contribution therefore has to be identifiable *as* one. The alternative considered
+ * was matching a goal to transactions by category, the way #94 matches a budget — rejected, because
+ * a "Holiday" goal beside a "Holiday" spending category would count a hotel bill as money set
+ * aside. `finance-goal.ts` records that reasoning at length.
+ *
+ * It is a reference the user created, not a total, a status or a flag anticipating a server, so it
+ * belongs here for the same reason `category` does. Nothing in this module resolves it: the ledger
+ * knows a goal id is *shaped* like one and nothing more, and only `finance-goal-progress` — which
+ * holds both stores — ever asks whether a goal by that id exists.
+ *
+ * It is **optional on the type**, deliberately and permanently. Every transaction this app writes
+ * carries the key explicitly, `null` included; the optionality exists for records already stored
+ * before Savings did, which decode unchanged and read as unattributed. That is why the schema version
+ * did not move: a bump would have quarantined every existing ledger over a field whose absence is
+ * already unambiguous, and quarantining somebody's real transactions to add a feature is a far worse
+ * outcome than a type that admits `undefined`.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -58,6 +79,13 @@ export type FinanceTransaction = {
   readonly occurredOn: string;
   readonly category: string | null;
   readonly note: string | null;
+  /**
+   * The savings goal this contribution was made toward — issue #95.
+   *
+   * `null` for ordinary spending and income, and absent on records stored before Savings existed.
+   * Both read as unattributed; see the header note on why the version did not move.
+   */
+  readonly goalId?: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -80,6 +108,16 @@ export type FinanceDraft = {
   readonly occurredOn: string;
   readonly category?: string | null;
   readonly note?: string | null;
+  /**
+   * Which savings goal this contributes to, if any — issue #95.
+   *
+   * Three-valued on purpose. A goal id attributes the record, `null` detaches it, and **omitting the
+   * key means "leave whatever is already there"**. That third case is what stops the Spending screen
+   * from silently destroying an attribution: someone editing a contribution's note there sends a
+   * draft with no `goalId`, and without this the goal would quietly lose the money. `undefined` is
+   * only meaningful on a revise; a create has nothing to preserve and stores `null`.
+   */
+  readonly goalId?: string | null;
 };
 
 export type FinanceFault =
@@ -90,11 +128,28 @@ export type FinanceFault =
   | 'invalid-date'
   | 'invalid-category'
   | 'invalid-note'
+  | 'invalid-goal'
   | 'not-found'
   | 'ledger-full';
 
+/**
+ * A draft every field of which has been checked.
+ *
+ * Named rather than `Required<FinanceDraft>` because `goalId` must stay three-valued through
+ * validation — `Required` would collapse "leave it alone" into a value and lose the distinction the
+ * draft type exists to carry.
+ */
+export type ValidatedFinanceDraft = {
+  readonly direction: FinanceDirection;
+  readonly amountMinor: number;
+  readonly occurredOn: string;
+  readonly category: string | null;
+  readonly note: string | null;
+  readonly goalId?: string | null;
+};
+
 export type FinanceValidation =
-  | { readonly kind: 'valid'; readonly draft: Required<FinanceDraft> }
+  | { readonly kind: 'valid'; readonly draft: ValidatedFinanceDraft }
   | { readonly kind: 'invalid'; readonly fault: FinanceFault };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -131,6 +186,13 @@ export function validateFinanceDraft(draft: FinanceDraft): FinanceValidation {
   if (note.length > MAX_NOTE_LENGTH) {
     return { kind: 'invalid', fault: 'invalid-note' };
   }
+  if (draft.goalId !== undefined && draft.goalId !== null && !isFinanceGoalId(draft.goalId)) {
+    /*
+      Shape only. Whether a goal by that id exists is a question about a store this module must know
+      nothing about, and it is asked where both stores are held — see the header note.
+    */
+    return { kind: 'invalid', fault: 'invalid-goal' };
+  }
   return {
     kind: 'valid',
     draft: {
@@ -139,6 +201,8 @@ export function validateFinanceDraft(draft: FinanceDraft): FinanceValidation {
       occurredOn: draft.occurredOn,
       category: category.length === 0 ? null : category,
       note: note.length === 0 ? null : note,
+      /* Spread rather than assigned, so an omitted key stays omitted rather than becoming `null`. */
+      ...(draft.goalId === undefined ? {} : { goalId: draft.goalId }),
     },
   };
 }
@@ -150,7 +214,7 @@ export function validateFinanceDraft(draft: FinanceDraft): FinanceValidation {
  * function is pure and a test can state both.
  */
 export function createFinanceTransaction(
-  draft: Required<FinanceDraft>,
+  draft: ValidatedFinanceDraft,
   id: string,
   at: Date,
 ): FinanceTransaction {
@@ -165,6 +229,8 @@ export function createFinanceTransaction(
     occurredOn: draft.occurredOn,
     category: draft.category,
     note: draft.note,
+    /* A create has nothing to preserve, so an omitted attribution is stored as the absence it is. */
+    goalId: draft.goalId ?? null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -173,7 +239,7 @@ export function createFinanceTransaction(
 /** Applies a validated draft to an existing transaction, keeping its identity and creation time. */
 export function reviseFinanceTransaction(
   existing: FinanceTransaction,
-  draft: Required<FinanceDraft>,
+  draft: ValidatedFinanceDraft,
   at: Date,
 ): FinanceTransaction {
   return {
@@ -183,6 +249,12 @@ export function reviseFinanceTransaction(
     occurredOn: draft.occurredOn,
     category: draft.category,
     note: draft.note,
+    /*
+      The one place the third state matters. A draft that says nothing about the goal leaves the
+      existing attribution alone, so editing a contribution from the Spending screen — which knows
+      nothing about goals — cannot silently take the money out of somebody's savings total.
+    */
+    goalId: draft.goalId === undefined ? (existing.goalId ?? null) : draft.goalId,
     updatedAt: at.toISOString(),
   };
 }
@@ -204,6 +276,12 @@ export function isFinanceTransaction(value: unknown): value is FinanceTransactio
       (typeof value.note === 'string' &&
         value.note.length > 0 &&
         value.note.length <= MAX_NOTE_LENGTH)) &&
+    /*
+      Absent, `null`, or a goal-shaped id. Absent is the pre-#95 record and is accepted rather than
+      quarantined — see the header note on why the schema version did not move. Anything else is a
+      value nothing wrote, so it is refused.
+    */
+    (value.goalId === undefined || value.goalId === null || isFinanceGoalId(value.goalId)) &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string'
   );

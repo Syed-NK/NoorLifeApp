@@ -925,11 +925,23 @@ describe('the screen claims only what it does', () => {
 });
 
 describe('nothing else in Finance became functional', () => {
-  it('leaves Savings as an honest placeholder', () => {
-    /* Budgets was built by #94; Savings stays a placeholder until #95, and this says so. */
+  it('leaves Spending unchanged by the Savings work', () => {
+    /*
+      Savings was asserted here as a placeholder until #95 built it. Inverted rather than deleted:
+      what this file needs to know now is that the Savings route is a real screen and that Spending
+      itself did not acquire any savings behaviour along the way — #95 adds an attribution field to
+      a transaction, not a goal picker to this composer.
+    */
     const route = fs.readFileSync(path.join(process.cwd(), 'src/app/finance/goals.tsx'), 'utf8');
-    expect(route).toContain('ModuleSectionScreen');
-    expect(route).toContain('Not built yet.');
+    expect(route).toContain('FinanceSavingsScreen');
+    expect(route).not.toContain('ModuleSectionScreen');
+
+    const spending = fs.readFileSync(
+      path.join(process.cwd(), 'src/features/finance/screens/finance-spending-screen.tsx'),
+      'utf8',
+    );
+    expect(spending).not.toContain('goalId');
+    expect(spending).not.toContain('createGoal');
   });
 
   it('leaves Bank sync and Receipts unavailable and unreachable', () => {

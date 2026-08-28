@@ -1,14 +1,6 @@
-import { ModuleSectionScreen } from '@features/modules/screens/module-section-screen';
+import { FinanceSavingsScreen } from '@features/finance/screens/finance-savings-screen';
 
-/** Finance → Savings. */
+/** Finance → Savings — issue #95. */
 export default function Screen() {
-  return (
-    <ModuleSectionScreen
-      moduleId="finance"
-      activeKey="goals"
-      title="Savings"
-      heroTitle="Goals planned"
-      heroBody="Not built yet. Name a goal and watch the gap close."
-    />
-  );
+  return <FinanceSavingsScreen />;
 }

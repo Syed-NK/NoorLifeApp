@@ -9,7 +9,6 @@ import { installPlannerDaySource, type PlannerDayHarness } from '@/test-support/
 
 import {
   MAX_FINANCE_BUDGETS,
-  canChangeFinanceCurrency,
   createFinanceBudget,
   financeCategoryKey,
   findBudgetForCategory,
@@ -19,6 +18,7 @@ import {
   type FinanceBudget,
 } from '../data/finance-budget';
 import { budgetProgress, progressForMonth } from '../data/finance-budget-progress';
+import { canChangeFinanceCurrency } from '../data/finance-currency-lock';
 import {
   createFinanceBudgetRepository,
   type FinanceBudgetRepository,
@@ -708,10 +708,10 @@ describe('spend is derived from the ledger, never stored', () => {
 
 describe('budgets use the ledger currency and no other', () => {
   it('locks the currency once a budget exists, as well as once a transaction does', () => {
-    expect(canChangeFinanceCurrency(false, [])).toBe(true);
-    expect(canChangeFinanceCurrency(true, [])).toBe(false);
-    expect(canChangeFinanceCurrency(false, [budgetOf('Food', 1_000)])).toBe(false);
-    expect(canChangeFinanceCurrency(true, [budgetOf('Food', 1_000)])).toBe(false);
+    expect(canChangeFinanceCurrency({ transactions: 0, budgets: 0, goals: 0 })).toBe(true);
+    expect(canChangeFinanceCurrency({ transactions: 1, budgets: 0, goals: 0 })).toBe(false);
+    expect(canChangeFinanceCurrency({ transactions: 0, budgets: 1, goals: 0 })).toBe(false);
+    expect(canChangeFinanceCurrency({ transactions: 1, budgets: 1, goals: 0 })).toBe(false);
   });
 
   it('refuses a currency change through the provider while a budget exists', async () => {
@@ -1310,9 +1310,12 @@ describe('nothing else changed', () => {
     }
   });
 
-  it('leaves Savings a placeholder and adds no artwork', () => {
-    const savings = fs.readFileSync(path.join(process.cwd(), 'src/app/finance/goals.tsx'), 'utf8');
-    expect(savings).toContain('Not built yet');
+  it('adds no artwork to the Budgets screen', () => {
+    /*
+      Savings used to be asserted here as an unbuilt placeholder. #95 built it, so that half of the
+      guard moved to the Savings suite, which now owns the claim. What stays is the part this file
+      is actually about: Budgets renders glyphs and type, and no raster reached it.
+    */
     const budgetsScreen = fs.readFileSync(
       path.join(process.cwd(), 'src/features/finance/screens/finance-budgets-screen.tsx'),
       'utf8',

@@ -129,6 +129,22 @@ export function financeBudgetsAddress(ownerId: string | null): string | null {
 }
 
 /**
+ * Where an owner's savings goals live — issue #95.
+ *
+ * A third key under the same namespace, for the reason the second one exists: separate addresses
+ * mean separate blast radii, so a malformed goal cannot quarantine the transactions or the budgets.
+ * It shares `financeOwnerSegment`, so there is still exactly one rule deciding whose data this is.
+ *
+ * Nothing about a contribution lives here. #95 makes a contribution a transaction, so the money is
+ * at the ledger address and this key holds only the targets it is measured against — which is also
+ * what keeps every contribution mutation a single atomic write to a single lane.
+ */
+export function financeGoalsAddress(ownerId: string | null): string | null {
+  const segment = financeOwnerSegment(ownerId);
+  return segment === null ? null : `${FINANCE_USER_NAMESPACE}.${segment}.goals`;
+}
+
+/**
  * The one derivation of "which account owns this", as an address segment.
  *
  * Extracted from `financeLedgerAddress` when Receipts gained an account-scoped directory for

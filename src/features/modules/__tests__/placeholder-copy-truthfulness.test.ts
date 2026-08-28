@@ -86,11 +86,11 @@ describe('the placeholder routes are discovered, not listed', () => {
       mean a screen became real or disappeared, which is worth a deliberate look.
     */
     /*
-      Seventeen since #94 built Budgets, which is one fewer than #93 left. A floor, so a new
-      placeholder still inherits the rule; it moves down as modules get built, which is the
-      direction it is meant to move.
+      Sixteen since #95 built Savings, which was the last of Finance's three section placeholders.
+      A floor, so a new placeholder still inherits the rule; it moves down as modules get built,
+      which is the direction it is meant to move.
     */
-    expect(ROUTES.length).toBeGreaterThanOrEqual(17);
+    expect(ROUTES.length).toBeGreaterThanOrEqual(16);
   });
 
   it('gives every one of them a headline and a supporting line to check', () => {

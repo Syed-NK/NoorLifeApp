@@ -235,21 +235,12 @@ export function sortFinanceBudgets(budgets: readonly FinanceBudget[]): readonly 
   return [...budgets].sort((left, right) => left.category.localeCompare(right.category));
 }
 
-/**
- * Whether the ledger currency may still be changed, now that budgets exist too.
- *
- * #92's rule was "only while the ledger holds no transactions", for a reason that applies word for
- * word to a budget: there is no honest conversion, so a change is offered exactly when it costs
- * nothing and refused afterwards. A budget is an amount of money in that currency, so leaving it
- * out would let somebody switch from AED to JPY while a 600.00 grocery budget sat there and quietly
- * became 600 yen.
- *
- * Stated here rather than inside `canChangeCurrency` because budgets live in their own store and the
- * ledger domain must not learn to read it — the composition happens where both are already held.
- */
-export function canChangeFinanceCurrency(
-  hasTransactions: boolean,
-  budgets: readonly FinanceBudget[],
-): boolean {
-  return !hasTransactions && budgets.length === 0;
-}
+/*
+  The currency lock used to live here, as `canChangeFinanceCurrency(hasTransactions, budgets)`.
+
+  It moved to `finance-currency-lock.ts` when savings goals became a third store holding amounts in
+  the ledger currency (#95). Keeping it here would have meant the budget domain importing the goal
+  type to own a rule that is not about budgets — the rule is about the currency, so it now lives
+  beside it, and each store's domain stays ignorant of the others. The reasoning it carried is
+  recorded in full at its new home.
+*/
