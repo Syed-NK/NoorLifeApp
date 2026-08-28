@@ -19,11 +19,7 @@ import { usePlannerDay } from '@features/planner/di/planner-day-source';
 
 import type { FinanceBudget } from '../data/finance-budget';
 import { financeCategoryKey } from '../data/finance-budget';
-import {
-  progressForMonth,
-  type FinanceBudgetProgress,
-  type FinanceBudgetStatus,
-} from '../data/finance-budget-progress';
+import { progressForMonth, type FinanceBudgetProgress } from '../data/finance-budget-progress';
 import { formatPercentTenths } from '../data/finance-comparison-copy';
 import type { FinanceCurrency } from '../data/finance-money';
 import { currentMonthOf, formatMonth } from '../data/finance-month';
@@ -407,21 +403,25 @@ const BUDGET_FAULT_MESSAGE: Record<string, string> = {
   'budgets-full': 'You have as many budgets as this can hold.',
 };
 
-/** The four states, as words. The sentence is the answer; nothing depends on a colour. */
-function statusSentence(
-  status: FinanceBudgetStatus,
-  differenceMinor: number,
-  money: FinanceMoney,
-): string {
-  switch (status) {
+/** The five states, as words. The sentence is the answer; nothing depends on a colour. */
+function statusSentence(entry: FinanceBudgetProgress, money: FinanceMoney): string {
+  switch (entry.status) {
     case 'no-spending':
       return 'No spending recorded';
     case 'below':
-      return `${money.amount(differenceMinor)} remaining`;
+      return `${money.amount(entry.differenceMinor)} remaining`;
     case 'at-limit':
       return 'Budget fully used';
     case 'over':
-      return `${money.amount(Math.abs(differenceMinor))} over the budget`;
+      return `${money.amount(Math.abs(entry.differenceMinor))} over the budget`;
+    case 'refunded-beyond':
+      /*
+        The excess-refund sentence — issue #96. It states what came back, and it deliberately does
+        not call it spending or income: the usage above is floored at nothing, and this is the part
+        the floor removed. `Math.abs` on the net would have printed money coming back as money going
+        out, which is the one thing this must never say.
+      */
+      return `${money.amount(entry.refundedBeyondSpendMinor)} refunded beyond this category’s spending`;
   }
 }
 
@@ -449,7 +449,7 @@ function BudgetRow({
 
   const spent = money.amount(entry.spentMinor);
   const limit = money.amount(entry.limitMinor);
-  const sentence = statusSentence(entry.status, entry.differenceMinor, money);
+  const sentence = statusSentence(entry, money);
   const used = formatPercentTenths(entry.percentTenths);
 
   /* Decoration only, and clamped so an over-budget bar cannot overflow its track. */

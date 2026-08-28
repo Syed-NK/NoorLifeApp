@@ -1,6 +1,6 @@
 import type { FinanceLedger, FinanceTransaction } from './finance-ledger';
 import { previousMonth, type FinanceMonth } from './finance-month';
-import { isConsumptionRecord } from './finance-record-kind';
+import { financeRecordEffect, isConsumptionRecord } from './finance-record-kind';
 import {
   NO_FINANCE_FILTERS,
   filterFinanceTransactions,
@@ -240,11 +240,21 @@ function spendByCategory(
 ): ReadonlyMap<string | null, number> {
   const totals = new Map<string | null, number>();
   for (const transaction of transactions) {
-    if (transaction.direction !== 'expense' || !isConsumptionRecord(transaction)) {
+    if (!isConsumptionRecord(transaction)) {
+      continue;
+    }
+    /*
+      The effect authority decides the sign, so a refund subtracts here exactly as it does in the
+      month totals — #96's "budget arithmetic must handle a negative amount without a total
+      flipping". A category whose refunds exceed its spending reports a negative movement, which is
+      the truth about that category and not something to hide behind `Math.abs`.
+    */
+    const { expenseMinor } = financeRecordEffect(transaction);
+    if (expenseMinor === 0) {
       continue;
     }
     const running = totals.get(transaction.category) ?? 0;
-    totals.set(transaction.category, running + transaction.amountMinor);
+    totals.set(transaction.category, running + expenseMinor);
   }
   return totals;
 }

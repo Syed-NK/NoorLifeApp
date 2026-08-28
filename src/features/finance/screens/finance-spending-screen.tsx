@@ -63,6 +63,7 @@ import { useFinance } from '../di/finance-provider';
 import { financeMoney, useFinanceLocale } from '../di/use-finance-money';
 import {
   DELETED_SAVINGS_GOAL_LABEL,
+  isRefund,
   isSavingsTransfer,
   savingsTransferLabel,
 } from '../data/finance-record-kind';
@@ -129,7 +130,7 @@ function SpendingBody() {
   */
   const intent = Array.isArray(params.intent) ? params.intent[0] : params.intent;
 
-  const [direction, setDirection] = useState<FinanceDirection>('expense');
+  const [recordKind, setRecordKind] = useState<ComposerKind>('expense');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [note, setNote] = useState('');
@@ -300,7 +301,7 @@ function SpendingBody() {
   const money = financeMoney(currency, locale);
 
   function clearComposer(): void {
-    setDirection('expense');
+    setRecordKind('expense');
     setAmount('');
     setCategory('');
     setNote('');
@@ -326,7 +327,7 @@ function SpendingBody() {
     savingRef.current = true;
     setSaving(true);
     const draft = {
-      direction,
+      ...composerFields(recordKind),
       amountMinor: parsed.minor,
       occurredOn,
       category: category.trim() === '' ? null : category.trim(),
@@ -345,7 +346,11 @@ function SpendingBody() {
       setComposerOpen(false);
       return;
     }
-    setMessage('That could not be saved.');
+    setMessage(
+      result.kind === 'invalid'
+        ? (SAVE_FAULT_MESSAGE[result.fault] ?? 'That could not be saved.')
+        : 'That could not be saved.',
+    );
   }
 
   async function confirmRemoval(): Promise<void> {
@@ -439,15 +444,27 @@ function SpendingBody() {
             </ModuleText>
 
             <ChoiceRow
-              label="Direction"
+              label="What this is"
               choices={[
                 { key: 'expense', label: 'Expense' },
                 { key: 'income', label: 'Income' },
+                { key: 'refund', label: 'Refund' },
               ]}
-              selected={direction}
-              onSelect={(value) => setDirection(value as FinanceDirection)}
+              selected={recordKind}
+              onSelect={(value) => setRecordKind(value as ComposerKind)}
               testID="finance-direction"
             />
+
+            {recordKind === 'refund' ? (
+              <ModuleText
+                token="caption"
+                color={moduleNeutrals.textSecondary}
+                testID="finance-refund-explainer"
+              >
+                A refund reduces what you have recorded spending — in the month, in the category and
+                against any budget for it. It is not counted as income.
+              </ModuleText>
+            ) : null}
 
             <Field
               value={amount}
@@ -652,9 +669,11 @@ function SpendingBody() {
                         >
                           {isSavingsTransfer(transaction)
                             ? savingsTransferLabel(transaction)
-                            : transaction.direction === 'expense'
-                              ? 'Expense'
-                              : 'Income'}
+                            : isRefund(transaction)
+                              ? 'Refund'
+                              : transaction.direction === 'expense'
+                                ? 'Expense'
+                                : 'Income'}
                         </ModuleText>
                         <ModuleText token="cardTitle">
                           {money.amount(transaction.amountMinor)}
@@ -677,7 +696,7 @@ function SpendingBody() {
                           onPress={() => {
                             setEditing(transaction);
                             setComposerOpen(true);
-                            setDirection(transaction.direction);
+                            setRecordKind(composerKindOf(transaction));
                             setAmount(money.plain(transaction.amountMinor));
                             setCategory(transaction.category ?? '');
                             setNote(transaction.note ?? '');
@@ -710,6 +729,50 @@ function SpendingBody() {
     </View>
   );
 }
+
+/**
+ * What the composer offers, and how each choice lands in the two stored fields — issue #96.
+ *
+ * A refund is an expense whose `kind` says money came back, so the user picks one thing and the
+ * mapping happens once, here. Offering "Refund" as a *direction* would have made it a third way for
+ * money to move, which is exactly what #96 says it is not.
+ */
+type ComposerKind = 'expense' | 'income' | 'refund';
+
+function composerFields(kind: ComposerKind): {
+  readonly direction: FinanceDirection;
+  readonly kind: 'ordinary' | 'refund';
+} {
+  switch (kind) {
+    case 'expense':
+      return { direction: 'expense', kind: 'ordinary' };
+    case 'income':
+      return { direction: 'income', kind: 'ordinary' };
+    case 'refund':
+      return { direction: 'expense', kind: 'refund' };
+  }
+}
+
+/** Which choice an existing record corresponds to, so editing opens on the truth. */
+function composerKindOf(transaction: FinanceTransaction): ComposerKind {
+  if (isRefund(transaction)) {
+    return 'refund';
+  }
+  return transaction.direction === 'expense' ? 'expense' : 'income';
+}
+
+/**
+ * The refusals a caller can actually act on.
+ *
+ * The two refund faults are unreachable from this composer — it never builds a refund that is also
+ * income or a savings transfer — but they are the domain's guards, and a refusal a user could ever
+ * see should say what happened rather than shrug.
+ */
+const SAVE_FAULT_MESSAGE: Record<string, string> = {
+  'refund-must-be-expense': 'A refund reduces spending, so it cannot be recorded as income.',
+  'refund-cannot-be-savings': 'A savings contribution cannot also be a refund.',
+  'unknown-goal': 'That savings goal no longer exists.',
+};
 
 const AMOUNT_MESSAGE: Record<string, string> = {
   empty: 'Enter an amount.',
@@ -1036,8 +1099,17 @@ function Total({
 }) {
   const { dp } = useModuleMetrics();
   const money = financeMoney(currency, useFinanceLocale());
-  const magnitude = money.amount(Math.abs(minor));
-  const text = signed && minor !== 0 ? `${minor < 0 ? '−' : '+'}${magnitude}` : magnitude;
+  /*
+    `signed` prefixes an explicit direction onto a magnitude — that is the net row, where "+" and
+    "−" are the point. Everything else renders the value **as it is**, because since #96 a spending
+    total can legitimately be negative: a month refunded more than it spent. Passing that through
+    `Math.abs` printed 150.00 of spending that never happened, which is the one thing a money screen
+    must never do. The formatter carries its own sign, so unsigned rows simply do not intervene.
+  */
+  const text =
+    signed && minor !== 0
+      ? `${minor < 0 ? '−' : '+'}${money.amount(Math.abs(minor))}`
+      : money.amount(minor);
   return (
     <View
       style={[styles.row, styles.spread, { columnGap: dp(8) }]}
@@ -1185,10 +1257,11 @@ function ChangeRow({
   const money = financeMoney(currency, useFinanceLocale());
   const phrasing = describeChange(change, subject, currency, previous, money.locale);
 
-  const present = (minor: number): string => {
-    const magnitude = money.amount(Math.abs(minor));
-    return signed && minor !== 0 ? `${minor < 0 ? '−' : '+'}${magnitude}` : magnitude;
-  };
+  /* Same rule as the totals row: only the signed variant strips and re-applies the sign. */
+  const present = (minor: number): string =>
+    signed && minor !== 0
+      ? `${minor < 0 ? '−' : '+'}${money.amount(Math.abs(minor))}`
+      : money.amount(minor);
   const current = present(change.currentMinor);
   const prior = present(change.previousMinor);
 
