@@ -280,11 +280,19 @@ describe('monthly totals are derived, never stored', () => {
       kind: 'month',
       month: '2026-08',
     });
+    /*
+      The savings fields joined this shape when the cross-feature audit made the exclusion policy
+      explicit. They are zero throughout this suite because none of its records is attributed to a
+      goal — which is the point: an unattributed ledger behaves exactly as it did before #95.
+    */
     expect(totalFinance(august)).toEqual({
       count: 2,
       incomeMinor: 1000,
       expenseMinor: 250,
       netMinor: 750,
+      savingsContributedMinor: 0,
+      savingsWithdrawnMinor: 0,
+      savingsCount: 0,
     });
   });
 
@@ -302,6 +310,9 @@ describe('monthly totals are derived, never stored', () => {
       incomeMinor: 0,
       expenseMinor: 0,
       netMinor: 0,
+      savingsContributedMinor: 0,
+      savingsWithdrawnMinor: 0,
+      savingsCount: 0,
     });
   });
 

@@ -507,6 +507,26 @@ export function FinanceProvider({
     goals: ownedGoals.goals.length,
   });
 
+  /*
+    Referential integrity across the two stores, composed here for the same reason the currency lock
+    is — the ledger domain validates that an attribution is *shaped* like a goal id, and only this
+    layer can see whether a goal by that id exists.
+
+    Three-valued, exactly like the draft field it guards. `undefined` means "leave the attribution
+    alone", which is the path an ordinary Spending edit takes and which must therefore never be
+    refused — including for a transfer whose goal has since been deleted, where preserving the
+    orphaned id is the point. `null` detaches and needs no goal. Only an explicit id is checked, so a
+    new contribution can never be filed against a goal that is not there, while existing history is
+    never rewritten by a rule about new writes.
+  */
+  const attributionIsKnown = useCallback(
+    (goalId: string | null | undefined): boolean =>
+      goalId === undefined ||
+      goalId === null ||
+      ownedGoals.goals.some((goal) => goal.id === goalId),
+    [ownedGoals.goals],
+  );
+
   const value = useMemo<FinanceState>(
     () => ({
       ledger: owned.ledger,
@@ -528,8 +548,14 @@ export function FinanceProvider({
         canChange
           ? apply(() => repository.setCurrency(currency))
           : Promise.resolve({ kind: 'invalid', fault: 'currency-locked' } as const),
-      createTransaction: (draft) => apply(() => repository.createTransaction(draft)),
-      updateTransaction: (id, draft) => apply(() => repository.updateTransaction(id, draft)),
+      createTransaction: (draft) =>
+        attributionIsKnown(draft.goalId)
+          ? apply(() => repository.createTransaction(draft))
+          : Promise.resolve({ kind: 'invalid', fault: 'unknown-goal' } as const),
+      updateTransaction: (id, draft) =>
+        attributionIsKnown(draft.goalId)
+          ? apply(() => repository.updateTransaction(id, draft))
+          : Promise.resolve({ kind: 'invalid', fault: 'unknown-goal' } as const),
       removeTransaction: (id) => apply(() => repository.removeTransaction(id)),
       createBudget: (draft) => applyBudget(() => budgetRepository.createBudget(draft)),
       updateBudget: (id, draft) => applyBudget(() => budgetRepository.updateBudget(id, draft)),
@@ -542,6 +568,7 @@ export function FinanceProvider({
       apply,
       applyBudget,
       applyGoal,
+      attributionIsKnown,
       budgetRepository,
       canChange,
       goalRepository,

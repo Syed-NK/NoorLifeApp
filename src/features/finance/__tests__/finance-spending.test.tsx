@@ -649,11 +649,18 @@ describe('the list is ordered, grouped and filterable', () => {
         { ...base!, id: `${base!.id}-b`, amountMinor: 1 },
       ],
     };
+    /*
+      The savings fields joined this shape when the cross-feature audit made the exclusion policy
+      explicit. Zero here because neither record is attributed to a goal — an unattributed ledger
+      summarises exactly as it did before #95.
+    */
     expect(summariseFinance(mixed, TODAY)).toEqual({
       count: 2,
       todayCount: 2,
       expenseMinor: 1,
       incomeMinor: 10,
+      savingsContributedMinor: 0,
+      savingsWithdrawnMinor: 0,
     });
   });
 });
@@ -940,8 +947,18 @@ describe('nothing else in Finance became functional', () => {
       path.join(process.cwd(), 'src/features/finance/screens/finance-spending-screen.tsx'),
       'utf8',
     );
-    expect(spending).not.toContain('goalId');
+    /*
+      Spending *reads* the attribution, so it can label a savings transfer truthfully instead of
+      calling it an ordinary expense — that is the cross-feature audit, and it is deliberate. What
+      it must still not do is write one: there is no goal picker in this composer, so no draft
+      assembled here carries a `goalId` key and no goal can be created or edited from Spending.
+      The read is asserted positively; the write is asserted absent.
+    */
+    expect(spending).toContain('isSavingsTransfer');
+    expect(spending).not.toMatch(/goalId:/);
     expect(spending).not.toContain('createGoal');
+    expect(spending).not.toContain('updateGoal');
+    expect(spending).not.toContain('removeGoal');
   });
 
   it('leaves Bank sync and Receipts unavailable and unreachable', () => {

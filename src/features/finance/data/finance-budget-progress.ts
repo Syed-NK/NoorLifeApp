@@ -2,6 +2,7 @@ import { financeCategoryKey, sortFinanceBudgets, type FinanceBudget } from './fi
 import { percentTenthsOf } from './finance-comparison';
 import type { FinanceLedger } from './finance-ledger';
 import { dayIsInMonth, type FinanceMonth } from './finance-month';
+import { isConsumptionRecord } from './finance-record-kind';
 
 /**
  * **Spent against budgeted, derived on every read** — issue #94.
@@ -20,6 +21,10 @@ import { dayIsInMonth, type FinanceMonth } from './finance-month';
  * month as the month and would move whenever somebody touched a filter. This is the same defect
  * #102's comparison exists to avoid, and it is avoided the same way — by not being handed the
  * filtered rows in the first place.
+ *
+ * ── Savings contributions are not spending either ──────────────────────────
+ * A budget measures what was consumed in a category. Money moved into a savings goal was not, so it
+ * is skipped by the same rule every other Finance aggregate now uses — `isConsumptionRecord`.
  *
  * ── Income is not spending ─────────────────────────────────────────────────
  * Only `direction === 'expense'` counts. A refund or a salary landing in a budgeted category must
@@ -91,6 +96,16 @@ function expenseByCategoryKey(
   let uncategorisedMinor = 0;
   for (const transaction of ledger.transactions) {
     if (transaction.direction !== 'expense') {
+      continue;
+    }
+    /*
+      A savings contribution is not spending against a budget. Before this, a 500.00 transfer landed
+      in `uncategorisedMinor` and the screen reported "500.00 spent this month without a category, so
+      it counts towards no budget" — money the user had set aside, described to them as untracked
+      spending. A transfer that had also been given a category would have gone further and eaten a
+      real budget's headroom.
+    */
+    if (!isConsumptionRecord(transaction)) {
       continue;
     }
     if (!dayIsInMonth(transaction.occurredOn, month)) {

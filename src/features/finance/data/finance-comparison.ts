@@ -1,5 +1,6 @@
 import type { FinanceLedger, FinanceTransaction } from './finance-ledger';
 import { previousMonth, type FinanceMonth } from './finance-month';
+import { isConsumptionRecord } from './finance-record-kind';
 import {
   NO_FINANCE_FILTERS,
   filterFinanceTransactions,
@@ -56,6 +57,13 @@ import {
  * because the intermediate `2000 × difference` leaves the safe range at the ledger's own bound.
  * Doing it in doubles would be exact for every ordinary ledger and quietly wrong for a large one,
  * which is the class of defect that only ever shows up in somebody's real records.
+ *
+ * ── Savings transfers are not a month's spending or income ─────────────────
+ * Every figure here is built from `totalFinance` and `spendByCategory`, and both now exclude records
+ * attributed to a savings goal. That correction matters most precisely here, because a comparison
+ * *amplifies*: on the audit ledger a single 500.00 contribution turned a true +200% month into a
+ * reported +700% one, and put a phantom uncategorised line at the top of the movement list. A
+ * percentage of a wrong total is the most confidently wrong number this module can produce.
  *
  * ── What this file will not do ─────────────────────────────────────────────
  * No forecast, no score, no grade, no advice and no adjective. "Good month" and "you overspent" are
@@ -200,13 +208,19 @@ export function compareSigned(currentMinor: number, previousMinor: number): Fina
   };
 }
 
-/** Expense totals per category over exactly the transactions given. Income is not spending. */
+/**
+ * Expense totals per category over exactly the transactions given. Income is not spending.
+ *
+ * Nor is a savings contribution. Without that exclusion a 500.00 transfer surfaced here as an
+ * uncategorised category that had "moved" by 500.00 — a phantom line in the movement list, sorted
+ * near the top because it was large, describing money that was set aside rather than spent.
+ */
 function spendByCategory(
   transactions: readonly FinanceTransaction[],
 ): ReadonlyMap<string | null, number> {
   const totals = new Map<string | null, number>();
   for (const transaction of transactions) {
-    if (transaction.direction !== 'expense') {
+    if (transaction.direction !== 'expense' || !isConsumptionRecord(transaction)) {
       continue;
     }
     const running = totals.get(transaction.category) ?? 0;

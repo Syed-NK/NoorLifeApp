@@ -128,7 +128,15 @@ export type FinanceFault =
   | 'invalid-date'
   | 'invalid-category'
   | 'invalid-note'
+  /** The attribution is not a goal-shaped id. Decided here, from the record alone. */
   | 'invalid-goal'
+  /**
+   * The attribution is well formed but names no goal this account holds.
+   *
+   * Raised by the provider, not by this module: whether a goal exists is a question about a store the
+   * ledger domain must know nothing about, and it is answered where both stores are already held.
+   */
+  | 'unknown-goal'
   | 'not-found'
   | 'ledger-full';
 
