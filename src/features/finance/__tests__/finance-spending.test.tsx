@@ -654,10 +654,17 @@ describe('the list is ordered, grouped and filterable', () => {
       explicit. Zero here because neither record is attributed to a goal — an unattributed ledger
       summarises exactly as it did before #95.
     */
+    /*
+      `grossExpenseMinor` and `refundedMinor` joined this shape with refunds (#96). They are zero
+      throughout this suite because none of its records is a refund — which is the point: a ledger
+      without refunds totals exactly as it did before.
+    */
     expect(summariseFinance(mixed, TODAY)).toEqual({
       count: 2,
       todayCount: 2,
       expenseMinor: 1,
+      grossExpenseMinor: 1,
+      refundedMinor: 0,
       incomeMinor: 10,
       savingsContributedMinor: 0,
       savingsWithdrawnMinor: 0,

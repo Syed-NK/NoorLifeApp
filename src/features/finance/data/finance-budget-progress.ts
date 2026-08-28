@@ -2,7 +2,7 @@ import { financeCategoryKey, sortFinanceBudgets, type FinanceBudget } from './fi
 import { percentTenthsOf } from './finance-comparison';
 import type { FinanceLedger } from './finance-ledger';
 import { dayIsInMonth, type FinanceMonth } from './finance-month';
-import { isConsumptionRecord } from './finance-record-kind';
+import { financeRecordEffect, isConsumptionRecord } from './finance-record-kind';
 
 /**
  * **Spent against budgeted, derived on every read** — issue #94.
@@ -36,10 +36,14 @@ import { isConsumptionRecord } from './finance-record-kind';
  * count a user's 1 March spend against February's budget — for them, and invisibly to anyone east of
  * UTC. February needs no case of its own for the same reason.
  *
- * ── Four states, and not one more ──────────────────────────────────────────
- * No spending, below, exactly at, over. #94 defines no warning threshold, so none is invented — an
- * "80% used" caution would be a product policy smuggled in as an implementation detail, and it would
- * be the app deciding when somebody should feel uneasy about their own money.
+ * ── Five states since #96, and not one more ───────────────────────────────
+ * No spending, below, exactly at, over, and — since refunds exist — refunded beyond what was spent.
+ * The fifth is not a threshold but a genuinely new fact: a category can be refunded more than it was
+ * spent in the same month, and saying so is the only honest alternative to hiding it.
+ *
+ * #94 defines no warning threshold, so none is invented — an "80% used" caution would be a product
+ * policy smuggled in as an implementation detail, and it would be the app deciding when somebody
+ * should feel uneasy about their own money.
  *
  * The comparison is on integers, so "exactly at the limit" is exact rather than a rounding artefact.
  *
@@ -50,12 +54,22 @@ import { isConsumptionRecord } from './finance-record-kind';
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-export type FinanceBudgetStatus = 'no-spending' | 'below' | 'at-limit' | 'over';
+export type FinanceBudgetStatus =
+  | 'no-spending'
+  | 'below'
+  | 'at-limit'
+  | 'over'
+  /** Refunds in this category exceeded its spending this month — issue #96. */
+  | 'refunded-beyond';
 
 export type FinanceBudgetProgress = {
   readonly budget: FinanceBudget;
-  /** Derived. Never stored, never written back. */
+  /** Usage against the limit: net spending, floored at zero. Derived, never stored. */
   readonly spentMinor: number;
+  /** The true net, which a refund can drive below zero. Reported so nothing is hidden. */
+  readonly netSpentMinor: number;
+  /** How far the refunds went past the spending. Zero unless `netSpentMinor` is negative. */
+  readonly refundedBeyondSpendMinor: number;
   readonly limitMinor: number;
   /** `limit − spent`. Positive is remaining, negative is over, and it is exact either way. */
   readonly differenceMinor: number;
@@ -95,6 +109,11 @@ function expenseByCategoryKey(
   const totals = new Map<string, number>();
   let uncategorisedMinor = 0;
   for (const transaction of ledger.transactions) {
+    /*
+      Direction alone no longer decides this — issue #96. A refund is an expense-direction record
+      whose effect is negative, so the effect authority is what says how much this contributes, and a
+      same-category refund reduces that category's usage rather than adding to it.
+    */
     if (transaction.direction !== 'expense') {
       continue;
     }
@@ -111,31 +130,60 @@ function expenseByCategoryKey(
     if (!dayIsInMonth(transaction.occurredOn, month)) {
       continue;
     }
+    const { expenseMinor } = financeRecordEffect(transaction);
     if (transaction.category === null) {
-      uncategorisedMinor += transaction.amountMinor;
+      uncategorisedMinor += expenseMinor;
       continue;
     }
     const key = financeCategoryKey(transaction.category);
-    totals.set(key, (totals.get(key) ?? 0) + transaction.amountMinor);
+    totals.set(key, (totals.get(key) ?? 0) + expenseMinor);
   }
   return { totals, uncategorisedMinor };
 }
 
-/** One budget's standing, against a spend total already computed for its month. */
-export function budgetProgress(budget: FinanceBudget, spentMinor: number): FinanceBudgetProgress {
+/**
+ * One budget's standing, against a **net** spend total already computed for its month.
+ *
+ * ── The excess-refund policy, stated once — issue #96 ──────────────────────
+ * `netSpentMinor` may be negative: a category can be refunded more than it was spent in the same
+ * month, and that is a real thing that happens when a purchase is returned after the month it was
+ * bought in. Three rules, chosen deliberately:
+ *
+ * 1. **Usage never goes below zero.** `spentMinor` is floored, so the bar, the percentage and the
+ *    status describe a budget that has been used somewhere between nothing and everything. A
+ *    negative "usage" has no meaning against a limit, and #96 does not ask for one to be displayed.
+ * 2. **The excess is stated, not swallowed.** `refundedBeyondSpendMinor` carries the part the floor
+ *    removed, so the screen can say so. `Math.abs` on the net would have turned money coming back
+ *    into money going out — inventing spending that never happened, which is the failure this issue
+ *    exists to prevent.
+ * 3. **It never becomes income.** The excess is reported as a *refund* figure and contributes
+ *    nothing to earned income anywhere — that is enforced upstream by the effect authority, which
+ *    gives a refund a zero income component whatever its magnitude.
+ */
+export function budgetProgress(
+  budget: FinanceBudget,
+  netSpentMinor: number,
+): FinanceBudgetProgress {
   const limitMinor = budget.limitMinor;
+  /* Usage: what has actually been consumed against the limit, never less than nothing. */
+  const spentMinor = Math.max(netSpentMinor, 0);
+  const refundedBeyondSpendMinor = Math.max(-netSpentMinor, 0);
   const differenceMinor = limitMinor - spentMinor;
   const status: FinanceBudgetStatus =
-    spentMinor === 0
-      ? 'no-spending'
-      : spentMinor < limitMinor
-        ? 'below'
-        : spentMinor === limitMinor
-          ? 'at-limit'
-          : 'over';
+    refundedBeyondSpendMinor > 0
+      ? 'refunded-beyond'
+      : spentMinor === 0
+        ? 'no-spending'
+        : spentMinor < limitMinor
+          ? 'below'
+          : spentMinor === limitMinor
+            ? 'at-limit'
+            : 'over';
   return {
     budget,
     spentMinor,
+    netSpentMinor,
+    refundedBeyondSpendMinor,
     limitMinor,
     differenceMinor,
     status,

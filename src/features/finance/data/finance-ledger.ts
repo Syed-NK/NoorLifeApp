@@ -70,6 +70,15 @@ const TRANSACTION_ID_PATTERN = /^finance\.[0-9a-f-]{36}$/i;
  */
 export type FinanceDirection = 'expense' | 'income';
 
+/**
+ * Whether an expense is money spent or money coming back — issue #96.
+ *
+ * A named union rather than a boolean `refund?: true`, so the ordinary case has a name too. A
+ * boolean would leave "not a refund" as the absence of a flag, and absence is exactly what a
+ * future third case — a transfer, a correction — would have to be squeezed into.
+ */
+export type FinanceRecordFlavour = 'ordinary' | 'refund';
+
 export type FinanceTransaction = {
   readonly id: string;
   readonly direction: FinanceDirection;
@@ -86,6 +95,23 @@ export type FinanceTransaction = {
    * Both read as unattributed; see the header note on why the version did not move.
    */
   readonly goalId?: string | null;
+  /**
+   * Whether this expense is money coming back — issue #96.
+   *
+   * #96: "A refund is a negative expense, not an income record." That sentence and #92's model —
+   * positive magnitudes with a direction — are both kept, by separating the two things the word
+   * "negative" was doing at once. The **stored magnitude stays positive**, because a signed amount
+   * invites two spellings of one fact; the **derived effect is negative**, because a refund reduces
+   * what was consumed. `finance-record-kind.ts` owns that effect, once.
+   *
+   * `'refund'` is only ever paired with `direction: 'expense'`, which the validator enforces: a
+   * refund is a *kind of expense*, so filing it as income would be the exact reading #96 forbids.
+   *
+   * Optional, and absent means `'ordinary'`. Every record stored before this issue decodes unchanged
+   * with its previous expense-or-income meaning, which is why the schema version does not move —
+   * the same reasoning `goalId` records above.
+   */
+  readonly kind?: FinanceRecordFlavour;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -118,6 +144,14 @@ export type FinanceDraft = {
    * only meaningful on a revise; a create has nothing to preserve and stores `null`.
    */
   readonly goalId?: string | null;
+  /**
+   * Ordinary or refund — issue #96. Three-valued for the same reason `goalId` is.
+   *
+   * Omitting the key preserves what is already stored, so a surface that knows nothing about refunds
+   * — Receipts, or the Savings contribution composer — cannot silently turn one back into an
+   * ordinary expense by editing its note.
+   */
+  readonly kind?: FinanceRecordFlavour;
 };
 
 export type FinanceFault =
@@ -137,6 +171,10 @@ export type FinanceFault =
    * ledger domain must know nothing about, and it is answered where both stores are already held.
    */
   | 'unknown-goal'
+  /** A refund filed as income, which is the reading #96 forbids. */
+  | 'refund-must-be-expense'
+  /** A refund attributed to a savings goal. #96 defines no such combination, so it is refused. */
+  | 'refund-cannot-be-savings'
   | 'not-found'
   | 'ledger-full';
 
@@ -154,6 +192,7 @@ export type ValidatedFinanceDraft = {
   readonly category: string | null;
   readonly note: string | null;
   readonly goalId?: string | null;
+  readonly kind?: FinanceRecordFlavour;
 };
 
 export type FinanceValidation =
@@ -201,6 +240,28 @@ export function validateFinanceDraft(draft: FinanceDraft): FinanceValidation {
     */
     return { kind: 'invalid', fault: 'invalid-goal' };
   }
+  if (draft.kind !== undefined && draft.kind !== 'ordinary' && draft.kind !== 'refund') {
+    /* An unrecognised flavour is refused rather than guessed at — see the decoder note. */
+    return { kind: 'invalid', fault: 'refund-must-be-expense' };
+  }
+  if (draft.kind === 'refund') {
+    /*
+      #96: "A refund is a negative expense, **not an income record**." Filing one as income is
+      precisely the mistake the sentence names, so it is refused at the boundary rather than
+      corrected later by something that has to guess what was meant.
+    */
+    if (draft.direction !== 'expense') {
+      return { kind: 'invalid', fault: 'refund-must-be-expense' };
+    }
+    /*
+      A refund into a savings goal has no defined meaning: #95 gives a goal-attributed expense one
+      reading (money set aside) and a goal-attributed income another (money taken back out), and a
+      refund is neither. #96 defines no third combination, so this is refused rather than invented.
+    */
+    if (draft.goalId !== undefined && draft.goalId !== null) {
+      return { kind: 'invalid', fault: 'refund-cannot-be-savings' };
+    }
+  }
   return {
     kind: 'valid',
     draft: {
@@ -209,7 +270,8 @@ export function validateFinanceDraft(draft: FinanceDraft): FinanceValidation {
       occurredOn: draft.occurredOn,
       category: category.length === 0 ? null : category,
       note: note.length === 0 ? null : note,
-      /* Spread rather than assigned, so an omitted key stays omitted rather than becoming `null`. */
+      /* Spread rather than assigned, so an omitted key stays omitted rather than becoming a value. */
+      ...(draft.kind === undefined ? {} : { kind: draft.kind }),
       ...(draft.goalId === undefined ? {} : { goalId: draft.goalId }),
     },
   };
@@ -239,6 +301,8 @@ export function createFinanceTransaction(
     note: draft.note,
     /* A create has nothing to preserve, so an omitted attribution is stored as the absence it is. */
     goalId: draft.goalId ?? null,
+    /* Absent means ordinary, so a create stores the flavour it was given or the default. */
+    kind: draft.kind ?? 'ordinary',
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -263,6 +327,8 @@ export function reviseFinanceTransaction(
       nothing about goals — cannot silently take the money out of somebody's savings total.
     */
     goalId: draft.goalId === undefined ? (existing.goalId ?? null) : draft.goalId,
+    /* Same three-valued preservation: a draft that says nothing leaves a refund a refund. */
+    kind: draft.kind === undefined ? (existing.kind ?? 'ordinary') : draft.kind,
     updatedAt: at.toISOString(),
   };
 }
@@ -290,6 +356,34 @@ export function isFinanceTransaction(value: unknown): value is FinanceTransactio
       value nothing wrote, so it is refused.
     */
     (value.goalId === undefined || value.goalId === null || isFinanceGoalId(value.goalId)) &&
+    /*
+      Absent, `'ordinary'`, or `'refund'` — issue #96. Absent is the pre-#96 record and reads as
+      ordinary, which is what keeps every existing ledger decoding unchanged.
+
+      An unrecognised flavour is **quarantined, not guessed**. A record stamped with a word this
+      build does not know has some meaning that this build cannot compute, and defaulting it to
+      ordinary would silently turn a refund into spending — the same coercion #96 refuses for a
+      mismatched currency, for the same reason.
+    */
+    (value.kind === undefined || value.kind === 'ordinary' || value.kind === 'refund') &&
+    /*
+      A stored refund must be an expense and must not be a savings transfer. Both are refused rather
+      than corrected: a refund filed as income is the reading #96 forbids, and a refund attributed to
+      a goal is a combination #96 never defines.
+    */
+    (value.kind !== 'refund' ||
+      (value.direction === 'expense' && (value.goalId === undefined || value.goalId === null))) &&
+    /*
+      A record may not carry a currency — issue #96: "a record whose currency does not match the
+      ledger's ... must be quarantined, never coerced."
+
+      The envelope owns the currency, once, for every amount inside it. A per-record code would be a
+      second answer to what an integer means, and the coercion it invites is the dangerous part: a
+      record stamped `JPY` inside an `AED` ledger has no honest reading — 1234 is either 12.34 or
+      1234 and nothing here can tell which. Refusing the whole envelope keeps the bytes intact for
+      something that does know, which is the same reason quarantine exists at all.
+    */
+    !('currency' in value) &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string'
   );

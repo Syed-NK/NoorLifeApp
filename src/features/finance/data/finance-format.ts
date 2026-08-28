@@ -1,3 +1,4 @@
+import { financeSeparators, groupDigits } from './finance-locale';
 import {
   FINANCE_CURRENCIES,
   MAX_MINOR_UNITS,
@@ -106,25 +107,81 @@ export function parseAmountToMinor(text: string, currency: FinanceCurrency): Amo
  * `parseAmountToMinor` returns the same integer it started from.
  */
 export function formatMinor(minor: number, currency: FinanceCurrency): string {
-  const digits = minorUnitDigits(currency);
-  if (digits === 0) {
-    return String(minor);
-  }
-  const scale = 10 ** digits;
-  const whole = Math.trunc(minor / scale);
-  const fraction = String(minor % scale).padStart(digits, '0');
-  return `${whole}.${fraction}`;
+  const { sign, whole, fraction } = splitMinor(minor, currency);
+  return fraction === '' ? `${sign}${whole}` : `${sign}${whole}.${fraction}`;
 }
 
 /**
- * The amount as a user reads it, with its currency code.
+ * A stored amount split into the three pieces every rendering needs — issue #96.
  *
- * The code, not a symbol: `$` is ambiguous across four supported currencies and a symbol chosen by
- * locale would contradict the ledger's own currency — the inference this module exists to refuse.
- * Grouping and locale marks are #96.
+ * **String work, never arithmetic.** The obvious implementation divides by `10 ** digits` and takes
+ * a remainder, and that is where the previous formatter broke: `Math.trunc(-5050 / 100)` is `-50`
+ * and `-5050 % 100` is `-50`, so the amount rendered as `-50.-50` — a minus sign inside the
+ * fraction, on a string nobody could read and no test had asked for. Every call site was passing
+ * `Math.abs` to avoid it, which meant the bug was one forgotten `Math.abs` away from a user's screen
+ * at all times.
+ *
+ * Padding the decimal string and slicing it has no sign to lose and no division to round: the digits
+ * of the integer *are* the digits of the amount, and where the point falls is the currency's
+ * exponent. It is exact for every value the ledger can hold, including the `10^12` bound.
  */
-export function formatAmount(minor: number, currency: FinanceCurrency): string {
-  return `${formatMinor(minor, currency)} ${currency}`;
+function splitMinor(
+  minor: number,
+  currency: FinanceCurrency,
+): { readonly sign: string; readonly whole: string; readonly fraction: string } {
+  const digits = minorUnitDigits(currency);
+  const sign = minor < 0 ? MINUS : '';
+  /* `Math.abs` on a safe integer is exact, and this is the only place the sign is ever removed. */
+  const raw = String(Math.abs(minor));
+  if (digits === 0) {
+    return { sign, whole: raw, fraction: '' };
+  }
+  const padded = raw.padStart(digits + 1, '0');
+  return {
+    sign,
+    whole: padded.slice(0, padded.length - digits),
+    fraction: padded.slice(padded.length - digits),
+  };
+}
+
+/**
+ * The typographic minus, U+2212.
+ *
+ * The same character the signed comparison rows already prefix, so a negative produced *by the
+ * formatter* and a sign applied *by a caller* are visually identical — which is what makes "one sign,
+ * never two" something a test can state rather than a convention to remember.
+ */
+const MINUS = '−';
+
+/**
+ * The amount as a user reads it: grouped, in the locale's marks, with its currency code.
+ *
+ * ── The code, never a symbol ───────────────────────────────────────────────
+ * `$` is ambiguous across four supported currencies, `¥` across two, and a symbol chosen by locale
+ * would contradict the ledger's own currency — the inference #92 exists to refuse. `Intl`'s currency
+ * style does exactly that: `en-US`/`JPY` renders `¥12`, and `ar-AE`/`AED` renders a right-to-left
+ * marked `د.إ.‏`. Both are the right currency and the wrong contract, so this appends the ISO code
+ * itself and asks `Intl` only which two characters separate the digits.
+ *
+ * ── Exactness is never handed to a float ───────────────────────────────────
+ * The integer is split into digit strings and grouped as strings. `10^12` minor units — the ledger's
+ * per-record bound — is `10,000,000,000.00`; taking it through a major-unit `number` would work
+ * today and stop being exact the moment the bound moved, which is precisely the class of defect
+ * #96 exists to close.
+ *
+ * The locale defaults to `en` so this stays callable from pure modules and tests; production
+ * surfaces pass the app's authoritative locale through `useFinanceMoney`.
+ */
+export function formatAmount(
+  minor: number,
+  currency: FinanceCurrency,
+  locale: string = 'en',
+): string {
+  const { sign, whole, fraction } = splitMinor(minor, currency);
+  const { group, decimal } = financeSeparators(locale);
+  const grouped = groupDigits(whole, group);
+  const number = fraction === '' ? grouped : `${grouped}${decimal}${fraction}`;
+  return `${sign}${number} ${currency}`;
 }
 
 /** Every supported currency with its display name, for the setup list. Searchable by both. */

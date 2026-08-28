@@ -220,6 +220,11 @@ export function isFinanceGoal(value: unknown): value is FinanceGoal {
     value.name.trim().length > 0 &&
     value.name.length <= MAX_GOAL_NAME_LENGTH &&
     isStorableMinorAmount(value.targetMinor) &&
+    /*
+      No per-record currency — issue #96. The envelope owns it for every amount inside, and a record
+      carrying its own code is a second answer to what the integer means. Quarantined, never coerced.
+    */
+    !('currency' in value) &&
     (value.targetOn === null || isLocalDate(value.targetOn)) &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string'

@@ -938,8 +938,13 @@ describe('the Budgets screen', () => {
       [{ day: '2026-08-04', amount: 98_765_432_199, category: long }],
       [{ category: long, limitMinor: 100_000 }],
     );
-    expect(rowLabel(long)).toContain('987654321.99 AED spent of 1000.00 AED');
-    expect(statusText(long)).toBe('987653321.99 AED over the budget');
+    /*
+      Grouped since #96. A nine-figure amount is exactly the case the grouping exists for: nobody
+      reads `987654321.99` correctly at a glance, and a long amount that is hard to read is one a
+      user cannot check. The digits are unchanged — only the separators are new.
+    */
+    expect(rowLabel(long)).toContain('987,654,321.99 AED spent of 1,000.00 AED');
+    expect(statusText(long)).toBe('987,653,321.99 AED over the budget');
   });
 
   it('shows the loading state before the stores resolve', async () => {

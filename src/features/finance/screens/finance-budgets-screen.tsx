@@ -16,20 +16,17 @@ import { useModuleSurfaces } from '@features/modules/module-surfaces';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import type { FinanceBudget } from '../data/finance-budget';
 import { financeCategoryKey } from '../data/finance-budget';
-import {
-  progressForMonth,
-  type FinanceBudgetProgress,
-  type FinanceBudgetStatus,
-} from '../data/finance-budget-progress';
+import { progressForMonth, type FinanceBudgetProgress } from '../data/finance-budget-progress';
 import { formatPercentTenths } from '../data/finance-comparison-copy';
-import { formatAmount, formatMinor, parseAmountToMinor } from '../data/finance-format';
 import type { FinanceCurrency } from '../data/finance-money';
 import { currentMonthOf, formatMonth } from '../data/finance-month';
 import { financeCategories } from '../data/finance-selectors';
 import { useFinance } from '../di/finance-provider';
+import { financeMoney, useFinanceLocale, type FinanceMoney } from '../di/use-finance-money';
 
 /**
  * **Budgets — an amount per category, measured against the ledger** — issue #94.
@@ -90,6 +87,9 @@ function BudgetsBody() {
     Spending records the same reasoning; two budgets for one category is the defect it prevents here.
   */
   const savingRef = useRef(false);
+
+  /* Read unconditionally: the early returns below run before the currency is known. */
+  const locale = useFinanceLocale();
 
   const ledger = finance.ledger;
   const month = currentMonthOf(today);
@@ -164,6 +164,7 @@ function BudgetsBody() {
   }
 
   const currency = ledger.currency;
+  const money = financeMoney(currency, locale);
 
   function clearComposer(): void {
     setCategory('');
@@ -175,7 +176,7 @@ function BudgetsBody() {
     if (savingRef.current) {
       return;
     }
-    const parsed = parseAmountToMinor(amount, currency);
+    const parsed = money.parse(amount);
     if (parsed.kind !== 'ok') {
       setMessage(AMOUNT_MESSAGE[parsed.reason] ?? 'That amount could not be read.');
       return;
@@ -260,7 +261,7 @@ function BudgetsBody() {
                   setEditing(entry.budget);
                   setComposerOpen(true);
                   setCategory(entry.budget.category);
-                  setAmount(formatMinor(entry.budget.limitMinor, currency));
+                  setAmount(money.plain(entry.budget.limitMinor));
                 }}
                 onDelete={() => setPendingRemoval(entry.budget)}
               />
@@ -277,7 +278,7 @@ function BudgetsBody() {
               look as though they covered the month when they cover only part of it.
             */}
             <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
-              {`${formatAmount(view.uncategorisedMinor, currency)} spent in ${formatMonth(month)} without a category, so it counts towards no budget.`}
+              {`${money.amount(view.uncategorisedMinor)} spent in ${formatMonth(month)} without a category, so it counts towards no budget.`}
             </ModuleText>
           </View>
         </ModuleCard>
@@ -403,21 +404,25 @@ const BUDGET_FAULT_MESSAGE: Record<string, string> = {
   'budgets-full': 'You have as many budgets as this can hold.',
 };
 
-/** The four states, as words. The sentence is the answer; nothing depends on a colour. */
-function statusSentence(
-  status: FinanceBudgetStatus,
-  differenceMinor: number,
-  currency: FinanceCurrency,
-): string {
-  switch (status) {
+/** The five states, as words. The sentence is the answer; nothing depends on a colour. */
+function statusSentence(entry: FinanceBudgetProgress, money: FinanceMoney): string {
+  switch (entry.status) {
     case 'no-spending':
       return 'No spending recorded';
     case 'below':
-      return `${formatAmount(differenceMinor, currency)} remaining`;
+      return `${money.amount(entry.differenceMinor)} remaining`;
     case 'at-limit':
       return 'Budget fully used';
     case 'over':
-      return `${formatAmount(Math.abs(differenceMinor), currency)} over the budget`;
+      return `${money.amount(Math.abs(entry.differenceMinor))} over the budget`;
+    case 'refunded-beyond':
+      /*
+        The excess-refund sentence — issue #96. It states what came back, and it deliberately does
+        not call it spending or income: the usage above is floored at nothing, and this is the part
+        the floor removed. `Math.abs` on the net would have printed money coming back as money going
+        out, which is the one thing this must never say.
+      */
+      return `${money.amount(entry.refundedBeyondSpendMinor)} refunded beyond this category’s spending`;
   }
 }
 
@@ -441,10 +446,11 @@ function BudgetRow({
   const theme = useModuleTheme();
   const surfaces = useModuleSurfaces();
   const { dp } = useModuleMetrics();
+  const money = financeMoney(currency, useFinanceLocale());
 
-  const spent = formatAmount(entry.spentMinor, currency);
-  const limit = formatAmount(entry.limitMinor, currency);
-  const sentence = statusSentence(entry.status, entry.differenceMinor, currency);
+  const spent = money.amount(entry.spentMinor);
+  const limit = money.amount(entry.limitMinor);
+  const sentence = statusSentence(entry, money);
   const used = formatPercentTenths(entry.percentTenths);
 
   /* Decoration only, and clamped so an over-budget bar cannot overflow its track. */
@@ -547,7 +553,7 @@ function CategoryChip({
         styles.choice,
         {
           /* The accessibility minimum, unscaled — it is a bound, not a dimension. */
-          minHeight: moduleLayout.minTouchTarget,
+          minHeight: minimumTouchTargetSize(),
           borderRadius: dp(12),
           borderColor: surfaces.border,
           backgroundColor: disabled ? surfaces.well : surfaces.card,

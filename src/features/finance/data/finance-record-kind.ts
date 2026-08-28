@@ -59,6 +59,13 @@ export type FinanceRecordKind =
   | 'spending'
   /** Money received. Counts toward income and the income comparison. */
   | 'income'
+  /**
+   * Money coming back on something bought — issue #96.
+   *
+   * "A refund is a negative expense, not an income record." So it reduces consumption and never
+   * touches income. It is a *kind of expense*, which is why it is not a direction of its own.
+   */
+  | 'refund'
   /** Money moved into a savings goal. Consumption aggregates exclude it. */
   | 'savings-contribution'
   /** Money taken back out of a savings goal. Income aggregates exclude it. */
@@ -82,7 +89,96 @@ export function financeRecordKind(transaction: FinanceTransaction): FinanceRecor
   if (isSavingsTransfer(transaction)) {
     return transaction.direction === 'expense' ? 'savings-contribution' : 'savings-withdrawal';
   }
+  if (transaction.kind === 'refund') {
+    /* The domain refuses a refund that is not an expense, so this needs no direction check. */
+    return 'refund';
+  }
   return transaction.direction === 'expense' ? 'spending' : 'income';
+}
+
+/**
+ * What a record does to the account's figures — the one authority every aggregate derives from.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── Why an effect and not just a kind ──────────────────────────────────────
+ * Classification alone was enough while every record either added to spending, added to income, or
+ * was excluded. A refund breaks that: it is neither excluded nor additive — it **subtracts** from
+ * consumption — so a consumer switching on the kind would have to know the sign, and every consumer
+ * that knew it separately would be one place for the sign to be wrong.
+ *
+ * Returning the contribution itself removes the question. A caller adds four numbers and never
+ * decides what any record means; `expenseMinor` simply arrives negative for a refund.
+ *
+ * ── The four figures are independent ───────────────────────────────────────
+ * No record contributes to more than one, and none borrows from another. That is what keeps a
+ * refund out of income (#96) and a savings transfer out of both (#95), by construction rather than
+ * by each aggregate remembering to exclude the right things.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export type FinanceRecordEffect = {
+  /** Signed. Negative for a refund, which is the whole of #96's "negative expense". */
+  readonly expenseMinor: number;
+  /** Earned income only. A refund and a savings withdrawal both contribute zero. */
+  readonly incomeMinor: number;
+  readonly savingsContributedMinor: number;
+  readonly savingsWithdrawnMinor: number;
+};
+
+const NO_EFFECT: FinanceRecordEffect = {
+  expenseMinor: 0,
+  incomeMinor: 0,
+  savingsContributedMinor: 0,
+  savingsWithdrawnMinor: 0,
+};
+
+/**
+ * The financial effect of one record.
+ *
+ * Exhaustive over `FinanceRecordKind`, so a kind added later is a compile error here rather than a
+ * silent zero somewhere downstream.
+ */
+export function financeRecordEffect(transaction: FinanceTransaction): FinanceRecordEffect {
+  const amount = transaction.amountMinor;
+  switch (financeRecordKind(transaction)) {
+    case 'spending':
+      return { ...NO_EFFECT, expenseMinor: amount };
+    case 'income':
+      return { ...NO_EFFECT, incomeMinor: amount };
+    case 'refund':
+      /*
+        The single line #96 asks for, in the single place it belongs: consumption goes down by the
+        magnitude, and earned income does not move. The **stored** amount is still positive — only
+        its effect is negative, which is what lets #92's positive-magnitude model stand unchanged.
+      */
+      return { ...NO_EFFECT, expenseMinor: -amount };
+    case 'savings-contribution':
+      return { ...NO_EFFECT, savingsContributedMinor: amount };
+    case 'savings-withdrawal':
+      return { ...NO_EFFECT, savingsWithdrawnMinor: amount };
+  }
+}
+
+/** Sums the effects of many records. Integer addition, in one place, for every aggregate. */
+export function financeTotalEffect(
+  transactions: readonly FinanceTransaction[],
+): FinanceRecordEffect {
+  let expenseMinor = 0;
+  let incomeMinor = 0;
+  let savingsContributedMinor = 0;
+  let savingsWithdrawnMinor = 0;
+  for (const transaction of transactions) {
+    const effect = financeRecordEffect(transaction);
+    expenseMinor += effect.expenseMinor;
+    incomeMinor += effect.incomeMinor;
+    savingsContributedMinor += effect.savingsContributedMinor;
+    savingsWithdrawnMinor += effect.savingsWithdrawnMinor;
+  }
+  return { expenseMinor, incomeMinor, savingsContributedMinor, savingsWithdrawnMinor };
+}
+
+/** Whether this record reduces consumption rather than adding to it. */
+export function isRefund(transaction: FinanceTransaction): boolean {
+  return financeRecordKind(transaction) === 'refund';
 }
 
 /**

@@ -7,7 +7,12 @@ import {
   previousMonth,
   type FinanceMonth,
 } from './finance-month';
-import { isConsumptionRecord, isSavingsTransfer } from './finance-record-kind';
+import {
+  financeTotalEffect,
+  isConsumptionRecord,
+  isRefund,
+  isSavingsTransfer,
+} from './finance-record-kind';
 
 /**
  * **Reading the ledger: grouping, filtering and the derived summary** — issue #93.
@@ -164,9 +169,17 @@ export type FinanceSummary = {
   readonly count: number;
   /** Every record occurring today, transfers included. A count, never an amount. */
   readonly todayCount: number;
-  /** Money spent. Savings contributions are excluded. */
+  /**
+   * Money spent, **net of refunds** — issue #96. Signed: negative when refunds exceed spending.
+   *
+   * Savings contributions are excluded (#95), and a refund reduces this rather than adding to income.
+   */
   readonly expenseMinor: number;
-  /** Money received. Savings withdrawals are excluded. */
+  /** Spending before refunds are applied, so a surface can state both figures. */
+  readonly grossExpenseMinor: number;
+  /** Total refunded. Reported separately; it is never income. */
+  readonly refundedMinor: number;
+  /** Money received. Savings withdrawals and refunds both contribute nothing. */
   readonly incomeMinor: number;
   /** Money moved into goals. Reported separately so a surface can present it as savings. */
   readonly savingsContributedMinor: number;
@@ -186,43 +199,49 @@ export type FinanceSummary = {
  * are claims about consumption and a transfer is neither.
  */
 export function summariseFinance(ledger: FinanceLedger, todayKey: string): FinanceSummary {
-  let expenseMinor = 0;
-  let incomeMinor = 0;
-  let savingsContributedMinor = 0;
-  let savingsWithdrawnMinor = 0;
+  const effect = financeTotalEffect(ledger.transactions);
   let todayCount = 0;
+  let grossExpenseMinor = 0;
+  let refundedMinor = 0;
   for (const transaction of ledger.transactions) {
-    if (isSavingsTransfer(transaction)) {
-      if (transaction.direction === 'expense') {
-        savingsContributedMinor += transaction.amountMinor;
-      } else {
-        savingsWithdrawnMinor += transaction.amountMinor;
-      }
-    } else if (transaction.direction === 'expense') {
-      expenseMinor += transaction.amountMinor;
-    } else {
-      incomeMinor += transaction.amountMinor;
-    }
     if (transaction.occurredOn === todayKey) {
       todayCount += 1;
+    }
+    if (isSavingsTransfer(transaction)) {
+      continue;
+    }
+    if (isRefund(transaction)) {
+      refundedMinor += transaction.amountMinor;
+    } else if (transaction.direction === 'expense') {
+      grossExpenseMinor += transaction.amountMinor;
     }
   }
   return {
     count: ledger.transactions.length,
     todayCount,
-    expenseMinor,
-    incomeMinor,
-    savingsContributedMinor,
-    savingsWithdrawnMinor,
+    expenseMinor: effect.expenseMinor,
+    grossExpenseMinor,
+    refundedMinor,
+    incomeMinor: effect.incomeMinor,
+    savingsContributedMinor: effect.savingsContributedMinor,
+    savingsWithdrawnMinor: effect.savingsWithdrawnMinor,
   };
 }
 
 export type FinanceTotals = {
   /** Every record given, transfers included — it matches the rows on screen. */
   readonly count: number;
-  /** Money spent. Savings contributions are excluded. */
+  /**
+   * Money spent, **net of refunds** — issue #96. Signed: negative when refunds exceed spending.
+   *
+   * Savings contributions are excluded (#95), and a refund reduces this rather than adding to income.
+   */
   readonly expenseMinor: number;
-  /** Money received. Savings withdrawals are excluded. */
+  /** Spending before refunds are applied, so a surface can state both figures. */
+  readonly grossExpenseMinor: number;
+  /** Total refunded. Reported separately; it is never income. */
+  readonly refundedMinor: number;
+  /** Money received. Savings withdrawals and refunds both contribute nothing. */
   readonly incomeMinor: number;
   /**
    * Income minus expense, over consumption only.
@@ -250,34 +269,34 @@ export type FinanceTotals = {
  * the Spending screen's totals, and #102's month comparison, which is built entirely from this.
  */
 export function totalFinance(transactions: readonly FinanceTransaction[]): FinanceTotals {
-  let expenseMinor = 0;
-  let incomeMinor = 0;
-  let savingsContributedMinor = 0;
-  let savingsWithdrawnMinor = 0;
+  const effect = financeTotalEffect(transactions);
+  let grossExpenseMinor = 0;
+  let refundedMinor = 0;
   let savingsCount = 0;
   for (const transaction of transactions) {
     if (isSavingsTransfer(transaction)) {
       savingsCount += 1;
-      if (transaction.direction === 'expense') {
-        savingsContributedMinor += transaction.amountMinor;
-      } else {
-        savingsWithdrawnMinor += transaction.amountMinor;
-      }
       continue;
     }
-    if (transaction.direction === 'expense') {
-      expenseMinor += transaction.amountMinor;
-    } else {
-      incomeMinor += transaction.amountMinor;
+    if (isRefund(transaction)) {
+      refundedMinor += transaction.amountMinor;
+    } else if (transaction.direction === 'expense') {
+      grossExpenseMinor += transaction.amountMinor;
     }
   }
   return {
     count: transactions.length,
-    expenseMinor,
-    incomeMinor,
-    netMinor: incomeMinor - expenseMinor,
-    savingsContributedMinor,
-    savingsWithdrawnMinor,
+    expenseMinor: effect.expenseMinor,
+    grossExpenseMinor,
+    refundedMinor,
+    incomeMinor: effect.incomeMinor,
+    /*
+      Income minus **net** expense, so a refund improves the net exactly once — through the expense
+      it reduces, never by also appearing as income.
+    */
+    netMinor: effect.incomeMinor - effect.expenseMinor,
+    savingsContributedMinor: effect.savingsContributedMinor,
+    savingsWithdrawnMinor: effect.savingsWithdrawnMinor,
     savingsCount,
   };
 }

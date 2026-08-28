@@ -325,6 +325,9 @@ describe('a mixed ledger produces independent, correct totals', () => {
       /* All four of this month's records are listed — the exclusion is in the money, not the rows. */
       count: 4,
       expenseMinor: 30_000,
+      /* No refunds here, so gross and net spending are the same figure — issue #96. */
+      grossExpenseMinor: 30_000,
+      refundedMinor: 0,
       incomeMinor: 90_000,
       netMinor: 60_000,
       savingsContributedMinor: 50_000,

@@ -714,8 +714,12 @@ describe('the words are descriptive and never judgemental', () => {
       'JPY',
       '2026-07',
     );
-    /* JPY has no minor digits — a `× 100` assumption would inflate this a hundredfold. */
-    expect(phrasing.sentence).toBe('3000 JPY more than July 2026');
+    /*
+      JPY has no minor digits — a `× 100` assumption would inflate this a hundredfold — and since
+      #96 the integer part is grouped in the locale's marks, so the figure reads as a person would
+      write it. Both halves matter: the digits are the currency's, the separators are the locale's.
+    */
+    expect(phrasing.sentence).toBe('3,000 JPY more than July 2026');
   });
 });
 

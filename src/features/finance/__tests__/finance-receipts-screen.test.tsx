@@ -591,11 +591,17 @@ describe('nothing reaches the ledger before confirmation', () => {
       'direction',
       'goalId',
       'id',
+      'kind',
       'note',
       'occurredOn',
       'updatedAt',
     ]);
-    expect((await mounted.ledger()).rows[0]).toMatchObject({ goalId: null });
+    /*
+      `kind` is on this list because #96 put it there, and Receipts writes `'ordinary'`: a receipt
+      records a purchase, and nothing about scanning one can decide that money came back. If
+      Receipts ever started inferring a refund, this assertion is where it would show up.
+    */
+    expect((await mounted.ledger()).rows[0]).toMatchObject({ goalId: null, kind: 'ordinary' });
   });
 
   it('refuses an amount the ledger cannot hold, and records nothing', async () => {

@@ -285,10 +285,17 @@ describe('monthly totals are derived, never stored', () => {
       explicit. They are zero throughout this suite because none of its records is attributed to a
       goal — which is the point: an unattributed ledger behaves exactly as it did before #95.
     */
+    /*
+      `grossExpenseMinor` and `refundedMinor` joined this shape with refunds (#96). They are zero
+      throughout this suite because none of its records is a refund — which is the point: a ledger
+      without refunds totals exactly as it did before.
+    */
     expect(totalFinance(august)).toEqual({
       count: 2,
       incomeMinor: 1000,
       expenseMinor: 250,
+      grossExpenseMinor: 250,
+      refundedMinor: 0,
       netMinor: 750,
       savingsContributedMinor: 0,
       savingsWithdrawnMinor: 0,
@@ -309,6 +316,8 @@ describe('monthly totals are derived, never stored', () => {
       count: 0,
       incomeMinor: 0,
       expenseMinor: 0,
+      grossExpenseMinor: 0,
+      refundedMinor: 0,
       netMinor: 0,
       savingsContributedMinor: 0,
       savingsWithdrawnMinor: 0,

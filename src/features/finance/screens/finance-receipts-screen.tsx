@@ -18,11 +18,12 @@ import { useModuleSurfaces } from '@features/modules/module-surfaces';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
-import { formatAmount, formatMinor, parseAmountToMinor } from '../data/finance-format';
 import type { FinanceDirection } from '../data/finance-ledger';
 import type { FinanceCurrency } from '../data/finance-money';
 import { useFinance } from '../di/finance-provider';
+import { financeMoney, useFinanceLocale } from '../di/use-finance-money';
 import {
   discardRetainedImage,
   discardStagedImage,
@@ -194,6 +195,8 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
 
   const ledger = finance.ledger;
   const currency = ledger.currency;
+  /* Read unconditionally; bound below wherever the currency has been narrowed. */
+  const locale = useFinanceLocale();
 
   const mismatch = useMemo(
     () => (reading === null || currency === null ? null : currencyMismatch(reading, currency)),
@@ -251,13 +254,13 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
       */
       const best = read.amounts[0];
       if (best !== undefined && currency !== null) {
-        setAmount(formatMinor(best.minor, currency));
+        setAmount(financeMoney(currency, locale).plain(best.minor));
       }
       if (read.occurredOn !== null) {
         setOccurredOn(read.occurredOn);
       }
     },
-    [ocr, currency],
+    [ocr, currency, locale],
   );
 
   const acquire = useCallback(
@@ -317,7 +320,7 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
     if (confirmingRef.current || currency === null) {
       return;
     }
-    const parsed = parseAmountToMinor(amount, currency);
+    const parsed = financeMoney(currency, locale).parse(amount);
     if (parsed.kind !== 'ok') {
       setMessage(AMOUNT_MESSAGE[parsed.reason] ?? 'That amount could not be read.');
       return;
@@ -727,6 +730,8 @@ function ReviewFields({
   readonly lines: readonly string[];
 }) {
   const { dp } = useModuleMetrics();
+  /* This component receives a narrowed currency, so it binds the contract itself. */
+  const money = financeMoney(currency, useFinanceLocale());
   const candidates = reading?.amounts ?? [];
   const dateEstablished = reading?.occurredOn ?? null;
 
@@ -775,22 +780,20 @@ function ReviewFields({
                 {candidates.map((candidate) => (
                   <Pressable
                     key={candidate.minor}
-                    onPress={() => onAmount(formatMinor(candidate.minor, currency))}
+                    onPress={() => onAmount(money.plain(candidate.minor))}
                     accessibilityRole="button"
-                    accessibilityLabel={`Use ${formatAmount(candidate.minor, currency)}${candidate.emphasis === 'total' ? ', read as the total' : ''}`}
+                    accessibilityLabel={`Use ${money.amount(candidate.minor)}${candidate.emphasis === 'total' ? ', read as the total' : ''}`}
                     style={[
                       styles.chip,
                       {
-                        minHeight: moduleLayout.minTouchTarget,
+                        minHeight: minimumTouchTargetSize(),
                         borderRadius: dp(12),
                         paddingHorizontal: dp(10),
                       },
                     ]}
                     testID={`finance-receipts-candidate-${candidate.minor}`}
                   >
-                    <ModuleText token="button">
-                      {formatAmount(candidate.minor, currency)}
-                    </ModuleText>
+                    <ModuleText token="button">{money.amount(candidate.minor)}</ModuleText>
                   </Pressable>
                 ))}
               </View>
@@ -883,7 +886,7 @@ function Toggle({
         styles.spread,
         {
           /* The accessibility minimum, unscaled — it is a bound, not a dimension. */
-          minHeight: moduleLayout.minTouchTarget,
+          minHeight: minimumTouchTargetSize(),
           columnGap: dp(8),
         },
       ]}
@@ -896,8 +899,8 @@ function Toggle({
         style={[
           styles.chip,
           {
-            minHeight: moduleLayout.minTouchTarget,
-            minWidth: moduleLayout.minTouchTarget,
+            minHeight: minimumTouchTargetSize(),
+            minWidth: minimumTouchTargetSize(),
             borderRadius: dp(12),
             borderColor: value ? theme.ink : surfaces.border,
             backgroundColor: value ? surfaces.well : surfaces.card,
@@ -995,7 +998,7 @@ function ChoiceRow({
                 styles.chip,
                 {
                   /* The accessibility minimum, unscaled — it is a bound, not a dimension. */
-                  minHeight: moduleLayout.minTouchTarget,
+                  minHeight: minimumTouchTargetSize(),
                   borderRadius: dp(12),
                   borderColor: isActive ? theme.ink : surfaces.border,
                   backgroundColor: isActive ? surfaces.well : surfaces.card,
