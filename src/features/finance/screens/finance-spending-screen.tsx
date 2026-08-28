@@ -19,6 +19,21 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
 
 import {
+  compareFinanceMonths,
+  type FinanceCategoryChange,
+  type FinanceChange,
+  type FinanceMonthComparison,
+} from '../data/finance-comparison';
+import {
+  INCOME_SUBJECT,
+  NET_SUBJECT,
+  SPENDING_SUBJECT,
+  announceChange,
+  describeChange,
+  describeMovement,
+  type ComparisonSubject,
+} from '../data/finance-comparison-copy';
+import {
   FINANCE_CURRENCY_NAMES,
   formatAmount,
   formatMinor,
@@ -181,6 +196,21 @@ function SpendingBody() {
   const groups = useMemo(() => groupFinanceByDay(visible), [visible]);
   const totals = useMemo(() => totalFinance(visible), [visible]);
   const filtering = hasActiveFilters(filters);
+
+  /*
+    The comparison, derived from the **ledger** — issue #102.
+
+    Not from `visible`, and the distinction is the whole reason this line reads the way it does. The
+    list above is narrowed by the category chips and by a custom date range; a monthly comparison
+    taken from those rows would report a slice of August as August, and would move every time
+    somebody touched a filter. `compareFinanceMonths` takes the whole owner ledger and scopes it to
+    the two months itself.
+
+    It recomputes when the ledger changes and when the selected month changes — and `month` follows
+    the shared day source while no month has been chosen, so a midnight roll-over into a new month
+    moves both sides of the comparison with no timer and no second clock here.
+  */
+  const comparison = useMemo(() => compareFinanceMonths(ledger, month), [ledger, month]);
 
   if (finance.loading) {
     return <ModuleLoadingState />;
@@ -531,6 +561,8 @@ function SpendingBody() {
           </View>
         </ModuleCard>
       </ModuleSection>
+
+      <MonthComparison comparison={comparison} currency={currency} />
 
       <Filters
         filters={filters}
@@ -968,8 +1000,227 @@ function Total({
   );
 }
 
+/**
+ * **This month set against the one before it** — issue #102.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ── It does no arithmetic ──────────────────────────────────────────────────
+ * Every figure arrives already derived. A component that recomputed a total would be a second
+ * implementation to disagree with the first, which is the same reason nothing here is stored.
+ *
+ * ── Both months are named, and both totals are shown ───────────────────────
+ * The heading names the pair, each row states this month's figure, and each row restates last
+ * month's beneath it. A comparison that showed only a delta would leave the reader unable to check
+ * it — and the month names are spelled out rather than implied by position, because "last month" is
+ * ambiguous the moment somebody steps the stepper backwards.
+ *
+ * ── Direction survives greyscale ───────────────────────────────────────────
+ * Nothing in this section is coloured by direction. The glyph takes the module's own ink, exactly as
+ * every other accent on the screen does, and the direction is carried by the words "more", "less",
+ * "higher", "lower" and "the same". A colour-blind reader and a greyscale screenshot get the same
+ * information as everybody else, which is #93's rule for the signed net applied again.
+ *
+ * ── The section is not withdrawn when a date range is in force ─────────────
+ * The figures above it switch to the range; these do not, and cannot — they are about calendar
+ * months. That is why the heading names them. Withdrawing the section instead would make a filter
+ * look as though it had changed the user's monthly record.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+function MonthComparison({
+  comparison,
+  currency,
+}: {
+  readonly comparison: FinanceMonthComparison;
+  readonly currency: FinanceCurrency;
+}) {
+  const { dp } = useModuleMetrics();
+  const previousName = formatMonth(comparison.previous);
+  const showCategories = comparison.categories.length > 0 || comparison.unchangedCategoryCount > 0;
+
+  return (
+    <ModuleSection
+      title={`${formatMonth(comparison.month)} compared with ${previousName}`}
+      subtitle="Every figure is worked out from your records each time this screen opens. Filters below do not change it."
+      testID="finance-comparison"
+    >
+      <ModuleCard testID="finance-comparison-card">
+        <View style={{ rowGap: dp(12) }}>
+          <ChangeRow
+            label={`Spent in ${formatMonth(comparison.month)}`}
+            change={comparison.spending}
+            subject={SPENDING_SUBJECT}
+            currency={currency}
+            previous={comparison.previous}
+            previousLabel={`Spent in ${previousName}`}
+            testID="finance-comparison-spending"
+          />
+          <ChangeRow
+            label={`Received in ${formatMonth(comparison.month)}`}
+            change={comparison.income}
+            subject={INCOME_SUBJECT}
+            currency={currency}
+            previous={comparison.previous}
+            previousLabel={`Received in ${previousName}`}
+            testID="finance-comparison-income"
+          />
+          <ChangeRow
+            label={`Net in ${formatMonth(comparison.month)}`}
+            change={comparison.net}
+            subject={NET_SUBJECT}
+            currency={currency}
+            previous={comparison.previous}
+            previousLabel={`Net in ${previousName}`}
+            signed
+            testID="finance-comparison-net"
+          />
+
+          {showCategories ? (
+            <View style={{ rowGap: dp(6) }} testID="finance-comparison-categories">
+              <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
+                {comparison.categories.length === 0
+                  ? 'No category of spending moved between these months.'
+                  : 'Spending by category, largest movement first'}
+              </ModuleText>
+              {comparison.categories.map((entry) => (
+                <CategoryRow
+                  key={entry.category ?? ' uncategorised'}
+                  entry={entry}
+                  currency={currency}
+                />
+              ))}
+              {comparison.unchangedCategoryCount === 0 ? null : (
+                <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
+                  {`${comparison.unchangedCategoryCount} ${comparison.unchangedCategoryCount === 1 ? 'category was' : 'categories were'} exactly the same in both months.`}
+                </ModuleText>
+              )}
+            </View>
+          ) : null}
+        </View>
+      </ModuleCard>
+    </ModuleSection>
+  );
+}
+
+/**
+ * One compared figure: this month's total, how it moved, and last month's total beneath it.
+ *
+ * The whole row is one accessible node with one composed label, so a screen reader states the
+ * comparison as a sentence rather than reading four fragments the listener has to reassemble. The
+ * percentage is absent from that label in exactly the states where it is absent from the screen.
+ */
+function ChangeRow({
+  label,
+  change,
+  subject,
+  currency,
+  previous,
+  previousLabel,
+  signed = false,
+  testID,
+}: {
+  readonly label: string;
+  readonly change: FinanceChange;
+  readonly subject: ComparisonSubject;
+  readonly currency: FinanceCurrency;
+  readonly previous: FinanceMonth;
+  readonly previousLabel: string;
+  readonly signed?: boolean;
+  readonly testID: string;
+}) {
+  const theme = useModuleTheme();
+  const { dp } = useModuleMetrics();
+  const phrasing = describeChange(change, subject, currency, previous);
+
+  const present = (minor: number): string => {
+    const magnitude = formatAmount(Math.abs(minor), currency);
+    return signed && minor !== 0 ? `${minor < 0 ? '−' : '+'}${magnitude}` : magnitude;
+  };
+  const current = present(change.currentMinor);
+  const prior = present(change.previousMinor);
+
+  return (
+    <View
+      style={{ rowGap: dp(4) }}
+      accessible
+      accessibilityLabel={`${announceChange(`${label}, ${current}`, phrasing)}. ${previousLabel}, ${prior}.`}
+      testID={testID}
+    >
+      <View style={[styles.row, styles.spread, { columnGap: dp(8) }]}>
+        <ModuleText token="caption" color={moduleNeutrals.textSecondary} style={styles.grow}>
+          {label}
+        </ModuleText>
+        <ModuleText token="cardTitle">{current}</ModuleText>
+      </View>
+      <View style={[styles.row, { columnGap: dp(6) }]}>
+        {/*
+          Decoration beside the wording, never instead of it. It takes the module's ink like every
+          other accent here, so no reader has to distinguish two hues to know which way this went.
+        */}
+        <ModuleText token="caption" color={theme.ink}>
+          {phrasing.glyph}
+        </ModuleText>
+        <ModuleText token="caption" color={moduleNeutrals.textSecondary} style={styles.grow}>
+          {phrasing.percent === null
+            ? phrasing.sentence
+            : `${phrasing.sentence} · ${phrasing.percent}`}
+        </ModuleText>
+      </View>
+      <View style={[styles.row, styles.spread, { columnGap: dp(8) }]}>
+        <ModuleText token="caption" color={moduleNeutrals.textTertiary} style={styles.grow}>
+          {previousLabel}
+        </ModuleText>
+        <ModuleText token="caption" color={moduleNeutrals.textTertiary}>
+          {prior}
+        </ModuleText>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * One category's movement.
+ *
+ * Transactions filed without a category are shown as "Uncategorised" rather than dropped: money the
+ * user did not label is still money they spent, and omitting it would make the category rows fail to
+ * add up to the month.
+ */
+function CategoryRow({
+  entry,
+  currency,
+}: {
+  readonly entry: FinanceCategoryChange;
+  readonly currency: FinanceCurrency;
+}) {
+  const theme = useModuleTheme();
+  const { dp } = useModuleMetrics();
+  const phrasing = describeMovement(entry.change, SPENDING_SUBJECT, currency);
+  const name = entry.category ?? 'Uncategorised';
+  const detail =
+    phrasing.percent === null ? phrasing.sentence : `${phrasing.sentence} · ${phrasing.percent}`;
+
+  return (
+    <View
+      style={[styles.row, styles.spread, { columnGap: dp(8) }]}
+      accessible
+      accessibilityLabel={`${name}, ${detail}`}
+      testID={`finance-comparison-category-${name}`}
+    >
+      <ModuleText token="caption" color={moduleNeutrals.textSecondary} style={styles.grow}>
+        {name}
+      </ModuleText>
+      <View style={[styles.row, { columnGap: dp(6) }]}>
+        <ModuleText token="caption" color={theme.ink}>
+          {phrasing.glyph}
+        </ModuleText>
+        <ModuleText token="caption">{detail}</ModuleText>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   input: { borderWidth: 1 },
+  grow: { flexShrink: 1 },
   row: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   spread: { justifyContent: 'space-between' },
   choices: { flexDirection: 'row', flexWrap: 'wrap' },
