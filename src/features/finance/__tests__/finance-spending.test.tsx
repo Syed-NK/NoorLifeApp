@@ -925,15 +925,11 @@ describe('the screen claims only what it does', () => {
 });
 
 describe('nothing else in Finance became functional', () => {
-  it('leaves Budgets and Savings as honest placeholders', () => {
-    for (const file of ['budgets', 'goals']) {
-      const route = fs.readFileSync(
-        path.join(process.cwd(), `src/app/finance/${file}.tsx`),
-        'utf8',
-      );
-      expect(route).toContain('ModuleSectionScreen');
-      expect(route).toContain('Not built yet.');
-    }
+  it('leaves Savings as an honest placeholder', () => {
+    /* Budgets was built by #94; Savings stays a placeholder until #95, and this says so. */
+    const route = fs.readFileSync(path.join(process.cwd(), 'src/app/finance/goals.tsx'), 'utf8');
+    expect(route).toContain('ModuleSectionScreen');
+    expect(route).toContain('Not built yet.');
   });
 
   it('leaves Bank sync and Receipts unavailable and unreachable', () => {

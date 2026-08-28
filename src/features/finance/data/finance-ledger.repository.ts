@@ -113,6 +113,22 @@ export function financeLedgerAddress(ownerId: string | null): string | null {
 }
 
 /**
+ * Where an owner's budgets live — issue #94.
+ *
+ * A separate key under the same namespace, deliberately. Widening the ledger envelope to carry
+ * budgets would put two independently-corruptible things behind one decoder: a malformed budget
+ * would quarantine the transactions, and the user would lose sight of their money over a planning
+ * record. Separate addresses mean separate blast radii, and each store keeps its own version.
+ *
+ * It shares `financeOwnerSegment`, so there is still exactly one rule deciding whose data this is —
+ * a second partitioning scheme is how a file ends up in one account's folder describing another's.
+ */
+export function financeBudgetsAddress(ownerId: string | null): string | null {
+  const segment = financeOwnerSegment(ownerId);
+  return segment === null ? null : `${FINANCE_USER_NAMESPACE}.${segment}.budgets`;
+}
+
+/**
  * The one derivation of "which account owns this", as an address segment.
  *
  * Extracted from `financeLedgerAddress` when Receipts gained an account-scoped directory for

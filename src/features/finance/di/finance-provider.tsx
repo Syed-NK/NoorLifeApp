@@ -12,6 +12,16 @@ import { AppState } from 'react-native';
 
 import { isLocallyAuthenticated, useAuth } from '@application/providers/auth-provider';
 
+import {
+  canChangeFinanceCurrency,
+  type FinanceBudget,
+  type FinanceBudgetDraft,
+} from '../data/finance-budget';
+import {
+  createFinanceBudgetRepository,
+  type FinanceBudgetMutation,
+  type FinanceBudgetRepository,
+} from '../data/finance-budget.repository';
 import type { FinanceDraft, FinanceLedger } from '../data/finance-ledger';
 import { emptyFinanceLedger } from '../data/finance-ledger';
 import {
@@ -53,11 +63,24 @@ import {
  * Signing out clears what is in memory. It does **not** delete the stored ledger: the account's
  * records are still theirs, and a sign-out that quietly destroyed financial history would be a data
  * loss disguised as a session boundary.
+ *
+ * ── Budgets join the same owner, not a second one — issue #94 ──────────────
+ * Budgets live at their own address and decode through their own version, so a malformed planning
+ * record cannot quarantine the transactions. But they are read under **this** provider and switched
+ * by **this** owner, because the alternative is two things that each believe they know whose data
+ * they hold — and #73's lesson is that the moment there are two answers, one of them is stale.
+ *
+ * That is also what lets the currency rule stay whole. #92 refuses a currency change once money has
+ * been recorded; a budget is money recorded in that currency, so the refusal has to see both stores
+ * at once. It is composed here, where both are already held, rather than teaching the ledger domain
+ * to read a store it should know nothing about.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 export type FinanceState = {
   readonly ledger: FinanceLedger;
+  /** The account's budgets — issue #94. Planning intent only; spend is never stored. */
+  readonly budgets: readonly FinanceBudget[];
   /**
    * Whose ledger this is, normalised, or `null` outside a session — issue #101.
    *
@@ -70,11 +93,24 @@ export type FinanceState = {
   readonly loading: boolean;
   /** `corrupt-data` means quarantined: the stored bytes are intact and were not overwritten. */
   readonly fault: 'storage-unavailable' | 'corrupt-data' | null;
+  /**
+   * The budget store's own fault, separate from the ledger's — issue #94.
+   *
+   * Separate because the stores are separate: budgets that cannot be read must not take the
+   * transactions down with them, and a Spending screen has no reason to stop working because a
+   * planning record went bad.
+   */
+  readonly budgetFault: 'storage-unavailable' | 'corrupt-data' | null;
+  /** Whether the ledger currency may still be set or changed — transactions *and* budgets. */
+  readonly canChangeCurrency: boolean;
   readonly reload: () => Promise<void>;
   readonly setCurrency: (currency: string) => Promise<FinanceMutation>;
   readonly createTransaction: (draft: FinanceDraft) => Promise<FinanceMutation>;
   readonly updateTransaction: (id: string, draft: FinanceDraft) => Promise<FinanceMutation>;
   readonly removeTransaction: (id: string) => Promise<FinanceMutation>;
+  readonly createBudget: (draft: FinanceBudgetDraft) => Promise<FinanceBudgetMutation>;
+  readonly updateBudget: (id: string, draft: FinanceBudgetDraft) => Promise<FinanceBudgetMutation>;
+  readonly removeBudget: (id: string) => Promise<FinanceBudgetMutation>;
 };
 
 const FinanceContext = createContext<FinanceState | null>(null);
@@ -82,6 +118,7 @@ const FinanceContext = createContext<FinanceState | null>(null);
 export type FinanceProviderProps = {
   readonly children: ReactNode;
   readonly repository?: FinanceLedgerRepository;
+  readonly budgetRepository?: FinanceBudgetRepository;
 };
 
 type Owned = {
@@ -111,12 +148,48 @@ function absorb(
   };
 }
 
-export function FinanceProvider({ children, repository: injected }: FinanceProviderProps) {
+/** The budget half of the owned state. Its own fault, switched by the same owner. */
+type OwnedBudgets = {
+  readonly repository: FinanceBudgetRepository;
+  readonly budgets: readonly FinanceBudget[];
+  readonly loading: boolean;
+  readonly fault: FinanceState['budgetFault'];
+};
+
+function absorbBudgets(
+  repository: FinanceBudgetRepository,
+  result: Awaited<ReturnType<FinanceBudgetRepository['read']>>,
+): OwnedBudgets {
+  if (result.kind === 'ok') {
+    return { repository, budgets: result.budgets, loading: false, fault: null };
+  }
+  /*
+    An empty list beside an error would let somebody create a budget against a store that has already
+    refused to confirm itself — which, on the corrupt branch, is the write that would destroy the
+    retained bytes.
+  */
+  return {
+    repository,
+    budgets: [],
+    loading: false,
+    fault: result.kind === 'corrupt' ? 'corrupt-data' : 'storage-unavailable',
+  };
+}
+
+export function FinanceProvider({
+  children,
+  repository: injected,
+  budgetRepository: injectedBudgets,
+}: FinanceProviderProps) {
   const auth = useAuth();
   const ownerId = isLocallyAuthenticated(auth) ? (auth.user?.id ?? null) : null;
   const repository = useMemo(
     () => injected ?? createFinanceLedgerRepository({ ownerId }),
     [injected, ownerId],
+  );
+  const budgetRepository = useMemo(
+    () => injectedBudgets ?? createFinanceBudgetRepository({ ownerId }),
+    [injectedBudgets, ownerId],
   );
 
   const [owned, setOwned] = useState<Owned>(() => ({
@@ -136,6 +209,33 @@ export function FinanceProvider({ children, repository: injected }: FinanceProvi
   if (owned.repository !== repository) {
     setOwned({ repository, ledger: emptyFinanceLedger(), loading: true, fault: null });
   }
+
+  const [ownedBudgets, setOwnedBudgets] = useState<OwnedBudgets>(() => ({
+    repository: budgetRepository,
+    budgets: [],
+    loading: true,
+    fault: null,
+  }));
+
+  /* The same synchronous reset, for the same reason: no frame of one account's plan in another's. */
+  if (ownedBudgets.repository !== budgetRepository) {
+    setOwnedBudgets({ repository: budgetRepository, budgets: [], loading: true, fault: null });
+  }
+
+  useEffect(() => {
+    let active = true;
+    void budgetRepository.read().then((result) => {
+      if (!active) {
+        return;
+      }
+      setOwnedBudgets((current) =>
+        current.repository === budgetRepository ? absorbBudgets(budgetRepository, result) : current,
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [budgetRepository]);
 
   useEffect(() => {
     let active = true;
@@ -161,11 +261,24 @@ export function FinanceProvider({ children, repository: injected }: FinanceProvi
     setOwned((current) =>
       current.repository === repository ? { ...current, loading: true } : current,
     );
-    const result = await repository.read();
+    setOwnedBudgets((current) =>
+      current.repository === budgetRepository ? { ...current, loading: true } : current,
+    );
+    /*
+      Both stores, one reload. They are read together because a screen showing spent against
+      budgeted needs both to be current — refreshing one on foreground and leaving the other would
+      show this month's transactions against a stale plan.
+    */
+    const [result, budgetResult] = await Promise.all([repository.read(), budgetRepository.read()]);
     setOwned((current) =>
       current.repository === repository ? absorb(repository, result) : current,
     );
-  }, [repository]);
+    setOwnedBudgets((current) =>
+      current.repository === budgetRepository
+        ? absorbBudgets(budgetRepository, budgetResult)
+        : current,
+    );
+  }, [budgetRepository, repository]);
 
   /*
     A stable handle on the current reload, for listeners that must not re-arm. `reload` changes
@@ -220,19 +333,84 @@ export function FinanceProvider({ children, repository: injected }: FinanceProvi
     [repository],
   );
 
+  /* The same late-owner refusal, for the budget store's own mutations. */
+  const applyBudget = useCallback(
+    async (operation: () => Promise<FinanceBudgetMutation>) => {
+      const result = await operation();
+      setOwnedBudgets((current) => {
+        if (current.repository !== budgetRepository) {
+          return current;
+        }
+        if (result.kind === 'ok') {
+          return { ...current, budgets: result.budgets, fault: null };
+        }
+        if (result.kind === 'corrupt') {
+          return { ...current, fault: 'corrupt-data' };
+        }
+        if (result.kind === 'unavailable') {
+          return { ...current, fault: 'storage-unavailable' };
+        }
+        return current;
+      });
+      return result;
+    },
+    [budgetRepository],
+  );
+
+  /*
+    The currency rule, composed across both stores — issue #94.
+
+    #92 refuses a change once a transaction exists, because there is no honest conversion and
+    relabelling recorded money is not one. A budget is an amount in that currency, so it counts: a
+    ledger with no transactions but a 600.00 grocery budget must not silently reinterpret that as
+    600 yen. The predicate lives with the budget domain; the composition happens here, where both
+    stores are already held.
+  */
+  const canChange = canChangeFinanceCurrency(
+    owned.ledger.transactions.length > 0,
+    ownedBudgets.budgets,
+  );
+
   const value = useMemo<FinanceState>(
     () => ({
       ledger: owned.ledger,
+      budgets: ownedBudgets.budgets,
       ownerId: repository.ownerId,
-      loading: owned.loading,
+      loading: owned.loading || ownedBudgets.loading,
       fault: owned.fault,
+      budgetFault: ownedBudgets.fault,
+      canChangeCurrency: canChange,
       reload,
-      setCurrency: (currency) => apply(() => repository.setCurrency(currency)),
+      setCurrency: (currency) =>
+        /*
+          Refused here as well as in the ledger repository, because only this layer can see the
+          budgets. The repository's own `currency-locked` still guards the transaction case; this
+          adds the one it cannot see, and reports the same fault so the caller needs no new branch.
+        */
+        canChange
+          ? apply(() => repository.setCurrency(currency))
+          : Promise.resolve({ kind: 'invalid', fault: 'currency-locked' } as const),
       createTransaction: (draft) => apply(() => repository.createTransaction(draft)),
       updateTransaction: (id, draft) => apply(() => repository.updateTransaction(id, draft)),
       removeTransaction: (id) => apply(() => repository.removeTransaction(id)),
+      createBudget: (draft) => applyBudget(() => budgetRepository.createBudget(draft)),
+      updateBudget: (id, draft) => applyBudget(() => budgetRepository.updateBudget(id, draft)),
+      removeBudget: (id) => applyBudget(() => budgetRepository.removeBudget(id)),
     }),
-    [apply, owned.fault, owned.ledger, owned.loading, reload, repository],
+    [
+      apply,
+      applyBudget,
+      budgetRepository,
+      canChange,
+      owned.fault,
+      owned.ledger,
+      owned.loading,
+      ownedBudgets.budgets,
+      ownedBudgets.fault,
+      ownedBudgets.loading,
+      reload,
+      repository,
+    ],
   );
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;

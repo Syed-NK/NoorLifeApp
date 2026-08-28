@@ -768,6 +768,12 @@ describe('one owner, at the app boundary', () => {
     walk(path.join(process.cwd(), 'src'));
 
     expect(consumers.sort()).toEqual([
+      /*
+        Writes budgets, and reads the ledger to derive spend against them — issue #94. It takes the
+        same app-scoped owner rather than mounting a provider of its own, which is what keeps one
+        answer to "whose money is this" across a screen that now reads two stores at once.
+      */
+      'src/features/finance/screens/finance-budgets-screen.tsx',
       /* Reads a summary; degrades to "nothing recorded" without an owner. */
       'src/features/finance/screens/finance-home-content.tsx',
       /*
