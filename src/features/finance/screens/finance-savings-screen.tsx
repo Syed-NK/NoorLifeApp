@@ -16,6 +16,7 @@ import { useModuleSurfaces } from '@features/modules/module-surfaces';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { formatPercentTenths } from '../data/finance-comparison-copy';
 import type { FinanceGoal } from '../data/finance-goal';
@@ -920,7 +921,7 @@ function ChoiceRow({
                 styles.choice,
                 {
                   /* The accessibility minimum, unscaled — it is a bound, not a dimension. */
-                  minHeight: moduleLayout.minTouchTarget,
+                  minHeight: minimumTouchTargetSize(),
                   borderRadius: dp(12),
                   borderColor: isActive ? theme.ink : surfaces.border,
                   backgroundColor: isActive ? surfaces.well : surfaces.card,

@@ -18,6 +18,7 @@ import { useModuleSurfaces } from '@features/modules/module-surfaces';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import type { FinanceDirection } from '../data/finance-ledger';
 import type { FinanceCurrency } from '../data/finance-money';
@@ -785,7 +786,7 @@ function ReviewFields({
                     style={[
                       styles.chip,
                       {
-                        minHeight: moduleLayout.minTouchTarget,
+                        minHeight: minimumTouchTargetSize(),
                         borderRadius: dp(12),
                         paddingHorizontal: dp(10),
                       },
@@ -885,7 +886,7 @@ function Toggle({
         styles.spread,
         {
           /* The accessibility minimum, unscaled — it is a bound, not a dimension. */
-          minHeight: moduleLayout.minTouchTarget,
+          minHeight: minimumTouchTargetSize(),
           columnGap: dp(8),
         },
       ]}
@@ -898,8 +899,8 @@ function Toggle({
         style={[
           styles.chip,
           {
-            minHeight: moduleLayout.minTouchTarget,
-            minWidth: moduleLayout.minTouchTarget,
+            minHeight: minimumTouchTargetSize(),
+            minWidth: minimumTouchTargetSize(),
             borderRadius: dp(12),
             borderColor: value ? theme.ink : surfaces.border,
             backgroundColor: value ? surfaces.well : surfaces.card,
@@ -997,7 +998,7 @@ function ChoiceRow({
                 styles.chip,
                 {
                   /* The accessibility minimum, unscaled — it is a bound, not a dimension. */
-                  minHeight: moduleLayout.minTouchTarget,
+                  minHeight: minimumTouchTargetSize(),
                   borderRadius: dp(12),
                   borderColor: isActive ? theme.ink : surfaces.border,
                   backgroundColor: isActive ? surfaces.well : surfaces.card,
