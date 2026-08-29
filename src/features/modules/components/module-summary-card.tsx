@@ -6,6 +6,7 @@ import type { IconName } from '@shared/models/icon';
 import { useModuleTheme } from '../module-context';
 import { useModuleSurfaces } from '../module-surfaces';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
+import { summaryColumns } from '../summary-fit';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
 
@@ -31,6 +32,14 @@ export type ModuleSummaryCardProps = {
   readonly testID?: string;
 };
 
+/**
+ * The approved cap on how far the 22 dp figure grows with the OS text size.
+ *
+ * Named rather than inline because two places now depend on it agreeing: the text that renders and
+ * the rule that decides how many columns those renders can fit in.
+ */
+const VALUE_MAX_FONT_MULTIPLIER = 1.4;
+
 const TREND_ICON: Readonly<Record<ModuleTrend, IconName>> = {
   up: 'trends',
   down: 'trends',
@@ -46,13 +55,42 @@ const TREND_ICON: Readonly<Record<ModuleTrend, IconName>> = {
  * the icon rotation and tint. The accessible label is the sentence, so a screen
  * reader gets the meaning rather than "up arrow".
  *
- * Metrics share the row equally with `minWidth: 0`, so a long figure shrinks its own
- * column instead of pushing its neighbour off-screen.
+ * ── The row gives way before a number does — issue #125 ────────────────────
+ * Metrics used to share the row equally with `flex: 1`, so three of them each got a third of the
+ * card whatever they held. That is right for a count and wrong for an amount: at the OS text size
+ * 1.5 Finance rendered `129.35…` and `0.00 P…`, and a wider emulator truncated a *shorter* value —
+ * the third was the constraint, not the screen.
+ *
+ * `summaryColumns` now decides how many columns the values can actually be read in, and the row
+ * wraps into that many. A card whose values fit keeps the compact arrangement it has today; one
+ * whose values do not becomes two-plus-one and then a stack, growing taller rather than hiding a
+ * digit. Source order is the render order in every arrangement, so the reading order never moves.
  */
 export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
   const theme = useModuleTheme();
   const surfaces = useModuleSurfaces();
-  const { dp } = useModuleMetrics();
+  const { dp, type, fontScale, contentWidth } = useModuleMetrics();
+
+  const padding = dp(moduleLayout.cardPadding);
+  const columnGap = dp(moduleLayout.cardGap);
+  const valueGap = dp(3);
+  /*
+    The width the metrics actually share. The card is laid out at the page's content width — measured
+    352 dp inside a 384 dp screen — so its own padding is the only deduction. Taken from the same
+    tokens the style below applies, so the rule cannot disagree with the box it is reasoning about.
+  */
+  const availableWidth = contentWidth - padding * 2;
+  const columns = summaryColumns({
+    items: metrics.map((metric) => ({ value: metric.value, unit: metric.unit })),
+    availableWidth,
+    columnGap,
+    valueGap,
+    valueFontSize: type('metric').fontSize,
+    unitFontSize: type('metricUnit').fontSize,
+    fontScale,
+    valueMaxMultiplier: VALUE_MAX_FONT_MULTIPLIER,
+  });
+  const columnWidth = (availableWidth - columnGap * (columns - 1)) / columns;
 
   return (
     <View
@@ -61,8 +99,10 @@ export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
         { backgroundColor: surfaces.card, borderColor: surfaces.border },
         {
           borderRadius: dp(moduleLayout.cardRadius),
-          padding: dp(moduleLayout.cardPadding),
-          columnGap: dp(moduleLayout.cardGap),
+          padding,
+          columnGap,
+          /* Wrapping is what turns a column count into rows; the gap keeps the rows apart. */
+          rowGap: dp(moduleLayout.cardGap),
         },
       ]}
       testID={testID}
@@ -80,7 +120,7 @@ export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
         return (
           <View
             key={metric.key}
-            style={styles.metric}
+            style={[styles.metric, { width: columnWidth }]}
             accessible
             accessibilityLabel={
               metric.trendLabel === undefined
@@ -93,24 +133,34 @@ export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
               {metric.icon === undefined ? null : (
                 <AppIcon name={metric.icon} size={dp(13)} color={theme.ink} />
               )}
-              <ModuleText token="caption" numberOfLines={1} style={styles.flexText}>
+              {/* Two lines, so a long or translated label wraps in its column instead of ellipsing. */}
+              <ModuleText token="caption" numberOfLines={2} style={styles.flexText}>
                 {metric.label}
               </ModuleText>
             </View>
 
-            <View style={[styles.valueRow, { columnGap: dp(3) }]}>
+            <View style={[styles.valueRow, { columnGap: valueGap }]}>
+              {/*
+                No `numberOfLines` on either — issue #125.
+
+                The column is now sized to the value, so wrapping is the safety net rather than the
+                normal case: it catches a value longer than anything the ledger can currently hold,
+                and a device whose shaping runs wider than the advance tables predict. A limit of one
+                line here would turn both of those into an ellipsis, which is the defect.
+
+                `maxFontSizeMultiplier` stays exactly as it was. It is the approved typographic cap on
+                a 22 dp figure, it predates this issue, and `summaryColumns` is given the same number
+                so the measurement matches what will be drawn.
+              */}
               <ModuleText
                 token="metric"
                 color={theme.ink}
-                numberOfLines={1}
-                maxFontSizeMultiplier={1.4}
+                maxFontSizeMultiplier={VALUE_MAX_FONT_MULTIPLIER}
               >
                 {metric.value}
               </ModuleText>
               {metric.unit === undefined ? null : (
-                <ModuleText token="metricUnit" numberOfLines={1}>
-                  {metric.unit}
-                </ModuleText>
+                <ModuleText token="metricUnit">{metric.unit}</ModuleText>
               )}
             </View>
 
@@ -143,12 +193,12 @@ export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
 const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     /* Overridden per module — issue #91. */
     borderWidth: 1,
     /* Overridden per module — issue #91. */
   },
   metric: {
-    flex: 1,
     minWidth: 0,
   },
   labelRow: {
