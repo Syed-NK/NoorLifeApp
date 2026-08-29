@@ -157,7 +157,7 @@ export function FamilyMemberRow({ member, onRemove, testID }: FamilyMemberRowPro
         {
           paddingVertical: dp(9),
           columnGap: dp(10),
-          minHeight: dp(subscriptionLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           borderBottomColor: subscriptionColors.border,
         },
       ]}
@@ -184,7 +184,7 @@ export function FamilyMemberRow({ member, onRemove, testID }: FamilyMemberRowPro
           accessibilityLabel={`Remove ${member.name} from the family`}
           hitSlop={8}
           style={[
-            { minHeight: dp(subscriptionLayout.minTouchTarget), justifyContent: 'center' },
+            { minHeight: minimumTouchTargetSize(), justifyContent: 'center' },
             {
               minWidth: minimumTouchTargetSize(),
               minHeight: minimumTouchTargetSize(),
@@ -269,7 +269,7 @@ export function InvitationRow({ invitation, onResend, onCancel, testID }: Invita
               accessibilityRole="button"
               accessibilityLabel={`Resend the invitation to ${invitation.email}`}
               hitSlop={8}
-              style={{ minHeight: dp(subscriptionLayout.minTouchTarget), justifyContent: 'center' }}
+              style={{ minHeight: minimumTouchTargetSize(), justifyContent: 'center' }}
               testID={`${testID ?? 'invitation'}-resend`}
             >
               <EntryAuthText token="label" color={subscriptionColors.accent}>
@@ -283,7 +283,7 @@ export function InvitationRow({ invitation, onResend, onCancel, testID }: Invita
               accessibilityRole="button"
               accessibilityLabel={`Cancel the invitation to ${invitation.email}`}
               hitSlop={8}
-              style={{ minHeight: dp(subscriptionLayout.minTouchTarget), justifyContent: 'center' }}
+              style={{ minHeight: minimumTouchTargetSize(), justifyContent: 'center' }}
               testID={`${testID ?? 'invitation'}-cancel`}
             >
               <EntryAuthText token="label" color={subscriptionColors.error}>

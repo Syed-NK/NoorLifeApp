@@ -6,6 +6,7 @@ import { useEntryAuthMetrics } from '@features/entry-auth/use-entry-auth-metrics
 import { subscriptionColors } from '@features/subscription/subscription-tokens';
 
 import { PROFILE_LAYOUT } from '../profile-metrics';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ProfileExpandableRowProps = {
   readonly question: string;
@@ -57,7 +58,7 @@ export function ProfileExpandableRow({
         accessibilityLabel={question}
         accessibilityHint={expanded ? collapseHint : expandHint}
         accessibilityState={{ expanded }}
-        style={[styles.header, { minHeight: dp(PROFILE_LAYOUT.minTouchTarget), columnGap: dp(10) }]}
+        style={[styles.header, { minHeight: minimumTouchTargetSize(), columnGap: dp(10) }]}
         testID={`${testID}-toggle`}
       >
         <EntryAuthText

@@ -10,6 +10,7 @@ import { subscriptionColors } from '@features/subscription/subscription-tokens';
 import { profileCopy } from '../profile-copy';
 import { PROFILE_LAYOUT } from '../profile-metrics';
 import { ProfileDialog } from './profile-dialog';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ProfileLogoutRowProps = {
   /**
@@ -98,7 +99,7 @@ export function ProfileLogoutRow({ onConfirm, testID = 'profile-log-out' }: Prof
             style={[
               styles.destructive,
               {
-                minHeight: dp(PROFILE_LAYOUT.minTouchTarget),
+                minHeight: minimumTouchTargetSize(),
                 borderRadius: dp(12),
               },
             ]}

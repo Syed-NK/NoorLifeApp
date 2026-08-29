@@ -215,6 +215,22 @@ describe('no production source can reintroduce a weakened floor', () => {
     ).toEqual([]);
   });
 
+  it('scales no minimum token, whichever module declares it', () => {
+    /*
+      Four modules declare a `minTouchTarget` of their own — `moduleLayout`, `entryAuthLayout`,
+      `PROFILE_LAYOUT` and `subscriptionLayout` — and the first sweep only knew about the first.
+      The subscription restore button measured 43.810 dp and the billing toggle 32.000 dp behind
+      the ones it missed, so this matches the *shape* rather than a list of names.
+    */
+    expect(offenders((code) => /(dp|scaled)([A-Za-z_]+.minTouchTarget)/.test(code))).toEqual([]);
+  });
+
+  it('assigns no module-local minimum token as a bound', () => {
+    expect(
+      offenders((code) => /min(Height|Width)s*:s*[A-Za-z_]+.minTouchTarget/.test(code)),
+    ).toEqual([]);
+  });
+
   it('never assigns the raw token as a minimum dimension', () => {
     /*
       The raw token is not wrong as a *number* — it is the contract. It is wrong as a **rendered

@@ -7,6 +7,7 @@ import { subscriptionColors } from '@features/subscription/subscription-tokens';
 
 import { profileCopy } from '../profile-copy';
 import { PROFILE_LAYOUT } from '../profile-metrics';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ProfileHeaderProps = {
   readonly onBack: () => void;
@@ -59,7 +60,7 @@ export function ProfileHeader({
 }: ProfileHeaderProps) {
   const { dp } = useEntryAuthMetrics();
 
-  const target = dp(PROFILE_LAYOUT.minTouchTarget);
+  const target = minimumTouchTargetSize();
   const disc = dp(PROFILE_LAYOUT.header.control);
   const glyph = dp(PROFILE_LAYOUT.header.icon);
 

@@ -41,7 +41,7 @@ export function AuthHeader({
   testID,
 }: AuthHeaderProps) {
   const { dp } = useEntryAuthMetrics();
-  const target = dp(entryAuthLayout.minTouchTarget);
+  const target = minimumTouchTargetSize();
 
   return (
     <View style={{ gap: dp(6) }} testID={testID}>
