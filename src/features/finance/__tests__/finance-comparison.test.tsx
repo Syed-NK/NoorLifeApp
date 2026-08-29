@@ -37,6 +37,36 @@ import { FinanceProvider } from '../di/finance-provider';
 import { FinanceSpendingScreen } from '../screens/finance-spending-screen';
 
 /**
+ * The source with its comments removed.
+ *
+ * These guards assert things about *code*. Read raw, they fail on documentation instead: a comment
+ * explaining why `hitSlop` is refused reads as a `hitSlop` usage, and an issue reference such as
+ * `#116` reads as a three-digit hex colour. Stripping comments keeps each assertion pointed at what
+ * it is about, and cannot hide a real usage — a comment can neither size a control nor colour one.
+ *
+ * Block comments go wholesale. A line comment is dropped only when it *begins* a line, so a double
+ * slash inside a string — a URL, say — is never mistaken for the start of one.
+ */
+function codeOf(source: string): string {
+  const OPEN = '/*';
+  const CLOSE = '*/';
+  const LINE = '//';
+  let out = source;
+  for (;;) {
+    const start = out.indexOf(OPEN);
+    if (start === -1) break;
+    const end = out.indexOf(CLOSE, start + OPEN.length);
+    if (end === -1) break;
+    out = out.slice(0, start) + out.slice(end + CLOSE.length);
+  }
+  const newline = String.fromCharCode(10);
+  return out
+    .split(newline)
+    .filter((line) => !line.trim().startsWith(LINE))
+    .join(newline);
+}
+
+/**
  * **This month against last** — issue #102.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -802,7 +832,7 @@ describe('the Spending screen states the comparison', () => {
       path.join(process.cwd(), 'src/features/finance/screens/finance-spending-screen.tsx'),
       'utf8',
     );
-    const component = source.slice(source.indexOf('function MonthComparison'));
+    const component = codeOf(source.slice(source.indexOf('function MonthComparison')));
     expect(component).not.toMatch(/#[0-9a-fA-F]{3,8}|'red'|'green'|rgba?\(/);
   });
 
