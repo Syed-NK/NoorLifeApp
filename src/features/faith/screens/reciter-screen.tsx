@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { ModuleText } from '@features/modules/components';
-import { moduleLayout } from '@features/modules/module-tokens';
+
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import { FaithCatalogueList, type CatalogueRow } from '../components/faith-catalogue-list';
@@ -21,6 +21,7 @@ import {
   SUDAIS_RESOURCE_ID,
 } from '../data/quran-foundation/recitation-attribution';
 import { DEFAULT_RECITER_ID } from '../storage/faith-preferences';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * "Choose reciter" — the recitation catalogue, and where its offline state is managed.
@@ -340,7 +341,7 @@ function ReciterCatalogueBody({
         </ModuleText>
       </View>
 
-      <View style={{ flex: 1, minHeight: dp(moduleLayout.minTouchTarget) }}>
+      <View style={{ flex: 1, minHeight: minimumTouchTargetSize() }}>
         <FaithCatalogueList
           rows={rows}
           selectedId={selectedId}

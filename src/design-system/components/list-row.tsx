@@ -4,9 +4,10 @@ import { AppText } from '@ds/typography/app-text';
 import { AppIcon } from './app-icon';
 import { PressableScale } from './pressable-scale';
 
-import { iconSize, neutralColors, radius, spacing, touchTarget } from '@ds/tokens';
+import { iconSize, neutralColors, radius, spacing } from '@ds/tokens';
 import type { IconName } from '@shared/models/icon';
 import { forwardChevron } from '@shared/utils/rtl';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ListRowProps = {
   readonly title: string;
@@ -60,7 +61,8 @@ export function ListRow({
   const readout = [title, subtitle, value].filter((part) => part !== undefined).join(', ');
 
   const content = (
-    <View style={[styles.root, style]}>
+    /* The floor is read at render, never cached in a StyleSheet - issue #115. */
+    <View style={[styles.root, { minHeight: minimumTouchTargetSize() }, style]}>
       {leadingDotColor === undefined ? null : (
         <View style={[styles.dot, { backgroundColor: leadingDotColor }]} />
       )}
@@ -128,7 +130,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    minHeight: touchTarget.minimum,
     paddingVertical: spacing.sm,
   },
   dot: {

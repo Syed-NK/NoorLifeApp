@@ -6,7 +6,7 @@ import { neutralColors, radius, semanticColors } from '@ds/tokens';
 import { useUpgradeSheetActions } from '@features/subscription/services/upgrade-sheet-context';
 import { usePaidContentLock } from '@features/subscription/use-module-lock';
 import type { FamilyCheckInSummary, OverallProgressSummary } from '@shared/models/dashboard';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { UPGRADE_SOURCES } from '../home-premium-surfaces';
 import { LOCKED } from '../main-home-metrics';
@@ -294,7 +294,15 @@ function ViewAll({
       hitSlop={minimumHitSlop(hitSize)}
       accessibilityRole="button"
       accessibilityLabel={`View all, ${label}`}
-      style={styles.viewAll}
+      style={[
+        styles.viewAll,
+        {
+          minWidth: minimumTouchTargetSize(),
+          minHeight: minimumTouchTargetSize(),
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+      ]}
     >
       <HomeText token="viewAll" color={semanticColors.primary} numberOfLines={1}>
         View All

@@ -5,8 +5,9 @@ import { AppText } from '@ds/typography/app-text';
 import { AppIcon } from './app-icon';
 import { SurfaceCard } from './surface-card';
 
-import { iconSize, neutralColors, radius, spacing, touchTarget } from '@ds/tokens';
+import { iconSize, neutralColors, radius, spacing } from '@ds/tokens';
 import type { IconName } from '@shared/models/icon';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * Tile density.
@@ -89,6 +90,8 @@ export function ActionTile({
       style={[
         styles.root,
         isGrid ? styles.gridRoot : isRow ? styles.rowRoot : styles.comfortableRoot,
+        /* The floor is read at render, never cached in a StyleSheet - issue #115. */
+        { minHeight: minimumTouchTargetSize() },
         style,
       ]}
       testID={testID}
@@ -145,7 +148,6 @@ const styles = StyleSheet.create({
   rowRoot: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-    minHeight: touchTarget.minimum,
   },
   stackedContent: {
     alignItems: 'flex-start',

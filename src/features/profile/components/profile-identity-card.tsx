@@ -7,7 +7,7 @@ import { useEntryAuthMetrics } from '@features/entry-auth/use-entry-auth-metrics
 import { profileAvatar } from '@features/home/module-pictograms';
 import { PlanBadge } from '@features/subscription/components/plan-badge';
 import { subscriptionColors } from '@features/subscription/subscription-tokens';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { profileCopy } from '../profile-copy';
 import { PROFILE_LAYOUT } from '../profile-metrics';
@@ -142,7 +142,16 @@ export function ProfileIdentityCard({
                 accessibilityRole="button"
                 accessibilityLabel="Profile details could not be refreshed. Retry."
                 hitSlop={minimumHitSlop(22)}
-                style={[styles.retry, { columnGap: dp(4) }]}
+                style={[
+                  styles.retry,
+                  { columnGap: dp(4) },
+                  {
+                    minWidth: minimumTouchTargetSize(),
+                    minHeight: minimumTouchTargetSize(),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  },
+                ]}
                 testID={`${testID}-retry`}
               >
                 <AppIcon name="retry" size={dp(13)} color={subscriptionColors.accent} />

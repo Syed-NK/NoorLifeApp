@@ -17,6 +17,7 @@ import { faithNavKeys } from '../faith-routes';
 import { useBookmark } from '../hooks/use-bookmark';
 import { useTranslationPreference } from '../hooks/use-translation-preference';
 import { useFaithResource } from '../hooks/use-faith-resource';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * The Daily Ayah, full-screen.
@@ -110,8 +111,8 @@ function AyahDetail({
             accessibilityLabel={bookmarked ? 'Remove bookmark' : 'Bookmark this verse'}
             accessibilityState={{ selected: bookmarked }}
             style={{
-              minWidth: dp(moduleLayout.minTouchTarget),
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minWidth: minimumTouchTargetSize(),
+              minHeight: minimumTouchTargetSize(),
               alignItems: 'flex-end',
               justifyContent: 'center',
             }}

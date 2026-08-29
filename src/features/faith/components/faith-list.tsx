@@ -9,8 +9,9 @@ import type { IconName } from '@shared/models/icon';
 
 import { FaithPictogram, type FaithPictogramSlot } from './faith-locked-library';
 import { useModuleTheme } from '@features/modules/module-context';
-import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
+import { moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * List primitives shared by the Faith sub-screens.
@@ -130,7 +131,7 @@ export function FaithRow({
         styles.row,
         {
           columnGap: dp(10),
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           paddingVertical: dp(6),
         },
       ]}

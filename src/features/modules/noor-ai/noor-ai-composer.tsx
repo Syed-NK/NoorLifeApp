@@ -10,6 +10,7 @@ import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { noorAIChatCopy } from './noor-ai-chat-copy';
 import type { NoorAIDraftProblem } from './noor-ai-message-draft';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type NoorAIComposerProps = {
   readonly value: string;
@@ -184,7 +185,7 @@ export function NoorAIComposer({
               style={[
                 styles.secondary,
                 {
-                  minHeight: dp(moduleLayout.minTouchTarget),
+                  minHeight: minimumTouchTargetSize(),
                   borderRadius: dp(moduleLayout.radiusSmall),
                   paddingHorizontal: dp(16),
                   borderColor: moduleNeutrals.border,
@@ -211,7 +212,7 @@ export function NoorAIComposer({
           style={[
             styles.send,
             {
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               borderRadius: dp(moduleLayout.radiusSmall),
               paddingHorizontal: dp(18),
               columnGap: dp(7),

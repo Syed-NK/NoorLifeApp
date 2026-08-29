@@ -6,7 +6,7 @@ import { AppIcon, PressableScale } from '@ds/components';
 import { ModuleEmptyState, ModuleLoadingState } from '@features/modules/components';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
 import { FaithScreen } from '../components/faith-screen';
@@ -90,6 +90,12 @@ export function BookmarksScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`Remove ${item.label} from bookmarks`}
                         hitSlop={minimumHitSlop(dp(20))}
+                        style={{
+                          minWidth: minimumTouchTargetSize(),
+                          minHeight: minimumTouchTargetSize(),
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
                         testID={`faith-bookmark-remove-${item.kind}-${item.id}`}
                       >
                         <AppIcon name="close" size={dp(18)} color={moduleNeutrals.textSecondary} />

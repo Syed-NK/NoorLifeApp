@@ -14,6 +14,7 @@ import {
 } from '../data/quran-selection/quran-selection';
 import type { SelectionResolution } from '../data/quran-selection/retained-selection.resolver';
 import { QuranSelectionView, SelectionOriginBadge } from './quran-selection-view';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * The two kinds of row the Duas library draws, and the actions on them.
@@ -281,7 +282,7 @@ export function AddSelection({
       style={[
         styles.add,
         {
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           borderRadius: dp(moduleLayout.radiusSmall),
           paddingHorizontal: dp(12),
           paddingVertical: dp(8),
@@ -335,7 +336,7 @@ function OpenTarget({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint="Opens the full dua, its source and its actions"
-      style={{ rowGap: dp(8), minHeight: dp(moduleLayout.minTouchTarget) }}
+      style={{ rowGap: dp(8), minHeight: minimumTouchTargetSize() }}
       testID={testID}
     >
       {children}
@@ -363,7 +364,7 @@ function Action({
   readonly testID: string;
 }) {
   const { dp } = useModuleMetrics();
-  const size = dp(moduleLayout.minTouchTarget);
+  const size = minimumTouchTargetSize();
 
   return (
     <PressableScale

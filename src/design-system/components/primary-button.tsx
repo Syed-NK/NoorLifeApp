@@ -4,16 +4,9 @@ import { AppText } from '@ds/typography/app-text';
 import { AppIcon } from './app-icon';
 import { PressableScale } from './pressable-scale';
 
-import {
-  elementSize,
-  iconSize,
-  neutralColors,
-  radius,
-  semanticColors,
-  spacing,
-  touchTarget,
-} from '@ds/tokens';
+import { elementSize, iconSize, neutralColors, radius, semanticColors, spacing } from '@ds/tokens';
 import type { IconName } from '@shared/models/icon';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type PrimaryButtonProps = {
   readonly label: string;
@@ -75,7 +68,7 @@ export function PrimaryButton({
         styles.root,
         {
           height,
-          minHeight: touchTarget.minimum,
+          minHeight: minimumTouchTargetSize(),
           backgroundColor: isInactive ? neutralColors.disabled : color,
         },
         fullWidth ? styles.fullWidth : styles.hugging,

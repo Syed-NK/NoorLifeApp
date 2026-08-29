@@ -4,16 +4,9 @@ import { AppText } from '@ds/typography/app-text';
 import { AppIcon } from './app-icon';
 import { PressableScale } from './pressable-scale';
 
-import {
-  elementSize,
-  iconSize,
-  neutralColors,
-  radius,
-  semanticColors,
-  spacing,
-  touchTarget,
-} from '@ds/tokens';
+import { elementSize, iconSize, neutralColors, radius, semanticColors, spacing } from '@ds/tokens';
 import type { IconName } from '@shared/models/icon';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type SecondaryButtonProps = {
   readonly label: string;
@@ -66,7 +59,7 @@ export function SecondaryButton({
       accessibilityState={{ disabled }}
       style={[
         styles.root,
-        { height, minHeight: touchTarget.minimum },
+        { height, minHeight: minimumTouchTargetSize() },
         variant === 'outline'
           ? { borderWidth: 1, borderColor: disabled ? neutralColors.disabled : color }
           : null,

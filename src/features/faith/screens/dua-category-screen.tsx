@@ -41,6 +41,7 @@ import {
 import { useCachedSurahNames } from '../hooks/use-cached-surah-names';
 import { useQuranSelections } from '../hooks/use-quran-selections';
 import { useTasbih } from '../hooks/use-tasbih';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * **One category of the Duas library** — its own search, its own filters, and an honest account of
@@ -440,7 +441,7 @@ function ReviewedRow({
             onPress={() => onOpen(dua.id)}
             accessibilityRole="button"
             accessibilityLabel={`Open ${dua.title}`}
-            style={{ minHeight: dp(moduleLayout.minTouchTarget), rowGap: dp(4) }}
+            style={{ minHeight: minimumTouchTargetSize(), rowGap: dp(4) }}
             testID={`faith-dua-category-reviewed-open-${dua.id}`}
           >
             <ModuleText token="body" color={moduleNeutrals.textPrimary} numberOfLines={2}>
@@ -530,7 +531,7 @@ function OpenSelections() {
       style={[
         styles.link,
         {
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           borderRadius: dp(moduleLayout.radiusSmall),
           paddingHorizontal: dp(12),
         },
@@ -555,7 +556,7 @@ function BackToCategories({ onPress }: { readonly onPress: () => void }) {
       style={[
         styles.link,
         {
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           borderRadius: dp(moduleLayout.radiusSmall),
           paddingHorizontal: dp(12),
         },

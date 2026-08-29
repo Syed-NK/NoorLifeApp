@@ -27,6 +27,7 @@ import { authErrorCopy, loginCopy, welcomeCopy } from '../entry-auth-copy';
 import { entryAuthColors } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
 import { useSubmit } from '../use-auth-error';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * Screen 06 — Login.
@@ -154,7 +155,16 @@ export function LoginScreen() {
               accessibilityState={{ checked: remember }}
               accessibilityLabel={loginCopy.rememberMe}
               hitSlop={8}
-              style={[styles.remember, { columnGap: dp(8), minHeight: dp(44) }]}
+              style={[
+                styles.remember,
+                { columnGap: dp(8), minHeight: dp(44) },
+                {
+                  minWidth: minimumTouchTargetSize(),
+                  minHeight: minimumTouchTargetSize(),
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                },
+              ]}
               testID="login-remember"
             >
               <View

@@ -13,7 +13,7 @@ import {
   tasbihStageSurface,
 } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop, useReducedMotion } from '@shared/utils/a11y';
+import { minimumHitSlop, useReducedMotion, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { FaithScreen } from '../components/faith-screen';
 import { QuranSelectionView, SelectionOriginBadge } from '../components/quran-selection-view';
@@ -581,13 +581,13 @@ function DhikrControlCard({
             onPress={onOpenSelector}
             accessibilityRole="button"
             accessibilityLabel={summary === null ? 'Choose what to count' : 'Change what you count'}
-            hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
+            hitSlop={minimumHitSlop(minimumTouchTargetSize())}
             style={[
               styles.outlined,
               {
                 flexShrink: 0,
                 borderRadius: dp(moduleLayout.radiusSmall),
-                minHeight: dp(moduleLayout.minTouchTarget),
+                minHeight: minimumTouchTargetSize(),
                 paddingHorizontal: dp(10),
                 columnGap: dp(5),
               },
@@ -628,7 +628,7 @@ function DhikrControlCard({
           onPress={onOpenSelector}
           accessibilityRole="button"
           accessibilityLabel={`${counterSpokenName(active)}. ${counterKindLabel(active)}.`}
-          style={[styles.row, { columnGap: dp(10), minHeight: dp(moduleLayout.minTouchTarget) }]}
+          style={[styles.row, { columnGap: dp(10), minHeight: minimumTouchTargetSize() }]}
           testID="faith-tasbih-counter-row"
         >
           <Emblem icon="profile" />
@@ -663,7 +663,7 @@ function DhikrControlCard({
             onPress={onUndo}
             accessibilityRole="button"
             accessibilityLabel="Undo"
-            hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
+            hitSlop={minimumHitSlop(minimumTouchTargetSize())}
             style={[
               styles.group,
               styles.flex,

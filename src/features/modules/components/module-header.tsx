@@ -4,7 +4,7 @@ import { Image, StyleSheet, View } from 'react-native';
 import { AppIcon, PressableScale } from '@ds/components';
 import { globalRoutes } from '@application/navigation/routes';
 import { profileAvatar } from '@features/home/module-pictograms';
-import { iconButtonA11y } from '@shared/utils/a11y';
+import { iconButtonA11y, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { useModule } from '../module-context';
 import { moduleLayout, moduleNeutrals, moduleScale } from '../module-tokens';
@@ -21,7 +21,15 @@ import { ModuleText } from './module-text';
  * title exists to avoid.
  */
 export function headerControlReserve(scaled: (value: number) => number): number {
-  const target = scaled(moduleLayout.minTouchTarget);
+  /*
+    The target is the density-safe floor, never `scaled(...)` — issue #115.
+
+    This reserve has to be exactly the width the controls actually occupy, and those are now sized
+    by `minimumTouchTargetSize()`. Leaving the reserve on the layout scale would compute a narrower
+    cluster than the one rendered, so the title band would run under Help on a narrow screen.
+    Only the gap between the two controls is a spacing value, so only the gap stays scaled.
+  */
+  const target = minimumTouchTargetSize();
   return Math.max(target, target * 2 + scaled(moduleLayout.headerControlGap));
 }
 
@@ -116,7 +124,7 @@ export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: Mod
   const iconSize = dp(moduleLayout.headerIcon);
   const avatarSize = dp(moduleLayout.headerAvatar);
   /** The tappable rectangle: 44 dp, the accessibility minimum on both axes. */
-  const target = dp(moduleLayout.minTouchTarget);
+  const target = minimumTouchTargetSize();
   /**
    * The visible disc inside it: 36 dp, as both approved references draw it.
    *

@@ -18,6 +18,7 @@ import { authErrorCopy, signUpCopy } from '../entry-auth-copy';
 import { entryAuthColors } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
 import { useSubmit } from '../use-auth-error';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * Screen 07 — Create Account.
@@ -156,7 +157,16 @@ export function SignUpScreen() {
         accessibilityState={{ checked: accepted }}
         accessibilityLabel="I agree to the Terms of Service and Privacy Policy"
         hitSlop={8}
-        style={[styles.termsRow, { columnGap: dp(10), minHeight: dp(44) }]}
+        style={[
+          styles.termsRow,
+          { columnGap: dp(10), minHeight: dp(44) },
+          {
+            minWidth: minimumTouchTargetSize(),
+            minHeight: minimumTouchTargetSize(),
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+        ]}
         testID="signup-terms"
       >
         <View

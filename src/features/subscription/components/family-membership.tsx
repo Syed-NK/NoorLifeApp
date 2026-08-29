@@ -10,6 +10,7 @@ import { isFamilyFull } from '../domain/entitlement';
 import { familyInviteCopy, familyMembersCopy, familyInvitationsCopy } from '../subscription-copy';
 import { subscriptionColors, subscriptionLayout } from '../subscription-tokens';
 import { PlanBadge } from './plan-badge';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * The family-membership primitives: seat indicator, member avatar, member row, invitation row.
@@ -182,7 +183,15 @@ export function FamilyMemberRow({ member, onRemove, testID }: FamilyMemberRowPro
           accessibilityRole="button"
           accessibilityLabel={`Remove ${member.name} from the family`}
           hitSlop={8}
-          style={{ minHeight: dp(subscriptionLayout.minTouchTarget), justifyContent: 'center' }}
+          style={[
+            { minHeight: dp(subscriptionLayout.minTouchTarget), justifyContent: 'center' },
+            {
+              minWidth: minimumTouchTargetSize(),
+              minHeight: minimumTouchTargetSize(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+          ]}
           testID={`${testID ?? 'member'}-remove`}
         >
           <EntryAuthText token="label" color={subscriptionColors.error}>

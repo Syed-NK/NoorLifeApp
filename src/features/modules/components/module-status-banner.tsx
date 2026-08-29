@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import type { IconName } from '@shared/models/icon';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { useStatusInkBorder } from '../module-surfaces';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
@@ -128,6 +128,12 @@ export function ModuleStatusBanner({
           accessibilityRole="button"
           accessibilityLabel={actionLabel}
           hitSlop={minimumHitSlop(dp(22))}
+          style={{
+            minWidth: minimumTouchTargetSize(),
+            minHeight: minimumTouchTargetSize(),
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
           testID={`${testID ?? 'module-banner'}-action`}
         >
           <ModuleText token="sectionAction" color={spec.color} numberOfLines={1}>
@@ -142,6 +148,12 @@ export function ModuleStatusBanner({
           accessibilityRole="button"
           accessibilityLabel="Dismiss message"
           hitSlop={minimumHitSlop(dp(18))}
+          style={{
+            minWidth: minimumTouchTargetSize(),
+            minHeight: minimumTouchTargetSize(),
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
           testID={`${testID ?? 'module-banner'}-dismiss`}
         >
           <AppIcon name="close" size={dp(15)} color={moduleNeutrals.textSecondary} />

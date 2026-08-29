@@ -9,6 +9,7 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { popularSectionLayout } from '../data/duas/dua-popular';
 import { duaSourceLabel, type ReviewedDua } from '../data/duas/reviewed-dua';
 import { SelectionOriginBadge } from './quran-selection-view';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * **Popular Duas** — the section a reviewer's editorial rank fills, and which draws nothing until one
@@ -159,7 +160,7 @@ function PopularCard({
           borderRadius: dp(moduleLayout.cardRadius),
           padding: dp(moduleLayout.cardPadding),
           rowGap: dp(6),
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
         },
       ]}
       testID={testID}

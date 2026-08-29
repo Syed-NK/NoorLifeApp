@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
 
 import { PressableScale } from '@ds/components';
-import { neutralColors, touchTarget } from '@ds/tokens';
+import { neutralColors } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleTheme } from '@features/modules/module-context';
@@ -22,6 +22,7 @@ import {
   SURAH_COUNT,
   type OfflineDownloadState,
 } from '../storage/faith-offline-recitation';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * Offline Qur'an audio — the one screen where recitation is downloaded, kept and removed.
@@ -159,7 +160,7 @@ function OfflineAudioBody() {
                     ? 'Turns off Wi-Fi only, allowing downloads over mobile data'
                     : 'Turns on Wi-Fi only'
                 }
-                style={{ minHeight: dp(moduleLayout.minTouchTarget), justifyContent: 'center' }}
+                style={{ minHeight: minimumTouchTargetSize(), justifyContent: 'center' }}
                 testID="faith-offline-audio-wifi-toggle"
               >
                 <ModuleText token="cardAction">{snapshot.wifiOnly ? 'On' : 'Off'}</ModuleText>
@@ -508,7 +509,10 @@ function SurahPanel({
                         : 'Resumes the download and fetches the verses still missing. Nothing already downloaded is fetched again.'
                     }
                     accessibilityState={{ disabled: busy }}
-                    style={styles.rowAction}
+                    style={[
+                      styles.rowAction,
+                      { minHeight: minimumTouchTargetSize(), minWidth: minimumTouchTargetSize() },
+                    ]}
                     testID={`faith-offline-audio-retry-surah-${entry.surah}`}
                   >
                     <ModuleText
@@ -525,7 +529,10 @@ function SurahPanel({
                   accessibilityRole="button"
                   accessibilityLabel={`Remove downloaded surah ${entry.surah}, ${entry.playable} verses`}
                   accessibilityHint="Deletes the audio from this device"
-                  style={styles.rowAction}
+                  style={[
+                    styles.rowAction,
+                    { minHeight: minimumTouchTargetSize(), minWidth: minimumTouchTargetSize() },
+                  ]}
                   testID={`faith-offline-audio-remove-surah-${entry.surah}`}
                 >
                   <ModuleText
@@ -566,13 +573,16 @@ const styles = StyleSheet.create({
     rowGap: 4,
   },
   /*
-    `touchTarget.minimum` unscaled, deliberately. `dp()` scales by screen width, and a floor that
-    shrinks on a narrower phone is not a floor — measured at 43 dp on a 384 dp device when it was
-    wrapped, which is the defect `205659b` fixed for the prayer sheet.
+    Unscaled, deliberately. `dp()` scales by screen width, and a floor that shrinks on a narrower
+    phone is not a floor — measured at 43 dp on a 384 dp device when it was wrapped, which is the
+    defect `205659b` fixed for the prayer sheet.
+
+    The value itself is applied at render beside the height — issue #115. A raw 44 in a StyleSheet
+    is evaluated once at module load and can still snap to 115 px / 43.810 dp on a 2.625 screen;
+    `minimumTouchTargetSize()` asks for the next whole pixel instead, and has to read the density
+    of the display actually being drawn to.
   */
   rowAction: {
-    minHeight: touchTarget.minimum,
-    minWidth: touchTarget.minimum,
     justifyContent: 'center',
   },
 });
@@ -734,7 +744,7 @@ function ConfirmRemoval({
               onPress={onCancel}
               accessibilityRole="button"
               accessibilityLabel="Keep the downloaded audio"
-              style={{ minHeight: dp(moduleLayout.minTouchTarget), justifyContent: 'center' }}
+              style={{ minHeight: minimumTouchTargetSize(), justifyContent: 'center' }}
               testID="faith-offline-audio-confirm-cancel"
             >
               <ModuleText token="cardAction">Cancel</ModuleText>
@@ -743,7 +753,7 @@ function ConfirmRemoval({
               onPress={onConfirm}
               accessibilityRole="button"
               accessibilityLabel={title}
-              style={{ minHeight: dp(moduleLayout.minTouchTarget), justifyContent: 'center' }}
+              style={{ minHeight: minimumTouchTargetSize(), justifyContent: 'center' }}
               testID="faith-offline-audio-confirm-remove"
             >
               <ModuleText token="cardAction" color={moduleNeutrals.warning}>

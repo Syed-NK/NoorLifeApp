@@ -24,6 +24,7 @@ import { faithNavKeys } from '../faith-routes';
 import { useFaithResource } from '../hooks/use-faith-resource';
 import { useTranslationPreference } from '../hooks/use-translation-preference';
 import { parseAyahParam, parseSurahParam } from './reader-screen';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * Faith AI.
@@ -332,7 +333,7 @@ function AskField({
           paddingLeft: dp(14),
           paddingRight: dp(6),
           columnGap: dp(8),
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
         },
       ]}
     >
@@ -488,7 +489,7 @@ function ReplyView({ reply }: { readonly reply: FaithAiReply }) {
               style={[
                 styles.handoff,
                 {
-                  minHeight: dp(moduleLayout.minTouchTarget),
+                  minHeight: minimumTouchTargetSize(),
                   borderRadius: dp(moduleLayout.radiusSmall),
                   backgroundColor: theme.fill,
                   paddingHorizontal: dp(16),

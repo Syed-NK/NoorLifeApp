@@ -40,6 +40,7 @@ import { useCachedSurahNames } from '../hooks/use-cached-surah-names';
 import { useQuranSelections } from '../hooks/use-quran-selections';
 import { useTasbih } from '../hooks/use-tasbih';
 import { recentSelections } from '../storage/faith-quran-selections';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * **Duas — the approved category library.**
@@ -464,7 +465,7 @@ function ContinueCard({
           borderRadius: dp(moduleLayout.cardRadius),
           padding: dp(moduleLayout.cardPadding),
           columnGap: dp(10),
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           backgroundColor: moduleNeutrals.surface,
           borderColor: moduleNeutrals.border,
           borderWidth: 1,

@@ -6,7 +6,7 @@ import { modulePalettes } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
 import { moduleLayout, moduleNeutrals, moduleColorThemes } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * The search field and the filter sheet the Duas surfaces share.
@@ -76,7 +76,7 @@ export function DuaSearchRow({
     phrase would not fit, which is a question about this device and this text size together.
   */
   const fieldWidth =
-    contentWidth - dp(moduleLayout.minTouchTarget) - dp(moduleLayout.cardGap) - dp(18) - dp(24);
+    contentWidth - minimumTouchTargetSize() - dp(moduleLayout.cardGap) - dp(18) - dp(24);
   const compact = FULL_PLACEHOLDER.length * type('body').fontSize * fontScale * 0.625 > fieldWidth;
 
   return (
@@ -86,7 +86,7 @@ export function DuaSearchRow({
           styles.search,
           {
             borderRadius: dp(moduleLayout.radiusSmall),
-            minHeight: dp(moduleLayout.minTouchTarget),
+            minHeight: minimumTouchTargetSize(),
             paddingHorizontal: dp(12),
             columnGap: dp(10),
           },
@@ -138,7 +138,7 @@ export function DuaSearchRow({
             onPress={() => onChange('')}
             accessibilityRole="button"
             accessibilityLabel="Clear the search"
-            hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
+            hitSlop={minimumHitSlop(minimumTouchTargetSize())}
             testID={`${testIDPrefix}-search-clear`}
           >
             <AppIcon name="close" size={dp(18)} color={moduleNeutrals.textSecondary} />
@@ -153,8 +153,8 @@ export function DuaSearchRow({
         style={[
           styles.filterButton,
           {
-            width: dp(moduleLayout.minTouchTarget),
-            height: dp(moduleLayout.minTouchTarget),
+            width: minimumTouchTargetSize(),
+            height: minimumTouchTargetSize(),
             borderRadius: dp(moduleLayout.radiusSmall),
             /* The active filter is carried by the border weight as well as the fill, never by colour alone. */
             borderColor: filterActive ? EMERALD : moduleNeutrals.border,
@@ -304,7 +304,7 @@ export function DuaFilterSheet<T extends string>({
                   style={[
                     styles.filterRow,
                     {
-                      minHeight: dp(moduleLayout.minTouchTarget),
+                      minHeight: minimumTouchTargetSize(),
                       borderRadius: dp(moduleLayout.radiusSmall),
                       paddingHorizontal: dp(12),
                       columnGap: dp(8),

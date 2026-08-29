@@ -25,6 +25,7 @@ import { useFaithRepositories } from '../di/faith-repository-context';
 import { faithNavKeys } from '../faith-routes';
 import { permissionAdvice, useLocationPermission } from '../hooks/use-location-permission';
 import { usePrayerNotifications } from '../hooks/use-prayer-notifications';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * Prayer location — which coordinate every prayer time in NoorLife is calculated from.
@@ -738,7 +739,7 @@ function CityResultRow({
       accessibilityState={{ selected }}
       accessibilityLabel={`${cityLabel(city)}. Select to preview its timezone before saving.`}
       style={({ pressed }) => ({
-        minHeight: dp(moduleLayout.minTouchTarget),
+        minHeight: minimumTouchTargetSize(),
         justifyContent: 'center',
         paddingHorizontal: dp(8),
         paddingVertical: dp(6),

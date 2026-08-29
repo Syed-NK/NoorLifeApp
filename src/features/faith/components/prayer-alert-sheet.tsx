@@ -2,12 +2,12 @@ import { Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-na
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@ds/components';
-import { neutralColors, touchTarget } from '@ds/tokens';
+import { neutralColors } from '@ds/tokens';
 import { ModuleText } from '@features/modules/components';
 import { useModuleTheme } from '@features/modules/module-context';
 import { moduleLayout, moduleNeutrals, withAlpha } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import type {
   ExactAlarmCapability,
@@ -208,6 +208,12 @@ export function PrayerAlertSheet({
               accessibilityRole="button"
               accessibilityLabel={`Close the notification settings for ${label}`}
               hitSlop={minimumHitSlop(dp(24))}
+              style={{
+                minWidth: minimumTouchTargetSize(),
+                minHeight: minimumTouchTargetSize(),
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               testID={`${testID}-close`}
             >
               <AppIcon name="close" size={dp(20)} color={moduleNeutrals.textPrimary} />
@@ -494,7 +500,7 @@ function Choice({
           accessibility floor must not, because a minimum that shrinks with the screen is not a
           minimum. This one value is therefore taken unscaled while everything around it scales.
         */
-        minHeight: touchTarget.minimum,
+        minHeight: minimumTouchTargetSize(),
         justifyContent: 'center',
         borderRadius: dp(moduleLayout.radiusSmall),
         backgroundColor: selected ? withAlpha(theme.primary, 0.14) : moduleNeutrals.surfaceMuted,

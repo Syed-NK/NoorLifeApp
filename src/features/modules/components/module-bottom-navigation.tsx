@@ -11,6 +11,7 @@ import { moduleLayout, moduleNavigationHeight, moduleNeutrals } from '../module-
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleAICenterButton } from './module-ai-center-button';
 import { ModuleText } from './module-text';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ModuleBottomNavigationProps = {
   /** `key` of the active navigation item. */
@@ -195,7 +196,7 @@ export function ModuleBottomNavigation({
                   accessibilityRole="tab"
                   accessibilityLabel={item.accessibilityLabel ?? item.label}
                   accessibilityState={{ selected: isActive }}
-                  style={styles.slotContent}
+                  style={[styles.slotContent, { minHeight: minimumTouchTargetSize() }]}
                   testID={`${prefix}-${item.key}`}
                 >
                   <AppIcon name={item.icon} size={dp(moduleLayout.navIcon)} color={tint} />
@@ -264,7 +265,6 @@ const styles = StyleSheet.create({
   slotContent: {
     flex: 1,
     alignSelf: 'stretch',
-    minHeight: moduleLayout.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },

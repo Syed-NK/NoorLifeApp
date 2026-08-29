@@ -8,7 +8,7 @@ import { useUpgradeSheetActions } from '@features/subscription/services/upgrade-
 import { useModuleLock } from '@features/subscription/use-module-lock';
 import type { TimelineEntry } from '@shared/models/dashboard';
 import type { ModuleTheme } from '@shared/models/module-theme';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 import { forwardChevron } from '@shared/utils/rtl';
 
 import { UPGRADE_SOURCES } from '../home-premium-surfaces';
@@ -130,7 +130,15 @@ export function TodayTimeline({
           {...(isPlannerLocked
             ? { accessibilityHint: 'Explains what NoorLife Premium includes' }
             : {})}
-          style={styles.viewAll}
+          style={[
+            styles.viewAll,
+            {
+              minWidth: minimumTouchTargetSize(),
+              minHeight: minimumTouchTargetSize(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+          ]}
           testID={`${testID ?? 'today'}-view-all`}
         >
           {/* Lock §9: View All is the global primary, not a module colour — until it is locked, when

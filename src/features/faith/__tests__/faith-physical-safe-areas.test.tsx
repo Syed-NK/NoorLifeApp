@@ -22,6 +22,7 @@ import type { RetainedQuran, RetainedQuranSource } from '../data/offline/retaine
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { DuaCategoryScreen } from '../screens/dua-category-screen';
 import { setActiveFaithScope } from '../storage/faith-user-scope';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * **Three defects a real phone found, and the properties that stop each coming back.**
@@ -221,7 +222,12 @@ describe('defect 1 — the filter sheet must clear the system navigation region'
         the height is read from the parent; reading it off the testID node finds only `absoluteFill`.
       */
       const row = flatten(option.parent?.props?.style);
-      expect(row.minHeight).toBe(dp(moduleLayout.minTouchTarget));
+      /*
+        The density-safe floor, not `dp(...)` — issue #115. The row measured 43 dp here while its
+        style said 44, which is the scaled-bound half of that issue.
+      */
+      expect(row.minHeight).toBe(minimumTouchTargetSize());
+      expect(row.minHeight).toBeGreaterThanOrEqual(moduleLayout.minTouchTarget);
     }
 
     fireEvent.press(view.getByTestId('faith-dua-category-filter-sunnah'));
