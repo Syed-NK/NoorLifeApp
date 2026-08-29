@@ -649,3 +649,220 @@ describe('the controls design locks used to hold below the floor', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Every interactive element, not the first one in each file — issue #115
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One JSX opening tag for an interactive element, with where it starts. */
+type InteractiveTag = {
+  readonly file: string;
+  readonly line: number;
+  readonly element: string;
+  readonly tag: string;
+  readonly testID: string;
+};
+
+/**
+ * Every `Pressable` / `Touchable*` opening tag in a file, in order.
+ *
+ * ── Why this replaced a per-file substring scan ────────────────────────────
+ * The scan that ran before PR #118 answered "does this file contain a control that relies on
+ * `hitSlop` alone", and the migration script that used the same shape fixed the **first** match per
+ * file. `ayah-action-sheet.tsx` has two identical close controls; the first was corrected and the
+ * second, `faith-reader-sheet-close`, was never visited — a 20 dp icon left as the whole
+ * accessibility node behind a slop.
+ *
+ * So this enumerates *every* occurrence and associates each `hitSlop` with the element that carries
+ * it, rather than with the file. Comments are stripped first, so a component explaining why
+ * `hitSlop` is wrong is not mistaken for one using it.
+ */
+function interactiveTags(file: string): InteractiveTag[] {
+  const source = codeOf(fs.readFileSync(path.join(process.cwd(), file), 'utf8'));
+  const found: InteractiveTag[] = [];
+  const opener =
+    /<(Pressable|PressableScale|TouchableOpacity|TouchableHighlight|TouchableWithoutFeedback)\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = opener.exec(source)) !== null) {
+    /*
+      Walk to the end of this opening tag rather than regex-matching to the next '>', because a
+      style object contains '>' inside arrow functions and would end the tag early.
+    */
+    let depth = 0;
+    let end = match.index;
+    for (let i = match.index; i < source.length; i++) {
+      const char = source[i];
+      if (char === '{') depth += 1;
+      else if (char === '}') depth -= 1;
+      else if (char === '>' && depth === 0) {
+        end = i;
+        break;
+      }
+    }
+    const tag = source.slice(match.index, end + 1);
+    const id = tag.match(/testID=\{?["`]?([^"`}\n]+)/);
+    found.push({
+      file,
+      line: source.slice(0, match.index).split(String.fromCharCode(10)).length,
+      element: match[1] ?? 'Pressable',
+      tag,
+      testID: id === null ? '(no testID)' : (id[1] ?? '(no testID)'),
+    });
+  }
+  return found;
+}
+
+/** Whether an element bounds its own node, as opposed to widening the area around it. */
+function ownsItsBounds(tag: InteractiveTag): boolean {
+  /*
+    `PressableScale` is exempt by construction, not by convention: since #115 the primitive applies
+    `Math.max(callerMinimum, minimumTouchTargetSize())` to both axes of the single element that
+    carries the role, the label and the testID. A consumer cannot opt out of that, so a `hitSlop` on
+    one is additional convenience rather than the reason it is reachable.
+  */
+  if (tag.element === 'PressableScale') return true;
+  if (/minimumTouchTargetSize\(\)/.test(tag.tag)) return true;
+  if (/min(Width|Height)\s*:/.test(tag.tag)) return true;
+  return /\b(width|height)\s*:/.test(tag.tag);
+}
+
+const PRODUCTION_TSX = productionSources()
+  .filter((file) => file.endsWith('.tsx'))
+  .map((file) => path.relative(process.cwd(), file).split(path.sep).join('/'));
+
+describe('no control anywhere relies on hitSlop for its size', () => {
+  it('inspects every interactive element in every production file', () => {
+    const all = PRODUCTION_TSX.flatMap(interactiveTags);
+    /* A sanity floor: if the walker silently stopped finding elements, this test would pass empty. */
+    expect(all.length).toBeGreaterThan(100);
+
+    const offending = all
+      .filter((tag) => /hitSlop/.test(tag.tag))
+      .filter((tag) => !ownsItsBounds(tag))
+      .map((tag) => `${tag.file}:${tag.line} <${tag.element}> ${tag.testID}`);
+
+    expect(offending).toEqual([]);
+  });
+
+  it('finds both controls in the file whose second one was missed', () => {
+    /*
+      The regression this guard exists for. Two identical close controls, and the migration only
+      corrected the first. If the walker ever goes back to one match per file, this drops to 1.
+    */
+    const tags = interactiveTags('src/features/faith/components/reader/ayah-action-sheet.tsx');
+    const closes = tags.filter(
+      (tag) => /hitSlop/.test(tag.tag) || tag.testID === 'faith-reader-sheet-close',
+    );
+    expect(closes.length).toBeGreaterThanOrEqual(2);
+    for (const tag of closes) {
+      expect(ownsItsBounds(tag)).toBe(true);
+    }
+  });
+
+  it('would catch a second unsafe occurrence added beside a safe one', () => {
+    /*
+      Synthetic, so the guard is proven against the exact shape it missed rather than against the
+      absence of one. Two elements, the first bounded and the second not.
+    */
+    const synthetic = [
+      '<Pressable hitSlop={8} style={{ minHeight: minimumTouchTargetSize() }} testID="safe" />',
+      '<Pressable hitSlop={8} testID="unsafe" />',
+    ].join(String.fromCharCode(10));
+    const file = path.join(process.cwd(), 'src/shared/utils/__tests__/.guard-fixture.tsx');
+    fs.writeFileSync(file, synthetic);
+    try {
+      const tags = interactiveTags('src/shared/utils/__tests__/.guard-fixture.tsx');
+      expect(tags.map((tag) => tag.testID)).toEqual(['safe', 'unsafe']);
+      expect(tags.filter((tag) => !ownsItsBounds(tag)).map((tag) => tag.testID)).toEqual([
+        'unsafe',
+      ]);
+    } finally {
+      fs.unlinkSync(file);
+    }
+  });
+
+  it('is not fooled by a comment that mentions hitSlop', () => {
+    const file = path.join(process.cwd(), 'src/shared/utils/__tests__/.guard-comment.tsx');
+    fs.writeFileSync(
+      file,
+      [
+        '/* hitSlop is refused here because it leaves the node undersized. */',
+        '<Pressable style={{ minHeight: minimumTouchTargetSize() }} testID="documented" />',
+      ].join(String.fromCharCode(10)),
+    );
+    try {
+      const tags = interactiveTags('src/shared/utils/__tests__/.guard-comment.tsx');
+      expect(tags).toHaveLength(1);
+      const only = tags[0];
+      if (only === undefined) throw new Error('fixture tag not found');
+      expect(/hitSlop/.test(only.tag)).toBe(false);
+      expect(ownsItsBounds(only)).toBe(true);
+    } finally {
+      fs.unlinkSync(file);
+    }
+  });
+
+  it('treats PressableScale as bounded by its own primitive, and a plain Pressable as not', () => {
+    const scale: InteractiveTag = {
+      file: 'x',
+      line: 1,
+      element: 'PressableScale',
+      tag: '<PressableScale hitSlop={8}',
+      testID: 'a',
+    };
+    const plain: InteractiveTag = {
+      file: 'x',
+      line: 1,
+      element: 'Pressable',
+      tag: '<Pressable hitSlop={8}',
+      testID: 'b',
+    };
+    expect(ownsItsBounds(scale)).toBe(true);
+    expect(ownsItsBounds(plain)).toBe(false);
+  });
+});
+
+describe('the reader action sheet close control', () => {
+  const FILE = 'src/features/faith/components/reader/ayah-action-sheet.tsx';
+
+  const closeTag = () =>
+    interactiveTags(FILE).find((tag) => tag.testID === 'faith-reader-sheet-close');
+
+  it('bounds both axes through the shared helper, on the Pressable itself', () => {
+    const tag = closeTag();
+    if (tag === undefined) throw new Error('faith-reader-sheet-close not found');
+    expect(tag.element).toBe('Pressable');
+    expect(tag.tag).toContain('minWidth: minimumTouchTargetSize()');
+    expect(tag.tag).toContain('minHeight: minimumTouchTargetSize()');
+  });
+
+  it('passes neither axis through a layout scale, and invents no constant', () => {
+    const tag = closeTag();
+    expect(tag?.tag).not.toMatch(/min(Width|Height):\s*dp\(/);
+    expect(tag?.tag).not.toMatch(/min(Width|Height):\s*4[4-9]\b/);
+  });
+
+  it('no longer needs a hitSlop to be reachable', () => {
+    expect(closeTag()?.tag).not.toContain('hitSlop');
+  });
+
+  it('keeps its role, its label and its 20 dp icon', () => {
+    const source = codeOf(fs.readFileSync(path.join(process.cwd(), FILE), 'utf8'));
+    const start = source.indexOf('faith-reader-sheet-close');
+    const around = source.slice(start - 900, start + 300);
+    expect(around).toContain('accessibilityRole="button"');
+    expect(around).toContain('accessibilityLabel="Close"');
+    /* The drawn glyph is unchanged; only the box around it grew. */
+    expect(around).toContain('size={dp(20)}');
+  });
+
+  it.each([2.625, 3, 1, 2.8125])('clears 44 dp at density %p', (density) => {
+    const spy = jest.spyOn(PixelRatio, 'get').mockReturnValue(density);
+    try {
+      expect(minimumTouchTargetSize()).toBeGreaterThanOrEqual(touchTarget.minimum);
+      expect(Number.isInteger(Math.round(minimumTouchTargetSize() * density))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
