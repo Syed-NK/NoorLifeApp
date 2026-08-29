@@ -182,11 +182,12 @@ describe('the grid’s layout and accessibility contract', () => {
 
     const cell = screen.getByTestId(`planner-calendar-grid-day-${TODAY}`);
     /*
-      `PressableScale` puts the caller style on an outer `Animated.View` and the testID on an inner
-      absolute-fill `Pressable`, so the sized box is the parent. Reading the child gives
-      `absoluteFill`, which has no width, and the assertion silently becomes NaN >= 44.
+      `PressableScale` is one node since #115: the element that carries the testID, the role and the
+      label is the element the caller styled, so the sized box is the node itself. It used to be an
+      outer `Animated.View` with an absolute-fill `Pressable` inside, and reading the child then
+      gave `absoluteFill` — no width, and the assertion silently became NaN >= 44.
     */
-    const sized = cell.parent ?? cell;
+    const sized = cell;
     const style = Array.isArray(sized.props.style)
       ? Object.assign({}, ...sized.props.style.flat())
       : sized.props.style;

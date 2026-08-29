@@ -122,8 +122,8 @@ describe('the tile keeps its size and can grow', () => {
     const view = await renderRow('family');
 
     for (const action of family.quickActions) {
-      // The touch target's parent carries the tile's box.
-      const box = flatten(view.getByTestId(`family-quick-${action.key}`).parent?.props.style);
+      // The touch target carries the tile box itself since #115 collapsed PressableScale.
+      const box = flatten(view.getByTestId(`family-quick-${action.key}`).props.style);
       // A floor, so a wrapped label lengthens the tile instead of being cut off.
       expect(box.height).toBeUndefined();
       expect(typeof box.minHeight).toBe('number');

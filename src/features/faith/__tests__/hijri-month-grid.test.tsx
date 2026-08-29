@@ -247,7 +247,7 @@ describe('the rendered grid', () => {
     await view.findByTestId('faith-calendar-grid');
 
     /**
-     * `.parent`, because the `testID` lands one level in.
+     * the testID node itself, because the testID node now carries the style itself - issue #115 made it the accessibility node.
      *
      * `PressableScale` renders the styled, sized view and puts an absolutely-positioned overlay
      * inside it to carry the hit slop. The overlay is what holds the `testID`, so the width lives on
@@ -255,7 +255,7 @@ describe('the rendered grid', () => {
      * and an assertion on `undefined === undefined` would pass while measuring nothing.
      */
     const widthOf = (testID: string): number => {
-      const sized = view.getByTestId(testID).parent;
+      const sized = view.getByTestId(testID);
       const style = sized?.props.style as { width?: unknown } | undefined;
       expect(typeof style?.width).toBe('number');
       return style?.width as number;

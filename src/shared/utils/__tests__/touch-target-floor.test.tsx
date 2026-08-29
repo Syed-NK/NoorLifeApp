@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { fireEvent, render, screen } from '@testing-library/react-native';
-import { PixelRatio } from 'react-native';
+import { PixelRatio, StyleSheet } from 'react-native';
 
 import { touchTarget } from '@ds/tokens';
+import { PressableScale } from '@ds/components/pressable-scale';
 import { PrimaryButton } from '@ds/components/primary-button';
 import { SecondaryButton } from '@ds/components/secondary-button';
 import { minimumTouchTargetSize, pixelSafeTouchTarget } from '@shared/utils/a11y';
@@ -111,6 +112,9 @@ const SHARED_PRIMITIVES = [
   'src/features/modules/components/module-bottom-navigation.tsx',
   'src/features/finance/components/finance-choice-row.tsx',
 ];
+
+const flatten = (style: unknown): Record<string, unknown> =>
+  (StyleSheet.flatten(style as never) ?? {}) as Record<string, unknown>;
 
 const offenders = (predicate: (code: string) => boolean) =>
   production.filter(({ code }) => predicate(code)).map(({ file }) => file);
@@ -319,11 +323,11 @@ describe('a rendered shared button owns its bound', () => {
     try {
       await render(<PrimaryButton label="Continue" onPress={() => undefined} testID="pb" />);
       /*
-        `PressableScale` keeps the caller's style on its outer view and puts the testID on an
-        absolute-fill Pressable inside it, so the bound is read from the parent. Reading it off the
-        testID node finds only `absoluteFill` — the convention `faith-physical-safe-areas` records.
+        Read from the testID node itself. `PressableScale` used to keep the style on an outer view
+        and put the testID on an absolute-fill overlay inside it; #115 collapsed the two, so the
+        node that is announced is the node that is measured.
       */
-      const style = flat(screen.getByTestId('pb').parent?.props?.style);
+      const style = flat(screen.getByTestId('pb').props?.style);
       expect(Number(style.minHeight)).toBeGreaterThanOrEqual(touchTarget.minimum);
       expect(Number(style.minHeight) * density).toBe(Math.ceil(touchTarget.minimum * density));
       /* The node that carries the bound is the node that carries the role. */
@@ -342,9 +346,7 @@ describe('a rendered shared button owns its bound', () => {
     expect(node.props.accessibilityRole).toBe('button');
     expect(node.props.accessibilityLabel).toBe('Save');
     expect(node.props.accessibilityState).toMatchObject({ disabled: true });
-    expect(Number(flat(node.parent?.props?.style).minHeight)).toBeGreaterThanOrEqual(
-      touchTarget.minimum,
-    );
+    expect(Number(flat(node.props?.style).minHeight)).toBeGreaterThanOrEqual(touchTarget.minimum);
   });
 
   it('does not fire while disabled, however large the target grew', async () => {
@@ -365,7 +367,7 @@ describe('a rendered shared button owns its bound', () => {
         <SecondaryButton label="Later" onPress={() => undefined} disabled testID="sb" />,
       );
       const node = screen.getByTestId('sb');
-      const bound = flat(node.parent?.props?.style);
+      const bound = flat(node.props?.style);
       expect(Number(bound.minHeight)).toBeGreaterThanOrEqual(touchTarget.minimum);
       expect(node.props.accessibilityState).toMatchObject({ disabled: true });
       /* Raising a floor must not turn a disabled control into an enabled one. */
@@ -470,5 +472,164 @@ describe('neighbouring contracts are unchanged', () => {
     );
     expect(banner).not.toMatch(/#[0-9a-fA-F]{6}\b/);
     expect(banner).not.toContain('require(');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The primitive that owns the node — issue #115, second pass
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PressableScale owns the box it is measured by', () => {
+  const source = () =>
+    codeOf(fs.readFileSync(path.join(SRC, 'design-system/components/pressable-scale.tsx'), 'utf8'));
+
+  it('renders one element, so the announced node and the measured node are the same', () => {
+    /*
+      The defect: the caller style sat on a wrapper and the accessibility props sat on an
+      `absoluteFill` Pressable inside it. `absoluteFill` resolves against the *padding* box, so on a
+      bordered control the labelled node was smaller than the box the caller sized — a Main Home
+      quick action inside a 116 px wrapper reported 113 px / 43.048 dp.
+    */
+    expect(source()).not.toContain('StyleSheet.absoluteFill');
+    expect(source()).toContain('AnimatedPressable');
+  });
+
+  it('raises the caller minimum rather than replacing it in either direction', () => {
+    expect(source()).toContain('Math.max(Number(requested.minWidth ?? 0), floor)');
+    expect(source()).toContain('Math.max(Number(requested.minHeight ?? 0), floor)');
+  });
+
+  it('keeps a bordered 44 dp control at 44 dp on the accessibility node', async () => {
+    const spy = jest.spyOn(PixelRatio, 'get').mockReturnValue(2.625);
+    try {
+      await render(
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel="Bordered"
+          onPress={() => undefined}
+          style={{ borderWidth: 1, minWidth: 44, minHeight: 44 }}
+          testID="bordered"
+        />,
+      );
+      const node = screen.getByTestId('bordered');
+      const style = flatten(node.props.style);
+      /* The node that carries the label is the node that carries the bound. */
+      expect(node.props.accessibilityLabel).toBe('Bordered');
+      expect(Number(style.minHeight)).toBeGreaterThanOrEqual(touchTarget.minimum);
+      expect(Number(style.minWidth)).toBeGreaterThanOrEqual(touchTarget.minimum);
+      expect(Number(style.minHeight) * 2.625).toBe(116);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('lets content-driven layouts grow past the floor', async () => {
+    await render(
+      <PressableScale
+        accessibilityRole="button"
+        accessibilityLabel="Tall"
+        onPress={() => undefined}
+        style={{ minHeight: 200 }}
+        testID="tall"
+      />,
+    );
+    /* A minimum larger than the floor survives: the floor is a lower bound, not a size. */
+    expect(Number(flatten(screen.getByTestId('tall').props.style).minHeight)).toBe(200);
+  });
+
+  it('does not shrink its bounds while the press animation runs', async () => {
+    const onPress = jest.fn();
+    await render(
+      <PressableScale
+        accessibilityRole="button"
+        accessibilityLabel="Press"
+        onPress={onPress}
+        testID="pressed"
+      />,
+    );
+    const node = screen.getByTestId('pressed');
+    fireEvent(node, 'pressIn');
+    /* The scale is a transform. Layout and accessibility bounds are untouched by it. */
+    expect(Number(flatten(node.props.style).minHeight)).toBeGreaterThanOrEqual(touchTarget.minimum);
+    fireEvent(node, 'pressOut');
+    fireEvent.press(node);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+    Disabled behaviour is covered end to end by `PrimaryButton`, which is a real `PressableScale`
+    consumer: "does not fire while disabled, however large the target grew" above presses it and
+    asserts the handler never runs. Asserting it again on a bare `PressableScale` is not possible
+    through the library anyway — a disabled node is filtered out of every query, by testID and by
+    label alike — and a test that cannot find its subject proves nothing about it.
+  */
+});
+
+describe('the controls design locks used to hold below the floor', () => {
+  /*
+    Every one of these measured under 44 dp on `emulator-5554` before the approved decision that the
+    accessibility minimum overrides an older visual-geometry lock. Each is drawn by a component whose
+    container fixed a height that clipped it, so the assertion is on the container.
+  */
+  const FREED: readonly (readonly [string, string])[] = [
+    ['src/features/home/components/home-header.tsx', 'minHeight: dp(LOCKED.header.height)'],
+    ['src/features/home/components/home-hero.tsx', 'minHeight: Math.max('],
+    ['src/features/home/components/today-timeline.tsx', 'minHeight: dp(LOCKED.today.cardHeight)'],
+    [
+      'src/features/home/components/today-timeline.tsx',
+      'minHeight: dp(LOCKED.today.headingHeight)',
+    ],
+  ];
+
+  it.each(FREED)('%s no longer fixes the height that clipped a control', (file, needle) => {
+    expect(codeOf(fs.readFileSync(path.join(process.cwd(), file), 'utf8'))).toContain(needle);
+  });
+
+  /*
+    Components that draw an interactive control, as opposed to a sheet or a scroll container. A
+    `maxHeight` is legitimate on a sheet capped at a fraction of the window; on a control it is a
+    ceiling that can sit below the floor, and the floor would lose.
+  */
+  const CONTROL_OWNERS = [
+    ...SHARED_PRIMITIVES,
+    'src/features/home/components/quick-actions-row.tsx',
+    'src/features/home/components/today-timeline.tsx',
+    'src/features/home/components/home-hero.tsx',
+    'src/features/home/components/home-header.tsx',
+    'src/features/home/components/home-bottom-navigation.tsx',
+  ];
+
+  it.each(CONTROL_OWNERS)('%s caps no control height above the floor', (file) => {
+    const code = codeOf(fs.readFileSync(path.join(process.cwd(), file), 'utf8'));
+    /*
+      Height only. A `maxWidth` is a readable-measure cap on a text block —
+      `module-state-view` holds its body to 280 dp — and caps no touch target. A
+      `maxHeight` on one of these components is a ceiling the floor would lose to.
+    */
+    expect(code).not.toContain('maxHeight');
+  });
+
+  it('reserves the raise so the Main Home centre control is not clipped to its bar', () => {
+    const code = codeOf(
+      fs.readFileSync(
+        path.join(SRC, 'features/home/components/home-bottom-navigation.tsx'),
+        'utf8',
+      ),
+    );
+    /* The root positions and reserves; a separate bar paints, exactly as the module nav does. */
+    expect(code).toContain('paddingTop: dp(LOCKED.bottomNav.aiRaise)');
+    expect(code).toContain('styles.bar');
+  });
+
+  it('leaves no Main Home container fixing a height that a control must fit inside', () => {
+    for (const file of [
+      'src/features/home/components/home-header.tsx',
+      'src/features/home/components/home-hero.tsx',
+      'src/features/home/components/today-timeline.tsx',
+    ]) {
+      const code = codeOf(fs.readFileSync(path.join(process.cwd(), file), 'utf8'));
+      expect(code).not.toMatch(/\bheight: dp\(LOCKED\.(header|hero)\.height\)/);
+      expect(code).not.toMatch(/\bheight: dp\(LOCKED\.today\.(cardHeight|headingHeight)\)/);
+    }
   });
 });

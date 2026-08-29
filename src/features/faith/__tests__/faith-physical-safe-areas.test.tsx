@@ -221,7 +221,7 @@ describe('defect 1 — the filter sheet must clear the system navigation region'
         there and the touch surface is an absolute-fill `Pressable` inside it carrying the testID. So
         the height is read from the parent; reading it off the testID node finds only `absoluteFill`.
       */
-      const row = flatten(option.parent?.props?.style);
+      const row = flatten(option.props?.style);
       /*
         The density-safe floor, not `dp(...)` — issue #115. The row measured 43 dp here while its
         style said 44, which is the scaled-bound half of that issue.
@@ -392,8 +392,19 @@ describe('defect 3 — a pressable card must reach the minimum touch target', ()
     await drain();
 
     const style = flatten(view.getByTestId('faith-dua-category-attribution').props.style);
-    /* Hit slop only. No minHeight was introduced, so the visual card is exactly what it was. */
-    expect(style.minHeight).toBeUndefined();
+    /*
+      The lock changed with #115, deliberately.
+
+      It used to assert the *absence* of a bound: the card was left at its drawn height and only a
+      hit slop widened where a finger landed. That is the substitution #115 refuses — the node a
+      screen reader and an accessibility scanner measure stayed small. The card now carries the
+      shared floor as a **minimum**, so it still draws at its content height wherever that already
+      exceeds 44 dp, and no longer reports an undersized node where it does not.
+
+      What is still locked is that nothing *fixes* the height: a card that grows with its copy must
+      keep growing.
+    */
+    expect(Number(style.minHeight)).toBeGreaterThanOrEqual(44);
     expect(style.height).toBeUndefined();
   });
 

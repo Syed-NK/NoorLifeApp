@@ -302,6 +302,6 @@ describe('spacing', () => {
   it('left-aligns the action button rather than stretching it', async () => {
     const view = await renderHero();
     const action = await view.findByTestId('faith-hero-action');
-    expect(flat(action.parent as never).alignSelf).toBe('flex-start');
+    expect(flat(action as never).alignSelf).toBe('flex-start');
   });
 });

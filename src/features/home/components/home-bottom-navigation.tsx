@@ -85,57 +85,73 @@ export function HomeBottomNavigation({
 
   return (
     <View
-      style={[styles.root, { height: barHeight + insets.bottom, paddingBottom: insets.bottom }]}
+      /*
+        The raise is reserved on the root — issue 115. The root began at the bar's top edge, so
+        the centre control, which rises above that edge, was clipped to it and measured 40.000 dp
+        at 360 dp and 36.148 dp at 320 dp. The root paints nothing, so reserving the space moves
+        nothing on screen.
+      */
+      style={[styles.root, { paddingTop: dp(LOCKED.bottomNav.aiRaise) }]}
       accessibilityRole="tablist"
       testID={testID}
+      pointerEvents="box-none"
     >
-      <View style={[styles.row, { height: barHeight }]}>
-        {theme.navigation.map((item, index) => {
-          const isActive = item.key === activeKey;
+      <View
+        style={[styles.bar, { height: barHeight + insets.bottom, paddingBottom: insets.bottom }]}
+        pointerEvents="box-none"
+        testID={`${testID ?? 'home-nav'}-bar`}
+      >
+        <View style={[styles.row, { height: barHeight }]}>
+          {theme.navigation.map((item, index) => {
+            const isActive = item.key === activeKey;
 
-          if (index === AI_NAV_INDEX) {
-            return (
-              <View key={item.key} style={[styles.slot, styles.aiSlot]}>
-                {/* Top-aligned with a negative margin, so the control's top edge lands
+            if (index === AI_NAV_INDEX) {
+              return (
+                <View key={item.key} style={[styles.slot, styles.aiSlot]}>
+                  {/* Top-aligned with a negative margin, so the control's top edge lands
                     exactly `aiRaise` above the bar. Centring it and then translating gave
                     only half the intended lift, because the centring offset (≈7 dp) ate
                     into the transform. There is no label competing for space in this slot,
                     so flex-start is free to use. */}
-                <View style={{ marginTop: -dp(LOCKED.bottomNav.aiRaise) }} pointerEvents="box-none">
-                  <PressableScale
-                    onPress={() => onNavigate(item)}
-                    style={[
-                      styles.aiButton,
-                      {
-                        width: aiSize,
-                        height: aiSize,
-                        borderRadius: aiSize / 2,
-                        borderWidth: LOCKED.bottomNav.aiBorder,
-                      },
-                    ]}
-                    {...iconButtonA11y(item.accessibilityLabel ?? `Open ${item.label}`, {
-                      selected: isActive,
-                    })}
-                    testID={`${testID ?? 'home-nav'}-ai`}
+                  <View
+                    style={{ marginTop: -dp(LOCKED.bottomNav.aiRaise) }}
+                    pointerEvents="box-none"
                   >
-                    <RobotAsset size={dp(LOCKED.bottomNav.aiImage)} />
-                  </PressableScale>
+                    <PressableScale
+                      onPress={() => onNavigate(item)}
+                      style={[
+                        styles.aiButton,
+                        {
+                          width: aiSize,
+                          height: aiSize,
+                          borderRadius: aiSize / 2,
+                          borderWidth: LOCKED.bottomNav.aiBorder,
+                        },
+                      ]}
+                      {...iconButtonA11y(item.accessibilityLabel ?? `Open ${item.label}`, {
+                        selected: isActive,
+                      })}
+                      testID={`${testID ?? 'home-nav'}-ai`}
+                    >
+                      <RobotAsset size={dp(LOCKED.bottomNav.aiImage)} />
+                    </PressableScale>
+                  </View>
+                  {/* No caption here by design — see the component note. */}
                 </View>
-                {/* No caption here by design — see the component note. */}
-              </View>
-            );
-          }
+              );
+            }
 
-          return (
-            <NavSlot
-              key={item.key}
-              item={item}
-              isActive={isActive}
-              onNavigate={onNavigate}
-              testID={`${testID ?? 'home-nav'}-${item.key}`}
-            />
-          );
-        })}
+            return (
+              <NavSlot
+                key={item.key}
+                item={item}
+                isActive={isActive}
+                onNavigate={onNavigate}
+                testID={`${testID ?? 'home-nav'}-${item.key}`}
+              />
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -230,15 +246,26 @@ function NavSlot({ item, isActive, onNavigate, testID }: NavSlotProps) {
 }
 
 const styles = StyleSheet.create({
+  /*
+    The root positions and reserves the raise; the bar paints — issue 115.
+
+    They were one view, so the centre control that rises above the bar was clipped to it and
+    measured 40.000 dp at 360 dp. Reserving the raise on a view that draws nothing keeps every
+    painted edge exactly where it was: the bar below still carries the height, the surface and the
+    top border it always had. The module navigation has been built this way since #84.
+  */
   root: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
+    zIndex: 10,
+  },
+  /** The bar the user sees. Every colour and edge that used to live on `root` is here. */
+  bar: {
     backgroundColor: neutralColors.surface,
     borderTopWidth: 1,
     borderTopColor: neutralColors.border,
-    zIndex: 10,
   },
   row: {
     flexDirection: 'row',

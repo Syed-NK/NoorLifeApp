@@ -67,7 +67,15 @@ export function HomeHeader({
 
   return (
     <View
-      style={[styles.root, { height: dp(LOCKED.header.height), paddingHorizontal: pagePadding }]}
+      /*
+        A minimum, not a fixed height — the 44 dp accessibility floor, issue 115.
+
+        The profile row and the notification button inside carry the shared floor, and a parent
+        with a fixed height clipped them: 41.481 dp each on a 320 dp handset. The locked value is
+        unchanged and still what the header draws wherever the content fits; it now yields rather
+        than cutting a control below the minimum.
+      */
+      style={[styles.root, { minHeight: dp(LOCKED.header.height), paddingHorizontal: pagePadding }]}
       testID={testID}
     >
       <PressableScale

@@ -1,4 +1,11 @@
-import { Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
+import { useState } from 'react';
+import {
+  Image,
+  StyleSheet,
+  View,
+  type ImageSourcePropType,
+  type LayoutChangeEvent,
+} from 'react-native';
 
 import { PressableScale } from '@ds/components';
 import { neutralColors } from '@ds/tokens';
@@ -61,11 +68,41 @@ export type HomeHeroProps = {
 export function HomeHero({ eyebrow, actionLabel, onPressAction, testID }: HomeHeroProps) {
   const { dp } = useMetrics();
 
+  /*
+    How tall the copy column actually is — issue 115.
+
+    The column is absolutely positioned, which is what keeps it clear of the artwork, and an
+    absolute child cannot make its parent grow. So at 320 dp the call to action inside it ran past
+    the bottom of the card and was clipped to it: 142 px against the 149 px the floor asks for,
+    42.074 dp. Measuring the column is the only honest way to know where it ends, because its
+    height depends on how the headline wraps at this width and this font scale.
+  */
+  const [copyHeight, setCopyHeight] = useState(0);
+  const onCopyLayout = (event: LayoutChangeEvent) => {
+    const next = event.nativeEvent.layout.height;
+    setCopyHeight((current) => (Math.abs(current - next) < 0.5 ? current : next));
+  };
+
   return (
     <View
       style={[
         styles.root,
-        { height: dp(LOCKED.hero.height), borderRadius: dp(LOCKED.hero.radius) },
+        /*
+          A minimum, not a fixed height — the 44 dp accessibility floor, issue 115. The call to
+          action inside measured 41.778 dp at 320 dp because this card capped it.
+        */
+        {
+          /*
+            The locked height wherever the copy still fits inside it — which is every width the
+            hero was drawn at, including the 393 dp reference. It grows only to contain a column
+            that would otherwise have its button cut off.
+          */
+          minHeight: Math.max(
+            dp(LOCKED.hero.height),
+            dp(LOCKED.hero.copyTop) + copyHeight + dp(LOCKED.hero.copyTop),
+          ),
+          borderRadius: dp(LOCKED.hero.radius),
+        },
       ]}
       testID={testID}
     >
@@ -86,6 +123,7 @@ export function HomeHero({ eyebrow, actionLabel, onPressAction, testID }: HomeHe
             width: dp(LOCKED.hero.copyWidth),
           },
         ]}
+        onLayout={onCopyLayout}
       >
         <HomeText
           token="heroEyebrow"

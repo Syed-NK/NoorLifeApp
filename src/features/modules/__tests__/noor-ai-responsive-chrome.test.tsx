@@ -48,7 +48,7 @@ function flatStyle(testID: string): Record<string, unknown> {
  * overlay. So the geometry a caller wrote lives on the parent of the queried node.
  */
 function flatPressableStyle(testID: string): Record<string, unknown> {
-  return flatten(screen.getByTestId(testID).parent?.props.style);
+  return flatten(screen.getByTestId(testID).props.style);
 }
 
 async function renderChat() {

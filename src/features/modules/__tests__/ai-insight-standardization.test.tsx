@@ -82,7 +82,7 @@ async function renderCard(moduleId: FrameworkModuleId, message = 'A short insigh
  */
 function styleOf(testID: string): ViewStyle {
   const node = screen.getByTestId(testID);
-  return StyleSheet.flatten(node.parent?.props.style) as ViewStyle;
+  return StyleSheet.flatten(node.props.style) as ViewStyle;
 }
 
 function cardStyle(): ViewStyle {
