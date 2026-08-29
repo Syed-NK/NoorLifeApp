@@ -68,6 +68,11 @@ function chromeConstant(name: string): number {
 const ACTION_PADDING_H = chromeConstant('HERO_ACTION_PADDING_H');
 const ACTION_GAP = chromeConstant('HERO_ACTION_GAP');
 const ACTION_CHEVRON = chromeConstant('HERO_ACTION_CHEVRON');
+/*
+  The pill's edge, added by #122. Unscaled by design, and part of the chrome because React Native
+  measures a border inside the frame — so it is two fewer dp for the label, and the rule has to know.
+*/
+const ACTION_BORDER = chromeConstant('HERO_ACTION_BORDER');
 
 /** Every module whose home hero is the shared card. Faith, Noor AI and Health draw their own. */
 const OWN_HERO = new Set(['faith', 'noor-ai', 'health']);
@@ -136,10 +141,10 @@ function renderedSize(
   return layoutSize(token, width) * applied;
 }
 
-/** The pill's chrome at one width: both paddings, the gap and the chevron. */
+/** The pill's chrome at one width: both paddings, the gap, the chevron and both borders. */
 function actionChrome(width: number): number {
   const dp = scaledDp(width);
-  return dp(ACTION_PADDING_H) * 2 + dp(ACTION_GAP) + dp(ACTION_CHEVRON);
+  return dp(ACTION_PADDING_H) * 2 + dp(ACTION_GAP) + dp(ACTION_CHEVRON) + ACTION_BORDER * 2;
 }
 
 /** Width the pill needs: its label at the action token, plus that chrome. */
@@ -333,11 +338,31 @@ describe('the measurement both conditions rest on', () => {
     expect(card).toContain('paddingHorizontal: dp(HERO_ACTION_PADDING_H)');
     expect(card).toContain('columnGap: dp(HERO_ACTION_GAP)');
     expect(card).toContain('size={dp(HERO_ACTION_CHEVRON)}');
-    expect(card).toContain(
-      'return dp(HERO_ACTION_PADDING_H) * 2 + dp(HERO_ACTION_GAP) + dp(HERO_ACTION_CHEVRON);',
-    );
+    expect(card).toContain('borderWidth: HERO_ACTION_BORDER');
     expect(card).toContain('actionChromeWidth: heroActionChromeWidth(dp)');
-    expect([ACTION_PADDING_H, ACTION_GAP, ACTION_CHEVRON]).toEqual([11, 5, 13]);
+    expect([ACTION_PADDING_H, ACTION_GAP, ACTION_CHEVRON, ACTION_BORDER]).toEqual([11, 5, 13, 1]);
+
+    /*
+      The rule's body, by name rather than by exact text. Asserting the formatted string broke the
+      moment #122 added a fourth term and the printer wrapped the expression — which taught the wrong
+      lesson, because the property worth locking is *which* constants the sum reads, not how Prettier
+      lays them out. So: every constant appears, and no bare number sneaks in beside them.
+    */
+    const body = /function heroActionChromeWidth[\s\S]*?\{([\s\S]*?)\n\}/.exec(card)?.[1];
+    expect(body).toBeDefined();
+    for (const name of [
+      'HERO_ACTION_PADDING_H',
+      'HERO_ACTION_GAP',
+      'HERO_ACTION_CHEVRON',
+      'HERO_ACTION_BORDER',
+    ]) {
+      expect(body).toContain(name);
+    }
+    /*
+      Nothing in the sum but those constants and the "there are two of them" multiplier. A literal
+      here is the drift this test exists to stop: a number the style could change without the rule.
+    */
+    expect(body?.replace(/HERO_ACTION_[A-Z_]+/g, '').replace(/\* 2\b/g, '')).not.toMatch(/\d/);
   });
 
   it('measures the action label in Medium, not in the headline’s face', () => {
@@ -1088,7 +1113,13 @@ describe('Faith, Noor AI and Health stay outside this rule', () => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const full = join(dir, entry.name);
         if (entry.isDirectory()) {
-          walk(full);
+          /*
+            Production call sites only. A suite that renders the card to assert something about it is
+            not a module choosing to draw it, and counting one would make this inventory grow every
+            time the component gained a test — which is the opposite of what it is for. #122's own
+            suite is the first to render it directly.
+          */
+          if (entry.name !== '__tests__') walk(full);
           continue;
         }
         if (entry.name.endsWith('.tsx') && code(full).includes('<ModuleHeroCard')) {

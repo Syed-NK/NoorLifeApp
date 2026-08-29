@@ -47,16 +47,31 @@ export type ModuleHeroCardProps = {
  * These were inline literals in the button's style. The fit rule has to know them — the reason
  * "Add your first goal" ellipsised is that the label *plus this chrome* is wider than the copy
  * column — and a rule reading a number the style could change independently is a rule that drifts.
- * So the style below and `heroActionChromeWidth` read the same three constants, and
+ * So the style below and `heroActionChromeWidth` read the same four constants, and
  * `__tests__/hero-copy-fit.test.ts` asserts that they do.
  */
 const HERO_ACTION_PADDING_H = 11;
 const HERO_ACTION_GAP = 5;
 const HERO_ACTION_CHEVRON = 13;
+/*
+  The pill's edge — issue #122.
+
+  Unscaled, like every other hairline in this feature: a border that shrank with `dp()` would be
+  thinner than a pixel on the narrow devices where the boundary matters most. It is part of the
+  chrome because React Native measures a border *inside* the frame, so two of these are two fewer
+  dp for the label — small, but the whole point of these constants is that the style and the fit
+  rule cannot disagree about the pill's width.
+*/
+const HERO_ACTION_BORDER = 1;
 
 /** Total width the pill adds to its label, at the current layout scale. */
 function heroActionChromeWidth(dp: (value: number) => number): number {
-  return dp(HERO_ACTION_PADDING_H) * 2 + dp(HERO_ACTION_GAP) + dp(HERO_ACTION_CHEVRON);
+  return (
+    dp(HERO_ACTION_PADDING_H) * 2 +
+    dp(HERO_ACTION_GAP) +
+    dp(HERO_ACTION_CHEVRON) +
+    HERO_ACTION_BORDER * 2
+  );
 }
 
 /**
@@ -303,6 +318,27 @@ export function ModuleHeroCard({
                 borderRadius: dp(moduleLayout.radiusSmall),
                 paddingHorizontal: dp(HERO_ACTION_PADDING_H),
                 columnGap: dp(HERO_ACTION_GAP),
+                /*
+                  ── The pill's own ground — issue #122 ────────────────────────
+                  The call to action sits on the hero, and the hero is a photograph. #91 removed this
+                  fill and left a note promising a per-module override that was never written, so the
+                  label fell through to `theme.ink` on the artwork: Finance measured **1.3:1** on a
+                  device and Planner 2.5:1. The ink is not at fault — `module-tokens.ts` records it as
+                  4.87 on white, and that figure was true of a ground the button no longer had.
+
+                  `surfaces.card` is that ground, named. It is opaque `#FFFFFF` for every module,
+                  whether or not the module has opted into the surface roles, so one expression serves
+                  the generic hero and no `moduleId === …` branch is needed. Deriving anything from the
+                  artwork was never an option: the PNG is commissioned per module and can change
+                  without this file, so a colour read from it is a contrast claim with no owner.
+
+                  The border is what makes the *edge* survive arbitrary artwork. An opaque white pill
+                  disappears against a pale region of a photograph; a pill whose fill and edge are
+                  themselves far apart cannot, because no single colour behind it can match both.
+                */
+                backgroundColor: surfaces.card,
+                borderWidth: HERO_ACTION_BORDER,
+                borderColor: module.theme.ink,
               },
             ]}
             testID={`${testID ?? 'module-hero'}-action`}
@@ -343,6 +379,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    /* Overridden per module — issue #91. */
+    /*
+      Layout only. The fill, the edge and the ink are role-derived, so they are applied where the
+      module's surfaces are in scope — see the style prop above. A literal here would be a colour
+      with no owner, which is the shape of the defect #122 records.
+    */
   },
 });
