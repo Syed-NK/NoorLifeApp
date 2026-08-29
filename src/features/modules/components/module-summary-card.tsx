@@ -40,6 +40,14 @@ export type ModuleSummaryCardProps = {
  */
 const VALUE_MAX_FONT_MULTIPLIER = 1.4;
 
+/**
+ * The card's own border, which React Native lays out *inside* the box.
+ *
+ * Named because the fit rule has to subtract it. Two dp sounds ignorable and is not: it is the
+ * difference between three columns fitting and the third wrapping onto a line of its own.
+ */
+const CARD_BORDER_WIDTH = 1;
+
 const TREND_ICON: Readonly<Record<ModuleTrend, IconName>> = {
   up: 'trends',
   down: 'trends',
@@ -75,11 +83,15 @@ export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
   const columnGap = dp(moduleLayout.cardGap);
   const valueGap = dp(3);
   /*
-    The width the metrics actually share. The card is laid out at the page's content width — measured
-    352 dp inside a 384 dp screen — so its own padding is the only deduction. Taken from the same
-    tokens the style below applies, so the rule cannot disagree with the box it is reasoning about.
+    The width the metrics actually share.
+
+    The card is laid out at the page's content width — measured 352 dp inside a 384 dp screen — so
+    what it keeps for itself is padding **and border**, both sides. Missing the border cost two dp,
+    which was enough on a device: the rule said three columns fitted, the columns were sized for
+    three, and the last one wrapped anyway. A layout that disagrees with its own measurement is
+    worse than one that is merely conservative.
   */
-  const availableWidth = contentWidth - padding * 2;
+  const availableWidth = contentWidth - (padding + CARD_BORDER_WIDTH) * 2;
   const columns = summaryColumns({
     items: metrics.map((metric) => ({ value: metric.value, unit: metric.unit })),
     availableWidth,
@@ -90,7 +102,12 @@ export function ModuleSummaryCard({ metrics, testID }: ModuleSummaryCardProps) {
     fontScale,
     valueMaxMultiplier: VALUE_MAX_FONT_MULTIPLIER,
   });
-  const columnWidth = (availableWidth - columnGap * (columns - 1)) / columns;
+  /*
+    Floored, so the columns and their gaps can never sum past the row they sit in. React Native
+    rounds each dp width to whole device pixels independently, and three columns each rounded up is
+    how an exact fit becomes an overflow — and an overflow, in a wrapping row, becomes a stray line.
+  */
+  const columnWidth = Math.floor((availableWidth - columnGap * (columns - 1)) / columns);
 
   return (
     <View
@@ -195,7 +212,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     /* Overridden per module — issue #91. */
-    borderWidth: 1,
+    borderWidth: CARD_BORDER_WIDTH,
     /* Overridden per module — issue #91. */
   },
   metric: {

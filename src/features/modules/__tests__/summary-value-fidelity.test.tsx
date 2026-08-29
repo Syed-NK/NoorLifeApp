@@ -60,8 +60,9 @@ function geometry(width: number) {
   const contentWidth =
     Math.min(width, moduleLayout.referenceWidth) - dp(moduleLayout.pagePadding) * 2;
   const padding = dp(moduleLayout.cardPadding);
+  /* Padding *and* border, both sides — React Native lays the border inside the box. */
   return {
-    availableWidth: contentWidth - padding * 2,
+    availableWidth: contentWidth - (padding + 1) * 2,
     columnGap: dp(moduleLayout.cardGap),
     valueGap: dp(3),
     valueFontSize: +(moduleType.metric[0] * scale).toFixed(1),
@@ -241,7 +242,7 @@ describe('the rendered card follows the rule', () => {
         fontScale,
       );
       const g = geometry(width);
-      const columnWidth = (g.availableWidth - g.columnGap * (expected - 1)) / expected;
+      const columnWidth = Math.floor((g.availableWidth - g.columnGap * (expected - 1)) / expected);
 
       for (const metric of metrics) {
         const style = flat(screen.getByTestId(`summary-${metric.key}`));
@@ -249,6 +250,34 @@ describe('the rendered card follows the rule', () => {
       }
     },
   );
+
+  it.each(CELLS)('fits its own row at %i dp, font scale %s', async (width, fontScale) => {
+    /*
+      The arithmetic that a device caught and this file had not.
+
+      The card reserves padding *and* a 1 dp border on each side, and React Native rounds every dp
+      width to whole pixels on its own. Miss either and the sum of the columns plus their gaps runs
+      a hair past the row — which, in a wrapping row, silently drops the last metric onto a line of
+      its own while still sizing it as though it had a share of the first. The layout then disagrees
+      with the rule that chose it, which is worse than either arrangement.
+    */
+    for (const metrics of [
+      metricsOf('1', AED_OBSERVED, AED_ZERO),
+      metricsOf('3', '12', '7'),
+      metricsOf('1', KWD_MAX, KWD_NEGATIVE),
+    ]) {
+      await renderCard(metrics, width, fontScale);
+      const columnWidth = Number(flat(screen.getByTestId('summary-m0')).width);
+      const g = geometry(width);
+      const columns = columnsFor(
+        metrics.map((metric) => metric.value),
+        width,
+        fontScale,
+      );
+      const used = columnWidth * columns + g.columnGap * (columns - 1);
+      expect(used).toBeLessThanOrEqual(g.availableWidth);
+    }
+  });
 
   it('wraps rather than overflowing, and keeps no fixed height', async () => {
     await renderCard(metricsOf('1', KWD_MAX, KWD_NEGATIVE), 320, 1.5);
