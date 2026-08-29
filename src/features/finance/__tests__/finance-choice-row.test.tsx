@@ -503,25 +503,28 @@ describe('Finance source stays text', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('scope', () => {
-  it('leaves #115 its non-Finance sites, unmigrated', () => {
+  it('shares the floor with the rest of the app, now that #115 has migrated it', () => {
     /*
-      Deliberately asserting that the defect is still there. #115 owns the app-wide migration, and a
-      Finance fix that quietly widened into shared chrome would make that issue impossible to verify.
+      This guard was inverted when #115 landed. It previously asserted that `module-header.tsx`
+      still carried the scaled bound, because #116 deliberately did not widen into shared chrome
+      and that had to be provable. #115 is the issue allowed to change it, so the guard now asserts
+      the opposite: the shared header takes the same density-safe floor these chips do.
     */
     const header = fs.readFileSync(
       path.join(process.cwd(), 'src/features/modules/components/module-header.tsx'),
       'utf8',
     );
-    expect(header).toContain('dp(moduleLayout.minTouchTarget)');
-    expect(header).not.toContain('minimumTouchTargetSize');
+    expect(header).toContain('minimumTouchTargetSize()');
+    expect(header).not.toContain('dp(moduleLayout.minTouchTarget)');
   });
 
-  it('leaves #84 navigation sizing untouched', () => {
+  it('leaves #84 navigation geometry intact while it takes the shared floor', () => {
     const nav = fs.readFileSync(
       path.join(process.cwd(), 'src/design-system/components/module-bottom-navigation.tsx'),
       'utf8',
     );
-    expect(nav).toContain('touchTarget.minimum');
+    /* #115 raised the bound; the slot geometry #84 fixed is untouched and Finance stays out of it. */
+    expect(nav).toContain('minimumTouchTargetSize()');
     expect(nav).not.toContain('FinanceChoiceRow');
   });
 

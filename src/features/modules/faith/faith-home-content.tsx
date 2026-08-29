@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
-import { statusLabel } from '@shared/utils/a11y';
+import { statusLabel, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { ArabicText } from '@features/faith/components/faith-list';
 import { UnverifiedSourceNotice } from '@features/faith/components/faith-states';
@@ -709,7 +709,7 @@ function FaithFeatureGrid() {
             {
               width: tileWidth,
               height: dp(moduleLayout.faithSubmenuTileHeight),
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               borderRadius: dp(moduleLayout.radiusSmall),
               rowGap: dp(3),
             },

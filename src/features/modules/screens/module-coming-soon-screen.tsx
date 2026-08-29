@@ -6,8 +6,9 @@ import { ModuleCard } from '../components/module-card';
 import { ModuleText } from '../components/module-text';
 import { AppIcon, PressableScale } from '@ds/components';
 import { getModuleDefinition } from '../module-registry';
-import { moduleLayout, moduleNeutrals, type FrameworkModuleId } from '../module-tokens';
+import { moduleNeutrals, type FrameworkModuleId } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ModuleComingSoonScreenProps = {
   readonly moduleId: FrameworkModuleId;
@@ -73,7 +74,7 @@ function ComingSoonBody({
           accessibilityRole="button"
           accessibilityLabel={`Back to ${moduleName}`}
           style={{
-            minHeight: dp(moduleLayout.minTouchTarget),
+            minHeight: minimumTouchTargetSize(),
             paddingHorizontal: dp(18),
             justifyContent: 'center',
           }}

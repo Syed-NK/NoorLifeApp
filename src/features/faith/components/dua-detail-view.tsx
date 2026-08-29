@@ -10,6 +10,7 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { duaCategoryById } from '../data/duas/dua-categories';
 import type { DuaDetailPresentation } from '../data/duas/dua-detail';
 import { QuranSelectionView, SelectionOriginBadge } from './quran-selection-view';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * **One Dua, drawn in full** — and every section that is not supported simply not drawn.
@@ -328,7 +329,7 @@ function SourceCard({
           style={[
             styles.link,
             {
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               borderRadius: dp(moduleLayout.radiusSmall),
               paddingHorizontal: dp(12),
             },
@@ -466,7 +467,7 @@ function ActionRow({
       style={[
         styles.action,
         {
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           borderRadius: dp(moduleLayout.radiusSmall),
           paddingHorizontal: dp(12),
           paddingVertical: dp(8),

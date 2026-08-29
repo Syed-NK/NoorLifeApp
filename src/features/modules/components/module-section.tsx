@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { useModuleTheme } from '../module-context';
 import { useOptionalModuleSurfaces } from '../module-surfaces';
@@ -87,7 +87,15 @@ export function ModuleSection({
             accessibilityRole="button"
             accessibilityLabel={`${actionLabel}, ${title}`}
             hitSlop={minimumHitSlop(dp(24))}
-            style={styles.action}
+            style={[
+              styles.action,
+              {
+                minWidth: minimumTouchTargetSize(),
+                minHeight: minimumTouchTargetSize(),
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+            ]}
             testID={`${testID ?? 'module-section'}-action`}
           >
             <ModuleText token="sectionAction" color={theme.ink} numberOfLines={1}>

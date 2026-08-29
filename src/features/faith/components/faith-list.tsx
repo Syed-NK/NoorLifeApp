@@ -9,8 +9,9 @@ import type { IconName } from '@shared/models/icon';
 
 import { FaithPictogram, type FaithPictogramSlot } from './faith-locked-library';
 import { useModuleTheme } from '@features/modules/module-context';
-import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
+import { moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * List primitives shared by the Faith sub-screens.
@@ -124,13 +125,27 @@ export function FaithRow({
     ? { accessible: true, accessibilityLabel: rowLabel, testID: `${testID}-text` }
     : {};
 
+  /*
+    A row that owns *both* a row action and its own trailing control — issue #115.
+
+    Bookmarks is the case: tapping the row opens the verse, tapping the cross removes it. Wrapping
+    the whole row in one pressable puts the cross inside an interactive ancestor, which is the
+    "accessible container swallows an interactive control" shape `faith-accessibility-interaction`
+    exists to refuse — and it only became visible once #115 collapsed `PressableScale` to a single
+    node, because the old overlay sat *beside* the cross rather than around it.
+
+    So the press carrier is the text column, and the control stays its sibling. Two nodes, neither
+    inside the other, each with its own label and its own 44 dp box.
+  */
+  const pressableTextColumn = trailing !== undefined && onPress !== undefined;
+
   const body = (
     <View
       style={[
         styles.row,
         {
           columnGap: dp(10),
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           paddingVertical: dp(6),
         },
       ]}
@@ -145,16 +160,35 @@ export function FaithRow({
       ) : icon === undefined ? null : (
         <AppIcon name={icon} size={dp(22)} color={iconColor ?? theme.ink} />
       )}
-      <View style={styles.flex} {...textGroupProps}>
-        <ModuleText token="rowLabel" numberOfLines={2}>
-          {title}
-        </ModuleText>
-        {subtitle === undefined ? null : (
-          <ModuleText token="rowMeta" numberOfLines={2}>
-            {subtitle}
+      {pressableTextColumn ? (
+        <PressableScale
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityLabel={rowLabel}
+          style={styles.flex}
+          testID={`${testID}-open`}
+        >
+          <ModuleText token="rowLabel" numberOfLines={2}>
+            {title}
           </ModuleText>
-        )}
-      </View>
+          {subtitle === undefined ? null : (
+            <ModuleText token="rowMeta" numberOfLines={2}>
+              {subtitle}
+            </ModuleText>
+          )}
+        </PressableScale>
+      ) : (
+        <View style={styles.flex} {...textGroupProps}>
+          <ModuleText token="rowLabel" numberOfLines={2}>
+            {title}
+          </ModuleText>
+          {subtitle === undefined ? null : (
+            <ModuleText token="rowMeta" numberOfLines={2}>
+              {subtitle}
+            </ModuleText>
+          )}
+        </View>
+      )}
       {arabic === undefined ? null : (
         <ModuleText token="arabic" numberOfLines={1} style={styles.arabic}>
           {arabic}
@@ -183,6 +217,14 @@ export function FaithRow({
     switch-only under an accessibility action — are exactly how a double toggle that lands back on
     the original value gets shipped. One control, one handler; the switch is already a 48 dp target.
   */
+  if (pressableTextColumn) {
+    return (
+      <View testID={testID} accessible={false}>
+        {body}
+      </View>
+    );
+  }
+
   if (trailingInteractive) {
     return (
       <View testID={testID} accessible={false}>

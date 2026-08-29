@@ -192,12 +192,12 @@ describe('the row does not reintroduce the shape that caused this', () => {
 
     for (const id of [retryId(1), removeId(1)]) {
       /*
-        The parent, not the node the testID is on. `PressableScale` puts the caller's style on an outer
+        The node the testID is on. #115 collapsed `PressableScale` to one element, so the box a
         view and fills it with an absolutely-positioned `Pressable` that carries the accessibility props
         — so the touch target is the parent's box, and reading `style` off the queried node returns
         `absoluteFill` and would pass whatever the floor was set to.
       */
-      const style = view.getByTestId(id).parent?.props.style;
+      const style = view.getByTestId(id).props.style;
       const flat = (Array.isArray(style) ? style : [style])
         .filter(
           (entry: unknown): entry is Record<string, unknown> =>

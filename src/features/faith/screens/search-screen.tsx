@@ -16,6 +16,7 @@ import { useFaithRepositories } from '../di/faith-repository-context';
 import { faithNavKeys } from '../faith-routes';
 import { useTranslationPreference } from '../hooks/use-translation-preference';
 import { useFaithResource } from '../hooks/use-faith-resource';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 type SearchHits = {
   readonly ayat: readonly { readonly id: string; readonly title: string; readonly body: string }[];
@@ -216,7 +217,7 @@ function SearchBody() {
             borderColor: theme.border,
             paddingHorizontal: dp(12),
             columnGap: dp(8),
-            minHeight: dp(moduleLayout.minTouchTarget),
+            minHeight: minimumTouchTargetSize(),
           },
         ]}
       >
@@ -247,8 +248,8 @@ function SearchBody() {
           style={[
             styles.submit,
             {
-              minWidth: dp(moduleLayout.minTouchTarget),
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minWidth: minimumTouchTargetSize(),
+              minHeight: minimumTouchTargetSize(),
             },
           ]}
           testID="faith-search-submit"

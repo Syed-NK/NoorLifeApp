@@ -14,6 +14,7 @@ import { moduleLayout } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { noorAIChatCopy } from './noor-ai-chat-copy';
 import { NOOR_AI_HOME_ROUTE } from './noor-ai-chat-routes';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * `/ai/feedback` — the route `NOORLIFE_PRODUCTION_WORKFLOW.md` §6 requires, and nothing more.
@@ -102,7 +103,7 @@ function NoorAIFeedbackBody() {
           alignSelf: 'flex-start',
           alignItems: 'center',
           justifyContent: 'center',
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           borderRadius: dp(moduleLayout.radiusSmall),
           paddingHorizontal: dp(18),
           backgroundColor: theme.fill,

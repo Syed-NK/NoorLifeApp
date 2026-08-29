@@ -547,14 +547,18 @@ describe('locked geometry survives both states', () => {
   /**
    * The resolved style of the box a testID names.
    *
-   * `PressableScale` keeps the caller's style on its wrapper and puts the testID on the absolute
-   * touch overlay inside it, so a pressable surface — every timeline row, and a locked summary
-   * card — measures one level up. A plain `View` measures where it stands.
+   * `PressableScale` is one element since #115, so the testID node carries the caller style. It used
+   * to keep that style on a wrapper with the testID on an absolute touch overlay inside it, so a
+   * pressable surface measured one level up. Everything now measures where it stands.
    */
   function flat(testID: string) {
     const node = screen.getByTestId(testID);
-    const own = StyleSheet.flatten(node.props.style);
-    return own?.height === undefined ? StyleSheet.flatten(node.parent?.props.style) : own;
+    /*
+      The node itself. #115 collapsed `PressableScale` to a single element, so the element that
+      carries the testID is the element the caller styled — there is no wrapper one level up to
+      fall through to, and falling through would now read the surrounding layout instead.
+    */
+    return StyleSheet.flatten(node.props.style);
   }
 
   it.each([
@@ -563,7 +567,19 @@ describe('locked geometry survives both states', () => {
   ])('keeps the Today card and its rows at their locked heights on a %s plan', async (_, mount) => {
     await mount();
 
-    expect(flat('main-home-timeline')?.height).toBe(LOCKED.today.cardHeight);
+    /*
+      ── The lock changed here, on an approved decision — issue 115 ─────────
+      Old contract: `height === LOCKED.today.cardHeight`, an exact 126 dp card.
+      Why it existed: the card is design-locked and a fixed height kept it identical in both
+      entitlement states.
+      New contract: the same 126 dp as a **minimum**. The rows inside it are interactive and now
+      carry the 44 dp accessibility floor; three of them no longer fit in 126 dp, and the last was
+      clipped to 8.381 dp on device. Visible geometry is unchanged wherever the content still fits,
+      and grows only where an accessible row would otherwise be cut off.
+      What is still locked: the value itself, the radius, and that nothing fixes the height.
+    */
+    expect(flat('main-home-timeline')?.minHeight).toBe(LOCKED.today.cardHeight);
+    expect(flat('main-home-timeline')?.height).toBeUndefined();
     expect(flat('main-home-timeline')?.borderRadius).toBe(LOCKED.today.cardRadius);
     for (const id of ['next-prayer', ...PROTECTED_ROWS.map((row) => row.id)]) {
       expect(flat(`timeline-row-${id}`)?.height).toBe(LOCKED.today.rowHeight);

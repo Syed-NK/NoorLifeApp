@@ -6,6 +6,7 @@ import { useEntryAuthMetrics } from '@features/entry-auth/use-entry-auth-metrics
 import type { BillingPeriod } from '../domain/subscription';
 import { billingCopy } from '../subscription-copy';
 import { subscriptionColors, subscriptionLayout } from '../subscription-tokens';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type BillingPeriodToggleProps = {
   readonly value: Extract<BillingPeriod, 'monthly' | 'yearly'>;
@@ -38,7 +39,7 @@ export function BillingPeriodToggle({
   const height = dp(subscriptionLayout.toggleHeight);
   const padding = dp(subscriptionLayout.togglePadding);
   // Brings the 40 dp control up to the 44 dp accessible minimum without changing its look.
-  const verticalSlop = Math.max(0, Math.ceil((dp(subscriptionLayout.minTouchTarget) - height) / 2));
+  const verticalSlop = Math.max(0, Math.ceil((minimumTouchTargetSize() - height) / 2));
 
   return (
     <View
@@ -101,6 +102,11 @@ function Segment({ label, selected, onPress, verticalSlop, badge, testID }: Segm
       style={[
         styles.segment,
         {
+          /*
+            The floor on the segment itself — issue 115. It measured 32.000 dp while a vertical
+            hitSlop widened where a finger landed, which leaves the announced node undersized.
+          */
+          minHeight: minimumTouchTargetSize(),
           borderRadius: subscriptionLayout.toggleRadius,
           columnGap: dp(6),
           backgroundColor: selected ? subscriptionColors.accent : 'transparent',

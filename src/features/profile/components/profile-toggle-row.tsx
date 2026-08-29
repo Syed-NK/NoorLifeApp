@@ -5,6 +5,7 @@ import { useEntryAuthMetrics } from '@features/entry-auth/use-entry-auth-metrics
 import { subscriptionColors } from '@features/subscription/subscription-tokens';
 
 import { PROFILE_LAYOUT } from '../profile-metrics';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ProfileToggleRowProps = {
   readonly label: string;
@@ -52,7 +53,7 @@ export function ProfileToggleRow({
 
   return (
     <View
-      style={[styles.row, { minHeight: dp(PROFILE_LAYOUT.minTouchTarget), columnGap: dp(12) }]}
+      style={[styles.row, { minHeight: minimumTouchTargetSize(), columnGap: dp(12) }]}
       accessible
       accessibilityRole="switch"
       accessibilityLabel={label}

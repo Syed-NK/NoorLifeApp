@@ -3,8 +3,8 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { AppIcon } from './app-icon';
 import { PressableScale } from './pressable-scale';
 
-import { elementSize, neutralColors, semanticColors, touchTarget } from '@ds/tokens';
-import { iconButtonA11y } from '@shared/utils/a11y';
+import { elementSize, neutralColors, semanticColors } from '@ds/tokens';
+import { iconButtonA11y, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type RobotAIButtonProps = {
   readonly onPress: () => void;
@@ -61,8 +61,8 @@ export function RobotAIButton({
         {
           width: size,
           height: size,
-          minWidth: touchTarget.minimum,
-          minHeight: touchTarget.minimum,
+          minWidth: minimumTouchTargetSize(),
+          minHeight: minimumTouchTargetSize(),
           borderRadius: size / 2,
           borderColor: ringColor,
           // Active state thickens the ring rather than only recolouring it, so it

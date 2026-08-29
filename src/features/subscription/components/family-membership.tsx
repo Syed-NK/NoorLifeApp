@@ -10,6 +10,7 @@ import { isFamilyFull } from '../domain/entitlement';
 import { familyInviteCopy, familyMembersCopy, familyInvitationsCopy } from '../subscription-copy';
 import { subscriptionColors, subscriptionLayout } from '../subscription-tokens';
 import { PlanBadge } from './plan-badge';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * The family-membership primitives: seat indicator, member avatar, member row, invitation row.
@@ -156,7 +157,7 @@ export function FamilyMemberRow({ member, onRemove, testID }: FamilyMemberRowPro
         {
           paddingVertical: dp(9),
           columnGap: dp(10),
-          minHeight: dp(subscriptionLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           borderBottomColor: subscriptionColors.border,
         },
       ]}
@@ -182,7 +183,15 @@ export function FamilyMemberRow({ member, onRemove, testID }: FamilyMemberRowPro
           accessibilityRole="button"
           accessibilityLabel={`Remove ${member.name} from the family`}
           hitSlop={8}
-          style={{ minHeight: dp(subscriptionLayout.minTouchTarget), justifyContent: 'center' }}
+          style={[
+            { minHeight: minimumTouchTargetSize(), justifyContent: 'center' },
+            {
+              minWidth: minimumTouchTargetSize(),
+              minHeight: minimumTouchTargetSize(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+          ]}
           testID={`${testID ?? 'member'}-remove`}
         >
           <EntryAuthText token="label" color={subscriptionColors.error}>
@@ -260,7 +269,7 @@ export function InvitationRow({ invitation, onResend, onCancel, testID }: Invita
               accessibilityRole="button"
               accessibilityLabel={`Resend the invitation to ${invitation.email}`}
               hitSlop={8}
-              style={{ minHeight: dp(subscriptionLayout.minTouchTarget), justifyContent: 'center' }}
+              style={{ minHeight: minimumTouchTargetSize(), justifyContent: 'center' }}
               testID={`${testID ?? 'invitation'}-resend`}
             >
               <EntryAuthText token="label" color={subscriptionColors.accent}>
@@ -274,7 +283,7 @@ export function InvitationRow({ invitation, onResend, onCancel, testID }: Invita
               accessibilityRole="button"
               accessibilityLabel={`Cancel the invitation to ${invitation.email}`}
               hitSlop={8}
-              style={{ minHeight: dp(subscriptionLayout.minTouchTarget), justifyContent: 'center' }}
+              style={{ minHeight: minimumTouchTargetSize(), justifyContent: 'center' }}
               testID={`${testID ?? 'invitation'}-cancel`}
             >
               <EntryAuthText token="label" color={subscriptionColors.error}>

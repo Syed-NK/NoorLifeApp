@@ -10,6 +10,7 @@ import {
   headerTitleBandWidth,
 } from '@features/modules/components/module-header';
 import { moduleLayout, moduleScale } from '@features/modules/module-tokens';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * The reader's header says `Reader`, on the frame it first appears and at every supported width.
@@ -171,7 +172,12 @@ describe('the band is wide enough at every supported width', () => {
     for (const width of [NARROW, REFERENCE, WIDE]) {
       const scale = moduleScale(width);
       const scaled = (value: number): number => Math.round(value * scale);
-      const target = scaled(moduleLayout.minTouchTarget);
+      /*
+        The reserve follows the control, and the control is now the density-safe floor — issue
+        #115. Reserving a scaled width for an unscaled control would let the title band run under
+        Help on a narrow screen.
+      */
+      const target = minimumTouchTargetSize();
 
       // Help + Profile + the gap between them — the larger of the two clusters.
       expect(headerControlReserve(scaled)).toBe(target * 2 + scaled(moduleLayout.headerControlGap));

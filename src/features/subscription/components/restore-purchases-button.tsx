@@ -5,6 +5,7 @@ import { useEntryAuthMetrics } from '@features/entry-auth/use-entry-auth-metrics
 
 import { welcomeCopy } from '../subscription-copy';
 import { subscriptionColors, subscriptionLayout } from '../subscription-tokens';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type RestorePurchasesButtonProps = {
   readonly onPress: () => void;
@@ -38,7 +39,7 @@ export function RestorePurchasesButton({
       accessibilityRole="button"
       accessibilityState={{ busy, disabled: busy }}
       accessibilityHint="Checks your store account for a previous NoorLife subscription"
-      style={[styles.target, { minHeight: dp(subscriptionLayout.minTouchTarget) }]}
+      style={[styles.target, { minHeight: minimumTouchTargetSize() }]}
       testID={testID ?? 'restore-purchases'}
     >
       <EntryAuthText

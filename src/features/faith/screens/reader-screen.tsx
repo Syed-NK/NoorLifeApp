@@ -48,6 +48,7 @@ import { useFaithResource } from '../hooks/use-faith-resource';
 import { useReadingLog } from '../hooks/use-reading-log';
 import { useSurahCatalogue } from '../hooks/use-surah-catalogue';
 import { useRecitationPlayer, type RecitationTransport } from '../hooks/use-recitation-player';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * One verse as the reader renders it: the scripture, and its translation if one loaded.
@@ -1517,7 +1518,7 @@ function ContinueReading({
         }
         style={{
           alignSelf: 'flex-start',
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           justifyContent: 'center',
         }}
         testID="faith-reader-load-more"

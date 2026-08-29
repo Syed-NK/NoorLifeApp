@@ -4,6 +4,7 @@ import { entryAuthColors, entryAuthLayout } from '../entry-auth-tokens';
 import type { EntryAuthTypeToken } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
 import { EntryAuthText } from './entry-auth-text';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type AuthHeaderProps = {
   /** Omitted on screens the workflow gives no back destination. */
@@ -40,7 +41,7 @@ export function AuthHeader({
   testID,
 }: AuthHeaderProps) {
   const { dp } = useEntryAuthMetrics();
-  const target = dp(entryAuthLayout.minTouchTarget);
+  const target = minimumTouchTargetSize();
 
   return (
     <View style={{ gap: dp(6) }} testID={testID}>
@@ -51,7 +52,16 @@ export function AuthHeader({
             accessibilityRole="button"
             accessibilityLabel="Go back"
             hitSlop={8}
-            style={[styles.backTarget, { width: target, height: target }]}
+            style={[
+              styles.backTarget,
+              { width: target, height: target },
+              {
+                minWidth: minimumTouchTargetSize(),
+                minHeight: minimumTouchTargetSize(),
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+            ]}
             testID={`${testID ?? 'auth-header'}-back`}
           >
             <View

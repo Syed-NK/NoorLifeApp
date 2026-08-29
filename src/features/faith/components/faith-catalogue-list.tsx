@@ -6,7 +6,7 @@ import { ModuleText } from '@features/modules/components';
 import { useModuleTheme } from '@features/modules/module-context';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * The shared frame for the two catalogue selectors.
@@ -107,7 +107,7 @@ export function FaithCatalogueList({
             {
               borderRadius: dp(12),
               paddingHorizontal: dp(12),
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               columnGap: dp(8),
             },
           ]}
@@ -131,6 +131,12 @@ export function FaithCatalogueList({
               accessibilityRole="button"
               accessibilityLabel="Clear search"
               hitSlop={minimumHitSlop(dp(20))}
+              style={{
+                minWidth: minimumTouchTargetSize(),
+                minHeight: minimumTouchTargetSize(),
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               testID={`${testID}-search-clear`}
             >
               <AppIcon name="close" size={dp(16)} color={moduleNeutrals.textSecondary} />
@@ -265,7 +271,7 @@ export function FaithCatalogueList({
                   alignItems: 'center',
                   columnGap: dp(6),
                   paddingHorizontal: dp(8),
-                  minHeight: dp(moduleLayout.minTouchTarget),
+                  minHeight: minimumTouchTargetSize(),
                 }}
                 testID={`${testID}-action-${item.id}`}
               >

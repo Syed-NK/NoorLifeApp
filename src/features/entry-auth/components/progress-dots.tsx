@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { entryAuthColors, entryAuthLayout } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ProgressDotsProps = {
   readonly count: number;
@@ -77,7 +78,15 @@ export function ProgressDots({ count, activeIndex, onSelect, testID }: ProgressD
             hitSlop={DOT_HIT_SLOP}
             accessibilityRole="button"
             accessibilityLabel={`Go back to step ${index + 1} of ${count}`}
-            style={dotStyle}
+            style={[
+              dotStyle,
+              {
+                minWidth: minimumTouchTargetSize(),
+                minHeight: minimumTouchTargetSize(),
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+            ]}
             testID={dotTestID}
           />
         );

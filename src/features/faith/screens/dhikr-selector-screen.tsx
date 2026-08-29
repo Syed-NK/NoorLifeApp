@@ -13,7 +13,7 @@ import {
   readerPageBackground,
 } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { ArabicText } from '../components/faith-list';
 import { BROWSE_ACTION_HINT, BROWSE_ACTION_LABEL } from '../components/dua-library-items';
@@ -308,7 +308,7 @@ function SearchField({
         styles.search,
         {
           borderRadius: dp(moduleLayout.radiusSmall),
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           paddingHorizontal: dp(12),
           columnGap: dp(10),
         },
@@ -376,14 +376,18 @@ function Chip({
       accessibilityState={{ selected: active }}
       accessibilityLabel={label}
       hitSlop={minimumHitSlop(dp(30))}
-      style={{
-        paddingHorizontal: dp(12),
-        paddingVertical: dp(7),
-        borderRadius: dp(999),
-        borderWidth: 1,
-        borderColor: active ? EMERALD : moduleNeutrals.border,
-        backgroundColor: active ? EMERALD_DEEP : moduleNeutrals.surface,
-      }}
+      style={[
+        {
+          paddingHorizontal: dp(12),
+          paddingVertical: dp(7),
+          borderRadius: dp(999),
+          borderWidth: 1,
+          borderColor: active ? EMERALD : moduleNeutrals.border,
+          backgroundColor: active ? EMERALD_DEEP : moduleNeutrals.surface,
+        },
+        /* The floor is the node itself, not the hitSlop around it - issue #115. */
+        { minWidth: minimumTouchTargetSize(), minHeight: minimumTouchTargetSize() },
+      ]}
       testID={`faith-dhikr-filter-${testID}`}
     >
       <ModuleText
@@ -622,7 +626,7 @@ function PersonalList({
                 styles.input,
                 {
                   borderRadius: dp(moduleLayout.radiusSmall),
-                  minHeight: dp(moduleLayout.minTouchTarget),
+                  minHeight: minimumTouchTargetSize(),
                   paddingHorizontal: dp(10),
                   color: moduleNeutrals.textPrimary,
                 },
@@ -656,7 +660,7 @@ function PersonalList({
                 styles.counter,
                 {
                   borderRadius: dp(moduleLayout.radiusSmall),
-                  minHeight: dp(moduleLayout.minTouchTarget),
+                  minHeight: minimumTouchTargetSize(),
                   paddingHorizontal: dp(12),
                   paddingVertical: dp(8),
                   borderColor: activeCounterId === label.id ? EMERALD : moduleNeutrals.border,
@@ -880,7 +884,7 @@ function RowButton({
   readonly testID: string;
 }) {
   const { dp } = useModuleMetrics();
-  const size = dp(moduleLayout.minTouchTarget);
+  const size = minimumTouchTargetSize();
 
   return (
     <PressableScale
@@ -937,7 +941,7 @@ function NewCounter({
               styles.input,
               {
                 borderRadius: dp(moduleLayout.radiusSmall),
-                minHeight: dp(moduleLayout.minTouchTarget),
+                minHeight: minimumTouchTargetSize(),
                 paddingHorizontal: dp(10),
                 color: moduleNeutrals.textPrimary,
               },
@@ -952,7 +956,7 @@ function NewCounter({
             accessibilityState={{ disabled: value.trim().length === 0 }}
             style={{
               paddingHorizontal: dp(14),
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               borderRadius: dp(moduleLayout.radiusSmall),
               backgroundColor: EMERALD_DEEP,
               alignItems: 'center',

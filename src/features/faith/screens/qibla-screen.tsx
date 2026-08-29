@@ -11,7 +11,7 @@ import {
 } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import type { IconName } from '@shared/models/icon';
-import { minimumHitSlop, useReducedMotion } from '@shared/utils/a11y';
+import { minimumHitSlop, useReducedMotion, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { QiblaBearingDial, QiblaLiveDial } from '../components/qibla-compass';
 import { FaithResourceView, FaithScreen } from '../components/faith-screen';
@@ -498,7 +498,7 @@ function AccuracyRow({ accuracy }: { readonly accuracy: CompassAccuracy }) {
         styles.row,
         {
           borderRadius: dp(moduleLayout.radiusSmall),
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           paddingHorizontal: dp(12),
           paddingVertical: dp(10),
           columnGap: dp(12),
@@ -573,7 +573,7 @@ function InfoRow({
         styles.row,
         {
           borderRadius: dp(moduleLayout.radiusSmall),
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           paddingHorizontal: dp(12),
           paddingVertical: dp(10),
           columnGap: dp(12),
@@ -581,7 +581,7 @@ function InfoRow({
       ]}
       accessible
       accessibilityLabel={`${title}. ${subtitle}`}
-      hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
+      hitSlop={minimumHitSlop(minimumTouchTargetSize())}
       testID={testID}
     >
       <RowGlyph icon={icon} accent={accent} />

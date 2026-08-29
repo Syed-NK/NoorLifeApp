@@ -7,7 +7,7 @@ import { ModuleText } from '@features/modules/components';
 import { moduleLayout, moduleNeutrals, readerDockColors } from '@features/modules/module-tokens';
 import { useModuleTheme } from '@features/modules/module-context';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * What the player is doing, as one closed set.
@@ -259,6 +259,12 @@ export function QuranAudioPlayer({
             accessibilityRole="button"
             accessibilityLabel={`Change reciter. Currently ${reciterName ?? 'not yet named'}`}
             hitSlop={minimumHitSlop(dp(18))}
+            style={{
+              minWidth: minimumTouchTargetSize(),
+              minHeight: minimumTouchTargetSize(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
             testID="faith-reader-player-reciter-control"
           >
             <ModuleText
@@ -499,7 +505,7 @@ function StepButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
-      hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
+      hitSlop={minimumHitSlop(minimumTouchTargetSize())}
       style={{
         width: dp(PLAYER_STEP_SIZE),
         height: dp(PLAYER_STEP_SIZE),
@@ -556,7 +562,7 @@ function SpeedControl({
       onPress={() => onChangeRate(nextRate)}
       accessibilityRole="button"
       accessibilityLabel={`Playback speed ${rate} times. Change to ${nextRate} times`}
-      hitSlop={minimumHitSlop(dp(moduleLayout.minTouchTarget))}
+      hitSlop={minimumHitSlop(minimumTouchTargetSize())}
       style={{
         minWidth: dp(32),
         height: dp(PLAYER_STEP_SIZE),
@@ -736,7 +742,7 @@ function OfflineRow({
         flexDirection: 'row',
         alignItems: 'center',
         columnGap: dp(8),
-        minHeight: dp(moduleLayout.minTouchTarget),
+        minHeight: minimumTouchTargetSize(),
       }}
       testID="faith-reader-player-offline"
     >
@@ -777,7 +783,7 @@ function RetryRow({ ayah, onRetry }: { readonly ayah: number; readonly onRetry: 
         flexDirection: 'row',
         alignItems: 'center',
         columnGap: dp(8),
-        minHeight: dp(moduleLayout.minTouchTarget),
+        minHeight: minimumTouchTargetSize(),
       }}
       testID="faith-reader-player-retry"
     >

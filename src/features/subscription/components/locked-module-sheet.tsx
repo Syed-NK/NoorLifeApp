@@ -12,6 +12,7 @@ import type { FrameworkModuleId } from '@features/modules/module-tokens';
 import { isPremiumModule } from '../domain/entitlement';
 import { lockedModuleCopy } from '../subscription-copy';
 import { subscriptionColors, subscriptionLayout } from '../subscription-tokens';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type LockedModuleSheetProps = {
   readonly visible: boolean;
@@ -156,7 +157,7 @@ export function LockedModuleSheet({
                 onPress={onContinueToFaith}
                 accessibilityRole="button"
                 style={{
-                  minHeight: dp(subscriptionLayout.minTouchTarget),
+                  minHeight: minimumTouchTargetSize(),
                   justifyContent: 'center',
                 }}
                 testID={`${testID ?? 'locked-sheet'}-faith`}

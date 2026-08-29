@@ -195,7 +195,7 @@ describe('the Help control', () => {
   it('has a 44 dp target around a 36 dp visible disc', async () => {
     const view = await renderIn(<ModuleHomeScreen moduleId="faith" />);
     const help = await view.findByTestId('faith-home-header-help');
-    const target = StyleSheet.flatten(help.parent?.props.style) as ImageStyle;
+    const target = StyleSheet.flatten(help.props.style) as ImageStyle;
 
     expect(target.width).toBe(moduleLayout.minTouchTarget);
     expect(target.height).toBe(moduleLayout.minTouchTarget);

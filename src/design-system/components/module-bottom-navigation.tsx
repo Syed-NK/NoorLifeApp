@@ -12,9 +12,9 @@ import {
   navigationColors,
   neutralColors,
   semanticColors,
-  touchTarget,
 } from '@ds/tokens';
 import { AI_NAV_INDEX, type ModuleTheme, type NavItem } from '@shared/models/module-theme';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /** Lock §13: nav labels are 9.5/13. */
 const LABEL_SIZE = 9.5;
@@ -84,7 +84,7 @@ export function ModuleBottomNavigation({
 
           if (index === AI_NAV_INDEX) {
             return (
-              <View key={item.key} style={styles.slot}>
+              <View key={item.key} style={[styles.slot, { minHeight: minimumTouchTargetSize() }]}>
                 <RobotAIButton
                   onPress={() => onNavigate(item)}
                   ringColor={activeColor}
@@ -112,7 +112,7 @@ export function ModuleBottomNavigation({
               accessibilityRole="tab"
               accessibilityLabel={item.accessibilityLabel ?? item.label}
               accessibilityState={{ selected: isActive }}
-              style={styles.slot}
+              style={[styles.slot, { minHeight: minimumTouchTargetSize() }]}
               testID={`${testID ?? 'module-nav'}-${item.key}`}
             >
               <AppIcon name={item.icon} size={elementSize.bottomNavIcon} color={tint} />
@@ -145,7 +145,6 @@ const styles = StyleSheet.create({
     // Stops a label wider than its fifth from pushing the slot open and shunting its
     // neighbours together.
     minWidth: 0,
-    minHeight: touchTarget.minimum,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 2,

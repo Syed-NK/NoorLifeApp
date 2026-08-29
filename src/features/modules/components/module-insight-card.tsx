@@ -7,6 +7,7 @@ import { useModule } from '../module-context';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ModuleInsightCardProps = {
   /** The insight itself, in one or two sentences. */
@@ -96,7 +97,7 @@ export function ModuleInsightCard({
         style={[
           styles.action,
           {
-            minHeight: dp(moduleLayout.minTouchTarget),
+            minHeight: minimumTouchTargetSize(),
             borderRadius: dp(moduleLayout.radiusSmall),
             backgroundColor: module.theme.fill,
             paddingHorizontal: dp(12),

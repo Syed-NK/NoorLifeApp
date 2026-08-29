@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { PressableScale } from '@ds/components';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { useModuleTheme } from '../module-context';
 import { useModuleSurfaces } from '../module-surfaces';
@@ -210,6 +210,12 @@ export function ModuleCardHeading({
           // The link is visually small; hit-slop carries it to 44 dp without changing
           // the reference's compact heading height.
           hitSlop={12}
+          style={{
+            minWidth: minimumTouchTargetSize(),
+            minHeight: minimumTouchTargetSize(),
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
           testID={testID}
         >
           <ModuleText token="cardAction" color={theme.ink} numberOfLines={1}>

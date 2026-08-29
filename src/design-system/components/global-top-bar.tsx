@@ -15,7 +15,7 @@ import {
   spacing,
   touchTarget,
 } from '@ds/tokens';
-import { iconButtonA11y } from '@shared/utils/a11y';
+import { iconButtonA11y, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type GlobalTopBarProps = {
   /** Greeting eyebrow, e.g. "Assalamu Alaikum,". */
@@ -54,7 +54,8 @@ export function GlobalTopBar({
     <View style={styles.root} testID={testID}>
       <PressableScale
         onPress={onPressAvatar}
-        style={styles.identity}
+        /* The floor is read at render, never cached in a StyleSheet - issue #115. */
+        style={[styles.identity, { minHeight: minimumTouchTargetSize() }]}
         {...iconButtonA11y(`Open profile for ${name}`)}
       >
         <View style={styles.avatar}>
@@ -115,7 +116,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     flexShrink: 1,
-    minHeight: touchTarget.minimum,
   },
   avatar: {
     width: elementSize.globalTopBarAvatar,

@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import type { IconName } from '@shared/models/icon';
-import { statusLabel } from '@shared/utils/a11y';
+import { statusLabel, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { useModuleTheme } from '../module-context';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
@@ -97,7 +97,7 @@ export function ModuleActivityCard({ items, testID }: ModuleActivityCardProps) {
               style={[
                 styles.row,
                 {
-                  minHeight: dp(moduleLayout.minTouchTarget),
+                  minHeight: minimumTouchTargetSize(),
                   columnGap: dp(10),
                   paddingVertical: dp(9),
                 },

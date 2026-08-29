@@ -130,7 +130,7 @@ const EVERY_STATE: readonly QuranPlaybackState[] = [
  * arrangement fixes. The testID is on the overlay, so geometry has to be read one level up.
  */
 function controlStyle(node: { readonly parent: unknown }): Record<string, unknown> {
-  return flatStyle(node.parent as { readonly props: { readonly style?: unknown } });
+  return flatStyle(node as unknown as { readonly props: { readonly style?: unknown } });
 }
 
 function flatStyle(node: {

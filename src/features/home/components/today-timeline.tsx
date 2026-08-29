@@ -8,7 +8,7 @@ import { useUpgradeSheetActions } from '@features/subscription/services/upgrade-
 import { useModuleLock } from '@features/subscription/use-module-lock';
 import type { TimelineEntry } from '@shared/models/dashboard';
 import type { ModuleTheme } from '@shared/models/module-theme';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 import { forwardChevron } from '@shared/utils/rtl';
 
 import { UPGRADE_SOURCES } from '../home-premium-surfaces';
@@ -93,7 +93,15 @@ export function TodayTimeline({
       style={[
         styles.card,
         {
-          height: dp(LOCKED.today.cardHeight),
+          /*
+            A minimum, not a fixed height — issue 115.
+
+            The card was tall enough for three rows at their old 23 dp. At the 44 dp floor those
+            rows no longer fit, and the last one was clipped to 8.381 dp on device. The locked
+            value stays as the card the design drew; what changes is that accessible rows may
+            push it taller rather than being cut off inside it.
+          */
+          minHeight: dp(LOCKED.today.cardHeight),
           borderRadius: dp(LOCKED.today.cardRadius),
           paddingHorizontal: dp(LOCKED.today.paddingHorizontal),
           paddingVertical: dp(LOCKED.today.paddingVertical),
@@ -101,7 +109,12 @@ export function TodayTimeline({
       ]}
       testID={testID}
     >
-      <View style={[styles.heading, { height: dp(LOCKED.today.headingHeight) }]}>
+      {/*
+        Also a minimum — issue 115. View All sits in this row, and a fixed heading height held it
+        at 40.000 dp and pushed its box down over the first timeline row, which measured as two
+        overlapping targets.
+      */}
+      <View style={[styles.heading, { minHeight: dp(LOCKED.today.headingHeight) }]}>
         <HomeText token="sectionTitle" numberOfLines={1} style={styles.headingTitle}>
           Today at a Glance
         </HomeText>
@@ -130,7 +143,15 @@ export function TodayTimeline({
           {...(isPlannerLocked
             ? { accessibilityHint: 'Explains what NoorLife Premium includes' }
             : {})}
-          style={styles.viewAll}
+          style={[
+            styles.viewAll,
+            {
+              minWidth: minimumTouchTargetSize(),
+              minHeight: minimumTouchTargetSize(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+          ]}
           testID={`${testID ?? 'today'}-view-all`}
         >
           {/* Lock §9: View All is the global primary, not a module colour — until it is locked, when

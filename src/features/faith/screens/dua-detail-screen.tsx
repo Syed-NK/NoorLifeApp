@@ -25,6 +25,7 @@ import { reviewedDuas } from '../data/duas/reviewed-dua';
 import { faithNavKeys, faithRoutes, readerHref } from '../faith-routes';
 import { useQuranSelections } from '../hooks/use-quran-selections';
 import { useTasbih } from '../hooks/use-tasbih';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * **Faith → Duas → one Dua.**
@@ -176,7 +177,7 @@ function UnknownDua({ duaId }: { readonly duaId: string }) {
         style={[
           styles.link,
           {
-            minHeight: dp(moduleLayout.minTouchTarget),
+            minHeight: minimumTouchTargetSize(),
             borderRadius: dp(moduleLayout.radiusSmall),
             paddingHorizontal: dp(12),
           },

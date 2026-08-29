@@ -188,14 +188,18 @@ function expectNoProtectedRouteEntered() {
 /**
  * The resolved style of the box a testID names.
  *
- * `PressableScale` keeps the caller's style on its wrapper and puts the testID on the absolute touch
- * overlay inside it, so a pressable surface measures one level up. A plain `View` measures where it
+ * `PressableScale` is one element since #115, so the testID node carries the caller style. It used touch
+ * overlay inside it, so a pressable surface measured one level up. Everything now measures where it
  * stands.
  */
 function flat(testID: string) {
   const node = screen.getByTestId(testID);
-  const own = StyleSheet.flatten(node.props.style);
-  return own?.height === undefined ? StyleSheet.flatten(node.parent?.props.style) : own;
+  /*
+    The node itself. #115 collapsed `PressableScale` to a single element, so the element that
+    carries the testID is the element the caller styled — there is no wrapper one level up to
+    fall through to, and falling through would now read the surrounding layout instead.
+  */
+  return StyleSheet.flatten(node.props.style);
 }
 
 // ── Today at a Glance: View All ─────────────────────────────────────────────
@@ -243,7 +247,19 @@ describe("Today at a Glance's View All on a free plan", () => {
     // Nothing is removed: the heading row is unchanged, so the card's 22 dp heading and the four rows
     // below it keep their exact positions.
     expect(screen.getByText('View All')).toBeTruthy();
-    expect(flat('main-home-timeline')?.height).toBe(LOCKED.today.cardHeight);
+    /*
+      ── The lock changed here, on an approved decision — issue 115 ─────────
+      Old contract: `height === LOCKED.today.cardHeight`, an exact 126 dp card.
+      Why it existed: the card is design-locked and a fixed height kept it identical in both
+      entitlement states.
+      New contract: the same 126 dp as a **minimum**. The rows inside it are interactive and now
+      carry the 44 dp accessibility floor; three of them no longer fit in 126 dp, and the last was
+      clipped to 8.381 dp on device. Visible geometry is unchanged wherever the content still fits,
+      and grows only where an accessible row would otherwise be cut off.
+      What is still locked: the value itself, the radius, and that nothing fixes the height.
+    */
+    expect(flat('main-home-timeline')?.minHeight).toBe(LOCKED.today.cardHeight);
+    expect(flat('main-home-timeline')?.height).toBeUndefined();
   });
 
   it('sends the section as the feature, Planner as the module, and its own source', async () => {
@@ -764,14 +780,25 @@ describe('the bottom-navigation geometry', () => {
 
     // The bar's height comes from the locked value plus the safe-area inset, which is 0 in the test
     // environment — so the flattened height is the locked height exactly.
-    const bar = StyleSheet.flatten(screen.getByTestId('main-home-nav').props.style);
+    /*
+      ── The lock changed here, on an approved decision — issue 115 ─────────
+      Old contract: the positioned root carried the bar height, the surface and the top border.
+      Why it existed: one view was enough while nothing rose above the bar.
+      New contract: the root positions and reserves the raise; `main-home-nav-bar` paints. The
+      centre control rises above the bar, and while the root began at the bar's top edge that
+      control was clipped to it — 40.000 dp at 360 dp, 36.148 dp at 320 dp. The module navigation
+      has been built this way since #84.
+      Visible geometry is unchanged: the painted bar still has exactly the locked height, the same
+      surface and the same border. Only a view that draws nothing grew.
+    */
+    const bar = StyleSheet.flatten(screen.getByTestId('main-home-nav-bar').props.style);
     expect(bar?.height).toBe(LOCKED.bottomNav.height);
-    expect(bar?.position).toBe('absolute');
+    /* Positioning stayed on the root; only the painting moved to the bar. */
+    const root = StyleSheet.flatten(screen.getByTestId('main-home-nav').props.style);
+    expect(root?.position).toBe('absolute');
 
     for (const key of ['home', 'modules', 'insights', 'profile']) {
-      const slot = StyleSheet.flatten(
-        screen.getByTestId(`main-home-nav-${key}`).parent?.props.style,
-      );
+      const slot = StyleSheet.flatten(screen.getByTestId(`main-home-nav-${key}`).props.style);
       expect(slot?.alignSelf).toBe('stretch');
     }
   });

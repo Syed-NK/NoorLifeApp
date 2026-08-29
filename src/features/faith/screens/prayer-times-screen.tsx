@@ -52,6 +52,7 @@ import { permissionAdvice, useLocationPermission } from '../hooks/use-location-p
 import { usePrayerCountdown } from '../hooks/use-prayer-countdown';
 import { usePrayerNotifications } from '../hooks/use-prayer-notifications';
 import { useTopOnEntry } from '../hooks/use-top-on-entry';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * Prayer times for today — the approved **timeline** composition.
@@ -530,6 +531,12 @@ function PrayerDay({
               accessibilityLabel="Refresh location. Gets a new position from this device and recalculates today’s prayer times."
               accessibilityState={{ disabled: device.state.kind === 'refreshing' }}
               hitSlop={10}
+              style={{
+                minWidth: minimumTouchTargetSize(),
+                minHeight: minimumTouchTargetSize(),
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               testID="faith-prayer-location-refresh"
             >
               <View

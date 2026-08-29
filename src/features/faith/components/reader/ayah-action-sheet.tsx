@@ -18,7 +18,7 @@ import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleTheme } from '@features/modules/module-context';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import type { IconName } from '@shared/models/icon';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { useAyahNote } from '../../hooks/use-ayah-note';
 import { usePlaylists } from '../../hooks/use-playlists';
@@ -332,7 +332,15 @@ export function AyahActionSheet({
                   accessibilityRole="button"
                   accessibilityLabel="Back to the aya actions"
                   hitSlop={minimumHitSlop(dp(24))}
-                  style={{ marginRight: dp(8) }}
+                  style={[
+                    { marginRight: dp(8) },
+                    {
+                      minWidth: minimumTouchTargetSize(),
+                      minHeight: minimumTouchTargetSize(),
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                  ]}
                   testID="faith-reader-sheet-back"
                 >
                   <AppIcon name="back" size={dp(20)} color={moduleNeutrals.textPrimary} />
@@ -683,7 +691,7 @@ function NotePanel({
           style={({ pressed }) => [
             styles.noteButton,
             {
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               borderRadius: dp(moduleLayout.radiusSmall),
               paddingHorizontal: dp(18),
               backgroundColor: theme.fill,
@@ -707,7 +715,7 @@ function NotePanel({
             style={({ pressed }) => [
               styles.noteButton,
               {
-                minHeight: dp(moduleLayout.minTouchTarget),
+                minHeight: minimumTouchTargetSize(),
                 borderRadius: dp(moduleLayout.radiusSmall),
                 paddingHorizontal: dp(18),
                 borderWidth: dp(1),
@@ -836,7 +844,7 @@ function PlaylistPanel({
           style={[
             styles.nameInput,
             {
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               borderRadius: dp(moduleLayout.radiusSmall),
               borderColor: theme.border,
               paddingHorizontal: dp(12),
@@ -863,7 +871,7 @@ function PlaylistPanel({
           style={({ pressed }) => [
             styles.noteButton,
             {
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               borderRadius: dp(moduleLayout.radiusSmall),
               paddingHorizontal: dp(16),
               backgroundColor: theme.fill,

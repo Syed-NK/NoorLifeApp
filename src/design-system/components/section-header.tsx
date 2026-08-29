@@ -4,8 +4,8 @@ import { AppText } from '@ds/typography/app-text';
 import { AppIcon } from './app-icon';
 import { PressableScale } from './pressable-scale';
 
-import { iconSize, neutralColors, semanticColors, spacing, touchTarget } from '@ds/tokens';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { iconSize, neutralColors, semanticColors, spacing } from '@ds/tokens';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 import { forwardChevron } from '@shared/utils/rtl';
 
 export type SectionHeaderProps = {
@@ -51,7 +51,8 @@ export function SectionHeader({
   const actionColor = action?.color ?? semanticColors.primary;
 
   return (
-    <View style={styles.root} testID={testID}>
+    /* The floor is read at render, never cached in a StyleSheet - issue #115. */
+    <View style={[styles.root, { minHeight: minimumTouchTargetSize() }]} testID={testID}>
       <View style={styles.titleColumn}>
         <AppText variant={titleVariant} numberOfLines={2}>
           {title}
@@ -69,7 +70,15 @@ export function SectionHeader({
           hitSlop={minimumHitSlop(spacing.xl)}
           accessibilityRole="button"
           accessibilityLabel={`${actionLabel}, ${title}`}
-          style={styles.action}
+          style={[
+            styles.action,
+            {
+              minWidth: minimumTouchTargetSize(),
+              minHeight: minimumTouchTargetSize(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+          ]}
         >
           <AppText variant="label" color={actionColor} numberOfLines={1}>
             {actionLabel}
@@ -87,7 +96,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
-    minHeight: touchTarget.minimum,
   },
   titleColumn: {
     flexShrink: 1,

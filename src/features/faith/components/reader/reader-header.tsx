@@ -5,7 +5,7 @@ import { ModuleText } from '@features/modules/components';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleTheme } from '@features/modules/module-context';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import type { SurahSummary } from '../../data/quran-content.repository';
 import { ArabicText } from '../faith-list';
@@ -87,7 +87,7 @@ export function ReaderHeader({
             columnGap: dp(6),
             flex: 1,
             minWidth: 0,
-            minHeight: dp(moduleLayout.minTouchTarget),
+            minHeight: minimumTouchTargetSize(),
           }}
           testID="faith-reader-surah-selector"
         >
@@ -231,6 +231,12 @@ export function SurahPicker({
             accessibilityRole="button"
             accessibilityLabel="Close surah list"
             hitSlop={minimumHitSlop(dp(20))}
+            style={{
+              minWidth: minimumTouchTargetSize(),
+              minHeight: minimumTouchTargetSize(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
             testID="faith-reader-surah-picker-close"
           >
             <AppIcon name="close" size={dp(22)} color={moduleNeutrals.textSecondary} />

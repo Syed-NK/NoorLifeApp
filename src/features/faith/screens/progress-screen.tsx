@@ -9,7 +9,7 @@ import { ModuleProgressBar } from '@features/modules/components/module-chart';
 import { useModuleTheme } from '@features/modules/module-context';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { FaithRow, FaithRowGroup } from '../components/faith-list';
 import { FaithScreen, FaithSuccessBanner } from '../components/faith-screen';
@@ -186,7 +186,7 @@ function ProgressBody() {
         style={[
           styles.reset,
           {
-            minHeight: dp(moduleLayout.minTouchTarget),
+            minHeight: minimumTouchTargetSize(),
             borderRadius: dp(moduleLayout.radiusSmall),
             columnGap: dp(8),
           },

@@ -10,6 +10,7 @@ import { useModuleTheme } from '../module-context';
 import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { noorAIChatCopy } from './noor-ai-chat-copy';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type NoorAIOutcomeViewProps = {
   readonly result: NoorAIResult;
@@ -145,7 +146,7 @@ export function NoorAIOutcomeView({ result, onSignIn, testID }: NoorAIOutcomeVie
               style={[
                 styles.action,
                 {
-                  minHeight: dp(moduleLayout.minTouchTarget),
+                  minHeight: minimumTouchTargetSize(),
                   borderRadius: dp(moduleLayout.radiusSmall),
                   paddingHorizontal: dp(18),
                   backgroundColor: theme.fill,

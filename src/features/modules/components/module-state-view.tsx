@@ -9,6 +9,7 @@ import { useModuleSurfaces } from '../module-surfaces';
 import { moduleLayout } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export type ModuleStateAction = {
   readonly label: string;
@@ -107,7 +108,7 @@ export function ModuleStateView({
           style={[
             styles.primary,
             {
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               borderRadius: dp(moduleLayout.radiusSmall),
               backgroundColor: theme.fill,
               paddingHorizontal: dp(18),
@@ -127,7 +128,7 @@ export function ModuleStateView({
           onPress={secondaryAction.onPress}
           accessibilityRole="button"
           accessibilityLabel={secondaryAction.label}
-          style={[styles.secondary, { minHeight: dp(moduleLayout.minTouchTarget) }]}
+          style={[styles.secondary, { minHeight: minimumTouchTargetSize() }]}
           testID={`${testID ?? 'module-state'}-secondary`}
         >
           <ModuleText token="button" color={theme.ink} numberOfLines={1}>

@@ -12,7 +12,7 @@ import {
   readerPageBackground,
 } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
-import { minimumHitSlop } from '@shared/utils/a11y';
+import { minimumHitSlop, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { BROWSE_ACTION_LABEL } from '../components/dua-library-items';
 import { FaithScreen } from '../components/faith-screen';
@@ -225,7 +225,7 @@ function VerseMatches({
           style={[
             styles.action,
             {
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               borderRadius: dp(moduleLayout.radiusSmall),
               borderColor: moduleNeutrals.border,
               paddingHorizontal: dp(12),
@@ -367,7 +367,7 @@ function SurahBrowser({ onOpen }: { readonly onOpen: (ref: QuranSelectionRef) =>
             ? `Surah ${item.number}`
             : `Surah ${item.number}, ${item.name}${item.ayahCount === null ? '' : `, ${item.ayahCount} ayat`}`
         }
-        style={[styles.row, { minHeight: dp(moduleLayout.minTouchTarget), columnGap: dp(10) }]}
+        style={[styles.row, { minHeight: minimumTouchTargetSize(), columnGap: dp(10) }]}
         testID={`faith-quran-selection-surah-${item.number}`}
       >
         <View style={styles.flex}>
@@ -585,7 +585,7 @@ function RangePicker({
               styles.input,
               {
                 borderRadius: dp(moduleLayout.radiusSmall),
-                minHeight: dp(moduleLayout.minTouchTarget),
+                minHeight: minimumTouchTargetSize(),
                 paddingHorizontal: dp(12),
                 color: moduleNeutrals.textPrimary,
               },
@@ -710,7 +710,7 @@ function Stepper({
             styles.stepperInput,
             {
               borderRadius: dp(moduleLayout.radiusSmall),
-              minHeight: dp(moduleLayout.minTouchTarget),
+              minHeight: minimumTouchTargetSize(),
               minWidth: dp(56),
               color: moduleNeutrals.textPrimary,
             },
@@ -743,7 +743,7 @@ function StepButton({
   readonly testID: string;
 }) {
   const { dp } = useModuleMetrics();
-  const size = dp(moduleLayout.minTouchTarget);
+  const size = minimumTouchTargetSize();
 
   return (
     <PressableScale
@@ -796,7 +796,7 @@ function ActionButton({
       style={[
         styles.action,
         {
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           borderRadius: dp(moduleLayout.radiusSmall),
           columnGap: dp(8),
           paddingHorizontal: dp(12),
@@ -837,7 +837,7 @@ function SearchField({
         styles.search,
         {
           borderRadius: dp(moduleLayout.radiusSmall),
-          minHeight: dp(moduleLayout.minTouchTarget),
+          minHeight: minimumTouchTargetSize(),
           paddingHorizontal: dp(12),
           columnGap: dp(10),
         },
