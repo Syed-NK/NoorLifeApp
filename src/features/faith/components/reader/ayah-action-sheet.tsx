@@ -364,7 +364,26 @@ export function AyahActionSheet({
                 onPress={close}
                 accessibilityRole="button"
                 accessibilityLabel="Close"
-                hitSlop={minimumHitSlop(dp(24))}
+                /*
+                  The bound is on this node, not a slop around it — issue #115.
+
+                  This is the second of two identical `hitSlop` controls in this file, and the
+                  migration in PR #118 corrected only the first: its script stopped at the first
+                  match per file. So this one kept a 20 dp icon as its whole accessibility node
+                  while a slop widened only where a finger landed, which is the substitution that
+                  issue refuses — a screen reader and an accessibility scanner both still read the
+                  small control.
+
+                  `hitSlop` is gone rather than kept: the node now clears the minimum on both axes
+                  by itself, so a slop on top would only be a second, larger answer to the same
+                  question. The drawn icon stays 20 dp; only the box around it grew.
+                */
+                style={{
+                  minWidth: minimumTouchTargetSize(),
+                  minHeight: minimumTouchTargetSize(),
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
                 testID="faith-reader-sheet-close"
               >
                 <AppIcon name="close" size={dp(20)} color={moduleNeutrals.textSecondary} />
