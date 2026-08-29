@@ -25,6 +25,7 @@ import {
 import { usePlannerDay } from '../di/planner-day-source';
 import { usePlanner } from '../di/planner-provider';
 import { PlannerTaskList } from './planner-task-list';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 type DueChoice = 'none' | 'today' | 'tomorrow' | 'custom';
 
@@ -423,7 +424,7 @@ function ChoiceRow({
               style={[
                 styles.choice,
                 {
-                  minHeight: dp(44),
+                  minHeight: minimumTouchTargetSize(),
                   borderRadius: dp(12),
                   borderColor: active ? theme.ink : moduleNeutrals.border,
                   backgroundColor: active ? theme.lightSurface : moduleNeutrals.surface,

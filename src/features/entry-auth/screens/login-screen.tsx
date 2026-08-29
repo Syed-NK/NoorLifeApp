@@ -157,7 +157,7 @@ export function LoginScreen() {
               hitSlop={8}
               style={[
                 styles.remember,
-                { columnGap: dp(8), minHeight: dp(44) },
+                { columnGap: dp(8), minHeight: minimumTouchTargetSize() },
                 {
                   minWidth: minimumTouchTargetSize(),
                   minHeight: minimumTouchTargetSize(),

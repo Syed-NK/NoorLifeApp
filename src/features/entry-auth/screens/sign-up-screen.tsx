@@ -159,7 +159,7 @@ export function SignUpScreen() {
         hitSlop={8}
         style={[
           styles.termsRow,
-          { columnGap: dp(10), minHeight: dp(44) },
+          { columnGap: dp(10), minHeight: minimumTouchTargetSize() },
           {
             minWidth: minimumTouchTargetSize(),
             minHeight: minimumTouchTargetSize(),

@@ -10,6 +10,7 @@ import {
   routineScheduleSpoken,
   type PlannerRoutine,
 } from '../data/planner-routine';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * **A list of routines** — either today's occurrences, which can be ticked, or the whole set for
@@ -85,7 +86,15 @@ export function PlannerRoutineList({
                   accessibilityLabel={`${completed ? 'Reopen' : 'Complete'} ${routine.title}, ${routineScheduleSpoken(
                     routine.schedule,
                   )}${routine.preferredTime === null ? '' : ` at ${routine.preferredTime}`}`}
-                  style={styles.heading}
+                  /*
+                    The density-safe floor, read at render — issue #120.
+
+                    The style below carried a literal `minHeight: 44`. That is a request, not a result: Yoga
+                    snaps to whole pixels, so 44 dp at density 2.625 is 115.5 px and paints 115 px / 43.810 dp.
+                    It was also evaluated once at module load, which is the wrong density for any display the
+                    app was not launched on. Both are the halves #115 closed elsewhere.
+                  */
+                  style={[styles.heading, { minHeight: minimumTouchTargetSize() }]}
                   testID={`${testID}-toggle-${routine.id}`}
                 >
                   <View
@@ -177,7 +186,6 @@ const styles = StyleSheet.create({
   heading: {
     alignItems: 'center',
     flexDirection: 'row',
-    minHeight: 44,
     columnGap: 10,
   },
   check: {

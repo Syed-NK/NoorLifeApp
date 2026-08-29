@@ -866,3 +866,243 @@ describe('the reader action sheet close control', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// An absent bound is a bound too — issue #120
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Every `name: { … }` entry of a file's `StyleSheet.create`, as text.
+ *
+ * The guard added by #119 read only the JSX tag, so a control whose sizing lives in
+ * `styles.heading` looked unsized — and a control that really was unsized looked the same. Both
+ * Planner checkbox toggles hid a literal `minHeight: 44` this way: a value that paints
+ * **115 px / 43.810 dp** at density 2.625 and is evaluated once at module load, which is the wrong
+ * density for any display the app was not launched on.
+ */
+function styleEntries(source: string): Map<string, string> {
+  const entries = new Map<string, string>();
+  const start = source.indexOf('StyleSheet.create(');
+  if (start === -1) return entries;
+  const body = source.slice(start);
+  const re = /(\w+)\s*:\s*\{/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    let depth = 1;
+    let i = m.index + m[0].length;
+    for (; i < body.length && depth > 0; i += 1) {
+      if (body[i] === '{') depth += 1;
+      else if (body[i] === '}') depth -= 1;
+    }
+    entries.set(m[1] ?? '', body.slice(m.index, i));
+  }
+  return entries;
+}
+
+/** A tag plus the text of every `styles.NAME` it references. */
+function resolvedTag(tag: InteractiveTag, source: string): string {
+  const NL = String.fromCharCode(10);
+  const styles = styleEntries(source);
+  let out = tag.tag;
+  for (const ref of tag.tag.matchAll(/styles\.(\w+)/g)) {
+    const entry = styles.get(ref[1] ?? '');
+    if (entry !== undefined) out += NL + entry;
+  }
+  return out;
+}
+
+/**
+ * Whether an element states a size at all — of any kind, correct or not.
+ *
+ * Deliberately generous. Its job is to separate "this control says nothing about its size" from
+ * "this control says something we can then judge", because the first is the shape #120 found and
+ * nothing in the source marks it. A full-fill dismiss scrim counts: four insets at zero is a size,
+ * and the two that remain in the app are exactly that.
+ */
+function statesASize(resolved: string): boolean {
+  if (/min(Width|Height)\s*:/.test(resolved)) return true;
+  if (/\b(width|height)\s*:/.test(resolved)) return true;
+  if (/flex\s*:\s*1/.test(resolved)) return true;
+  if (/aspectRatio/.test(resolved)) return true;
+  if (/absoluteFill/.test(resolved)) return true;
+  const insets = ['top', 'left', 'right', 'bottom'].filter((side) =>
+    new RegExp('\\b' + side + '\\s*:\\s*0\\b').test(resolved),
+  );
+  return /position\s*:\s*'absolute'/.test(resolved) && insets.length === 4;
+}
+
+/** Whether the size it states is the density-safe floor. */
+function statesTheFloor(resolved: string): boolean {
+  return /minimumTouchTargetSize\(\)/.test(resolved);
+}
+
+/**
+ * The controls in a file that state no size at all.
+ *
+ * One function, called by both the production sweep and the fixture below, so a sweep narrowed
+ * back to "only elements carrying a hitSlop" fails the fixture too. With every control in the app
+ * now bounded, that narrowing is otherwise invisible: the sweep would report zero and look healthy.
+ */
+function unsizedControls(file: string): string[] {
+  const source = codeOf(fs.readFileSync(path.join(process.cwd(), file), 'utf8'));
+  return interactiveTags(file)
+    .filter((tag) => tag.element !== 'PressableScale')
+    .filter((tag) => !statesASize(resolvedTag(tag, source)))
+    .map((tag) => `${file}:${tag.line} <${tag.element}> ${tag.testID}`);
+}
+
+describe('no interactive element leaves its size unstated', () => {
+  const NL = String.fromCharCode(10);
+  const PRODUCTION = productionSources()
+    .filter((file) => file.endsWith('.tsx'))
+    .map((file) => path.relative(process.cwd(), file).split(path.sep).join('/'));
+
+  it('states a size on every interactive element, or is a full-fill scrim', () => {
+    /*
+      #115 closed three shapes: the bound through `dp()`, the raw token that rounds below 44, and
+      `hitSlop` standing in for the node. #120 is a fourth — a plain `Pressable` carrying *neither*
+      a bound nor a `hitSlop`. The reader's aya pill measured 20.978 dp that way, and the #119
+      guard could not see it because it only inspected elements that had a `hitSlop` to inspect.
+    */
+    expect(PRODUCTION.flatMap(unsizedControls)).toEqual([]);
+  });
+
+  it('uses the density-safe floor wherever a minimum is stated', () => {
+    /* A stated minimum that is a literal is the rounding half of #115, wearing a StyleSheet. */
+    const offenders: string[] = [];
+    for (const file of PRODUCTION) {
+      const source = codeOf(fs.readFileSync(path.join(process.cwd(), file), 'utf8'));
+      for (const tag of interactiveTags(file)) {
+        if (tag.element === 'PressableScale') continue;
+        const resolved = resolvedTag(tag, source);
+        /*
+          Only a minimum that is *trying* to express the 44 dp contract. `minWidth: 0` is the flex
+          idiom that lets a column shrink, and `minHeight: dp(96)` is a design dimension that
+          happens to be a minimum — neither is a touch target, and reading them as one would flag
+          a dozen correct layouts. What must use the helper is anything spelling the floor itself:
+          `44`, `dp(44)`, or one of the four modules' `minTouchTarget` tokens.
+        */
+        const floorAttempts = resolved
+          .split(NL)
+          .filter((line) => /min(Width|Height)\s*:/.test(line))
+          .filter((line) => /\b44\b|minTouchTarget|touchTarget\.minimum/.test(line));
+        if (floorAttempts.length === 0) continue;
+        if (floorAttempts.every((line) => /minimumTouchTargetSize\(\)/.test(line))) continue;
+        offenders.push(`${file}:${tag.line} <${tag.element}> ${tag.testID}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('resolves a size hidden behind a styles reference', () => {
+    /* The blind spot itself: a bound in `styles.X` used to read as no bound. */
+    const file = 'src/features/planner/screens/planner-task-list.tsx';
+    const source = codeOf(fs.readFileSync(path.join(process.cwd(), file), 'utf8'));
+    const toggle = interactiveTags(file).find((t) => t.tag.includes('styles.heading'));
+    if (toggle === undefined) throw new Error('planner toggle not found');
+    expect(/styles\./.test(toggle.tag)).toBe(true);
+    expect(statesASize(resolvedTag(toggle, source))).toBe(true);
+  });
+
+  it('inspects an element that carries no hitSlop at all', () => {
+    /*
+      The regression this describe exists for, and the one shape a clean codebase cannot prove on
+      its own: with every control bounded, a sweep narrowed back to "only elements with a hitSlop"
+      still reports zero and looks healthy. So the same `unsizedControls` the sweep uses is run
+      against a fixture containing exactly what #120 found — a bare `Pressable`, no bound, no slop.
+    */
+    const file = 'src/shared/utils/__tests__/.unbounded-fixture.tsx';
+    fs.writeFileSync(
+      path.join(process.cwd(), file),
+      [
+        '<Pressable onPress={go} accessibilityRole="button" accessibilityLabel="Bare" testID="bare" />',
+        '<Pressable onPress={go} hitSlop={8} style={{ minHeight: minimumTouchTargetSize() }} testID="ok" />',
+      ].join(String.fromCharCode(10)),
+    );
+    try {
+      const found = unsizedControls(file);
+      expect(found).toHaveLength(1);
+      expect(found[0]).toContain('bare');
+    } finally {
+      fs.unlinkSync(path.join(process.cwd(), file));
+    }
+  });
+
+  it('counts a full-fill scrim as sized, and a bare Pressable as not', () => {
+    const NL = String.fromCharCode(10);
+    const scrim = [
+      '<Pressable style={styles.scrim} onPress={close} />',
+      "scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }",
+    ].join(NL);
+    expect(statesASize(scrim)).toBe(true);
+    expect(statesASize('<Pressable onPress={close} accessibilityLabel="x" />')).toBe(false);
+  });
+});
+
+describe('the controls #120 corrected', () => {
+  const reader = () =>
+    codeOf(
+      fs.readFileSync(path.join(SRC, 'features/faith/components/reader/ayah-block.tsx'), 'utf8'),
+    );
+
+  it('gives the aya pill the floor on both axes', () => {
+    /*
+      `PillTarget` takes its testID as a prop, so inside this file the tag reads `testID={testID}`
+      and the call site supplies `faith-reader-ayah-number-…`. The pill is identified by the hint
+      only it carries.
+    */
+    const tags = interactiveTags('src/features/faith/components/reader/ayah-block.tsx');
+    const pill = tags.find((t) => t.tag.includes('Opens the actions for this aya'));
+    if (pill === undefined) throw new Error('aya pill not found');
+    expect(pill.tag).toContain('minWidth: minimumTouchTargetSize()');
+    expect(pill.tag).toContain('minHeight: minimumTouchTargetSize()');
+    expect(reader()).toContain('faith-reader-ayah-number-');
+  });
+
+  it('leaves the pill free to grow with a longer citation', () => {
+    /* Width is a *minimum*, so a three-digit aya still sizes to its text and is not truncated. */
+    expect(reader()).not.toMatch(/width:\s*minimumTouchTargetSize/);
+    expect(reader()).not.toContain('numberOfLines');
+  });
+
+  it('no longer nests the pill inside a pressable ancestor', () => {
+    /*
+      The block used to be one `Pressable` wrapping the pill — an interactive container holding an
+      interactive descendant, with near-duplicate labels. They are siblings now: the pill, then the
+      verse body which carries the row press.
+    */
+    const source = reader();
+    const blockStart = source.indexOf('paddingVertical: dp(14)');
+    const pillAt = source.indexOf('faith-reader-ayah-number');
+    const bodyAt = source.indexOf('faith-reader-ayah-${text.surah}-${text.ayah}');
+    expect(blockStart).toBeGreaterThan(-1);
+    /* The container that owns the block padding is a View, not a Pressable. */
+    expect(source.slice(Math.max(0, blockStart - 200), blockStart)).toContain('<View');
+    expect(pillAt).toBeGreaterThan(-1);
+    expect(bodyAt).toBeGreaterThan(-1);
+  });
+
+  it('keeps the row press and the pill press on the same action', () => {
+    const source = reader();
+    expect((source.match(/onPress=\{onOpenActions\}/g) ?? []).length).toBeGreaterThanOrEqual(1);
+    expect(source).toContain('onPress={onPress}');
+  });
+
+  it('floors both Planner checkbox toggles through the helper', () => {
+    for (const file of [
+      'src/features/planner/components/planner-routine-list.tsx',
+      'src/features/planner/screens/planner-task-list.tsx',
+    ]) {
+      const source = codeOf(fs.readFileSync(path.join(process.cwd(), file), 'utf8'));
+      expect(source).toContain('minHeight: minimumTouchTargetSize()');
+      expect(source).not.toMatch(/minHeight:\s*44\b/);
+    }
+  });
+
+  it('floors the prayer-alert sheet action', () => {
+    const source = codeOf(
+      fs.readFileSync(path.join(SRC, 'features/faith/components/prayer-alert-sheet.tsx'), 'utf8'),
+    );
+    expect(source).toContain('minHeight: minimumTouchTargetSize()');
+  });
+});

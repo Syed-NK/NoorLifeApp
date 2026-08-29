@@ -8,6 +8,7 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import type { AyahText, AyahTranslation } from '../../data/quran-content.repository';
 import { ArabicText } from '../faith-list';
 import type { AyahFocusRegistry } from './ayah-focus';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * One ayah, in a continuous reader.
@@ -129,16 +130,12 @@ export function AyahBlock({
       region itself still answers a tap anywhere in it, including a TalkBack double-tap landing on
       the scripture.
     */
-    <Pressable
-      onPress={onOpenActions}
-      accessibilityLabel={`Aya ${text.surah} verse ${text.ayah}`}
-      style={({ pressed }) => ({
+    <View
+      style={{
         paddingVertical: dp(14),
         borderTopWidth: dp(1),
         borderTopColor: moduleNeutrals.divider,
-        backgroundColor: pressed ? moduleNeutrals.surfaceMuted : 'transparent',
-      })}
-      testID={`faith-reader-ayah-${text.surah}-${text.ayah}`}
+      }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {/*
@@ -178,44 +175,73 @@ export function AyahBlock({
         <View style={{ flex: 1 }} />
       </View>
 
-      <View
-        style={{
-          marginTop: dp(10),
-          ...(fill === null
-            ? {}
-            : {
-                backgroundColor: fill,
-                borderRadius: dp(moduleLayout.radiusSmall),
-                paddingHorizontal: dp(12),
-                paddingVertical: dp(10),
-                marginHorizontal: dp(-2),
-              }),
-        }}
-        testID={
-          state === 'idle' ? undefined : `faith-reader-ayah-${state}-${text.surah}-${text.ayah}`
-        }
-      >
-        <ArabicText size="scripture" testID={`faith-reader-arabic-${text.surah}-${text.ayah}`}>
-          {text.arabic}
-        </ArabicText>
-      </View>
-
       {/*
+        ── The verse body carries the row press, beside the pill rather than around it — #120 ──
+        The block used to be one `Pressable` **containing** the pill, so an interactive container
+        held an interactive descendant and the two announced near-identical labels: exactly the shape
+        `faith-accessibility-interaction` refuses, and the one corrected for the Bookmarks row in
+        #119. On device the accessibility tree showed it plainly —
+        `ViewGroup faith-reader-ayah-1-1 clickable=true` wrapping
+        `Button faith-reader-ayah-number-1-1 clickable=true`.
+
+        Making them siblings keeps both behaviours the old structure was written for. A tap anywhere
+        on the scripture or the translation still opens the actions, which is what the container was
+        for; the pill is still the region's one labelled button, which is what it was for. What is
+        gone is one being inside the other.
+
+        `accessible` stays unset, for the reason the old container gave: merging would cost the
+        Arabic its `accessibilityLanguage`, which is what stops TalkBack reading Uthmani script
+        through the interface language.
+      */}
+      <Pressable
+        onPress={onOpenActions}
+        accessibilityLabel={`Aya ${text.surah} verse ${text.ayah}`}
+        style={({ pressed }) => ({
+          /* Always far taller than the floor in practice; stated so it is provable, not argued. */
+          minHeight: minimumTouchTargetSize(),
+          backgroundColor: pressed ? moduleNeutrals.surfaceMuted : 'transparent',
+        })}
+        testID={`faith-reader-ayah-${text.surah}-${text.ayah}`}
+      >
+        <View
+          style={{
+            marginTop: dp(10),
+            ...(fill === null
+              ? {}
+              : {
+                  backgroundColor: fill,
+                  borderRadius: dp(moduleLayout.radiusSmall),
+                  paddingHorizontal: dp(12),
+                  paddingVertical: dp(10),
+                  marginHorizontal: dp(-2),
+                }),
+          }}
+          testID={
+            state === 'idle' ? undefined : `faith-reader-ayah-${state}-${text.surah}-${text.ayah}`
+          }
+        >
+          <ArabicText size="scripture" testID={`faith-reader-arabic-${text.surah}-${text.ayah}`}>
+            {text.arabic}
+          </ArabicText>
+        </View>
+
+        {/*
         On the ordinary surface in every state, and with no `numberOfLines` here or anywhere on this
         path. The limit was 6, which ellipsised any translation longer than six lines — silently
         abridging the meaning of an ayah, which is the one thing on this screen that must never be
         shortened. A long verse makes the page taller, which is right.
       */}
-      {translation === null ? null : (
-        <ModuleText
-          token="body"
-          style={{ marginTop: dp(10) }}
-          testID={`faith-reader-translation-${text.surah}-${text.ayah}`}
-        >
-          {translation.text}
-        </ModuleText>
-      )}
-    </Pressable>
+        {translation === null ? null : (
+          <ModuleText
+            token="body"
+            style={{ marginTop: dp(10) }}
+            testID={`faith-reader-translation-${text.surah}-${text.ayah}`}
+          >
+            {translation.text}
+          </ModuleText>
+        )}
+      </Pressable>
+    </View>
   );
 }
 
@@ -249,6 +275,25 @@ function PillTarget({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint="Opens the actions for this aya"
+      /*
+        The floor on the node that carries the role, the label and the press — issue #120.
+
+        The drawn pill is a caption with 2 dp of vertical padding, so the labelled node measured
+        **146 x 59 px / 51.911 x 20.978 dp** on a 450 dpi handset at font scale 1.0, and
+        **28.444 dp** at 1.5 — under half the minimum at the default scale, and never reaching it.
+        This is the class #115 did not close: a plain `Pressable` carrying neither a bound nor a
+        `hitSlop`, so there was nothing in the source to notice.
+
+        The pill itself is unchanged. `minWidth` is a *minimum*, so the citation still sizes to its
+        text and a longer reference is still not truncated — the property the comment at the call
+        site protects. Only the box around it grew, which is what makes the block a little taller.
+      */
+      style={{
+        minWidth: minimumTouchTargetSize(),
+        minHeight: minimumTouchTargetSize(),
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+      }}
       testID={testID}
     >
       {children}

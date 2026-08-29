@@ -556,6 +556,12 @@ function Notice({
           onPress={onAction}
           accessibilityRole="button"
           accessibilityLabel={actionLabel}
+          /*
+            A bare text action had no sizing expression of any kind — issue #120. That is the
+            class #115 never looked for: nothing in the source to notice, because there is no
+            wrong value, only an absent one.
+          */
+          style={{ minHeight: minimumTouchTargetSize(), justifyContent: 'center' }}
           testID={`${testID}-action`}
         >
           <ModuleText token="rowMeta" color={colour}>
