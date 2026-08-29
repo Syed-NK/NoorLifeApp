@@ -6,6 +6,7 @@ import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 
 import type { PlannerTask } from '../data/planner-task';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 export function plannerDueLabel(task: PlannerTask, today: string, tomorrow: string): string {
   if (task.dueDate === null) {
@@ -60,7 +61,15 @@ export function PlannerTaskList({
               accessibilityRole="checkbox"
               accessibilityState={{ checked: task.status === 'completed' }}
               accessibilityLabel={`${task.status === 'completed' ? 'Reopen' : 'Complete'} ${task.title}`}
-              style={styles.heading}
+              /*
+                The density-safe floor, read at render — issue #120.
+
+                The style below carried a literal `minHeight: 44`. That is a request, not a result: Yoga
+                snaps to whole pixels, so 44 dp at density 2.625 is 115.5 px and paints 115 px / 43.810 dp.
+                It was also evaluated once at module load, which is the wrong density for any display the
+                app was not launched on. Both are the halves #115 closed elsewhere.
+              */
+              style={[styles.heading, { minHeight: minimumTouchTargetSize() }]}
               testID={`${testID}-toggle-${task.id}`}
             >
               <View
@@ -121,7 +130,6 @@ const styles = StyleSheet.create({
   heading: {
     alignItems: 'center',
     flexDirection: 'row',
-    minHeight: 44,
     columnGap: 10,
   },
   check: {

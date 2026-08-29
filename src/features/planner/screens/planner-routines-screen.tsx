@@ -30,6 +30,7 @@ import {
 } from '../data/planner-routine';
 import { usePlannerDay } from '../di/planner-day-source';
 import { usePlannerRoutines } from '../di/planner-routine-provider';
+import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
 /**
  * **Planner → Routines.** The parts of the day the user chose to repeat, and today's tick boxes.
@@ -246,7 +247,7 @@ function PlannerRoutinesBody() {
                       style={[
                         styles.choice,
                         {
-                          minHeight: dp(44),
+                          minHeight: minimumTouchTargetSize(),
                           borderRadius: dp(12),
                           borderColor: active ? theme.ink : moduleNeutrals.border,
                           backgroundColor: active ? theme.lightSurface : moduleNeutrals.surface,
@@ -434,7 +435,7 @@ function ChoiceRow({
               style={[
                 styles.choice,
                 {
-                  minHeight: dp(44),
+                  minHeight: minimumTouchTargetSize(),
                   borderRadius: dp(12),
                   borderColor: active ? theme.ink : moduleNeutrals.border,
                   backgroundColor: active ? theme.lightSurface : moduleNeutrals.surface,
