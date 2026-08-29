@@ -19,6 +19,7 @@ import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
 import { minimumTouchTargetSize } from '@shared/utils/a11y';
 
+import { FinanceChoiceRow } from '../components/finance-choice-row';
 import {
   compareFinanceMonths,
   type FinanceCategoryChange,
@@ -444,7 +445,7 @@ function SpendingBody() {
               {editing === null ? 'Add a transaction' : 'Edit transaction'}
             </ModuleText>
 
-            <ChoiceRow
+            <FinanceChoiceRow
               label="What this is"
               choices={[
                 { key: 'expense', label: 'Expense' },
@@ -877,7 +878,7 @@ function Filters({
     >
       <ModuleCard>
         <View style={{ rowGap: dp(10) }}>
-          <ChoiceRow
+          <FinanceChoiceRow
             label="Category"
             choices={[
               { key: '', label: 'All' },
@@ -965,64 +966,6 @@ function Field({
       ]}
       testID={testID}
     />
-  );
-}
-
-function ChoiceRow({
-  label,
-  choices,
-  selected,
-  onSelect,
-  testID,
-}: {
-  readonly label: string;
-  readonly choices: readonly { readonly key: string; readonly label: string }[];
-  readonly selected: string;
-  readonly onSelect: (value: string) => void;
-  readonly testID: string;
-}) {
-  const theme = useModuleTheme();
-  const surfaces = useModuleSurfaces();
-  const { dp } = useModuleMetrics();
-  return (
-    <View style={{ rowGap: dp(6) }} testID={testID}>
-      <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
-        {label}
-      </ModuleText>
-      <View style={[styles.choices, { gap: dp(6) }]}>
-        {choices.map((choice) => {
-          const isActive = selected === choice.key;
-          return (
-            <Pressable
-              key={choice.key}
-              onPress={() => onSelect(choice.key)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={`${label}: ${choice.label}`}
-              style={[
-                styles.choice,
-                {
-                  /* The accessibility minimum, unscaled — it is a bound, not a dimension. */
-                  minHeight: minimumTouchTargetSize(),
-                  borderRadius: dp(12),
-                  borderColor: isActive ? theme.ink : surfaces.border,
-                  backgroundColor: isActive ? surfaces.well : surfaces.card,
-                  paddingHorizontal: dp(10),
-                },
-              ]}
-              testID={`${testID}-${choice.key || 'all'}`}
-            >
-              <ModuleText
-                token="button"
-                color={isActive ? theme.ink : moduleNeutrals.textSecondary}
-              >
-                {choice.label}
-              </ModuleText>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
   );
 }
 
@@ -1209,7 +1152,19 @@ function MonthComparison({
               </ModuleText>
               {comparison.categories.map((entry) => (
                 <CategoryRow
-                  key={entry.category ?? ' uncategorised'}
+                  /*
+                    A U+0000 prefix, written as an escape rather than a raw byte — issue #116.
+
+                    The sentinel keys the one uncategorised row so it cannot collide with a real
+                    category literally named `uncategorised`. That is worth keeping; the raw byte was
+                    not. A NUL in the file made every standard source tool classify this TypeScript
+                    as binary, so `grep` skipped it — which is how the undersized filter chips below
+                    survived an audit that was looking for exactly them.
+
+                    `\u0000` produces the identical string, so the key, its uniqueness and the row
+                    order are unchanged.
+                  */
+                  key={entry.category ?? '\u0000uncategorised'}
                   entry={entry}
                   currency={currency}
                 />
@@ -1351,6 +1306,5 @@ const styles = StyleSheet.create({
   grow: { flexShrink: 1 },
   row: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   spread: { justifyContent: 'space-between' },
-  choices: { flexDirection: 'row', flexWrap: 'wrap' },
   choice: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 });

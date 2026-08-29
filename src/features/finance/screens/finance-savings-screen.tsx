@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
 
 import {
   ModuleButton,
@@ -16,7 +16,8 @@ import { useModuleSurfaces } from '@features/modules/module-surfaces';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
 import { usePlannerDay } from '@features/planner/di/planner-day-source';
-import { minimumTouchTargetSize } from '@shared/utils/a11y';
+
+import { FinanceChoiceRow } from '../components/finance-choice-row';
 
 import { formatPercentTenths } from '../data/finance-comparison-copy';
 import type { FinanceGoal } from '../data/finance-goal';
@@ -450,7 +451,7 @@ function SavingsBody() {
                             : 'Edit this transaction'}
                         </ModuleText>
 
-                        <ChoiceRow
+                        <FinanceChoiceRow
                           label="What happened"
                           choices={[
                             { key: 'expense', label: 'Set aside' },
@@ -886,64 +887,6 @@ function ContributionRow({
   );
 }
 
-function ChoiceRow({
-  label,
-  choices,
-  selected,
-  onSelect,
-  testID,
-}: {
-  readonly label: string;
-  readonly choices: readonly { readonly key: string; readonly label: string }[];
-  readonly selected: string;
-  readonly onSelect: (value: string) => void;
-  readonly testID: string;
-}) {
-  const theme = useModuleTheme();
-  const surfaces = useModuleSurfaces();
-  const { dp } = useModuleMetrics();
-  return (
-    <View style={{ rowGap: dp(6) }} testID={testID}>
-      <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
-        {label}
-      </ModuleText>
-      <View style={[styles.choices, { gap: dp(6) }]}>
-        {choices.map((choice) => {
-          const isActive = selected === choice.key;
-          return (
-            <Pressable
-              key={choice.key}
-              onPress={() => onSelect(choice.key)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={`${label}: ${choice.label}`}
-              style={[
-                styles.choice,
-                {
-                  /* The accessibility minimum, unscaled — it is a bound, not a dimension. */
-                  minHeight: minimumTouchTargetSize(),
-                  borderRadius: dp(12),
-                  borderColor: isActive ? theme.ink : surfaces.border,
-                  backgroundColor: isActive ? surfaces.well : surfaces.card,
-                  paddingHorizontal: dp(10),
-                },
-              ]}
-              testID={`${testID}-${choice.key}`}
-            >
-              <ModuleText
-                token="button"
-                color={isActive ? theme.ink : moduleNeutrals.textSecondary}
-              >
-                {choice.label}
-              </ModuleText>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
 function Field({
   value,
   onChangeText,
@@ -995,7 +938,5 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   spread: { justifyContent: 'space-between' },
   grow: { flexShrink: 1 },
-  choices: { flexDirection: 'row', flexWrap: 'wrap' },
-  choice: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   track: { width: '100%', overflow: 'hidden' },
 });

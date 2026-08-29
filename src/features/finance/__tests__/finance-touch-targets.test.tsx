@@ -18,6 +18,36 @@ import { FinanceProvider } from '../di/finance-provider';
 import { FinanceSpendingScreen } from '../screens/finance-spending-screen';
 
 /**
+ * The source with its comments removed.
+ *
+ * These guards assert things about *code*. Read raw, they fail on documentation instead: a comment
+ * explaining why `hitSlop` is refused reads as a `hitSlop` usage, and an issue reference such as
+ * `#116` reads as a three-digit hex colour. Stripping comments keeps each assertion pointed at what
+ * it is about, and cannot hide a real usage — a comment can neither size a control nor colour one.
+ *
+ * Block comments go wholesale. A line comment is dropped only when it *begins* a line, so a double
+ * slash inside a string — a URL, say — is never mistaken for the start of one.
+ */
+function codeOf(source: string): string {
+  const OPEN = '/*';
+  const CLOSE = '*/';
+  const LINE = '//';
+  let out = source;
+  for (;;) {
+    const start = out.indexOf(OPEN);
+    if (start === -1) break;
+    const end = out.indexOf(CLOSE, start + OPEN.length);
+    if (end === -1) break;
+    out = out.slice(0, start) + out.slice(end + CLOSE.length);
+  }
+  const newline = String.fromCharCode(10);
+  return out
+    .split(newline)
+    .filter((line) => !line.trim().startsWith(LINE))
+    .join(newline);
+}
+
+/**
  * **The 44 dp minimum, after the pixel grid has had its say** — measured defect.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -254,12 +284,14 @@ describe('the Expense / Income / Refund selector', () => {
   });
 
   it('wraps rather than overflowing when the row cannot hold three chips', () => {
+    /* The row wraps, so a narrow screen stacks the chips instead of clipping one off the edge.
+       Read from the shared primitive, because #116 moved the row there — a wrap that only the
+       Spending copy carried would be exactly the drift that issue exists to end. */
     const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/features/finance/screens/finance-spending-screen.tsx'),
+      path.join(process.cwd(), 'src/features/finance/components/finance-choice-row.tsx'),
       'utf8',
     );
-    /* The row wraps, so a narrow screen stacks the chips instead of clipping one off the edge. */
-    expect(source).toMatch(/choices: \{ flexDirection: 'row', flexWrap: 'wrap' \}/);
+    expect(source).toContain("choices: { flexDirection: 'row', flexWrap: 'wrap' }");
   });
 
   it('does not disable font scaling or shrink the type to fit', () => {
@@ -283,6 +315,15 @@ describe('the Expense / Income / Refund selector', () => {
     );
     expect(source).not.toContain('hitSlop');
     expect(source).not.toContain('minimumHitSlop');
+    /* And not smuggled into the shared row the chips now come from. */
+    expect(
+      codeOf(
+        fs.readFileSync(
+          path.join(process.cwd(), 'src/features/finance/components/finance-choice-row.tsx'),
+          'utf8',
+        ),
+      ),
+    ).not.toContain('hitSlop');
   });
 });
 
@@ -291,19 +332,22 @@ describe('the Expense / Income / Refund selector', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('no Finance control still asks for the unrounded minimum', () => {
+  /*
+    Screens *and* the shared component, because #116 moved every chip bound out of the three
+    screens into one primitive. Scanning only `screens/` would now report a clean sweep while
+    the file that actually sizes the controls went unread.
+  */
   const SCREENS = [
-    'finance-spending-screen.tsx',
-    'finance-budgets-screen.tsx',
-    'finance-savings-screen.tsx',
-    'finance-receipts-screen.tsx',
-    'finance-home-content.tsx',
+    'screens/finance-spending-screen.tsx',
+    'screens/finance-budgets-screen.tsx',
+    'screens/finance-savings-screen.tsx',
+    'screens/finance-receipts-screen.tsx',
+    'screens/finance-home-content.tsx',
+    'components/finance-choice-row.tsx',
   ];
 
   it.each(SCREENS)('%s sizes every control through the pixel-safe floor', (file) => {
-    const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/features/finance/screens', file),
-      'utf8',
-    );
+    const source = fs.readFileSync(path.join(process.cwd(), 'src/features/finance', file), 'utf8');
     /*
       The raw token is the defect: it is the value that becomes 43.8 dp. Any control sized by it
       would be undersized on exactly the devices this project verifies on.
@@ -315,7 +359,7 @@ describe('no Finance control still asks for the unrounded minimum', () => {
     let raised = 0;
     for (const file of SCREENS) {
       const source = fs.readFileSync(
-        path.join(process.cwd(), 'src/features/finance/screens', file),
+        path.join(process.cwd(), 'src/features/finance', file),
         'utf8',
       );
       raised += (source.match(/min(Height|Width): minimumTouchTargetSize\(\)/g) ?? []).length;
