@@ -1072,12 +1072,40 @@ export function AuthProvider({
     }
 
     /*
-      The same switch the bounded launch path uses when a late answer lands, because they are the same
-      question: a server has spoken while this process already believes something. `unavailable`
-      cannot be reached from offline authority — an unconfigured build never gets one — and is inert
-      there rather than duplicating a launch decision already taken.
+      ═══════════════════════════════════════════════════════════════════════
+      ── Bounded, for the same reason the launch is — issue #124 ─────────────
+      This used to `await authService.resolveSession()` with nothing around it, and on a link that
+      carries traffic but which Android will not validate, that call does not fail: it **hangs**. The
+      socket is accepted and never answered, so the await never settles.
+
+      Traced on a device, the consequence was worse than one lost attempt. The trigger below sets an
+      `inFlight` latch and clears it in `.finally()` — which a promise that never settles never
+      reaches. So the first foreground after an offline launch parked here forever and every
+      subsequent foreground was swallowed by the latch:
+
+          foreground 1 →  attempt {starting:true} · reval-enter {}      … and nothing more
+          foreground 2 →  (no attempt at all)
+
+      The app could not recover online authority for the rest of the process, which is what left
+      Money AI refusing before transport with "You're offline" on a working connection.
+
+      The bound makes the promise settle either way, so the latch always clears and the next
+      foreground is a real retry. `SESSION_RESOLUTION_TIMEOUT_MS` is the launch's own constant,
+      unchanged: this is the same question under the same patience, not a longer wait to hide a
+      failure. A bound that elapses is not a verdict — nothing is published, offline authority
+      simply stands until an attempt actually answers.
+      ═══════════════════════════════════════════════════════════════════════
+
+      `applyServerAnswer` is the same switch the bounded launch path uses when a late answer lands,
+      because they are the same question: a server has spoken while this process already believes
+      something. `unavailable` cannot be reached from offline authority — an unconfigured build never
+      gets one — and is inert there rather than duplicating a launch decision already taken.
     */
-    await applyServerAnswer(await authService.resolveSession());
+    const answer = await withBound(authService.resolveSession(), SESSION_RESOLUTION_TIMEOUT_MS);
+    if (answer === TIMED_OUT) {
+      return;
+    }
+    await applyServerAnswer(answer);
   }, [applyServerAnswer, network]);
 
   /**
