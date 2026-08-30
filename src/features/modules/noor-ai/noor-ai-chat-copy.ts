@@ -206,9 +206,25 @@ export const noorAIChatCopy = {
         body: 'Noor AI is not answering questions at the moment. Please try again later.',
         tone: 'warning' as ModuleStatusTone,
       },
+      /*
+        ── One message, because the app has one fact — issue #124 ────────────
+        This said "You're offline. Check your internet and ask again." It was measured saying that on
+        a device whose Wi-Fi was carrying traffic and which could reach the service over TCP 443: the
+        link was fine, Android had simply not validated it, and the request had never been sent.
+
+        The temptation is two messages — offline when disconnected, service-unavailable otherwise.
+        The gate cannot honestly choose between them. It refuses on a *cached* authority, and at that
+        moment it knows only that no live session was established; whether that is a missing link or
+        an unreachable service is exactly what it failed to find out. A confident "you're offline" is
+        a claim about the user's network that nothing in this path has established.
+
+        So the message states what is known — the request did not reach Noor AI — and asks for the
+        one action that helps in either case. It is true when the device is genuinely offline and true
+        when the service could not be reached, which is the whole of what can be said here.
+      */
       'network-unavailable': {
-        title: 'You’re offline',
-        body: 'Noor AI needs a connection. Check your internet and ask again.',
+        title: 'Noor AI could not be reached',
+        body: 'NoorLife could not reach Noor AI. Check your connection and try again.',
         tone: 'warning' as ModuleStatusTone,
       },
       'timed-out': {
