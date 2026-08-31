@@ -238,12 +238,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
   },
+  /**
+   * A fifth of the bar, with nothing held back from it — issue #133.
+   *
+   * This used to keep `paddingHorizontal: 2`, which cost the label 4 dp of the fifth it was given.
+   * That was the whole of the truncation defect: measured with the production advance tables, one
+   * label in the whole app — Finance's "Transactions" — needed more than the remainder, by 0.47 dp
+   * at 320 dp, 0.21 dp at 384 dp, and exactly nothing at 393 dp. 411 dp was the first width where
+   * it cleared, which is why the phone ellipsised it and the emulator never did.
+   *
+   * Returning those 4 dp turns the worst case from 0.47 dp over to 3.53 dp of headroom, and the
+   * closest two labels in any module at any tested width still keep 12.32 dp between them — 0.23 dp
+   * less than before, because the widest label is centred against a neighbour with slack. The
+   * padding was never what separated them.
+   *
+   * It also finishes what #84 started. That issue made the pressable `flex: 1` so "the pressable is
+   * the slot"; this padding was the last thing keeping it 4 dp narrower than the slot it fills. The
+   * target only grows, and the selected background is unaffected — padding sits inside it.
+   */
   slot: {
     flex: 1,
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 2,
   },
   aiSlot: {
     justifyContent: 'flex-start',
