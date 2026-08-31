@@ -10,6 +10,38 @@ import { moduleLayout, moduleNeutrals } from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
 
+/**
+ * Lines a capability label may take — issue #136.
+ *
+ * Two where the label can break, matching what #52 approved for the quick-action label. One line
+ * cost Finance's `Bank sync` its last two characters at OS text size 1.5: measured against the
+ * Poppins advance tables, the label wants 71.44 dp of a 71.25 dp box at 384 dp, and at 411 dp the
+ * 0.06 dp it nominally has left is inside the rounding React Native applies when it resolves the
+ * fractional tile width to whole physical pixels. Both targets drew an ellipsis.
+ *
+ * `Bank sync` is two words and its widest is 34.93 dp, so a second line clears it at every width
+ * with room to spare. The two fixes this rules out are the two the earlier issues already ruled
+ * out: shortening the registry's copy fits the product to the layout rather than the other way
+ * round, and lowering `maxFontSizeMultiplier` is the typographic cap #125 settled.
+ *
+ * ── Why a single word keeps one line — issue #138 ───────────────────────────
+ * A second line only helps a label that has somewhere to break. React Native splits a word wider
+ * than its line between letters instead of wrapping it, so handing the extra line to a single word
+ * trades an ellipsis for the mid-word split #52 identified as the worse of the two. Measured: with
+ * two lines for everything, Family's `Memories` went from `Memorie…` to `Memorie` / `s` at 320 dp
+ * and text size 1.5.
+ *
+ * So the clamp is decided by whether the copy can use it. That keeps this change to the labels it
+ * fixes and leaves every single-word label rendering exactly as it did. #138 owns the one cell that
+ * needs horizontal room rather than a line.
+ */
+function labelLines(label: string): number {
+  return /\s/.test(label.trim()) ? 2 : 1;
+}
+
+/** The approved typographic cap for a capability label. Unchanged by #136 — only the clamp moved. */
+const FEATURE_LABEL_MAX_FONT_MULTIPLIER = 1.3;
+
 export type ModuleFeatureGridProps = {
   /** Defaults to the module's own capabilities. */
   readonly items?: readonly ModuleCapability[];
@@ -93,10 +125,15 @@ export function ModuleFeatureGrid({ items, onSelect, testID }: ModuleFeatureGrid
             <ModuleText
               token="tileLabel"
               align="center"
-              numberOfLines={1}
+              numberOfLines={labelLines(item.label)}
               color={disabled ? moduleNeutrals.textTertiary : moduleNeutrals.textPrimary}
-              // The tile is a fixed 74 dp, so an unbounded multiplier would clip.
-              maxFontSizeMultiplier={1.3}
+              /*
+                Still capped, so a second line cannot become a third — issue #136.
+
+                The cap is the approved typographic limit and #125 settled that it is not the lever
+                to buy width with; it stays exactly as it was. What changed is the clamp above it.
+              */
+              maxFontSizeMultiplier={FEATURE_LABEL_MAX_FONT_MULTIPLIER}
               style={styles.label}
             >
               {item.label}
@@ -108,7 +145,16 @@ export function ModuleFeatureGrid({ items, onSelect, testID }: ModuleFeatureGrid
           styles.tile,
           {
             width: featureTileWidth,
-            height: dp(moduleLayout.featureTileHeight),
+            /*
+              A floor, not a fixed height — issue #136.
+
+              74 dp is still the rhythm every tile keeps, and every label that fits one line still
+              renders in a 74 dp tile. But a hard height would clip the second line the fix above
+              depends on, so fixing a horizontal ellipsis would have bought a vertical one. The row
+              is a flex line with the default `stretch`, so a tile that does take the second line
+              lifts its whole row and the grid stays even.
+            */
+            minHeight: dp(moduleLayout.featureTileHeight),
             borderRadius: dp(moduleLayout.radiusSmall),
             /*
               The disabled branch stays neutral, deliberately — issue #91.
