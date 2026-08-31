@@ -68,36 +68,15 @@ const GRID_MODULE_IDS = ['finance', 'health', 'learning', 'family', 'goals'] as 
  */
 const ROUNDING_ALLOWANCE_DP = 1;
 
-/**
- * The one cell this suite measures, agrees is broken, and does not fix — issue #138.
- *
- * `Memories` is a single word with 0.04 dp of nominal slack at 320 dp and text size 1.5, and a
- * 320 dp emulator at that size draws `Memorie…`. No line count can fix it: a word wider than its
- * line has nowhere to break, so #136 deliberately leaves single-word labels on one line rather than
- * trading the ellipsis for a mid-word split. It needs horizontal room, which is a shared decision
- * across every module's grid.
- *
- * Listed rather than skipped so it is visible here instead of absent, and narrow enough that the
- * same label breaking at any other width or size still fails.
- */
-const KNOWN_UNFIXED = [
-  { moduleId: 'family', label: 'Memories', width: 320, fontScale: 1.5 },
-] as const;
+/*
+  There is no longer a cell this suite measures, agrees is broken, and skips — issue #138.
 
-function isKnownUnfixed(
-  moduleId: string,
-  label: string,
-  width: number,
-  fontScale: number,
-): boolean {
-  return KNOWN_UNFIXED.some(
-    (entry) =>
-      entry.moduleId === moduleId &&
-      entry.label === label &&
-      entry.width === width &&
-      entry.fontScale === fontScale,
-  );
-}
+  `Memories` was that cell: a single word with 0.04 dp of nominal slack at 320 dp and text size 1.5,
+  which a 320 dp emulator drew as `Memorie…`. #136 could not reach it, because a word wider than its
+  line has nowhere to break and a second line would only have split it mid-word. #138 gave the tile
+  back 2 dp of horizontal padding a side, which turns that 0.04 dp into 4.04 dp, so the label is now
+  asserted by the loop below like every other one and the exclusion machinery is gone with it.
+*/
 
 type Node = {
   readonly props: Record<string, unknown>;
@@ -224,9 +203,6 @@ describe.each(WIDTHS)('at %i dp wide', (width) => {
       await renderGrid(moduleId);
 
       for (const label of capabilityLabels(moduleId)) {
-        if (isKnownUnfixed(moduleId, label, width, fontScale)) {
-          continue;
-        }
         const node = screen.getByText(label) as unknown as Node;
         const style = merge(node.props.style);
         const fontSize = style.fontSize ?? 0;
@@ -289,6 +265,37 @@ describe.each(WIDTHS)('at %i dp wide', (width) => {
       expect(node.props.maxFontSizeMultiplier).toBe(1.3);
     });
 
+    it('gives Family Memories the horizontal room it was short of', async () => {
+      /*
+        #138's reported label, named for the same reason `Bank sync` is: every other assertion here
+        derives its label from the registry, so a rename would keep this suite green while the fix
+        was reverted.
+
+        It is the opposite case to `Bank sync`. `Memories` is one word, so the second line #136 added
+        can never reach it — a word wider than its line is split between letters rather than wrapped,
+        which is the worse failure #52 identified. What it needed was width, and #138 gave it back
+        2 dp of tile padding a side.
+      */
+      await renderGrid('family');
+
+      const node = screen.getByText('Memories') as unknown as Node;
+      // One line, deliberately: #136 withholds the second line from copy that cannot break.
+      expect(node.props.numberOfLines).toBe(1);
+
+      const style = merge(node.props.style);
+      const fontSize = style.fontSize ?? 0;
+      const cap = node.props.maxFontSizeMultiplier as number | undefined;
+      const { inset, tileWidth } = tileInset(node);
+      const drawn = textWidthEm('Memories', 'medium') * fontSize * Math.min(fontScale, cap ?? 1);
+
+      /*
+        Slack past the rounding allowance, not merely a positive number. Before #138 this cell had
+        0.04 dp of it at 320 dp and text size 1.5 and the device still drew `Memorie…`, so "fits" by
+        arithmetic alone is precisely the answer that was wrong.
+      */
+      expect(tileWidth - inset - drawn).toBeGreaterThanOrEqual(ROUNDING_ALLOWANCE_DP);
+    });
+
     it.each(GRID_MODULE_IDS)('leaves every single-word %s label on one line', async (moduleId) => {
       /*
         The containment half of #136, and the reason #138 is still #138.
@@ -329,6 +336,22 @@ describe('the tile keeps its rhythm without clipping the second line', () => {
     */
     expect(style.height).toBeUndefined();
     expect(style.minHeight).toBeGreaterThan(0);
+  });
+
+  it('holds no more chrome back from the label than #138 left it', async () => {
+    await renderGrid('family');
+
+    const { inset } = tileInset(screen.getByText('Memories') as unknown as Node);
+
+    /*
+      1 dp of border and 2 dp of padding a side — six in total.
+
+      Pinned rather than derived, because every fit assertion in this file measures its budget as
+      `tileWidth - inset`: restoring the old 4 dp padding would shrink the budget and the drawn width
+      with it, and the suite would stay green while `Memories` went back to `Memorie…` on a 320 dp
+      screen. This is the one assertion that names the chrome instead of reading it.
+    */
+    expect(inset).toBe(6);
   });
 
   it('leaves the shared label role at the size it had before the fix', () => {

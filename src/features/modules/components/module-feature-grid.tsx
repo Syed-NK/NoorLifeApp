@@ -222,7 +222,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    paddingHorizontal: 4,
+    /**
+     * Two, not four — issue #138.
+     *
+     * A word wider than its line has nowhere to break, so #136's second line cannot reach a
+     * single-word label and only horizontal room can. The tile withheld 10 dp from its label: 1 dp
+     * of border and 4 dp of padding on each side. Measured across every capability label in the
+     * five modules that paint this grid, at 320/360/384/393/411 dp and text sizes 1.0 and 1.5, one
+     * label in the app was starved by it — Family's `Memories`, with **0.04 dp** of nominal slack
+     * at 320 dp and text size 1.5, which is well inside the pixel rounding React Native applies
+     * when it resolves the fractional tile width, and drew `Memorie…` on a device.
+     *
+     * Returning 2 dp a side turns that 0.04 dp into **4.04 dp**, comfortably past both the 1 dp
+     * rounding allowance this grid already reasons in and the advance tables' own error at this
+     * size. `Memories` stays the worst case at every padding value, so clearing it clears the grid.
+     *
+     * Two rather than none: the tile draws a 1 dp border, and text arriving flush against it reads
+     * as a defect of its own. Two keeps a visible channel while giving the label the room it was
+     * short of. The four-column grain and the 9 dp gap between tiles are deliberately untouched —
+     * those are the grid's shared rhythm, and #138 does not need them.
+     */
+    paddingHorizontal: 2,
   },
   label: {
     alignSelf: 'stretch',
