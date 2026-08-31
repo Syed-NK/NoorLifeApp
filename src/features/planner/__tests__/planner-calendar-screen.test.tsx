@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
-import { isoFor, monthLabel, spokenDate } from '@shared/utils/calendar-grid';
+import { isoFor, monthLabel, monthOf, spokenDate } from '@shared/utils/calendar-grid';
+
+import { installPlannerDaySource } from '@/test-support/planner-day';
 
 import {
   createPlannerTaskRepository,
@@ -15,15 +17,58 @@ const OWNER = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 const OTHER_OWNER = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
 
 /**
- * The Calendar screen, rendered the way its route renders it.
+ * The clock this screen is read against — issue #132.
  *
- * "Today" is taken from the real clock rather than pinned, because the screen does too — pinning it
- * here would test a fixture instead of the behaviour, and the day cells are addressed by ISO date so
- * nothing depends on which day the suite happens to run on.
+ * ── What was wrong ─────────────────────────────────────────────────────────
+ * "Today" used to come from the real clock, on the stated grounds that "the day cells are addressed
+ * by ISO date so nothing depends on which day the suite happens to run on". That was true of
+ * `TODAY` and false of the `TOMORROW` beside it. `buildMonthGrid` returns *only* the days of the month it is
+ * given — trailing blanks are documented there as a layout concern — so on the last day of any
+ * month, tomorrow is not a cell that exists, and three tests failed looking for it. On 31 August
+ * they asked the August grid for `2026-09-01`.
+ *
+ * The screen was right. A calendar showing August should not draw 1 September, and nothing here
+ * ever needed *tomorrow* specifically: all three tests need one selectable day that is not today,
+ * so that selecting it can be seen to change the list, the carried date and the spoken label.
+ *
+ * ── How it is pinned ───────────────────────────────────────────────────────
+ * Through `installPlannerDaySource`, the same harness fourteen other suites already use, because
+ * #76's whole point is that there is exactly one day source and a suite must not be handed its own.
+ * The clocks are built with local parts at midday — never parsed from a `Z` string — because
+ * `localDateKey` reads `getFullYear`/`getMonth`/`getDate`, so a UTC instant would name the wrong
+ * local day west of Greenwich and midday leaves room for any DST shift.
+ *
+ * The dates are chosen for the boundaries rather than for being far away, so none of them expires.
  */
-const now = new Date();
-const TODAY = localDateKey(now);
-const TOMORROW = offsetLocalDate(now, 1);
+const CLOCKS = [
+  { label: 'an ordinary mid-month day', at: new Date(2026, 5, 10, 12, 0, 0) },
+  { label: 'the last day of a 31-day month', at: new Date(2026, 7, 31, 12, 0, 0) },
+  { label: 'the last day of the year', at: new Date(2026, 11, 31, 12, 0, 0) },
+  { label: 'a leap-year 29 February', at: new Date(2028, 1, 29, 12, 0, 0) },
+  { label: 'a non-leap 28 February', at: new Date(2027, 1, 28, 12, 0, 0) },
+] as const;
+
+/** The pinned instant, and the two day keys every test below reads. Set per clock. */
+let pinned = CLOCKS[0].at;
+let TODAY = '';
+let OTHER_DAY = '';
+
+/**
+ * A day the rendered grid actually contains, which is not today.
+ *
+ * Tomorrow, unless today is the last of its month, in which case yesterday — and which of those it
+ * is comes from `monthOf`, the same authority the screen pages with, rather than from counting days
+ * here. One of the two is always in the month: only a one-day month could fail that.
+ */
+function siblingDayInSameMonth(instant: Date): string {
+  const today = localDateKey(instant);
+  const month = monthOf(today);
+  const next = offsetLocalDate(instant, 1);
+  const stays = monthOf(next);
+  const sameMonth =
+    month !== null && stays !== null && stays.year === month.year && stays.month === month.month;
+  return sameMonth ? next : offsetLocalDate(instant, -1);
+}
 
 function rows(): Map<string, string> {
   return new Map<string, string>();
@@ -41,7 +86,7 @@ function repository(store: Map<string, string>, ownerId: string = OWNER): Planne
     ownerId,
     storage,
     id: () => `task.aaaaaaaa-1111-4111-8111-${String(++sequence).padStart(12, '0')}`,
-    now: () => new Date('2026-08-21T08:00:00.000Z'),
+    now: () => new Date(pinned.getTime()),
   });
 }
 
@@ -70,7 +115,21 @@ async function press(testID: string): Promise<void> {
   });
 }
 
-describe('Planner calendar screen', () => {
+describe.each(CLOCKS)('Planner calendar screen, with today on $label', (clock) => {
+  let harness: ReturnType<typeof installPlannerDaySource>;
+
+  beforeEach(() => {
+    pinned = clock.at;
+    TODAY = localDateKey(pinned);
+    OTHER_DAY = siblingDayInSameMonth(pinned);
+    harness = installPlannerDaySource(pinned);
+  });
+
+  // Required, or the next file in this worker inherits a frozen clock.
+  afterEach(() => {
+    harness.restore();
+  });
+
   it('mounts from its route with no module context but its own scaffold', async () => {
     /*
       The crash regression, carried forward to this route. `renderCalendar` supplies no
@@ -131,12 +190,12 @@ describe('Planner calendar screen', () => {
     const store = rows();
     const repo = repository(store);
     await repo.create({ title: 'Due today', dueDate: TODAY, dueTime: '09:30', priority: 'high' });
-    await repo.create({ title: 'Due tomorrow', dueDate: TOMORROW, priority: 'normal' });
+    await repo.create({ title: 'Due on the other day', dueDate: OTHER_DAY, priority: 'normal' });
 
     await renderCalendar(repository(store));
 
     expect(screen.getByText('Due today')).toBeTruthy();
-    expect(screen.queryByText('Due tomorrow')).toBeNull();
+    expect(screen.queryByText('Due on the other day')).toBeNull();
     expect(screen.queryByTestId('planner-calendar-day-empty')).toBeNull();
     expect(screen.getByText('1 open')).toBeTruthy();
   });
@@ -145,17 +204,17 @@ describe('Planner calendar screen', () => {
     const store = rows();
     const repo = repository(store);
     await repo.create({ title: 'Today job', dueDate: TODAY, priority: 'normal' });
-    await repo.create({ title: 'Tomorrow job', dueDate: TOMORROW, priority: 'normal' });
+    await repo.create({ title: 'Other-day job', dueDate: OTHER_DAY, priority: 'normal' });
 
     await renderCalendar(repository(store));
     expect(screen.getByText('Today job')).toBeTruthy();
 
-    await press(`planner-calendar-grid-day-${TOMORROW}`);
+    await press(`planner-calendar-grid-day-${OTHER_DAY}`);
 
-    expect(screen.getByText('Tomorrow job')).toBeTruthy();
+    expect(screen.getByText('Other-day job')).toBeTruthy();
     expect(screen.queryByText('Today job')).toBeNull();
     // The heading stops claiming "Today" once another day is selected.
-    expect(screen.getByText(spokenDate(TOMORROW))).toBeTruthy();
+    expect(screen.getByText(spokenDate(OTHER_DAY))).toBeTruthy();
   });
 
   it('completes a task from the day list and moves it to the completed count', async () => {
@@ -232,12 +291,12 @@ describe('Planner calendar screen', () => {
     push.mockClear();
 
     await renderCalendar(repository(rows()));
-    await press(`planner-calendar-grid-day-${TOMORROW}`);
+    await press(`planner-calendar-grid-day-${OTHER_DAY}`);
     await press('planner-calendar-add');
 
     expect(push).toHaveBeenCalledWith({
       pathname: '/planner/tasks',
-      params: { date: TOMORROW },
+      params: { date: OTHER_DAY },
     });
   });
 
@@ -260,13 +319,13 @@ describe('Planner calendar screen', () => {
   it('speaks a whole date and the task count on each day cell', async () => {
     const store = rows();
     const repo = repository(store);
-    await repo.create({ title: 'One', dueDate: TOMORROW, priority: 'normal' });
+    await repo.create({ title: 'One', dueDate: OTHER_DAY, priority: 'normal' });
 
     await renderCalendar(repository(store));
 
-    const cell = screen.getByTestId(`planner-calendar-grid-day-${TOMORROW}`);
+    const cell = screen.getByTestId(`planner-calendar-grid-day-${OTHER_DAY}`);
     const label = String(cell.props.accessibilityLabel);
-    expect(label).toContain(spokenDate(TOMORROW));
+    expect(label).toContain(spokenDate(OTHER_DAY));
     expect(label).toContain('1 task');
 
     const todayCell = screen.getByTestId(`planner-calendar-grid-day-${TODAY}`);
@@ -306,5 +365,38 @@ describe('Planner calendar screen', () => {
     });
     // The month grid still renders — a calendar with no data is still a calendar.
     expect(screen.getByTestId('planner-calendar-grid')).toBeTruthy();
+  });
+});
+
+/**
+ * The two properties the pinning above depends on — issue #132.
+ *
+ * Without these, the clocks could drift into naming a different day than they read as, or the
+ * sibling could wander out of the displayed month again, and the fifteen tests per clock would
+ * simply stop covering the boundary they were added for while still passing.
+ */
+describe('the clocks these tests are read against', () => {
+  /** Stated, not computed, so a clock cannot quietly become a different calendar day. */
+  const EXPECTED = ['2026-06-10', '2026-08-31', '2026-12-31', '2028-02-29', '2027-02-28'] as const;
+
+  it.each(CLOCKS.map((clock, index) => ({ ...clock, expected: EXPECTED[index] })))(
+    'reads $label as $expected in local time',
+    ({ at, expected }) => {
+      /*
+        `localDateKey` reads local parts. A clock built by parsing a `Z` string instead of from local
+        parts names a different day wherever the offset crosses midnight, and this is what catches
+        that — as well as any edit that moves a boundary date off its boundary.
+      */
+      expect(localDateKey(at)).toBe(expected);
+    },
+  );
+
+  it.each(CLOCKS)('offers a sibling day inside the same displayed month on $label', ({ at }) => {
+    const today = localDateKey(at);
+    const sibling = siblingDayInSameMonth(at);
+
+    expect(sibling).not.toBe(today);
+    // The grid draws one month, so a sibling outside it is not a cell the screen can select.
+    expect(monthOf(sibling)).toEqual(monthOf(today));
   });
 });
