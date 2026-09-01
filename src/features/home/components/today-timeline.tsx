@@ -305,7 +305,12 @@ function TimelineRow({ entry, rowHeight, dotSize, onSelectEntry }: TimelineRowPr
       >
         {entry.time}
       </HomeText>
-      <HomeText token="activity" color={entry.accent} numberOfLines={1} style={styles.activity}>
+      {/*
+        Two lines since #148. `Nothing planned for today` drew `Nothing planned for tod…` at a 1.5
+        text scale once #141 restored scaling — the label's box is capped by the row it shares with
+        the time, the lock badge and the trailing icon, so the glyphs grew and the box did not.
+      */}
+      <HomeText token="activity" color={entry.accent} numberOfLines={2} style={styles.activity}>
         {entry.title}
       </HomeText>
       {/* Additional to the trailing icon below, never a replacement for it. */}
