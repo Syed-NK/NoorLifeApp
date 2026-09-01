@@ -1,7 +1,8 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { AppTextInput } from '@ds/typography/app-text-input';
 import {
   ModuleButton,
   ModuleErrorState,
@@ -184,7 +185,7 @@ function PlannerTasksBody() {
           <ModuleText token="cardTitle" accessibilityRole="header">
             {editing === null ? 'Add a task' : 'Edit task'}
           </ModuleText>
-          <TextInput
+          <AppTextInput
             value={title}
             onChangeText={setTitle}
             placeholder="What needs doing?"
@@ -204,7 +205,7 @@ function PlannerTasksBody() {
             ]}
             testID="planner-task-title"
           />
-          <TextInput
+          <AppTextInput
             value={notes}
             onChangeText={setNotes}
             placeholder="Notes (optional)"
@@ -242,7 +243,7 @@ function PlannerTasksBody() {
             testID="planner-task-due"
           />
           {dueChoice === 'custom' ? (
-            <TextInput
+            <AppTextInput
               value={customDate}
               onChangeText={setCustomDate}
               placeholder="Date (YYYY-MM-DD)"
@@ -265,7 +266,7 @@ function PlannerTasksBody() {
             />
           ) : null}
           {dueChoice === 'none' ? null : (
-            <TextInput
+            <AppTextInput
               value={dueTime}
               onChangeText={setDueTime}
               placeholder="Time (optional, 09:30)"

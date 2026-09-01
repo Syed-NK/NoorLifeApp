@@ -1,9 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Image, StyleSheet, TextInput, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
-import { fontFamilies } from '@ds/tokens';
+import { AppTextInput } from '@ds/typography/app-text-input';
 import { ModuleStatusBanner, ModuleText } from '@features/modules/components';
 import { ModuleCard } from '@features/modules/components/module-card';
 import { useModuleTheme } from '@features/modules/module-context';
@@ -337,7 +337,7 @@ function AskField({
         },
       ]}
     >
-      <TextInput
+      <AppTextInput
         value={value}
         onChangeText={onChange}
         onSubmitEditing={onSubmit}
@@ -575,7 +575,6 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     minWidth: 0,
-    fontFamily: fontFamilies.regular,
     paddingVertical: 8,
   },
   send: {

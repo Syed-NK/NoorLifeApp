@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { AppTextInput } from '@ds/typography/app-text-input';
 import {
   ModuleButton,
   ModuleErrorState,
@@ -172,7 +173,7 @@ function PlannerRoutinesBody() {
             {editing === null ? 'Add a routine' : 'Edit routine'}
           </ModuleText>
 
-          <TextInput
+          <AppTextInput
             value={title}
             onChangeText={setTitle}
             placeholder="What do you repeat?"
@@ -193,7 +194,7 @@ function PlannerRoutinesBody() {
             testID="planner-routine-title"
           />
 
-          <TextInput
+          <AppTextInput
             value={note}
             onChangeText={setNote}
             placeholder="Notes (optional)"
@@ -269,7 +270,7 @@ function PlannerRoutinesBody() {
             </View>
           )}
 
-          <TextInput
+          <AppTextInput
             value={preferredTime}
             onChangeText={setPreferredTime}
             placeholder="Time (optional, 07:30)"

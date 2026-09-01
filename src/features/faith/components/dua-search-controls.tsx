@@ -1,8 +1,9 @@
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { modulePalettes } from '@ds/tokens';
+import { AppTextInput } from '@ds/typography/app-text-input';
 import { ModuleText } from '@features/modules/components';
 import { moduleLayout, moduleNeutrals, moduleColorThemes } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
@@ -104,7 +105,7 @@ export function DuaSearchRow({
           technology is told the purpose in full at every size — the visible text is what gives way to
           the width, not the meaning.
         */}
-        <TextInput
+        <AppTextInput
           value={value}
           onChangeText={onChange}
           placeholder={compact ? COMPACT_PLACEHOLDER : FULL_PLACEHOLDER}

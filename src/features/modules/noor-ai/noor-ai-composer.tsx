@@ -1,7 +1,7 @@
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
-import { fontFamilies } from '@ds/tokens';
+import { AppTextInput } from '@ds/typography/app-text-input';
 
 import { ModuleStatusBanner } from '../components/module-status-banner';
 import { ModuleText } from '../components/module-text';
@@ -127,7 +127,7 @@ export function NoorAIComposer({
         ]}
         testID={`${prefix}-field`}
       >
-        <TextInput
+        <AppTextInput
           value={value}
           onChangeText={onChangeText}
           placeholder={noorAIChatCopy.composer.placeholder}
@@ -245,7 +245,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   input: {
-    fontFamily: fontFamilies.regular,
     color: moduleNeutrals.textPrimary,
     /**
      * Fills the wrapper, so the whole visible field is the touch target.

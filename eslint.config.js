@@ -22,14 +22,30 @@ module.exports = defineConfig([
               message:
                 'Import icons through @ds/components/app-icon (AppIcon) so the icon set stays centralised and typed.',
             },
+            {
+              // Every string the app *displays* is Poppins because AppText and its per-surface
+              // siblings resolve the family from a type token. TextInput is a separate component
+              // that none of them wrap, so before AppTextInput existed each input had to remember
+              // the family by hand and 26 of 31 did not - leaving the text the user typed in Roboto
+              // while the label directly above it was Poppins. This rule is what stops the next
+              // input reintroducing it. Ref types come from AppTextInputHandle, so there is no
+              // legitimate reason for a call site to name TextInput at all.
+              name: 'react-native',
+              importNames: ['TextInput'],
+              message:
+                'Import AppTextInput from @ds/typography/app-text-input so every input carries the Poppins face (spec 2.4). For a ref, use AppTextInputHandle.',
+            },
           ],
         },
       ],
     },
   },
   {
-    // AppIcon is the single sanctioned boundary to the icon library.
-    files: ['src/design-system/components/app-icon.tsx'],
+    // The two sanctioned boundaries: AppIcon to the icon library, AppTextInput to TextInput.
+    files: [
+      'src/design-system/components/app-icon.tsx',
+      'src/design-system/typography/app-text-input.tsx',
+    ],
     rules: {
       'no-restricted-imports': 'off',
     },

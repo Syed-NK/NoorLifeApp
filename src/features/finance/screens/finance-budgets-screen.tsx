@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { AppTextInput } from '@ds/typography/app-text-input';
 import {
   ModuleButton,
   ModuleErrorState,
@@ -591,7 +592,7 @@ function Field({
   const surfaces = useModuleSurfaces();
   const { dp } = useModuleMetrics();
   return (
-    <TextInput
+    <AppTextInput
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}

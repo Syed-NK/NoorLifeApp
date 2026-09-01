@@ -6,13 +6,13 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@ds/components';
-import { fontFamilies, neutralColors } from '@ds/tokens';
+import { neutralColors } from '@ds/tokens';
+import { AppTextInput } from '@ds/typography/app-text-input';
 import { ModuleText } from '@features/modules/components';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleTheme } from '@features/modules/module-context';
@@ -676,7 +676,7 @@ function NotePanel({
 
   return (
     <View style={{ rowGap: dp(10), paddingTop: dp(4) }} testID="faith-reader-note-panel">
-      <TextInput
+      <AppTextInput
         value={draft}
         onChangeText={(value) => {
           touched.current = true;
@@ -853,7 +853,7 @@ function PlaylistPanel({
       })}
 
       <View style={[styles.newRow, { columnGap: dp(8), marginTop: dp(4) }]}>
-        <TextInput
+        <AppTextInput
           value={name}
           onChangeText={setName}
           maxLength={MAX_PLAYLIST_NAME}
@@ -940,7 +940,6 @@ const styles = StyleSheet.create({
   },
   noteInput: {
     borderWidth: 1,
-    fontFamily: fontFamilies.regular,
     textAlignVertical: 'top',
   },
   noteActions: {
@@ -959,6 +958,5 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     borderWidth: 1,
-    fontFamily: fontFamilies.regular,
   },
 });

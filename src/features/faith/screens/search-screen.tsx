@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { ModuleStatusBanner, ModuleText } from '@features/modules/components';
-import { fontFamilies } from '@ds/tokens';
+import { AppTextInput } from '@ds/typography/app-text-input';
 import { useModuleTheme } from '@features/modules/module-context';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
 import { useModuleMetrics } from '@features/modules/use-module-metrics';
@@ -222,7 +222,7 @@ function SearchBody() {
         ]}
       >
         <AppIcon name="search" size={dp(18)} color={theme.ink} />
-        <TextInput
+        <AppTextInput
           value={draft}
           onChangeText={setDraft}
           onSubmitEditing={() => setQuery(draft)}
@@ -344,7 +344,6 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     minWidth: 0,
-    fontFamily: fontFamilies.regular,
     paddingVertical: 8,
   },
   submit: {

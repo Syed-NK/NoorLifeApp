@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, View } from 'react-native';
 
+import { AppTextInput } from '@ds/typography/app-text-input';
 import { ModuleButton, ModuleStatusBanner, ModuleText } from '@features/modules/components';
 import { ModuleCard } from '@features/modules/components/module-card';
 import { useModuleTheme } from '@features/modules/module-context';
@@ -1036,7 +1037,7 @@ function Field({
   return (
     <View style={{ rowGap: dp(3) }}>
       <ModuleText token="rowMeta">{label}</ModuleText>
-      <TextInput
+      <AppTextInput
         {...input}
         accessibilityLabel={accessibilityLabel}
         placeholderTextColor={moduleNeutrals.textTertiary}
