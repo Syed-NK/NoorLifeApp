@@ -77,7 +77,13 @@ export function HomeSummaryRow({
   const cardStyle = [
     styles.card,
     {
-      height: dp(LOCKED.summary.height),
+      /*
+        A floor, not a fixed height — issue #141. Main Home now honours the OS text size, and a fixed
+        height here clipped the scaled figure inside a card that could not grow instead of letting the
+        column grow and the screen scroll. At 1.0 the content is shorter than the locked height, so the
+        floor still decides and the reference geometry is unchanged.
+      */
+      minHeight: dp(LOCKED.summary.height),
       borderRadius: dp(LOCKED.summary.radius),
       padding: dp(LOCKED.summary.padding),
     },
