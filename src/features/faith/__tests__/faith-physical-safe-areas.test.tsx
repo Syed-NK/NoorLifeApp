@@ -10,7 +10,7 @@ import {
   headerControlReserve,
   headerTitleBandWidth,
 } from '@features/modules/components/module-header';
-import { moduleLayout, moduleScale } from '@features/modules/module-tokens';
+import { moduleHeaderTitleLines, moduleLayout, moduleScale } from '@features/modules/module-tokens';
 import { touchTarget } from '@ds/tokens';
 
 import { TEST_FAITH_USER_ID } from '@/test-support/faith-storage-address';
@@ -308,13 +308,21 @@ describe('defect 2 — the header title must never reach under a control', () =>
       const title = view.getByTestId('faith-dua-category-header-title');
 
       /*
-        The visible string may be ellipsised to the band; the spoken one may not. "Daily Remembra…"
-        is what the Samsung drew, and it is what a screen reader must never be handed.
+        The visible string may be shortened to the band; the spoken one may not. "Daily Remembra…"
+        is what the Samsung drew, and it is what a screen reader must never be handed. This holds
+        whether the band shortens the title or wraps it, so it is the assertion that outlived the
+        one-line policy.
       */
       expect(String(title.props.accessibilityLabel)).toBe('Daily Remembrances');
       expect(title.props.accessibilityRole).toBe('header');
-      /* One line, because the header's height is fixed — a second line would push the page down. */
-      expect(title.props.numberOfLines).toBe(1);
+      /*
+        Two lines since #143. This said one, "because the header height is fixed — a second line
+        would push the page down", which was true of the height as it was: the height is what
+        changed. `moduleHeaderHeight` reserves room for both lines once the text size needs it, so
+        "Daily Remembrances" wraps here instead of ellipsising. The number is read from the token
+        rather than restated, so the policy has one home.
+      */
+      expect(title.props.numberOfLines).toBe(moduleHeaderTitleLines);
     },
   );
 

@@ -1050,3 +1050,61 @@ export function moduleDockClearance(
 ): number {
   return moduleNavigationHeight(scaled, safeAreaBottom) + scaled(moduleLayout.navAIRaise);
 }
+
+/**
+ * How many lines the module header's title may take — issue #143.
+ *
+ * One, until a 384 dp Samsung at a 1.5 text scale drew `Prayer locatio…`. The title band is
+ * arithmetic on the screen width and the control cluster (see `headerTitleBandWidth`), and it is
+ * already *maximal* for a title centred on the screen: the reserve is symmetric because the brief
+ * centres the title on the screen rather than on the gap between the controls, so roughly 50 dp on
+ * the left is unusable by design. Measured at 384 dp the band is 164 dp, and `Prayer location` needs
+ * about 178 dp once the header's 1.3x cap is applied. Widening the band would put text under the
+ * Help control, which is the defect the band was introduced to fix.
+ *
+ * So the title gets the second line instead, which is the same remedy #52, #136 and #139 applied to
+ * tile labels and #133 to navigation labels: a label that names a destination is not allowed to
+ * ellipsise at a supported text size.
+ */
+export const moduleHeaderTitleLines = 2;
+
+/**
+ * The cap on the header title's font growth.
+ *
+ * 1.3 exactly, and it is the floor as well as the ceiling: #115 established 1.3 as the minimum any
+ * clamp in this app may use, so this may not be lowered to buy width. It lives here rather than as a
+ * literal at the call site because `moduleHeaderHeight` and the `ModuleText` that renders the title
+ * must agree about it — if they disagreed, the reserved height would not match the text drawn into
+ * it, which is precisely how the band and the layout came to describe different rectangles before.
+ */
+export const moduleHeaderTitleMaxFontScale = 1.3;
+
+/**
+ * The module header's height, in scaled dp.
+ *
+ * ── Why this is arithmetic and not measured ─────────────────────────────────
+ * The header's height is consumed in two places that must agree: the header draws it, and
+ * `prayerDashboardSafeBodyHeight` subtracts it to decide whether Faith Home needs to scroll. A
+ * content-driven height would leave the second place guessing, and `prayer-dashboard-fit.ts` records
+ * what that costs — a 707 dp dashboard once reported as overflow inside a 716.6 dp gap, because the
+ * deduction and the content disagreed. One function, both callers, no divergence.
+ *
+ * ── Why it does not depend on the title string ──────────────────────────────
+ * Knowing whether *this* title wraps means measuring it, and `module-header.tsx` explains at length
+ * why the title box deliberately depends on no font measurement: on a cold deep link the title lays
+ * out in the system fallback face, and a box sized to that never re-measures once Poppins arrives.
+ * So the header reserves room for `moduleHeaderTitleLines` whenever the text size makes that exceed
+ * the base height, uniformly across all eight modules. Every header is the same height as every
+ * other at a given text size, which is what the shared chrome should look like anyway.
+ *
+ * ── Why font scale 1.0 is untouched ────────────────────────────────────────
+ * Two lines at 1.0 measure 2 x 24 = 48 dp against a 54 dp base, so the base still wins and the
+ * header is exactly the height it has always been. The growth begins only where the type demands
+ * it: at 1.5 the capped line box is 24 x 1.3 = 31.2 dp, so two lines need 63 dp and the header
+ * becomes 63 dp rather than clipping the second line inside 54.
+ */
+export function moduleHeaderHeight(scaled: (value: number) => number, fontScale: number): number {
+  const capped = Math.min(Math.max(fontScale, 1), moduleHeaderTitleMaxFontScale);
+  const lineBox = scaled(moduleType.headerTitle[1]) * capped;
+  return Math.max(scaled(moduleLayout.headerHeight), Math.ceil(lineBox * moduleHeaderTitleLines));
+}

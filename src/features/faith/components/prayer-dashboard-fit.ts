@@ -1,4 +1,9 @@
-import { moduleLayout, moduleNavigationHeight, moduleType } from '@features/modules/module-tokens';
+import {
+  moduleHeaderHeight,
+  moduleLayout,
+  moduleNavigationHeight,
+  moduleType,
+} from '@features/modules/module-tokens';
 
 import { prayerActionMetrics } from './prayer-action-cards';
 import { prayerJourneyMetrics } from './prayer-journey-timeline';
@@ -206,12 +211,22 @@ export function prayerDashboardSafeBodyHeight(input: {
   readonly insetTop: number;
   readonly insetBottom: number;
   readonly dp: (value: number) => number;
+  /**
+   * The OS text size, because the header is no longer a constant — issue #143.
+   *
+   * The title may take two lines, so the header grows at large text sizes. Subtracting the base 54
+   * dp here would hand the dashboard room the header has already taken and report a fit that is not
+   * there. `moduleHeaderHeight` is the one function the header itself draws from, so the deduction
+   * and the chrome cannot disagree — which is the failure the note above this describes from the
+   * other direction.
+   */
+  readonly fontScale: number;
 }): number {
-  const { screenHeight, insetTop, insetBottom, dp } = input;
+  const { screenHeight, insetTop, insetBottom, dp, fontScale } = input;
   return (
     screenHeight -
     insetTop -
-    dp(moduleLayout.headerHeight) -
+    moduleHeaderHeight(dp, fontScale) -
     moduleNavigationHeight(dp, insetBottom)
   );
 }
