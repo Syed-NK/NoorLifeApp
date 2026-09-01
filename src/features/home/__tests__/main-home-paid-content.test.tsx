@@ -593,7 +593,9 @@ describe('locked geometry survives both states', () => {
     await mount();
 
     for (const id of ['family-check-in-card', 'overall-progress-card']) {
-      expect(flat(id)?.height).toBe(LOCKED.summary.height);
+      /* A floor since #141 — the locked figure, with nothing able to clip a scaled value. */
+      expect(flat(id)?.minHeight).toBe(LOCKED.summary.height);
+      expect(flat(id)?.height).toBeUndefined();
       expect(flat(id)?.borderRadius).toBe(LOCKED.summary.radius);
       expect(flat(id)?.padding).toBe(LOCKED.summary.padding);
     }

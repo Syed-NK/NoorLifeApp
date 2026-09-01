@@ -419,7 +419,9 @@ describe('the Noor AI insight card geometry', () => {
     await mount();
 
     const card = flat('main-home-ai-insight');
-    expect(card?.height).toBe(LOCKED.aiInsight.height);
+    /* A floor since #141 — the locked figure, with nothing able to clip a scaled value. */
+    expect(card?.minHeight).toBe(LOCKED.aiInsight.height);
+    expect(card?.height).toBeUndefined();
     expect(card?.borderRadius).toBe(LOCKED.aiInsight.radius);
     expect(card?.paddingLeft).toBe(LOCKED.aiInsight.paddingHorizontal);
     expect(card?.paddingVertical).toBe(LOCKED.aiInsight.paddingVertical);

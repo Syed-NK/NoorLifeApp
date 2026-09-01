@@ -47,26 +47,30 @@ export type HomeTextProps = Omit<TextProps, 'style'> & {
 };
 
 /**
- * Whether Main Home's locked text honours the OS font-scale setting.
+ * Main Home honours the OS font-scale setting — issue #141.
  *
- * ── Deliberately `false`, and this needs revisiting before production ───────
- * The pack asks for `allowFontScaling={false}` on the locked visual components so an
- * emulator's accessibility settings cannot distort the pixel comparison against
- * `00-main-home-exact-reference.png`. That is a *validation* concession, not a product
- * decision, and it conflicts with NOORLIFE_UI_DESIGN_SPEC.md §8 ("Dynamic text scaling
- * without clipping").
+ * ── It did not, and that was the last §8 exception in the app ─────────────
+ * The pack asked for `allowFontScaling={false}` on the locked visual components so an emulator's
+ * accessibility settings could not disturb the pixel comparison against
+ * `00-main-home-exact-reference.png`. That was a *validation* concession recorded as needing a
+ * product decision before release, and the cost was measurable: at font scale 1.5 every text node on
+ * the app's primary screen reported byte-identical `uiautomator` bounds to 1.0. A user who had asked
+ * for larger text got none of it, on the one screen they see first.
  *
- * The whole screen is a fixed-height, no-scroll compact layout, so honouring a 1.3×
- * scale here would overflow several cards rather than reflow them — the two requirements
- * genuinely cannot both hold at these dimensions.
+ * ── Why turning it on is not enough on its own ─────────────────────────────
+ * The old note said the two requirements could not both hold, and it was right about the layout as it
+ * was: three section roots carried a fixed `height`, so growing text would have overflowed *inside*
+ * a card that could not grow, and the screen's own `ScrollView` fallback would never have seen it —
+ * the column's total height would not have changed. Those three roots now carry `minHeight`, and
+ * `main-home-screen.tsx` decides whether to scroll from the column's **measured** height rather than
+ * from a constant. Growth therefore reaches the fallback that already existed.
  *
- * Before release, either flip this to `true` and let the layout fall back to its
- * `ScrollView` branch under large font scales, or supply a scaled type ramp. Every other
- * screen in the app already scales normally through `AppText`; this constant confines the
- * exception to Main Home.
+ * ── What is deliberately not done here ─────────────────────────────────────
+ * No clamp. `AppText` caps a few variants whose geometry cannot absorb growth, and doing that here
+ * would re-introduce the same defect in a milder form — the point is that the OS setting is honoured,
+ * and the screen scrolls when it must. The locked type ramp in `main-home-metrics.ts` is untouched:
+ * this changes whether the ramp scales, never what the ramp says.
  */
-const ALLOW_FONT_SCALING = false;
-
 /**
  * Text primitive for Main Home only.
  *
@@ -86,7 +90,7 @@ export function HomeText({ token, color, style, children, ...rest }: HomeTextPro
   return (
     <Text
       {...rest}
-      allowFontScaling={ALLOW_FONT_SCALING}
+      allowFontScaling
       style={[
         {
           fontFamily: fontFamilies[WEIGHTS[token]],

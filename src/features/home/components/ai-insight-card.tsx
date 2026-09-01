@@ -77,7 +77,8 @@ export function AIInsightCard({ insight, theme, onPress, testID }: AIInsightCard
       style={[
         styles.card,
         {
-          height: dp(LOCKED.aiInsight.height),
+          /* A floor, not a fixed height — see #141. At 1.0 the locked height still decides. */
+          minHeight: dp(LOCKED.aiInsight.height),
           borderRadius: dp(LOCKED.aiInsight.radius),
           paddingLeft: dp(LOCKED.aiInsight.paddingHorizontal),
           paddingVertical: dp(LOCKED.aiInsight.paddingVertical),

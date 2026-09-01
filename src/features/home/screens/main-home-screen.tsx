@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -133,9 +133,35 @@ function MainHomeContent({ simulateFailure = false }: MainHomeScreenProps) {
 
   // Space between the status inset and the top of the navigation bar.
   const usableHeight = screenHeight - insets.top - navHeight;
-  // A plain View when everything fits; a ScrollView only when it would otherwise clip.
-  const needsScroll =
-    usableHeight < SCROLL_FALLBACK_USABLE_HEIGHT || usableHeight < dp(CONTENT_HEIGHT);
+  /**
+   * The column's real laid-out height, once it has been laid out — issue #141.
+   *
+   * `dp(CONTENT_HEIGHT)` is the sum of the locked section heights, and while Main Home suppressed
+   * font scaling it was exact: nothing on the screen could be taller than its locked box. Now that the
+   * screen honours the OS text size, a scaled string makes its section taller than the locked figure,
+   * and a decision made from the constant alone would keep the plain `View` and clip the overflow.
+   *
+   * It is measured rather than predicted. A `fontScale` term would only be a proxy for this — it cannot
+   * know how many lines a particular string took at a particular width, which is the thing that
+   * actually decides whether the column outgrew the viewport. `main-home-metrics.ts` is design-locked
+   * in any case, so the constant it publishes could not be taught about text size even if that were the
+   * right answer.
+   *
+   * Zero until the first layout, so the constant still decides the first frame and the screen does not
+   * flash from one branch to the other.
+   */
+  const [measuredContentHeight, setMeasuredContentHeight] = useState(0);
+
+  /**
+   * A plain View when everything fits; a ScrollView only when it would otherwise clip.
+   *
+   * The measurement is taken from the column, which is content-sized in **both** branches — nothing
+   * above it sets a height or clips — so the number does not change when the branch does. That is what
+   * keeps the decision from oscillating: measuring 800 dp in the static branch switches to scrolling,
+   * and the scrolling branch measures 800 dp too.
+   */
+  const contentHeight = measuredContentHeight > 0 ? measuredContentHeight : dp(CONTENT_HEIGHT);
+  const needsScroll = usableHeight < SCROLL_FALLBACK_USABLE_HEIGHT || usableHeight < contentHeight;
 
   const gap = (value: number) => <View style={{ height: dp(value) }} />;
 
@@ -209,7 +235,11 @@ function MainHomeContent({ simulateFailure = false }: MainHomeScreenProps) {
   }
 
   const column = (
-    <View style={[styles.column, { width: Math.min(screenWidth, REFERENCE_WIDTH) }]}>
+    <View
+      style={[styles.column, { width: Math.min(screenWidth, REFERENCE_WIDTH) }]}
+      onLayout={(event) => setMeasuredContentHeight(event.nativeEvent.layout.height)}
+      testID="main-home-column"
+    >
       <HomeHeader
         greeting={user?.greeting ?? 'Assalamu Alaikum,'}
         name={user?.givenName ?? 'there'}
