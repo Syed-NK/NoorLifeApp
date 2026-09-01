@@ -127,6 +127,23 @@ describe('adopting it costs a call site nothing', () => {
   });
 });
 
+/** Every production source file under src, excluding tests. */
+const SRC_ROOT = join(process.cwd(), 'src');
+
+function sourceFiles(dir: string): readonly string[] {
+  if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) return [];
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== '__tests__') out.push(...sourceFiles(full));
+    } else if (/\.tsx?$/.test(entry.name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
 /**
  * The primitive only holds if nothing goes around it.
  *
@@ -135,22 +152,7 @@ describe('adopting it costs a call site nothing', () => {
  * question: does any production file still render the raw component?
  */
 describe('no production surface renders TextInput directly', () => {
-  const SRC_ROOT = join(process.cwd(), 'src');
   const PRIMITIVE = join('src', 'design-system', 'typography', 'app-text-input.tsx');
-
-  function sourceFiles(dir: string): readonly string[] {
-    if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) return [];
-    const out: string[] = [];
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name !== '__tests__') out.push(...sourceFiles(full));
-      } else if (/\.tsx?$/.test(entry.name)) {
-        out.push(full);
-      }
-    }
-    return out;
-  }
 
   /**
    * Matches the component, not the type.
@@ -183,5 +185,80 @@ describe('no production surface renders TextInput directly', () => {
       readFileSync(file, 'utf8').includes('<AppTextInput'),
     );
     expect(adopters.length).toBeGreaterThanOrEqual(18);
+  });
+});
+
+/**
+ * Every input declares a size — issue #142.
+ *
+ * The primitive supplies a face and deliberately no size: inputs carry sizes measured against their
+ * own geometry, and choosing one for them is not the design system's business. The cost of that
+ * choice is that a call site can omit the size and get React Native's platform default, which is not
+ * on any ramp — it ignores the type scale and ignores the width scale, so the field grows relative to
+ * its neighbours as the OS text size rises and never narrows when the screen does.
+ *
+ * Six Faith fields did exactly that, and the same defect had already been found and fixed once in
+ * `dua-search-controls.tsx` before recurring. So the omission is checked here rather than left to be
+ * noticed on a device at 1.5.
+ *
+ * The check is syntactic: it reads each `AppTextInput` element's own props. Every call site today
+ * states its size inline — either a `fontSize` or a `type(…)` token from its surface's ramp — so if a
+ * future one legitimately puts the size in a `StyleSheet` key instead, this will report it and the
+ * honest fix is to move the size inline rather than to widen the scan.
+ */
+describe('no input is left to size itself', () => {
+  /**
+   * Each `<AppTextInput …>` element's own text.
+   *
+   * The name must *end* at the match, or `<AppTextInputHandle>` — the ref type — is read as an
+   * element and reported as sizeless. Braces are tracked so a `>` inside an arrow function or a
+   * template literal does not close the element early.
+   */
+  function inputElements(source: string): readonly string[] {
+    const out: string[] = [];
+    let from = 0;
+    for (;;) {
+      const start = source.indexOf('<AppTextInput', from);
+      if (start === -1) break;
+      if (/[A-Za-z0-9_]/.test(source.charAt(start + '<AppTextInput'.length))) {
+        from = start + '<AppTextInput'.length;
+        continue;
+      }
+      let depth = 0;
+      let end = start;
+      for (; end < source.length; end++) {
+        const c = source.charAt(end);
+        if (c === '{') depth++;
+        else if (c === '}') depth--;
+        else if (c === '>' && depth === 0) break;
+      }
+      out.push(source.slice(start, end + 1));
+      from = end + 1;
+    }
+    return out;
+  }
+
+  it('states a size at every call site', () => {
+    const offenders: string[] = [];
+    for (const file of sourceFiles(SRC_ROOT)) {
+      for (const element of inputElements(readFileSync(file, 'utf8'))) {
+        if (element.includes('fontSize') || element.includes('type(')) continue;
+        const marker = element.indexOf('testID');
+        offenders.push(
+          `${relative(process.cwd(), file).split(sep).join('/')} — ${
+            marker === -1 ? '(no testID)' : element.slice(marker, marker + 48).split('\n')[0]
+          }`,
+        );
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('parses a real number of elements, so the scan cannot pass by finding nothing', () => {
+    const counted = sourceFiles(SRC_ROOT).reduce(
+      (total, file) => total + inputElements(readFileSync(file, 'utf8')).length,
+      0,
+    );
+    expect(counted).toBeGreaterThanOrEqual(28);
   });
 });
