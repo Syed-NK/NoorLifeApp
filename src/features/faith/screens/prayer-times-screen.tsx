@@ -210,6 +210,7 @@ export function PrayerTimesScreen() {
     insetTop: insets.top,
     insetBottom: insets.bottom,
     dp,
+    fontScale,
   });
   const mode: PrayerDashboardMode = prayerDashboardMode({
     screenWidth,

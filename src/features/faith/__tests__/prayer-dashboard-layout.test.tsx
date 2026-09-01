@@ -7,6 +7,7 @@ import React from 'react';
 
 import {
   faithHeroGeometry,
+  moduleHeaderHeight,
   moduleLayout,
   moduleNavigationHeight,
   moduleType,
@@ -231,6 +232,7 @@ describe('the safe body is the region between the fixed chrome', () => {
       insetTop: 52,
       insetBottom: 28,
       dp,
+      fontScale: 1,
     });
 
     expect(height).toBe(914 - 52 - moduleLayout.headerHeight - moduleNavigationHeight(dp, 28));
@@ -244,12 +246,14 @@ describe('the safe body is the region between the fixed chrome', () => {
       insetTop: 24,
       insetBottom: 24,
       dp,
+      fontScale: 1,
     });
     const deep = prayerDashboardSafeBodyHeight({
       screenHeight: 914,
       insetTop: 52,
       insetBottom: 28,
       dp,
+      fontScale: 1,
     });
     expect(deep).toBe(shallow - 32);
   });
@@ -640,6 +644,7 @@ describe('the dashboard fits 411 dp at the default text size', () => {
         insetTop: EMULATOR.insetTop,
         insetBottom: EMULATOR.insetBottom,
         dp: dpAt411,
+        fontScale: 1,
       }),
     ).toBeCloseTo(clearOfNavigation, 1);
   });
@@ -805,5 +810,50 @@ describe('the trimmed sections stayed inside what the correction allows', () => 
   it('leaves the hero untouched', () => {
     expect(moduleLayout.faithHeroHeight).toBe(144);
     expect(faithHeroGeometry.height).toBe(144);
+  });
+});
+
+/**
+ * The header's height reaches the one other place that subtracts it — issue #143.
+ *
+ * The module header's title may now take two lines, so the header is no longer a constant: it grows
+ * once the OS text size makes two capped line boxes exceed the base 54 dp. This function is the only
+ * other consumer of that height, and if it kept subtracting the base it would hand the dashboard room
+ * the chrome had already taken — the same class of disagreement the note above records from the other
+ * direction, where a deduction rather than the content was what did not fit.
+ *
+ * So the assertion is not "the number is 63". It is that this function and the header derive the
+ * height from the same call, which is what makes them impossible to move apart.
+ */
+describe('the safe body follows the header when the header grows', () => {
+  const dp = (value: number) => value;
+
+  const safeBodyAt = (fontScale: number): number =>
+    prayerDashboardSafeBodyHeight({
+      screenHeight: 914,
+      insetTop: 52,
+      insetBottom: 28,
+      dp,
+      fontScale,
+    });
+
+  it('deducts exactly what the header reserves, at every text size', () => {
+    for (const fontScale of [1, 1.15, 1.3, 1.5, 2]) {
+      expect(safeBodyAt(fontScale)).toBe(
+        914 - 52 - moduleHeaderHeight(dp, fontScale) - moduleNavigationHeight(dp, 28),
+      );
+    }
+  });
+
+  it('gives the dashboard less room at a large text size than at the default', () => {
+    // Reverting the deduction to the base height would make these equal, which is the regression.
+    expect(safeBodyAt(1.5)).toBeLessThan(safeBodyAt(1));
+    expect(safeBodyAt(1)).toBe(
+      914 - 52 - moduleLayout.headerHeight - moduleNavigationHeight(dp, 28),
+    );
+  });
+
+  it('stops shrinking where the title stops growing', () => {
+    expect(safeBodyAt(2)).toBe(safeBodyAt(1.3));
   });
 });

@@ -7,7 +7,14 @@ import { profileAvatar } from '@features/home/module-pictograms';
 import { iconButtonA11y, minimumTouchTargetSize } from '@shared/utils/a11y';
 
 import { useModule } from '../module-context';
-import { moduleLayout, moduleNeutrals, moduleScale } from '../module-tokens';
+import {
+  moduleHeaderHeight,
+  moduleHeaderTitleLines,
+  moduleHeaderTitleMaxFontScale,
+  moduleLayout,
+  moduleNeutrals,
+  moduleScale,
+} from '../module-tokens';
 import { useModuleMetrics } from '../use-module-metrics';
 import { ModuleText } from './module-text';
 
@@ -44,7 +51,7 @@ export function headerControlReserve(scaled: (value: number) => number): number 
  * because gating it put a two-second blank between the native splash and the branded one — so a
  * linked screen can lay out before Poppins is registered. Yoga measures the title in the system
  * fallback face, the box is sized to that, Poppins arrives and draws wider glyphs into a box that
- * never re-measures, and `numberOfLines={1}` ellipsises the difference.
+ * never re-measures, and the title ellipsises the difference.
  *
  * Measured on the emulator, opening `noorlifeapp://faith/reader/4` from a force-stopped app: the
  * title node came out 141 px wide and drew `Rea…`, where the same screen reached by tapping through
@@ -119,7 +126,7 @@ export type ModuleHeaderProps = {
 export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: ModuleHeaderProps) {
   const router = useRouter();
   const module = useModule();
-  const { dp, pagePadding } = useModuleMetrics();
+  const { dp, pagePadding, fontScale } = useModuleMetrics();
 
   const iconSize = dp(moduleLayout.headerIcon);
   const avatarSize = dp(moduleLayout.headerAvatar);
@@ -141,7 +148,7 @@ export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: Mod
     <View
       style={[
         styles.root,
-        { height: dp(moduleLayout.headerHeight), paddingHorizontal: pagePadding },
+        { minHeight: moduleHeaderHeight(dp, fontScale), paddingHorizontal: pagePadding },
       ]}
       testID={testID}
     >
@@ -174,15 +181,23 @@ export function ModuleHeader({ title, backHref, backLabel, onBack, testID }: Mod
           token="headerTitle"
           align="center"
           /*
-            Kept, and it is a wrap guard rather than a truncation policy. The header has a fixed
-            height, so a title allowed to run to two lines would grow past it and push the screen
-            down. With the band above, a short fixed title like `Reader` has more than twice the
-            width it needs — so the only strings this can ever shorten are long descriptive ones on
-            the narrowest devices, which previously ran *underneath* the controls instead.
+            Two, since #143. It was one, on the reasoning that the header has a fixed height and a
+            second line would push the screen down — true of the height as it was, and the height is
+            what changed: `moduleHeaderHeight` now reserves room for both lines whenever the text
+            size makes that exceed the base, so the line has somewhere to go.
+
+            Still a bound rather than a licence. Two lines is what the band needs for the longest
+            titles this app uses at the 1.3x cap — `Prayer location` measured about 178 dp against a
+            164 dp band at 384 dp — and a third line would grow the chrome further than a header
+            should go. A title long enough to need one is a copy problem, not a layout problem.
           */
-          numberOfLines={1}
-          // Caps growth so a large OS text size cannot outgrow the band.
-          maxFontSizeMultiplier={1.3}
+          numberOfLines={moduleHeaderTitleLines}
+          /*
+            Caps growth so a large OS text size cannot outgrow the band. 1.3 is also the floor #115
+            set for any clamp in this app, so it may not be lowered to buy width — and
+            `moduleHeaderHeight` reserves height using this same constant, so the two cannot drift.
+          */
+          maxFontSizeMultiplier={moduleHeaderTitleMaxFontScale}
           accessibilityRole="header"
           /*
             The complete title, always, whatever the visible string had to give up to the band's
