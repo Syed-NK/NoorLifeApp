@@ -285,3 +285,120 @@ describe('the hero headline can finish its sentence', () => {
     expect(screen.getByText('View My Day')).toBeTruthy();
   });
 });
+
+/**
+ * **The quick-action label that lost a word at the default text size** — issue #150.
+ *
+ * On a Samsung SM-G556B at 384 dp and font scale **1.0**, the first quick action painted `Add` for
+ * `Add Task`, with no ellipsis — while `Log Wellness` and `Family Check-in` rendered whole in tiles
+ * of the same width. Measured: the cut label's node was 46.2 dp, the intact one beside it 77.9 dp. So
+ * it was never a width problem, and the node kept reporting the full string, which is why nothing
+ * upstream could see it.
+ *
+ * The cause was `adjustsFontSizeToFit` with `numberOfLines={1}`. It is an iOS-first prop that React
+ * Native maps to Android autosizing, and its interaction with a shrink-wrapped row and `ellipsize`
+ * drops text silently. It also made the outcome non-monotonic: at 1.5 the same tile rendered
+ * `Add Task` in full, so *more* text was visible at a *larger* size.
+ *
+ * There is no adaptive-label mechanism behind this and never was — `QuickAction` carries one
+ * `label: string`, and no measurement, cache or width rule chooses between variants. Removing the
+ * shrink makes it ordinary text layout, which is monotonic by construction: more room, or smaller
+ * type, can only ever show more.
+ */
+describe('quick-action labels are laid out, not shrunk', () => {
+  const TILES = [
+    ['quick-action-add-task', 'Add Task'],
+    ['quick-action-log-wellness', 'Log Wellness'],
+    ['quick-action-family-check-in', 'Family Check-in'],
+  ] as const;
+
+  /** The label inside one tile — `Family Check-in` also names the summary card above. */
+  function tileLabel(testID: string, text: string) {
+    return within(screen.getByTestId(testID)).getByText(text);
+  }
+
+  it.each(TILES)('renders %s with its whole label', async (testID, text) => {
+    await renderHome();
+
+    // The string itself, never a shortened variant: there is no compact label to fall back to.
+    expect(tileLabel(testID, text)).toBeTruthy();
+  });
+
+  it.each([1, 1.5])('never shrinks a quick-action label at font scale %s', async (fontScale) => {
+    await renderHome(fontScale);
+
+    for (const [testID, text] of TILES) {
+      const props = tileLabel(testID, text).props;
+      /*
+        `adjustsFontSizeToFit` is the defect itself, and `minimumFontScale` is inert without it — both
+        are refused so a future edit cannot reinstate the silent cut by reaching for either.
+      */
+      expect(props.adjustsFontSizeToFit).not.toBe(true);
+      expect(props.minimumFontScale).toBeUndefined();
+      /*
+        And still scales. A call site cannot currently switch this off — `HomeText` places
+        `allowFontScaling` *after* its prop spread, so the component wins — but that ordering is the
+        only thing making it true, and it is one line away from being reversed. Asserted on the
+        rendered outcome rather than on the call site, so it holds whichever end the value comes from.
+      */
+      expect(props.allowFontScaling).not.toBe(false);
+      expect(props.maxFontSizeMultiplier ?? null).toBeNull();
+    }
+  });
+
+  it.each([1, 1.5])('lets every quick-action label wrap at font scale %s', async (fontScale) => {
+    await renderHome(fontScale);
+
+    for (const [testID, text] of TILES) {
+      // One line is what forced the shrink; two is what `ActionTile` chose for the same problem.
+      expect(tileLabel(testID, text).props.numberOfLines).toBe(2);
+    }
+  });
+
+  /**
+   * Monotonicity, stated as the property rather than as two screenshots.
+   *
+   * The defect showed *more* text at a larger size than at a smaller one. Ordinary layout cannot do
+   * that, and what makes it ordinary is that nothing about the label depends on the font scale — the
+   * same props at 1.0 and 1.5, so the only thing that changes is how the text flows.
+   */
+  it('decides nothing from the font scale', async () => {
+    await renderHome(1);
+    const atOne = TILES.map(([id, text]) => {
+      const p = tileLabel(id, text).props;
+      return {
+        lines: p.numberOfLines,
+        shrink: p.adjustsFontSizeToFit,
+        scaling: p.allowFontScaling,
+      };
+    });
+
+    await cleanup();
+    await renderHome(1.5);
+    const atOneFive = TILES.map(([id, text]) => {
+      const p = tileLabel(id, text).props;
+      return {
+        lines: p.numberOfLines,
+        shrink: p.adjustsFontSizeToFit,
+        scaling: p.allowFontScaling,
+      };
+    });
+
+    expect(atOneFive).toEqual(atOne);
+  });
+
+  it('keeps the tile a 44 dp target and the accessible name whole', async () => {
+    await renderHome();
+
+    for (const [testID, text] of TILES) {
+      const node = screen.getByTestId(testID);
+      expect(Number(flatten(node.props.style).minHeight)).toBeGreaterThanOrEqual(44);
+      /*
+        Read off the tile rather than queried across the screen: `Family Check-in, Premium feature`
+        also names the summary card, so a screen-level lookup matches two nodes and throws. The
+        spoken name always carried the full label; the visible one now matches it.
+      */
+      expect(node.props.accessibilityLabel).toBe(`${text}, Premium feature`);
+    }
+  });
+});

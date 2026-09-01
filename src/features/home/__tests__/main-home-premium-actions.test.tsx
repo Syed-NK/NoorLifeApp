@@ -586,15 +586,36 @@ describe('the quick-action geometry', () => {
     }
   });
 
-  it('keeps the label at the same shrink allowance in both states', async () => {
+  /**
+   * The locked tile must not steal width from the label — which is why the padlock is out of flow.
+   *
+   * This used to assert a `minimumFontScale` and a single line, because the label shrank to fit. It
+   * no longer shrinks: `adjustsFontSizeToFit` dropped text on Android without an ellipsis (#150),
+   * painting `Add` for `Add Task` at font scale 1.0 while a longer label beside it rendered whole.
+   * So the allowance being compared is now the line count, and the case asserts the same thing it
+   * always did — that the two entitlement states give the label identical room.
+   */
+  it('gives the label the same allowance in both states', async () => {
     await free();
     // Scoped to the row: "Family Check-in" is also the Family summary card's heading.
-    const label = within(screen.getByTestId('main-home-quick-actions')).getByText(
+    const lockedLabel = within(screen.getByTestId('main-home-quick-actions')).getByText(
       'Family Check-in',
-    );
-    // The locked tile must not steal width from the label — which is why the padlock is out of flow.
-    expect(label.props.minimumFontScale).toBe(LOCKED.quickAction.minimumFontScale);
-    expect(label.props.numberOfLines).toBe(1);
+    ).props;
+    await paid();
+    const paidLabel = within(screen.getByTestId('main-home-quick-actions')).getByText(
+      'Family Check-in',
+    ).props;
+
+    expect(lockedLabel.numberOfLines).toBe(2);
+    expect(paidLabel.numberOfLines).toBe(lockedLabel.numberOfLines);
+    /*
+      Shrinking is what produced the silent cut, so neither state may reintroduce it — a future edit
+      that put `adjustsFontSizeToFit` back would pass every other case in this file.
+    */
+    for (const props of [lockedLabel, paidLabel]) {
+      expect(props.adjustsFontSizeToFit).not.toBe(true);
+      expect(props.minimumFontScale).toBeUndefined();
+    }
   });
 
   it.each([

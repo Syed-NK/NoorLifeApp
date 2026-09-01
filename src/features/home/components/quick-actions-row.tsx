@@ -146,13 +146,31 @@ function QuickActionTile({ action, onSelectAction }: QuickActionTileProps) {
       testID={`quick-action-${action.key}`}
     >
       <AppIcon name={action.icon} size={dp(LOCKED.quickAction.icon)} color={sourceTheme.primary} />
-      <HomeText
-        token="quickActionLabel"
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={LOCKED.quickAction.minimumFontScale}
-        style={styles.label}
-      >
+      {/*
+        Wrapped, not shrunk — issue #150.
+
+        This was `numberOfLines={1}` with `adjustsFontSizeToFit`, meant to let `Family Check-in`
+        shrink slightly rather than ellipsise. What it actually did on Android was drop text without
+        an ellipsis, and not even predictably: measured on a Samsung SM-G556B at 384 dp and font
+        scale 1.0, this tile painted `Add` while `Log Wellness` and `Family Check-in` rendered whole
+        in tiles of the same width — a 46.2 dp label cut while a 77.9 dp one beside it was not. The
+        node still reported the full string, so nothing upstream could see it.
+
+        `adjustsFontSizeToFit` is an iOS-first prop; React Native maps it to Android autosizing,
+        whose interaction with a shrink-wrapped row and `ellipsize` is what produces the silent cut.
+        Removing it makes the outcome ordinary text layout again: the label renders at the locked
+        ramp and wraps when it must, which is monotonic — more room or smaller type can only ever
+        show more, never less.
+
+        Two lines is what the shared `ActionTile` already chose for the same problem, on the same
+        reasoning: "Wrapping to a second line is preferable to ellipsising a control's name, and the
+        tile's 44 dp min-height absorbs it." Measured here at 1.5, two lines are 39 dp inside the
+        44 dp the tile already has.
+
+        `LOCKED.quickAction.minimumFontScale` is left in the token file, which is design-locked and
+        may not be edited. Nothing reads it now.
+      */}
+      <HomeText token="quickActionLabel" numberOfLines={2} style={styles.label}>
         {action.label}
       </HomeText>
       {/* Out of flow and above the content band, so the label keeps the exact width and position it
