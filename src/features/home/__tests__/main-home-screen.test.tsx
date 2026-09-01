@@ -154,10 +154,20 @@ describe('Main Home hero card', () => {
   it('renders the tagline in full, on three lines, without truncating it', async () => {
     await renderMainHome();
     await settleReady();
-    // Lock §6 fixes both the text and its line breaks.
+    /*
+      Lock §6 fixes both the text and its line breaks, and the string still carries them — three
+      authored lines at the default text size, exactly as before.
+
+      What is no longer asserted is a `numberOfLines` of three. That cap was the mechanism this case
+      relied on and it is what broke the promise in the title: once #141 restored scaling, the third
+      authored line stopped fitting the fixed 182 dp copy column at 1.5, wrapped onto a fourth
+      rendered line, and the cap dropped it — the hero read `beautifully in` (#151). So the assertion
+      is now the property the name always described: the whole tagline, and nothing able to cut it.
+    */
     const title = screen.getByText('Your family,\nyour day,\nbeautifully in sync.');
-    expect(title.props.numberOfLines).toBe(3);
+    expect(title.props.numberOfLines).toBeUndefined();
     expect(title.props.ellipsizeMode).toBeUndefined();
+    expect(title.props.adjustsFontSizeToFit).not.toBe(true);
   });
 
   it('carries no supporting line and no micro-metrics, matching the reference', async () => {

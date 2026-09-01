@@ -134,10 +134,25 @@ export function HomeHero({ eyebrow, actionLabel, onPressAction, testID }: HomeHe
           {eyebrow}
         </HomeText>
 
+        {/*
+          No line cap — issue #151.
+
+          It was `numberOfLines={3}`, which matched `HERO_HEADLINE` exactly: the copy is authored as
+          three hard-wrapped lines. That cap was right while the authored line count and the *rendered*
+          line count were the same number, and they were only the same while Main Home did not scale.
+          Once #141 restored scaling, the third authored line stopped fitting the fixed 182 dp copy
+          column at a 1.5 text scale, wrapped onto a fourth rendered line, and the cap discarded it —
+          the hero read `beautifully in` on both devices and the sentence never finished.
+
+          Nothing replaces it. A cap of four would fail the same way at the next text size up, and the
+          alternatives are all worse than a taller card: shrinking the type leaves the locked ramp,
+          widening the column runs the copy under the artwork, and a fixed height is the clipping this
+          removes. The card already grows from the *measured* copy column above, so the line it needs
+          has somewhere to go at any scale.
+        */}
         <HomeText
           token="heroHeadline"
           color={neutralColors.surface}
-          numberOfLines={3}
           style={{ marginBottom: dp(LOCKED.hero.titleMarginBottom) }}
           testID={`${testID ?? 'home-hero'}-title`}
         >
