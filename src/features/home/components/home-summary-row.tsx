@@ -109,7 +109,13 @@ export function HomeSummaryRow({
       >
         <View style={styles.headingRow}>
           <AppIcon name="family" size={dp(16)} color={familyTheme.primary} />
-          <HomeText token="summaryTitle" numberOfLines={1} style={styles.headingTitle}>
+          {/*
+            Two lines since #148. `Family Check-in` fitted while Main Home suppressed font scaling;
+            once #141 restored it the half-width heading drew `Family Check…` at a 1.5 text scale.
+            §10 forbids truncating a locked label, and the card carries `minHeight` rather than a
+            fixed height, so the line has somewhere to go.
+          */}
+          <HomeText token="summaryTitle" numberOfLines={2} style={styles.headingTitle}>
             Family Check-in
           </HomeText>
           {isLocked ? (
@@ -122,7 +128,12 @@ export function HomeSummaryRow({
         <HomeText token="summaryValue" numberOfLines={1}>
           {isLocked ? 'Premium' : `${familyCheckIn.completed} of ${familyCheckIn.total}`}
         </HomeText>
-        <HomeText token="progressSupport" color={neutralColors.textSecondary} numberOfLines={1}>
+        {/*
+          Two, which is what the same role already gets on the card beside it — `Included with
+          Premium` has wrapped there all along. This one was pinned to one line and drew
+          `Unlock family conne…` at 1.5 once #141 restored scaling.
+        */}
+        <HomeText token="progressSupport" color={neutralColors.textSecondary} numberOfLines={2}>
           {isLocked ? 'Unlock family connection' : familyCheckIn.statusLabel}
         </HomeText>
 
@@ -174,7 +185,8 @@ export function HomeSummaryRow({
         testID="overall-progress-card"
       >
         <View style={styles.headingRow}>
-          <HomeText token="summaryTitle" numberOfLines={1} style={styles.headingTitle}>
+          {/* The same role as the card beside it, so the same allowance — see #148. */}
+          <HomeText token="summaryTitle" numberOfLines={2} style={styles.headingTitle}>
             Overall Progress
           </HomeText>
           {isLocked ? (
