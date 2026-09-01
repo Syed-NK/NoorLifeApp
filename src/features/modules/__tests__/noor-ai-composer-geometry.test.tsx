@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import { AppProviders } from '@application/providers/app-providers';
 import { answerNoorAIPort } from '@/test-support/noor-ai-fixtures';
@@ -33,11 +34,19 @@ import { NoorAIChatScreen } from '../noor-ai/noor-ai-chat-screen';
 const INPUT = 'noor-ai-chat-composer-input';
 const FIELD = 'noor-ai-chat-composer-field';
 
+/**
+ * Resolves the element's style the way React Native itself does.
+ *
+ * `StyleSheet.flatten` rather than a one-level merge, because a style prop is a *tree*: a primitive
+ * that composes its own base style with the caller's — `AppTextInput` supplies the Poppins face this
+ * way — hands the host an array whose second entry is itself an array. A shallow `Object.assign`
+ * spreads that nested array as an array-like, so every property inside it reads back `undefined` and
+ * the geometry assertions below pass or fail on nothing. Flattening recursively is what makes them
+ * read the values that are actually applied.
+ */
 function flatStyle(testID: string): Record<string, unknown> {
   const style: unknown = screen.getByTestId(testID).props.style;
-  return Array.isArray(style)
-    ? Object.assign({}, ...style.filter(Boolean))
-    : ((style ?? {}) as Record<string, unknown>);
+  return (StyleSheet.flatten(style as never) ?? {}) as Record<string, unknown>;
 }
 
 async function renderComposer() {

@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { modulePalettes } from '@ds/tokens';
+import { AppTextInput } from '@ds/typography/app-text-input';
 import { ModuleText } from '@features/modules/components';
 import { ModuleCard } from '@features/modules/components/module-card';
 import {
@@ -315,7 +316,7 @@ function SearchField({
       ]}
     >
       <AppIcon name="search" size={dp(18)} color={moduleNeutrals.textSecondary} />
-      <TextInput
+      <AppTextInput
         value={value}
         onChangeText={onChange}
         placeholder="Search your counters"
@@ -615,7 +616,7 @@ function PersonalList({
       {personal.map((label) =>
         renaming === label.id ? (
           <View key={label.id} style={[styles.row, { columnGap: dp(8) }]}>
-            <TextInput
+            <AppTextInput
               value={draft}
               onChangeText={onDraft}
               maxLength={MAX_LABEL_LENGTH}
@@ -929,7 +930,7 @@ function NewCounter({
           verified Quran or Hadith content.
         </ModuleText>
         <View style={[styles.row, { columnGap: dp(8) }]}>
-          <TextInput
+          <AppTextInput
             value={value}
             onChangeText={onChange}
             maxLength={MAX_LABEL_LENGTH}

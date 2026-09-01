@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+
+import { AppTextInput, type AppTextInputHandle } from '@ds/typography/app-text-input';
 
 import { entryAuthColors, entryAuthLayout } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
@@ -32,7 +34,7 @@ export type OtpInputProps = {
  */
 export function OtpInput({ value, onChange, invalid = false, onComplete, testID }: OtpInputProps) {
   const { dp, type } = useEntryAuthMetrics();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<AppTextInputHandle>(null);
   const [focused, setFocused] = useState(false);
 
   const digits = value.padEnd(OTP_LENGTH, ' ').slice(0, OTP_LENGTH).split('');
@@ -80,7 +82,7 @@ export function OtpInput({ value, onChange, invalid = false, onComplete, testID 
         })}
       </View>
 
-      <TextInput
+      <AppTextInput
         ref={inputRef}
         value={value}
         onChangeText={handleChange}

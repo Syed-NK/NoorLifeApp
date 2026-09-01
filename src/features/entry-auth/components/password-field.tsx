@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import { Pressable, StyleSheet, View, type TextInputProps } from 'react-native';
+
+import { AppTextInput } from '@ds/typography/app-text-input';
 
 import { entryAuthColors, entryAuthLayout } from '../entry-auth-tokens';
 import { useEntryAuthMetrics } from '../use-entry-auth-metrics';
@@ -58,7 +60,7 @@ export function PasswordField({
           },
         ]}
       >
-        <TextInput
+        <AppTextInput
           style={[styles.input, type('body'), { color: entryAuthColors.textPrimary }]}
           placeholderTextColor={entryAuthColors.textSecondary}
           secureTextEntry={!revealed}

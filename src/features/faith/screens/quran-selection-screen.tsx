@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
 import { modulePalettes } from '@ds/tokens';
+import { AppTextInput } from '@ds/typography/app-text-input';
 import { ModuleText } from '@features/modules/components';
 import { ModuleCard } from '@features/modules/components/module-card';
 import {
@@ -574,7 +575,7 @@ function RangePicker({
           <ModuleText token="caption" numberOfLines={2}>
             Only you see this. NoorLife makes no claim about what you write here.
           </ModuleText>
-          <TextInput
+          <AppTextInput
             value={note}
             onChangeText={setNote}
             maxLength={MAX_SELECTION_LABEL_LENGTH}
@@ -697,7 +698,7 @@ function Stepper({
           onPress={() => onChange(Math.max(1, value - 1))}
           testID={`${testID}-down`}
         />
-        <TextInput
+        <AppTextInput
           value={draft ?? String(value)}
           onChangeText={setDraft}
           onBlur={() => commit(draft ?? String(value))}
@@ -844,7 +845,7 @@ function SearchField({
       ]}
     >
       <AppIcon name="search" size={dp(18)} color={moduleNeutrals.textSecondary} />
-      <TextInput
+      <AppTextInput
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}

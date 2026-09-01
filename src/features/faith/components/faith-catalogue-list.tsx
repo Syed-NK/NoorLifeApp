@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { FlatList, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
 
 import { AppIcon, PressableScale } from '@ds/components';
+import { AppTextInput } from '@ds/typography/app-text-input';
 import { ModuleText } from '@features/modules/components';
 import { useModuleTheme } from '@features/modules/module-context';
 import { moduleLayout, moduleNeutrals } from '@features/modules/module-tokens';
@@ -113,7 +114,7 @@ export function FaithCatalogueList({
           ]}
         >
           <AppIcon name="search" size={dp(18)} color={moduleNeutrals.textSecondary} />
-          <TextInput
+          <AppTextInput
             value={query}
             onChangeText={onQueryChange}
             placeholder={searchPlaceholder}
