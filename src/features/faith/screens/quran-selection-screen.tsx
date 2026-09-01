@@ -432,7 +432,7 @@ function RangePicker({
   readonly initial: QuranSelectionRef;
   readonly onBack: () => void;
 }) {
-  const { dp } = useModuleMetrics();
+  const { dp, type } = useModuleMetrics();
   const router = useRouter();
   const selections = useQuranSelections();
   const tasbih = useTasbih();
@@ -589,6 +589,7 @@ function RangePicker({
                 minHeight: minimumTouchTargetSize(),
                 paddingHorizontal: dp(12),
                 color: moduleNeutrals.textPrimary,
+                fontSize: type('body').fontSize,
               },
             ]}
             testID="faith-quran-selection-note-input"
@@ -668,7 +669,7 @@ function Stepper({
   readonly onChange: (next: number) => void;
   readonly testID: string;
 }) {
-  const { dp } = useModuleMetrics();
+  const { dp, type } = useModuleMetrics();
   const [draft, setDraft] = useState<string | null>(null);
 
   const commit = (text: string): void => {
@@ -714,6 +715,7 @@ function Stepper({
               minHeight: minimumTouchTargetSize(),
               minWidth: dp(56),
               color: moduleNeutrals.textPrimary,
+              fontSize: type('body').fontSize,
             },
           ]}
           testID={`${testID}-input`}
@@ -830,7 +832,7 @@ function SearchField({
   readonly onChange: (text: string) => void;
   readonly placeholder: string;
 }) {
-  const { dp } = useModuleMetrics();
+  const { dp, type } = useModuleMetrics();
 
   return (
     <View
@@ -852,7 +854,14 @@ function SearchField({
         placeholderTextColor={moduleNeutrals.textTertiary}
         /* Says all three ways in, including the one that used not to exist. */
         accessibilityLabel="Search by surah, reference, or words you remember"
-        style={[styles.flex, { color: moduleNeutrals.textPrimary, paddingVertical: dp(10) }]}
+        style={[
+          styles.flex,
+          {
+            color: moduleNeutrals.textPrimary,
+            fontSize: type('body').fontSize,
+            paddingVertical: dp(10),
+          },
+        ]}
         testID="faith-quran-selection-search"
       />
     </View>

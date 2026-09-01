@@ -301,7 +301,7 @@ function SearchField({
   readonly value: string;
   readonly onChange: (text: string) => void;
 }) {
-  const { dp } = useModuleMetrics();
+  const { dp, type } = useModuleMetrics();
 
   return (
     <View
@@ -322,7 +322,14 @@ function SearchField({
         placeholder="Search your counters"
         placeholderTextColor={moduleNeutrals.textTertiary}
         accessibilityLabel="Search your counters"
-        style={[styles.flex, { color: moduleNeutrals.textPrimary, paddingVertical: dp(10) }]}
+        style={[
+          styles.flex,
+          {
+            color: moduleNeutrals.textPrimary,
+            fontSize: type('body').fontSize,
+            paddingVertical: dp(10),
+          },
+        ]}
         testID="faith-dhikr-search"
       />
     </View>
@@ -600,7 +607,7 @@ function PersonalList({
   readonly onChoose: (id: string) => void;
   readonly onRemove: (id: string) => void;
 }) {
-  const { dp } = useModuleMetrics();
+  const { dp, type } = useModuleMetrics();
 
   if (personal.length === 0) {
     return (
@@ -630,6 +637,7 @@ function PersonalList({
                   minHeight: minimumTouchTargetSize(),
                   paddingHorizontal: dp(10),
                   color: moduleNeutrals.textPrimary,
+                  fontSize: type('body').fontSize,
                 },
               ]}
               testID={`faith-dhikr-rename-input-${label.id}`}
@@ -919,7 +927,7 @@ function NewCounter({
   readonly onChange: (text: string) => void;
   readonly onCreate: () => void;
 }) {
-  const { dp } = useModuleMetrics();
+  const { dp, type } = useModuleMetrics();
 
   return (
     <ModuleCard testID="faith-dhikr-new-counter">
@@ -945,6 +953,7 @@ function NewCounter({
                 minHeight: minimumTouchTargetSize(),
                 paddingHorizontal: dp(10),
                 color: moduleNeutrals.textPrimary,
+                fontSize: type('body').fontSize,
               },
             ]}
             testID="faith-dhikr-new-input"
