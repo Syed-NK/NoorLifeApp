@@ -211,3 +211,77 @@ describe('nothing else about these surfaces moved', () => {
     expect(screen.getByText('Premium').props.numberOfLines).toBe(1);
   });
 });
+
+/**
+ * **The hero headline, which lost its last word** — issue #151.
+ *
+ * `HERO_HEADLINE` is authored as three hard-wrapped lines, and the headline was capped at
+ * `numberOfLines={3}` to match. That was right while the authored line count and the *rendered* line
+ * count were the same number — true only while Main Home did not scale. Once #141 restored scaling
+ * the third authored line stopped fitting the fixed 182 dp copy column at a 1.5 text scale, wrapped
+ * onto a fourth rendered line, and the cap discarded it: both devices drew `beautifully in`, and the
+ * sentence the hero exists to say never finished.
+ *
+ * The cap is gone rather than raised. Four would fail the same way one text size later, and every
+ * other lever is worse than a taller card — shrinking the type leaves the locked ramp, widening the
+ * column runs the copy under the artwork, and a fixed height is the clipping being removed. The card
+ * already grows from its *measured* copy column, so the extra line has somewhere to go at any scale.
+ */
+describe('the hero headline can finish its sentence', () => {
+  const HEADLINE = 'Your family,\nyour day,\nbeautifully in sync.';
+
+  it('keeps the authored copy and its line breaks exactly', async () => {
+    await renderHome();
+
+    // Lock §6 fixes the words and the breaks; #151 changed neither.
+    expect(screen.getByTestId('main-home-hero-title').props.children).toBe(HEADLINE);
+  });
+
+  it.each([1, 1.5])(
+    'caps the headline at no number of lines at font scale %s',
+    async (fontScale) => {
+      await renderHome(fontScale);
+
+      const title = screen.getByTestId('main-home-hero-title');
+      /*
+      Any cap reintroduces the defect — three drops the fourth line at 1.5, and four drops the fifth
+      at the text size above it. This is the assertion a "just bump it to 4" edit has to get past.
+    */
+      expect(title.props.numberOfLines).toBeUndefined();
+      expect(title.props.ellipsizeMode).toBeUndefined();
+    },
+  );
+
+  it.each([1, 1.5])(
+    'does not buy the room by shrinking the type at font scale %s',
+    async (fontScale) => {
+      await renderHome(fontScale);
+
+      const title = screen.getByTestId('main-home-hero-title');
+      expect(title.props.adjustsFontSizeToFit).not.toBe(true);
+      expect(title.props.allowFontScaling).not.toBe(false);
+      expect(title.props.maxFontSizeMultiplier ?? null).toBeNull();
+    },
+  );
+
+  it('grows the hero from the measured copy column rather than a fixed height', async () => {
+    await renderHome();
+
+    /*
+      The growth mechanism the fix depends on. A `height` here would crop the extra line straight back
+      off, and the card would report no error while doing it.
+    */
+    const hero = flatten(screen.getByTestId('main-home-hero').props.style);
+    expect(hero.height).toBeUndefined();
+    expect(hero.maxHeight).toBeUndefined();
+    expect(Number(hero.minHeight)).toBeGreaterThanOrEqual(LOCKED.hero.height);
+  });
+
+  it('leaves the eyebrow and the call to action as they were', async () => {
+    await renderHome();
+
+    // Scoped to the headline: the one-line eyebrow above it is not part of #151.
+    expect(screen.getByText('Today with NoorLife').props.numberOfLines).toBe(1);
+    expect(screen.getByText('View My Day')).toBeTruthy();
+  });
+});
