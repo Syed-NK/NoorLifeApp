@@ -1,3 +1,4 @@
+import { memo, useCallback } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { ModuleText } from '@features/modules/components';
@@ -65,7 +66,7 @@ const STATE_SPOKEN: Readonly<Record<Exclude<AyahBlockState, 'idle'>, string>> = 
   focused: 'Ready to play',
 };
 
-export function AyahBlock({
+function AyahBlockRow({
   surahName,
   text,
   translation,
@@ -89,8 +90,15 @@ export function AyahBlock({
    * action sheet closes. See `ayah-focus.ts` for why a registry and not a ref.
    */
   readonly focusRegistry: AyahFocusRegistry;
-  readonly onOpenActions: () => void;
+  /**
+   * Takes the verse it is opening, so one handler can serve every row.
+   *
+   * A per-row closure would be rebuilt on each of the parent renders and defeat the `memo` below
+   * — which is exactly what it used to be, and what made a deep link render 286 rows three times.
+   */
+  readonly onOpenActions: (ayah: number) => void;
 }) {
+  const openActions = useCallback(() => onOpenActions(text.ayah), [onOpenActions, text.ayah]);
   const theme = useModuleTheme();
   const { dp } = useModuleMetrics();
   const fill = state === 'idle' ? null : STATE_FILL[state];
@@ -153,7 +161,7 @@ export function AyahBlock({
           ayah={text.ayah}
           label={`Aya ${text.surah} verse ${text.ayah}${spokenState === '' ? '' : `, ${spokenState}`}`}
           focusRegistry={focusRegistry}
-          onPress={onOpenActions}
+          onPress={openActions}
           testID={`faith-reader-ayah-number-${text.surah}-${text.ayah}`}
         >
           <View
@@ -194,7 +202,7 @@ export function AyahBlock({
         through the interface language.
       */}
       <Pressable
-        onPress={onOpenActions}
+        onPress={openActions}
         accessibilityLabel={`Aya ${text.surah} verse ${text.ayah}`}
         style={({ pressed }) => ({
           /* Always far taller than the floor in practice; stated so it is provable, not argued. */
@@ -300,3 +308,14 @@ function PillTarget({
     </Pressable>
   );
 }
+
+/**
+ * Memoised, because the reader re-renders the whole surah for things no verse displays — issue #55.
+ *
+ * Opening a deep link into Al-Baqarah committed three passes over a 286-row list: the mount, then two
+ * more as the transport settled and pointed itself at the target verse. Nothing a row draws changed
+ * in the second or third pass, and every prop here is a primitive, a value out of the page `useMemo`,
+ * or now a stable callback — so a comparison is cheap and skips the two passes outright. Measured on
+ * the deep-link suite's heaviest case: rendering the rows is over 80% of it (about 815 ms of 1000).
+ */
+export const AyahBlock = memo(AyahBlockRow);

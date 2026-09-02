@@ -1258,6 +1258,23 @@ function ReaderBody({
     [page.verses, appended],
   );
 
+  /*
+    One handler for the whole list, not one closure per row.
+
+    `() => onSelect(item)` gave every row a new prop on every parent render, so memoising the row
+    would have changed nothing. Passing the verse's number instead keeps this stable for as long as
+    the page is, which is what lets `AyahBlock` skip the passes that do not concern it.
+  */
+  const openActionsFor = useCallback(
+    (ayah: number) => {
+      const verse = items.find((entry) => entry.text.ayah === ayah);
+      if (verse !== undefined) {
+        onSelect(verse);
+      }
+    },
+    [items, onSelect],
+  );
+
   /**
    * The cursor of the last page actually loaded. `appended` wins when it exists, because it
    * describes where the reader has got to; the first page's cursor is where it started.
@@ -1343,7 +1360,7 @@ function ReaderBody({
             read={furthestRead >= item.text.ayah}
             hasNote={noteKeys.has(verseKey(item.text.surah, item.text.ayah))}
             focusRegistry={focusRegistry}
-            onOpenActions={() => onSelect(item)}
+            onOpenActions={openActionsFor}
           />
         </View>
       ))}
