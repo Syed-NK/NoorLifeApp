@@ -341,7 +341,7 @@ describe('permission timing', () => {
 
       expect((await mounted.ledger()).count).toBe(0);
       await act(async () => {
-        ui().unmount();
+        await ui().unmount();
         await Promise.resolve();
       });
       view = null;
@@ -481,7 +481,7 @@ describe('nothing reaches the ledger before confirmation', () => {
     const mounted = await capture();
 
     await act(async () => {
-      ui().unmount();
+      await ui().unmount();
       await Promise.resolve();
     });
     view = null;
@@ -917,7 +917,7 @@ describe('the receipt image is not kept unless asked for', () => {
 
     await press(ui().getByTestId('finance-receipts-retain'));
     await act(async () => {
-      ui().unmount();
+      await ui().unmount();
       await Promise.resolve();
     });
     view = null;

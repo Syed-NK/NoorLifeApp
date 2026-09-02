@@ -553,7 +553,7 @@ describe('recovering online authority when the connection comes back', () => {
       makes a press after a `changeText` read stale state in this repo's other suites.
     */
     await act(async () => {
-      view.unmount();
+      await view.unmount();
       await Promise.resolve();
     });
 

@@ -236,7 +236,7 @@ describe('nothing from one case leaks into the next', () => {
     const readsWhileMounted = log.length;
     expect(readsWhileMounted).toBeGreaterThan(2);
 
-    cleanup();
+    await cleanup();
     for (let turn = 0; turn < MAX_SETTLE_TURNS; turn += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
@@ -256,7 +256,7 @@ describe('nothing from one case leaks into the next', () => {
     try {
       const log: string[] = [];
       await mountReader({ surah: '2', ayah: '286' }, log, { stall: true });
-      cleanup();
+      await cleanup();
       for (let turn = 0; turn < MAX_SETTLE_TURNS; turn += 1) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }

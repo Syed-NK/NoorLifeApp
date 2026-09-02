@@ -121,7 +121,7 @@ async function drain(passes = 8): Promise<void> {
 
 async function renderDetail(duaId: string, width = 411, fontScale = 1): Promise<typeof screen> {
   viewport(width, fontScale);
-  render(
+  await render(
     <FaithRepositoryProvider
       repositories={{ ...createMockFaithRepositories(), retainedQuran: retainedDouble() }}
     >

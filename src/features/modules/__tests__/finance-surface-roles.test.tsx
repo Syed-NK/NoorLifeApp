@@ -396,7 +396,7 @@ describe('the rendered Finance home', () => {
         ...[screen.getByTestId(`${moduleId}-home`).props.style].flat(3).filter(Boolean),
       ) as Record<string, unknown>;
       grounds[moduleId] = style.backgroundColor;
-      view.unmount();
+      await view.unmount();
     }
 
     expect(grounds).toEqual({

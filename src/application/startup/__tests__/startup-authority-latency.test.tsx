@@ -424,7 +424,7 @@ describe('a profile that arrives too late is inert', () => {
     await settle();
     const before = samples.length;
 
-    view.unmount();
+    await view.unmount();
     profile.settle({
       id: USER.id,
       full_name: 'Durable Name',

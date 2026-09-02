@@ -549,7 +549,7 @@ describe('a decision belongs to the account it was read for', () => {
 
     /* B has no answer of its own, so B holds — it does not inherit A's. */
     expect(destination()).toBeNull();
-    second.unmount();
+    await second.unmount();
   });
 
   it('does not route account B on a decision already stored for account A', async () => {
@@ -579,7 +579,7 @@ describe('a decision belongs to the account it was read for', () => {
     mockAuth.current = state({}, USER_B);
     mockReadJourney.mockReturnValue(new Promise(() => undefined));
     await act(async () => {
-      view.rerender(tree());
+      await view.rerender(tree());
       await Promise.resolve();
     });
     await settle(STARTUP_PRESENTATION_CEILING_MS + 1000);
@@ -759,7 +759,7 @@ describe('a decision arriving into a different world', () => {
 
     /* A plan decision cannot resurrect a signed-out launch into an authenticated destination. */
     expect(destination()).not.toBe('authenticated_home');
-    view.unmount();
+    await view.unmount();
   });
 
   it('is inert after unmount', async () => {
@@ -770,7 +770,7 @@ describe('a decision arriving into a different world', () => {
     await settle(JOURNEY_READ_TIMEOUT_MS + 500);
     const before = seen.length;
 
-    view.unmount();
+    await view.unmount();
     journey.settleWith({ status: 'completed', planCode: 'free' });
     await settle(STARTUP_PRESENTATION_CEILING_MS);
 

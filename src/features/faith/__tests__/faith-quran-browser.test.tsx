@@ -134,7 +134,7 @@ async function renderBrowser(
   fontScale = 1,
 ): Promise<typeof screen> {
   viewport(width, fontScale);
-  render(
+  await render(
     <FaithRepositoryProvider repositories={{ ...createMockFaithRepositories(), retainedQuran }}>
       <QuranSelectionScreen />
     </FaithRepositoryProvider>,

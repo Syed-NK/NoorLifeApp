@@ -82,7 +82,7 @@ const SEEDED_COORDINATE = TEST_LOCATION_COORDINATE;
 warmUpFirstMount(() => renderLocationScreen());
 
 async function renderLocationScreen() {
-  render(
+  await render(
     <FaithRepositoryProvider repositories={createMockFaithRepositories()}>
       <PrayerLocationScreen />
     </FaithRepositoryProvider>,
@@ -93,7 +93,7 @@ async function renderLocationScreen() {
 }
 
 async function renderPrayerScreen() {
-  render(
+  await render(
     <FaithRepositoryProvider repositories={createMockFaithRepositories()}>
       <PrayerTimesScreen />
     </FaithRepositoryProvider>,
@@ -358,7 +358,7 @@ describe('offline city search', () => {
       },
     };
 
-    render(
+    await render(
       <FaithRepositoryProvider repositories={repositories}>
         <PrayerLocationScreen />
       </FaithRepositoryProvider>,
@@ -825,7 +825,7 @@ describe('the device control cannot be pressed into two native requests', () => 
   */
   it('stays disabled and busy, and starts only one request, while one is in flight', async () => {
     const { count, releaseAll, repositories } = countingRepositories();
-    render(
+    await render(
       <FaithRepositoryProvider repositories={repositories}>
         <PrayerLocationScreen />
       </FaithRepositoryProvider>,

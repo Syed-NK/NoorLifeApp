@@ -79,7 +79,7 @@ describe('the exchange writes the marker before it navigates', () => {
       </AppProviders>,
     );
     await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/auth/set-new-password'));
-    view.rerender(
+    await view.rerender(
       <AppProviders>
         <AuthCallbackScreen port={port} />
       </AppProviders>,

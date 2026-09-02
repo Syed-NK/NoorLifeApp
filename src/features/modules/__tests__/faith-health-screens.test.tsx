@@ -29,12 +29,13 @@ import { faithAddress } from '@/test-support/faith-storage-address';
  * Mounts whole module homes, whose repository sleeps 350 ms per read, and pays a first-mount
  * compile cost of several seconds on a loaded machine. Both are taken out of the tests themselves.
  */
-installMockLatencyTimers(() =>
-  render(
-    <PlannerOwners>
-      <ModuleHomeScreen moduleId="planner" />
-    </PlannerOwners>,
-  ),
+installMockLatencyTimers(
+  async () =>
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="planner" />
+      </PlannerOwners>,
+    ),
 );
 
 describe('the architecture correction holds', () => {

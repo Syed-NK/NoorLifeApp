@@ -460,7 +460,7 @@ describe('a profile response arriving after unmount', () => {
     expect(authorities.at(-1)).toBe('signed-in:online:Signup Name');
     expect(receiptWrites()).toHaveLength(0);
 
-    view.unmount();
+    await view.unmount();
     await settle(HELD_MS * 4);
 
     expect(receiptWrites()).toHaveLength(0);
@@ -474,7 +474,7 @@ describe('a profile response arriving after unmount', () => {
     const view = await launchAndSettle();
     const before = receiptWrites().length;
 
-    view.unmount();
+    await view.unmount();
     profile.settle(profileRow('Durable Name'));
     await settle();
 

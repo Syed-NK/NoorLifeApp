@@ -221,8 +221,8 @@ describe('the timer', () => {
       </StartupPresentationProvider>,
     );
     const mine = created.mock.results[0]?.value as unknown;
-    view.unmount();
-    fresh.unmount();
+    await view.unmount();
+    await fresh.unmount();
     await act(async () => {
       await Promise.resolve();
     });

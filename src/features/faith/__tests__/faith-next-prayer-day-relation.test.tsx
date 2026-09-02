@@ -222,7 +222,7 @@ describe('the relation is the location’s, not the device’s', () => {
 
 describe('the Prayer Times card says it', () => {
   warmUpFirstMount(async () => {
-    render(
+    await render(
       <FaithRepositoryProvider repositories={createMockFaithRepositories()}>
         <PrayerTimesScreen />
       </FaithRepositoryProvider>,
@@ -238,7 +238,7 @@ describe('the Prayer Times card says it', () => {
       prayerTimes: repositoryAt(now),
       calendar: createHijriCalendarRepository(() => now),
     };
-    render(
+    await render(
       <FaithRepositoryProvider repositories={repositories}>
         <PrayerTimesScreen />
       </FaithRepositoryProvider>,
@@ -297,7 +297,7 @@ describe('the Faith Home hero says it too', () => {
       prayerTimes: repositoryAt(now),
       calendar: createHijriCalendarRepository(() => now),
     };
-    render(
+    await render(
       <FaithRepositoryProvider repositories={repositories}>
         <ModuleHomeScreen moduleId="faith" />
       </FaithRepositoryProvider>,

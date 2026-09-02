@@ -316,7 +316,7 @@ describe('replay', () => {
      * The grant was cleared on success, so a fresh mount finds none and shows the expired state. A grant
      * left live would let a second submission act on the same authorisation.
      */
-    view.unmount();
+    await view.unmount();
     const second = await render(
       <AppProviders>
         <SetNewPasswordScreen port={port} />
