@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { withAsyncStorageFailing } from '@/test-support/async-storage-failure';
 
 import {
   CURRENT_ONBOARDING_VERSION,
@@ -127,26 +128,16 @@ describe('the development-only reset', () => {
 
 describe('storage failure', () => {
   it('falls back to showing onboarding rather than skipping it', async () => {
-    const spy = jest
-      .spyOn(AsyncStorage, 'getItem')
-      .mockRejectedValue(new Error('storage unavailable'));
-    try {
+    await withAsyncStorageFailing('getItem', new Error('storage unavailable'), async () => {
       // Wrongly showing onboarding costs three taps; wrongly skipping it leaves a new user on an
       // authentication screen with no idea what the app is.
       expect(await shouldShowOnboarding()).toBe(true);
-    } finally {
-      spy.mockRestore();
-    }
+    });
   });
 
   it('does not throw when completion cannot be written', async () => {
-    const spy = jest
-      .spyOn(AsyncStorage, 'multiSet')
-      .mockRejectedValue(new Error('storage unavailable'));
-    try {
+    await withAsyncStorageFailing('multiSet', new Error('storage unavailable'), async () => {
       await expect(markOnboardingCompleted()).resolves.toBeUndefined();
-    } finally {
-      spy.mockRestore();
-    }
+    });
   });
 });

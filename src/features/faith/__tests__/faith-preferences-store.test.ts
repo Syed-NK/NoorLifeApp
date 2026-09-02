@@ -6,6 +6,7 @@ import {
   subscribeToFaithPreferences,
   updateFaithPreferences,
 } from '../state/faith-preferences-store';
+import { withAsyncStorageFailing } from '@/test-support/async-storage-failure';
 import { faithAddress } from '@/test-support/faith-storage-address';
 
 /**
@@ -105,11 +106,15 @@ describe('faith preferences are one shared snapshot', () => {
 
   it('reports a write the device refused instead of swallowing it', async () => {
     await hydrateFaithPreferences();
-    const setItem = jest
-      .spyOn(AsyncStorage, 'setItem')
-      .mockRejectedValueOnce(new Error('no space'));
 
-    await updateFaithPreferences({ prayerNotificationsEnabled: true });
+    /*
+      Scoped rather than spied: `jest.spyOn(...).mockRestore()` would leave the mock's in-memory
+      store gone for every later case in the file — see `withAsyncStorageFailing`. The rejection is
+      real, and it cannot write, so the store is genuinely untouched by it.
+    */
+    await withAsyncStorageFailing('setItem', new Error('no space'), async () => {
+      await updateFaithPreferences({ prayerNotificationsEnabled: true });
+    });
 
     const snapshot = getFaithPreferencesSnapshot();
     /* The value the user asked for is still what the app shows… */
@@ -117,8 +122,7 @@ describe('faith preferences are one shared snapshot', () => {
     /* …and the fact that it did not reach the device is stated rather than hidden. */
     expect(snapshot.persistenceError).not.toBeNull();
 
-    setItem.mockRestore();
-    /* And a later successful write clears the report. */
+    /* And a later successful write clears the report — and reaches the device. */
     await updateFaithPreferences({ prayerNotificationsEnabled: false });
     expect(getFaithPreferencesSnapshot().persistenceError).toBeNull();
   });
