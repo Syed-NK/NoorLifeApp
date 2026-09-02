@@ -43,6 +43,17 @@
  */
 
 /**
+ * The device store, imported so it can be emptied between tests.
+ *
+ * It is a native boundary like the others, but unlike them it *holds test data*: a suite writes a
+ * bookmark or a reading position and the in-memory mock keeps it for the rest of the worker. That is
+ * a leak no individual suite can be relied on to clean up, and it is not hypothetical — the Faith
+ * Home controls suite had one case seed a reading position and a sibling assert Continue's
+ * no-position destination, so the pair passed only while the seeding case ran second. Issue #158.
+ */
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+/**
  * The one feature import in this file, and it is here because it is a *process-wide* cache.
  *
  * Everything else mocked below is a native boundary. This is not: it is NoorLife's own startup
@@ -1395,7 +1406,17 @@ export function setRouteParams(params: Readonly<Record<string, string | string[]
   Object.assign(mockRouteParams, params);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  /*
+    First, because everything below it is a cache *over* this one.
+
+    Every suite that needs stored state already arranges it — `seedPrayerLocation`,
+    `seedTranslationPreference`, a direct `setItem` through `faithAddress` — so clearing costs those
+    nothing and takes away the ability to pass by inheriting a neighbour's write. Persistence
+    assertions keep their meaning: they arrange, act and read back inside one case, which is where
+    a persistence claim belongs.
+  */
+  await AsyncStorage.clear();
   for (const value of Object.values(mockRouterInstance)) {
     value.mockClear();
   }
