@@ -104,7 +104,7 @@ async function settle() {
 
 /** Mounts the coordinator and lets the startup run settle. */
 async function mount() {
-  const view = render(<ContentSyncCoordinator />);
+  const view = await render(<ContentSyncCoordinator />);
   await settle();
   return view;
 }
@@ -311,5 +311,39 @@ describe('lifecycle disposal', () => {
     expect(isDueBoundaryArmed()).toBe(false);
     await advance(SYNC_INTERVAL * 2);
     expect(mockRun.mock.calls.length).toBe(afterSignOut);
+  });
+
+  /**
+   * A rerender that never reaches the component cannot be mistaken for a disposal — issue #160.
+   *
+   * `mount()` used to call `render(...)` without awaiting it. `render` is async in RNTL 14, so its
+   * `act` scope stayed open and the next `rerender` on that view was **swallowed**: the component
+   * did not re-render, the effect keyed on `ownerKey` never re-ran, and the boundary stayed armed
+   * across a sign-out the coordinator had been told about. Traced directly — one render, one effect
+   * run, no disposal.
+   *
+   * The case above catches that, but only by asserting an *absence*, and an absence is what a
+   * swallowed rerender also produces once the state happens to be clean. This one requires two
+   * rerenders to land and asserts a transition in **both** directions, so a dropped rerender fails
+   * it whichever end it is dropped at, in any order, at any seed.
+   */
+  it('re-arms after a sign-out and a sign-in, so a dropped rerender cannot pass', async () => {
+    const view = await mount();
+    expect(isDueBoundaryArmed()).toBe(true);
+
+    mockAuthStatus = 'signed-out';
+    mockAuthUserId = null;
+    await rerender(view);
+    expect(isDueBoundaryArmed()).toBe(false);
+
+    mockAuthStatus = 'signed-in';
+    mockAuthUserId = 'user-1';
+    await rerender(view);
+    expect(isDueBoundaryArmed()).toBe(true);
+
+    /* And the re-armed boundary is the new session`s, not a survivor of the old one. */
+    const afterReturn = mockRun.mock.calls.length;
+    await advance(SYNC_INTERVAL + 1000);
+    expect(mockRun.mock.calls.length).toBeGreaterThan(afterReturn);
   });
 });
