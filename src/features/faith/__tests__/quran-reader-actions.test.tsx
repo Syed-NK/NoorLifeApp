@@ -173,14 +173,14 @@ function flatten(style: unknown): Record<string, number | string | undefined> {
  * what makes the sequence the one a user performs.
  */
 async function typeInto(view: typeof screen, testID: string, text: string): Promise<void> {
-  fireEvent.changeText(await view.findByTestId(testID), text);
+  await fireEvent.changeText(await view.findByTestId(testID), text);
   await waitFor(() => expect(String(view.getByTestId(testID).props.value)).toBe(text));
 }
 
 /** Plays a verse and reports the platform playing it, which is what `active` means. */
 async function playAndReport(view: typeof screen, ayah: number): Promise<void> {
-  fireEvent.press(await view.findByTestId(`faith-reader-ayah-1-${ayah}`));
-  fireEvent.press(await view.findByTestId('faith-reader-action-play'));
+  await fireEvent.press(await view.findByTestId(`faith-reader-ayah-1-${ayah}`));
+  await fireEvent.press(await view.findByTestId('faith-reader-action-play'));
   await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
   mockPlaylist.setStatus({ playing: true, isLoaded: true });
   await view.findByTestId(`faith-reader-ayah-active-1-${ayah}`);
@@ -269,7 +269,7 @@ describe('there are no permanent action icons beside an ayah', () => {
 describe('any part of an ayah opens its actions', () => {
   it('opens from the number pill', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-number-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-number-1-1'));
 
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
     // The sheet names the verse it belongs to, in the same words the pill uses.
@@ -278,7 +278,7 @@ describe('any part of an ayah opens its actions', () => {
 
   it('opens the same sheet from the Arabic', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-arabic-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-arabic-1-1'));
 
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
     expect(within(sheet).getByTestId('faith-reader-action-play')).toBeTruthy();
@@ -286,7 +286,7 @@ describe('any part of an ayah opens its actions', () => {
 
   it('opens the same sheet from the translation', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-translation-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-translation-1-1'));
 
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
     expect(within(sheet).getByTestId('faith-reader-action-play')).toBeTruthy();
@@ -294,7 +294,7 @@ describe('any part of an ayah opens its actions', () => {
 
   it('names the selected aya and its surah in the sheet’s own title', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
 
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
     expect(within(sheet).getByText('Aya 1:2')).toBeTruthy();
@@ -303,7 +303,7 @@ describe('any part of an ayah opens its actions', () => {
 
   it('marks the selected aya behind the overlay, without claiming it is being recited', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
 
     const marked = await view.findByTestId('faith-reader-ayah-selected-1-2');
     expect(flatten(marked.props.style).backgroundColor).toBe(readerAyahColors.selected);
@@ -315,7 +315,7 @@ describe('any part of an ayah opens its actions', () => {
 describe('the sheet offers exactly the seven approved actions', () => {
   it('shows them in the specified order, and nothing else', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
     const rendered = view
@@ -327,7 +327,7 @@ describe('the sheet offers exactly the seven approved actions', () => {
 
   it('carries Learn and Memorize nowhere, because neither has an implementation', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
     expect(view.queryByText(/^Learn$/)).toBeNull();
@@ -336,7 +336,7 @@ describe('the sheet offers exactly the seven approved actions', () => {
 
   it('gives every row a label, a hit target and a visible pressed state', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
     for (const key of AYAH_ACTION_KEYS) {
@@ -350,7 +350,7 @@ describe('the sheet offers exactly the seven approved actions', () => {
 
   it('shows a pressed state, and returns to rest when the finger lifts', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
     // One row is enough: they are all the same component, and pressing all seven in sequence spends
@@ -358,16 +358,16 @@ describe('the sheet offers exactly the seven approved actions', () => {
     const row = () => view.getByTestId('faith-reader-action-bookmark');
     const resting = flatten(row().props.style).backgroundColor;
 
-    fireEvent(row(), 'pressIn');
+    await fireEvent(row(), 'pressIn');
     await waitFor(() => expect(flatten(row().props.style).backgroundColor).not.toBe(resting));
 
-    fireEvent(row(), 'pressOut');
+    await fireEvent(row(), 'pressOut');
     await waitFor(() => expect(flatten(row().props.style).backgroundColor).toBe(resting));
   });
 
   it('scrolls, so a large font scale cannot hide the last actions', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
 
     expect(await view.findByTestId('faith-reader-sheet-scroll')).toBeTruthy();
   });
@@ -380,30 +380,30 @@ describe('the sheet offers exactly the seven approved actions', () => {
 describe('the sheet closes the four ways it must', () => {
   it('closes on a tap outside it', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
-    fireEvent.press(view.getByTestId('faith-reader-ayah-actions-scrim'));
+    await fireEvent.press(view.getByTestId('faith-reader-ayah-actions-scrim'));
     await waitFor(() => expect(view.queryByTestId('faith-reader-ayah-actions')).toBeNull());
   });
 
   it('closes on Android Back', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     const modal = await view.findByTestId('faith-reader-ayah-actions-modal');
 
     // The hardware button reaches a `Modal` as `onRequestClose` and nothing else, so this is the
     // gesture rather than a stand-in for it.
-    fireEvent(modal, 'requestClose');
+    await fireEvent(modal, 'requestClose');
     await waitFor(() => expect(view.queryByTestId('faith-reader-ayah-actions')).toBeNull());
   });
 
   it('closes on its own close button', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
-    fireEvent.press(view.getByTestId('faith-reader-sheet-close'));
+    await fireEvent.press(view.getByTestId('faith-reader-sheet-close'));
     await waitFor(() => expect(view.queryByTestId('faith-reader-ayah-actions')).toBeNull());
   });
 
@@ -415,7 +415,7 @@ describe('the sheet closes the four ways it must', () => {
       applies on release really does dismiss on both a long drag and a short flick.
     */
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     const sheet = await view.findByTestId('faith-reader-ayah-actions');
 
     expect(findPanHandlers(sheet).onResponderRelease).toBeInstanceOf(Function);
@@ -439,10 +439,10 @@ describe('the sheet closes the four ways it must', () => {
 
     try {
       const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-      fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+      await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
       await view.findByTestId('faith-reader-ayah-actions');
 
-      fireEvent.press(view.getByTestId('faith-reader-sheet-close'));
+      await fireEvent.press(view.getByTestId('faith-reader-sheet-close'));
       await waitFor(() => expect(focus).toHaveBeenCalledWith(2));
     } finally {
       spy.mockRestore();
@@ -476,8 +476,8 @@ function findPanHandlers(node: {
 describe('Play', () => {
   it('points the one global player at the selected aya and starts it', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-play'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-play'));
 
     await waitFor(() => expect(mockPlaylist.currentUri()).toContain('s1-a2'));
     // The label, the audio and the highlight are three views of one selection.
@@ -495,18 +495,18 @@ describe('Play', () => {
     await view.findByTestId('faith-reader-player');
     expect(view.getAllByTestId('faith-reader-player')).toHaveLength(1);
 
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
     expect(view.getAllByTestId('faith-reader-player')).toHaveLength(1);
 
-    fireEvent.press(view.getByTestId('faith-reader-action-play'));
+    await fireEvent.press(view.getByTestId('faith-reader-action-play'));
     await waitFor(() => expect(mockPlaylist.currentUri()).not.toBeNull());
     expect(view.getAllByTestId('faith-reader-player')).toHaveLength(1);
   });
 
   it('does not autoplay merely because the sheet opened', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
     await view.findByTestId('faith-reader-ayah-actions');
 
     await new Promise((resolve) => setTimeout(resolve, 60));
@@ -518,8 +518,8 @@ describe('Play', () => {
 describe('Read', () => {
   it('records the aya once, however many times it is pressed', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-read'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-read'));
     await view.findByTestId('faith-reader-success');
 
     await waitFor(async () => expect((await readReadingLog()).furthest['1']).toBe(2));
@@ -527,7 +527,7 @@ describe('Read', () => {
 
     // Pressed again on the same verse. `applyReading` returns `added: 0`, so nothing is written and
     // the day's count cannot be inflated by repetition.
-    fireEvent.press(view.getByTestId('faith-reader-action-read'));
+    await fireEvent.press(view.getByTestId('faith-reader-action-read'));
     await waitFor(() =>
       expect(String(view.getByTestId('faith-reader-success').props.accessibilityLabel)).toMatch(
         /already recorded as read/i,
@@ -538,7 +538,7 @@ describe('Read', () => {
 
   it('records nothing from opening the sheet', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     await view.findByTestId('faith-reader-ayah-actions');
     await new Promise((resolve) => setTimeout(resolve, 60));
 
@@ -550,8 +550,8 @@ describe('Read', () => {
 describe('Bookmark', () => {
   it('toggles, persists, and renames itself to Remove bookmark', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-bookmark'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-bookmark'));
 
     await waitFor(() => expect(view.getByText('Remove bookmark')).toBeTruthy());
     const stored = JSON.parse(
@@ -562,7 +562,7 @@ describe('Bookmark', () => {
     // The surah's name travels with it, so the Bookmarks screen can cite it without a lookup.
     expect(stored[0]?.label).toContain('Al-Fatihah');
 
-    fireEvent.press(view.getByTestId('faith-reader-action-bookmark'));
+    await fireEvent.press(view.getByTestId('faith-reader-action-bookmark'));
     await waitFor(() => expect(view.getByText('Bookmark')).toBeTruthy());
     expect(
       JSON.parse((await AsyncStorage.getItem(faithAddress('bookmarks'))) as string),
@@ -573,11 +573,11 @@ describe('Bookmark', () => {
 describe('Add note', () => {
   it('creates, edits and deletes against the verse rather than a list position', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-note'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-note'));
 
     await typeInto(view, 'faith-reader-note-input', 'Read this at Fajr.');
-    fireEvent.press(view.getByTestId('faith-reader-note-save'));
+    await fireEvent.press(view.getByTestId('faith-reader-note-save'));
 
     await waitFor(async () => expect(await readNotes()).toHaveLength(1));
     // The identity is the verse. An index would silently re-attach this to a different ayah the
@@ -585,31 +585,31 @@ describe('Add note', () => {
     expect((await readNotes())[0]).toMatchObject({ surah: 1, ayah: 2, text: 'Read this at Fajr.' });
 
     // Edit.
-    fireEvent.press(await view.findByTestId('faith-reader-action-note'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-note'));
     await typeInto(view, 'faith-reader-note-input', 'Read this at Isha.');
-    fireEvent.press(view.getByTestId('faith-reader-note-save'));
+    await fireEvent.press(view.getByTestId('faith-reader-note-save'));
     await waitFor(async () => expect((await readNotes())[0]?.text).toBe('Read this at Isha.'));
     expect(await readNotes()).toHaveLength(1);
 
     // Delete.
-    fireEvent.press(await view.findByTestId('faith-reader-action-note'));
-    fireEvent.press(await view.findByTestId('faith-reader-note-delete'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-note'));
+    await fireEvent.press(await view.findByTestId('faith-reader-note-delete'));
     await waitFor(async () => expect(await readNotes()).toHaveLength(0));
   });
 
   it('keeps one verse’s note off another verse', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-note'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-note'));
     await typeInto(view, 'faith-reader-note-input', 'On the first verse.');
-    fireEvent.press(view.getByTestId('faith-reader-note-save'));
+    await fireEvent.press(view.getByTestId('faith-reader-note-save'));
     await waitFor(async () => expect(await readNotes()).toHaveLength(1));
 
-    fireEvent.press(view.getByTestId('faith-reader-sheet-close'));
+    await fireEvent.press(view.getByTestId('faith-reader-sheet-close'));
     await waitFor(() => expect(view.queryByTestId('faith-reader-ayah-actions')).toBeNull());
 
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-note'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-note'));
     const input = await view.findByTestId('faith-reader-note-input');
     await waitFor(() => expect(String(input.props.value)).toBe(''));
   });
@@ -618,11 +618,11 @@ describe('Add note', () => {
 describe('Add to playlist', () => {
   it('creates a playlist, stores the verse and the reciter, and refuses a duplicate', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-playlist'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-playlist'));
 
     await typeInto(view, 'faith-reader-playlist-name', 'Morning');
-    fireEvent.press(view.getByTestId('faith-reader-playlist-create'));
+    await fireEvent.press(view.getByTestId('faith-reader-playlist-create'));
 
     await waitFor(async () => expect(await readPlaylists()).toHaveLength(1));
     const [playlist] = await readPlaylists();
@@ -634,7 +634,7 @@ describe('Add to playlist', () => {
 
     // Adding it again writes nothing and says so, rather than appending it twice or silently
     // doing nothing — the third outcome the storage layer exists to report.
-    fireEvent.press(view.getByTestId(`faith-reader-playlist-${playlist?.id}`));
+    await fireEvent.press(view.getByTestId(`faith-reader-playlist-${playlist?.id}`));
     await waitFor(() =>
       expect(String(view.getByTestId('faith-reader-playlist-status').props.children)).toMatch(
         /already in Morning/i,
@@ -647,8 +647,8 @@ describe('Add to playlist', () => {
 describe('Ask Noor AI', () => {
   it('opens Noor AI with the verse as a route reference, never as a copy of the text', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-ask-noor-ai'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-ask-noor-ai'));
 
     expect(mockRouter.push).toHaveBeenCalledWith(faithAiHref(1, 2));
     // A pair of integers. Nothing that could carry, corrupt or become an unattributed verse.
@@ -700,7 +700,7 @@ describe('Ask Noor AI', () => {
     );
 
     await typeInto(screen, 'faith-ai-input', 'What does this mean?');
-    fireEvent.press(screen.getByTestId('faith-ai-send'));
+    await fireEvent.press(screen.getByTestId('faith-ai-send'));
 
     await waitFor(() => expect(asked).toHaveLength(1));
     expect(asked[0]?.context).toEqual({ kind: 'ayah', surah: 1, ayah: 2 });
@@ -784,8 +784,8 @@ describe('Share', () => {
 
     try {
       const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
-      fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
-      fireEvent.press(await view.findByTestId('faith-reader-action-share'));
+      await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-1'));
+      await fireEvent.press(await view.findByTestId('faith-reader-action-share'));
 
       await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
       const message = String((share.mock.calls[0]?.[0] as { message: string }).message);

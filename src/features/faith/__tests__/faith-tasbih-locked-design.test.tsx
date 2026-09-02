@@ -154,7 +154,7 @@ describe('counting', () => {
     const view = await renderTasbih();
     expect(countOf(view)).toBe(0);
 
-    fireEvent.press(view.getByTestId('faith-tasbih-count'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-count'));
     await settle();
 
     expect(countOf(view)).toBe(1);
@@ -191,7 +191,7 @@ describe('counting', () => {
 
     // Drained between presses, for the `act` reason recorded above.
     for (let tap = 0; tap < 3; tap += 1) {
-      fireEvent.press(stage);
+      await fireEvent.press(stage);
       await settle(380);
     }
 
@@ -203,11 +203,11 @@ describe('counting', () => {
     const stage = view.getByTestId('faith-tasbih-count');
 
     // Drained between events: each `fireEvent` enters an `act` scope, and this project has none.
-    fireEvent(stage, 'touchStart', { nativeEvent: { pageX: 200, pageY: 200 } });
+    await fireEvent(stage, 'touchStart', { nativeEvent: { pageX: 200, pageY: 200 } });
     await settle(60);
-    fireEvent(stage, 'touchMove', { nativeEvent: { pageX: 200, pageY: 600 } });
+    await fireEvent(stage, 'touchMove', { nativeEvent: { pageX: 200, pageY: 600 } });
     await settle(60);
-    fireEvent.press(stage);
+    await fireEvent.press(stage);
     await settle();
 
     expect(countOf(view)).toBe(0);
@@ -218,11 +218,11 @@ describe('counting', () => {
     const stage = view.getByTestId('faith-tasbih-count');
 
     // A real tap is never perfectly still, least of all on a control used with the eyes shut.
-    fireEvent(stage, 'touchStart', { nativeEvent: { pageX: 200, pageY: 200 } });
+    await fireEvent(stage, 'touchStart', { nativeEvent: { pageX: 200, pageY: 200 } });
     await settle(60);
-    fireEvent(stage, 'touchMove', { nativeEvent: { pageX: 203, pageY: 202 } });
+    await fireEvent(stage, 'touchMove', { nativeEvent: { pageX: 203, pageY: 202 } });
     await settle(60);
-    fireEvent.press(stage);
+    await fireEvent.press(stage);
     await settle();
 
     expect(countOf(view)).toBe(1);
@@ -230,9 +230,9 @@ describe('counting', () => {
 
   it('persists the count across a relaunch', async () => {
     const view = await renderTasbih();
-    fireEvent.press(view.getByTestId('faith-tasbih-count'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-count'));
     await settle(380);
-    fireEvent.press(view.getByTestId('faith-tasbih-count'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-count'));
     await settle(380);
     expect(countOf(view)).toBe(2);
 
@@ -296,11 +296,11 @@ describe('rounds and undo', () => {
 
   it('keeps the count when the target changes', async () => {
     const view = await renderTasbih();
-    fireEvent.press(view.getByTestId('faith-tasbih-count'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-count'));
     await settle(600);
     expect(countOf(view)).toBe(1);
 
-    fireEvent.press(view.getByTestId('faith-tasbih-target-up'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-target-up'));
     await settle(600);
 
     // Repetitions already made were real; adjusting an intention does not undo them.
@@ -331,11 +331,11 @@ describe('haptics', () => {
     const toggle = view.getByTestId('faith-tasbih-haptics-switch');
     expect(toggle.props.value).toBe(true);
 
-    fireEvent(toggle, 'valueChange', false);
+    await fireEvent(toggle, 'valueChange', false);
     await settle(500);
 
     // Counting is unaffected by the preference: feedback is a courtesy, not a precondition.
-    fireEvent.press(view.getByTestId('faith-tasbih-count'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-count'));
     await settle(600);
     expect(countOf(view)).toBe(1);
   });
@@ -403,7 +403,7 @@ describe('bead material', () => {
       .props.source;
     expect(before).toBe(stagePlate('walnut'));
 
-    fireEvent.press(view.getByTestId('faith-tasbih-material-green-jade'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-material-green-jade'));
     await settle(600);
 
     // The stage is the whole picture, not a tint: choosing jade swaps the plate outright.
@@ -419,7 +419,7 @@ describe('bead material', () => {
     const view = await renderTasbih();
     await view.findByTestId('faith-tasbih-materials');
 
-    fireEvent.press(view.getByTestId('faith-tasbih-material-sandalwood'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-material-sandalwood'));
     await settle(700);
 
     const stored = await AsyncStorage.getItem(faithAddress('preferences'));
@@ -430,7 +430,7 @@ describe('bead material', () => {
   it('restores the chosen material after a relaunch', async () => {
     const view = await renderTasbih();
     await view.findByTestId('faith-tasbih-materials');
-    fireEvent.press(view.getByTestId('faith-tasbih-material-black-onyx'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-material-black-onyx'));
     await settle(700);
 
     await cleanup();
@@ -643,7 +643,7 @@ describe('the control card matches the locked design', () => {
       module spends most of its code refusing to make. The label states the action instead.
     */
     expect(String(change.props.accessibilityLabel)).toMatch(/choose what to count/i);
-    fireEvent.press(change);
+    await fireEvent.press(change);
     await settle(200);
 
     // Navigation is the selector's own screen; the counting screen never grows an inline list.
@@ -715,7 +715,7 @@ describe('the decorative layer', () => {
   it('does not stop the stage beneath it from counting', async () => {
     const view = await renderTasbih();
 
-    fireEvent.press(view.getByTestId('faith-tasbih-count'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-count'));
     await settle();
 
     expect(countOf(view)).toBe(1);
@@ -745,7 +745,7 @@ describe('layout direction', () => {
       I18nManager.forceRTL(true);
 
       const view = await renderTasbih();
-      fireEvent.press(view.getByTestId('faith-tasbih-count'));
+      await fireEvent.press(view.getByTestId('faith-tasbih-count'));
       await settle(600);
 
       /*

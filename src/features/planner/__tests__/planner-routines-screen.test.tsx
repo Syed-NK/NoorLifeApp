@@ -74,14 +74,14 @@ async function renderRoutines(repo: PlannerRoutineRepository) {
 
 async function press(testID: string): Promise<void> {
   await act(async () => {
-    fireEvent.press(screen.getByTestId(testID));
+    void fireEvent.press(screen.getByTestId(testID));
     await Promise.resolve();
   });
 }
 
 async function type(testID: string, value: string): Promise<void> {
   await act(async () => {
-    fireEvent.changeText(screen.getByTestId(testID), value);
+    void fireEvent.changeText(screen.getByTestId(testID), value);
     await Promise.resolve();
   });
 }

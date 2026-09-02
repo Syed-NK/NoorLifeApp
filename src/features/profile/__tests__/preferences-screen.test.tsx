@@ -183,8 +183,8 @@ describe('notifications', () => {
     const allow = await screen.findByTestId('preferences-notifications-allow');
     // Two presses inside one tick, while the first request is still open.
     await act(async () => {
-      fireEvent.press(allow);
-      fireEvent.press(allow);
+      void fireEvent.press(allow);
+      void fireEvent.press(allow);
     });
 
     await waitFor(() => expect(port.requests).toHaveBeenCalledTimes(1));

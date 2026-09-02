@@ -181,7 +181,7 @@ describe('defect 1 — the filter sheet must clear the system navigation region'
     'renders the panel with the inset applied and the options scrollable at font %s',
     async (fontScale) => {
       const view = await renderCategory('travel', fontScale);
-      fireEvent.press(view.getByTestId('faith-dua-category-filter'));
+      await fireEvent.press(view.getByTestId('faith-dua-category-filter'));
       await drain();
 
       const panel = flatten(view.getByTestId('faith-dua-category-filter-panel').props.style);
@@ -206,7 +206,7 @@ describe('defect 1 — the filter sheet must clear the system navigation region'
 
   it.each(SCALES)('keeps every option present and pressable at font %s', async (fontScale) => {
     const view = await renderCategory('travel', fontScale);
-    fireEvent.press(view.getByTestId('faith-dua-category-filter'));
+    await fireEvent.press(view.getByTestId('faith-dua-category-filter'));
     await drain();
 
     /*
@@ -230,7 +230,7 @@ describe('defect 1 — the filter sheet must clear the system navigation region'
       expect(row.minHeight).toBeGreaterThanOrEqual(moduleLayout.minTouchTarget);
     }
 
-    fireEvent.press(view.getByTestId('faith-dua-category-filter-sunnah'));
+    await fireEvent.press(view.getByTestId('faith-dua-category-filter-sunnah'));
     await drain();
     expect(String(view.getByTestId('faith-dua-category-filter').props.accessibilityLabel)).toBe(
       'Filter. Currently Sunnah.',
@@ -239,7 +239,7 @@ describe('defect 1 — the filter sheet must clear the system navigation region'
 
   it('keeps the scrim dismiss and the accessibility order intact', async () => {
     const view = await renderCategory('travel');
-    fireEvent.press(view.getByTestId('faith-dua-category-filter'));
+    await fireEvent.press(view.getByTestId('faith-dua-category-filter'));
     await drain();
 
     const scrim = view.getByTestId('faith-dua-category-filter-scrim');
@@ -248,7 +248,7 @@ describe('defect 1 — the filter sheet must clear the system navigation region'
 
     /* Heading first, then the options in their declared order — the scroll region changes neither. */
     expect(view.getByText('Show')).toBeTruthy();
-    fireEvent.press(scrim);
+    await fireEvent.press(scrim);
     await drain();
     expect(view.queryByTestId('faith-dua-category-filter-options')).toBeNull();
   });
@@ -371,7 +371,7 @@ describe('defect 3 — a pressable card must reach the minimum touch target', ()
     expect(typeof attribution.props.onLayout).toBe('function');
 
     /* The height the Samsung measured, fed through the component's own layout event. */
-    fireEvent(attribution, 'layout', { nativeEvent: { layout: { width: 352, height: 37 } } });
+    await fireEvent(attribution, 'layout', { nativeEvent: { layout: { width: 352, height: 37 } } });
     await drain();
 
     const slop = view.getByTestId('faith-dua-category-attribution').props.hitSlop;
@@ -384,7 +384,7 @@ describe('defect 3 — a pressable card must reach the minimum touch target', ()
     const view = await renderCategory('travel');
     const attribution = view.getByTestId('faith-dua-category-attribution');
 
-    fireEvent(attribution, 'layout', { nativeEvent: { layout: { width: 352, height: 60 } } });
+    await fireEvent(attribution, 'layout', { nativeEvent: { layout: { width: 352, height: 60 } } });
     await drain();
 
     const slop = view.getByTestId('faith-dua-category-attribution').props.hitSlop;
@@ -396,7 +396,7 @@ describe('defect 3 — a pressable card must reach the minimum touch target', ()
   it('does not enlarge the drawn card', async () => {
     const view = await renderCategory('travel');
     const attribution = view.getByTestId('faith-dua-category-attribution');
-    fireEvent(attribution, 'layout', { nativeEvent: { layout: { width: 352, height: 37 } } });
+    await fireEvent(attribution, 'layout', { nativeEvent: { layout: { width: 352, height: 37 } } });
     await drain();
 
     const style = flatten(view.getByTestId('faith-dua-category-attribution').props.style);

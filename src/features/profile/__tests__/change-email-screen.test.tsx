@@ -305,8 +305,8 @@ describe('requesting the change', () => {
     // swallow the second, not the field having been cleared by the first.
     const submit = screen.getByTestId('change-email-submit');
     await act(async () => {
-      fireEvent.press(submit);
-      fireEvent.press(submit);
+      void fireEvent.press(submit);
+      void fireEvent.press(submit);
     });
 
     await waitFor(() => expect(port.requests).toHaveBeenCalledTimes(1));
@@ -321,8 +321,8 @@ describe('requesting the change', () => {
 
     await fireEvent.changeText(screen.getByTestId('change-email-new'), 'new@example.com');
     await act(async () => {
-      fireEvent.press(screen.getByTestId('change-email-submit'));
-      fireEvent(screen.getByTestId('change-email-new'), 'submitEditing');
+      void fireEvent.press(screen.getByTestId('change-email-submit'));
+      void fireEvent(screen.getByTestId('change-email-new'), 'submitEditing');
     });
 
     await waitFor(() => expect(port.requests).toHaveBeenCalledTimes(1));

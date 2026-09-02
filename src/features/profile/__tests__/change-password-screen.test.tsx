@@ -346,9 +346,9 @@ describe('submission', () => {
     // validation instead — the right count for the wrong reason.
     const submit = screen.getByTestId('change-password-submit');
     await act(async () => {
-      fireEvent.press(submit);
-      fireEvent.press(submit);
-      fireEvent.press(submit);
+      void fireEvent.press(submit);
+      void fireEvent.press(submit);
+      void fireEvent.press(submit);
     });
 
     await waitFor(() => expect(port.updates).toHaveBeenCalledTimes(1));

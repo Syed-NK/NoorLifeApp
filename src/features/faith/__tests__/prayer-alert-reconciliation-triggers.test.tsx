@@ -79,7 +79,7 @@ describe('changing a calculation input reschedules the alerts derived from it', 
     */
     expect(notifications.calls().filter((call) => call.startsWith('schedule'))).toHaveLength(0);
 
-    fireEvent.press(await view.findByTestId('faith-preference-method-umm-al-qura'));
+    await fireEvent.press(await view.findByTestId('faith-preference-method-umm-al-qura'));
     for (let turn = 0; turn < 8; turn += 1) {
       await settle();
     }
@@ -96,7 +96,7 @@ describe('changing a calculation input reschedules the alerts derived from it', 
     const notifications = createFakeNotificationPort({ permission: 'granted' });
     const view = await renderPreferences(notifications);
 
-    fireEvent.press(await view.findByTestId('faith-preferences-translation-row'));
+    await fireEvent.press(await view.findByTestId('faith-preferences-translation-row'));
     for (let turn = 0; turn < 8; turn += 1) {
       await settle();
     }

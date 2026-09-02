@@ -153,23 +153,23 @@ function coloursIn(root: TestElement): readonly string[] {
 }
 
 async function openForm() {
-  fireEvent.press(await screen.findByTestId('faith-prayer-location-mode-coordinates'));
+  await fireEvent.press(await screen.findByTestId('faith-prayer-location-mode-coordinates'));
   await settle();
 }
 
 /** Fills valid coordinates and previews them, which is what enables Save. */
 async function previewDubai() {
-  fireEvent.changeText(
+  await fireEvent.changeText(
     await screen.findByTestId('faith-prayer-location-latitude-input'),
     '25.2048',
   );
   await settle();
-  fireEvent.changeText(
+  await fireEvent.changeText(
     await screen.findByTestId('faith-prayer-location-longitude-input'),
     '55.2708',
   );
   await settle();
-  fireEvent.press(await screen.findByTestId('faith-prayer-location-preview-action'));
+  await fireEvent.press(await screen.findByTestId('faith-prayer-location-preview-action'));
   await settle();
 }
 
@@ -283,17 +283,17 @@ describe('Save is gated on a current preview', () => {
   it('is enabled once a preview resolves', async () => {
     await renderScreen();
     await openForm();
-    fireEvent.changeText(
+    await fireEvent.changeText(
       await screen.findByTestId('faith-prayer-location-latitude-input'),
       '25.2048',
     );
     await settle();
-    fireEvent.changeText(
+    await fireEvent.changeText(
       await screen.findByTestId('faith-prayer-location-longitude-input'),
       '55.2708',
     );
     await settle();
-    fireEvent.press(await screen.findByTestId('faith-prayer-location-preview-action'));
+    await fireEvent.press(await screen.findByTestId('faith-prayer-location-preview-action'));
     await settle();
 
     expect(
@@ -307,22 +307,25 @@ describe('Save is gated on a current preview', () => {
   it('invalidates the preview when a coordinate is edited, and disables Save again', async () => {
     await renderScreen();
     await openForm();
-    fireEvent.changeText(
+    await fireEvent.changeText(
       await screen.findByTestId('faith-prayer-location-latitude-input'),
       '25.2048',
     );
     await settle();
-    fireEvent.changeText(
+    await fireEvent.changeText(
       await screen.findByTestId('faith-prayer-location-longitude-input'),
       '55.2708',
     );
     await settle();
-    fireEvent.press(await screen.findByTestId('faith-prayer-location-preview-action'));
+    await fireEvent.press(await screen.findByTestId('faith-prayer-location-preview-action'));
     await settle();
     expect(screen.queryByTestId('faith-prayer-location-preview')).toBeTruthy();
 
     // One digit changes, and the resolved timezone on screen is no longer about these numbers.
-    fireEvent.changeText(await screen.findByTestId('faith-prayer-location-latitude-input'), '25.3');
+    await fireEvent.changeText(
+      await screen.findByTestId('faith-prayer-location-latitude-input'),
+      '25.3',
+    );
     await settle();
 
     expect(screen.queryByTestId('faith-prayer-location-preview')).toBeNull();
@@ -334,12 +337,12 @@ describe('Save is gated on a current preview', () => {
   it('leaves the saved location untouched when Cancel is pressed', async () => {
     await renderScreen();
     await openForm();
-    fireEvent.changeText(
+    await fireEvent.changeText(
       await screen.findByTestId('faith-prayer-location-latitude-input'),
       '25.2048',
     );
     await settle();
-    fireEvent.press(await screen.findByTestId('faith-prayer-location-cancel'));
+    await fireEvent.press(await screen.findByTestId('faith-prayer-location-cancel'));
     await settle();
 
     expect((await readStoredLocation())?.coordinate).toEqual(TEST_LOCATION_COORDINATE);

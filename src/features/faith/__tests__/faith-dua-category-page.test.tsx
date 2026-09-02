@@ -257,7 +257,7 @@ describe('the search field and the filter control are on every category', () => 
     const view = await renderCategory('my-quran-selections');
     expect(view.queryByTestId('faith-dua-category-search-clear')).toBeNull();
 
-    fireEvent.changeText(view.getByTestId('faith-dua-category-search'), '2:255');
+    await fireEvent.changeText(view.getByTestId('faith-dua-category-search'), '2:255');
     await drain();
     expect(view.getByTestId('faith-dua-category-search-clear')).toBeTruthy();
   });
@@ -304,7 +304,7 @@ describe('which filters a card offers, and which are absent rather than empty', 
 
   it('renders exactly the offered filters in the sheet, with the active one marked', async () => {
     const view = await renderCategory('travel');
-    fireEvent.press(view.getByTestId('faith-dua-category-filter'));
+    await fireEvent.press(view.getByTestId('faith-dua-category-filter'));
     await drain();
 
     for (const id of ['all', 'quran', 'sunnah']) {
@@ -388,7 +388,7 @@ describe('the five kinds of nothing, each in its own words', () => {
     await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
     const view = await renderCategory('my-quran-selections');
 
-    fireEvent.changeText(view.getByTestId('faith-dua-category-search'), 'zzzz-no-match');
+    await fireEvent.changeText(view.getByTestId('faith-dua-category-search'), 'zzzz-no-match');
     await drain();
 
     expect(view.getByTestId('faith-dua-category-search-empty')).toBeTruthy();

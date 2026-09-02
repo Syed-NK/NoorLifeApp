@@ -372,7 +372,7 @@ describe('a rendered shared button owns its bound', () => {
       The behavioural half of the same contract. Announcing `disabled` and still firing would be a
       control that lies, and a bigger target only makes it easier to hit by accident.
     */
-    fireEvent.press(screen.getByTestId('pb-press'));
+    await fireEvent.press(screen.getByTestId('pb-press'));
     expect(onPress).not.toHaveBeenCalled();
   });
 
@@ -564,11 +564,11 @@ describe('PressableScale owns the box it is measured by', () => {
       />,
     );
     const node = screen.getByTestId('pressed');
-    fireEvent(node, 'pressIn');
+    await fireEvent(node, 'pressIn');
     /* The scale is a transform. Layout and accessibility bounds are untouched by it. */
     expect(Number(flatten(node.props.style).minHeight)).toBeGreaterThanOrEqual(touchTarget.minimum);
-    fireEvent(node, 'pressOut');
-    fireEvent.press(node);
+    await fireEvent(node, 'pressOut');
+    await fireEvent.press(node);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 

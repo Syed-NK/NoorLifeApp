@@ -84,7 +84,7 @@ describe('Retry refuses a press it could not honour', () => {
     );
 
     /* And the press genuinely does not reach the service — the part a user would notice. */
-    fireEvent.press(retry);
+    await fireEvent.press(retry);
     expect(retrySurah).not.toHaveBeenCalled();
   });
 
@@ -95,7 +95,7 @@ describe('Retry refuses a press it could not honour', () => {
     const retry = view.getByTestId(retryId(1));
 
     expect(retry.props.accessibilityState.disabled).toBe(false);
-    fireEvent.press(retry);
+    await fireEvent.press(retry);
     expect(retrySurah).toHaveBeenCalledWith(1);
     /*
       The hint describes a run over the recorded scope: the download resumes and fetches what is still

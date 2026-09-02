@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react-nativ
 import React from 'react';
 import { useWindowDimensions } from 'react-native';
 
-import { TEST_FAITH_USER_ID } from '@/test-support/faith-storage-address';
+import { faithAddress, TEST_FAITH_USER_ID } from '@/test-support/faith-storage-address';
 import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 
 import { QURAN_CONTENT_ATTRIBUTION } from '../data/dhikr/quran-content-attribution';
@@ -458,7 +458,7 @@ describe('Open in Reader', () => {
     await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
     const view = await renderDetail('q.2.255.255');
 
-    fireEvent.press(view.getByTestId('faith-dua-detail-read'));
+    await fireEvent.press(view.getByTestId('faith-dua-detail-read'));
     await drain();
 
     expect(router.push).toHaveBeenCalledWith({
@@ -493,7 +493,7 @@ describe('Use in Tasbih', () => {
     await repository.increment();
 
     const view = await renderDetail('q.2.255.255');
-    fireEvent.press(view.getByTestId('faith-dua-detail-use'));
+    await fireEvent.press(view.getByTestId('faith-dua-detail-use'));
     await drain(24);
 
     const session = await createLocalTasbihRepository().getSession();
@@ -511,19 +511,39 @@ describe('Use in Tasbih', () => {
     await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
     const view = await renderDetail('q.2.255.255');
 
-    fireEvent.press(view.getByTestId('faith-dua-detail-use'));
-    /* Nothing has been pushed yet: the two writes are awaited first. */
-    expect(router.push).not.toHaveBeenCalled();
-
+    await fireEvent.press(view.getByTestId('faith-dua-detail-use'));
     await drain(24);
+
     expect(router.push).toHaveBeenCalledWith('/faith/tasbih');
+
+    /*
+      "Only after the switch" asserted `router.push` had not been called yet, immediately after the
+      press. That could only hold while the press was dropped — `fireEvent` is async in RNTL 14 and
+      was not awaited, so nothing had run by the time it was checked, and the assertion was true of
+      an interaction that had not happened. Awaited, the whole chain completes and the probe reads
+      as a failure. See #155.
+
+      The guarantee itself is unchanged and is now read off call order: the session write lands
+      before the navigation, so a reader who lands on the counter finds it already switched.
+    */
+    const writes = (AsyncStorage.setItem as unknown as jest.Mock).mock;
+    // Resolved through the production boundary rather than written down; see `faithAddress`.
+    const sessionKey = faithAddress('tasbihSessions');
+    const sessionWrite = writes.calls.findIndex(
+      (call: readonly unknown[]) => call[0] === sessionKey,
+    );
+    expect(sessionWrite).toBeGreaterThanOrEqual(0);
+    const pushOrder = (router.push as unknown as jest.Mock).mock.invocationCallOrder[0] ?? 0;
+    expect(writes.invocationCallOrder[sessionWrite] ?? Number.MAX_SAFE_INTEGER).toBeLessThan(
+      pushOrder,
+    );
   });
 
   it('stamps a selection as used, and would not stamp a reviewed entry', async () => {
     await saveQuranSelection({ surah: 2, startAyah: 255, endAyah: 255 }, null);
     const view = await renderDetail('q.2.255.255');
 
-    fireEvent.press(view.getByTestId('faith-dua-detail-use'));
+    await fireEvent.press(view.getByTestId('faith-dua-detail-use'));
     await drain(24);
 
     const stored = await readQuranSelections();
@@ -539,7 +559,7 @@ describe('the favourite control writes to the real account-scoped state', () => 
     expect(String(view.getByTestId('faith-dua-detail-favourite').props.accessibilityLabel)).toBe(
       'Add to favorites',
     );
-    fireEvent.press(view.getByTestId('faith-dua-detail-favourite'));
+    await fireEvent.press(view.getByTestId('faith-dua-detail-favourite'));
     await drain(16);
 
     const stored = await readQuranSelections();

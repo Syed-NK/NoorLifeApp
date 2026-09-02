@@ -116,7 +116,7 @@ describe('haptics', () => {
 
   it('can be turned off, and stay off', async () => {
     const view = await renderTasbih();
-    fireEvent(await view.findByTestId('faith-tasbih-haptics-switch'), 'valueChange', false);
+    await fireEvent(await view.findByTestId('faith-tasbih-haptics-switch'), 'valueChange', false);
 
     await waitFor(async () =>
       expect((await view.findByTestId('faith-tasbih-haptics-switch')).props.value).toBe(false),
@@ -130,8 +130,8 @@ describe('haptics', () => {
 
   it('counting still works with them off', async () => {
     const view = await renderTasbih();
-    fireEvent(await view.findByTestId('faith-tasbih-haptics-switch'), 'valueChange', false);
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent(await view.findByTestId('faith-tasbih-haptics-switch'), 'valueChange', false);
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
 
     await waitFor(async () => expect(await countValue(view)).toBe('1'));
   });

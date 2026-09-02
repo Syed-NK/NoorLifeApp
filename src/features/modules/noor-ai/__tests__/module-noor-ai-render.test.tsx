@@ -86,12 +86,12 @@ describe('a conversation opened from a module', () => {
 
     const input = view.getByTestId('noor-ai-chat-composer-input');
     await act(async () => {
-      fireEvent.changeText(input, 'How do I add a task?');
+      void fireEvent.changeText(input, 'How do I add a task?');
     });
     const send = view.getByTestId('noor-ai-chat-composer-send');
     await act(async () => {
-      fireEvent.press(send);
-      fireEvent.press(send);
+      void fireEvent.press(send);
+      void fireEvent.press(send);
     });
     await settle();
 
@@ -112,7 +112,7 @@ describe('a conversation opened from a module', () => {
     await waitFor(() => expect(screen.getByTestId('noor-ai-chat-composer-input')).toBeTruthy());
 
     await act(async () => {
-      fireEvent.press(view.getByTestId('noor-ai-chat-composer-send'));
+      void fireEvent.press(view.getByTestId('noor-ai-chat-composer-send'));
     });
     await settle();
 

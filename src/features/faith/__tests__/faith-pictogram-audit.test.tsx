@@ -209,7 +209,7 @@ describe('the Help control', () => {
 
   it('opens the module help destination rather than doing nothing', async () => {
     const view = await renderIn(<ModuleHomeScreen moduleId="faith" />);
-    fireEvent.press(await view.findByTestId('faith-home-header-help'));
+    await fireEvent.press(await view.findByTestId('faith-home-header-help'));
     expect(mockRouter.push).toHaveBeenCalledWith('/settings/help');
   });
 });

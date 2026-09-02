@@ -194,9 +194,9 @@ describe('with a valid grant', () => {
 
     const submit = screen.getByTestId('set-new-password-submit');
     await act(async () => {
-      fireEvent.press(submit);
-      fireEvent.press(submit);
-      fireEvent.press(submit);
+      void fireEvent.press(submit);
+      void fireEvent.press(submit);
+      void fireEvent.press(submit);
     });
 
     await waitFor(() => expect(port.updates).toHaveBeenCalledTimes(1));

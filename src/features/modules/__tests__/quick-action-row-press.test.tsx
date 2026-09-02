@@ -76,7 +76,7 @@ describe('each tile is its own control', () => {
     for (const action of family.quickActions) {
       const tile = view.getByTestId(`family-quick-${action.key}`);
       expect(tile.props.accessibilityRole).toBe('button');
-      fireEvent.press(tile);
+      await fireEvent.press(tile);
     }
     expect(pressed).toEqual(family.quickActions.map((action) => action.key));
   });

@@ -160,34 +160,34 @@ describe('personal counters are fully functional', () => {
   it('creates, renames and removes a private label', async () => {
     const view = await renderSelector();
 
-    fireEvent.changeText(await view.findByTestId('faith-dhikr-new-input'), 'Morning count');
+    await fireEvent.changeText(await view.findByTestId('faith-dhikr-new-input'), 'Morning count');
     await flush();
-    fireEvent.press(view.getByTestId('faith-dhikr-create'));
+    await fireEvent.press(view.getByTestId('faith-dhikr-create'));
 
     const row = await waitFor(() => view.getByTestId(/^faith-dhikr-counter-user-/));
     const id = String(row.props.testID).replace('faith-dhikr-counter-', '');
 
-    fireEvent.press(view.getByTestId(`faith-dhikr-rename-${id}`));
+    await fireEvent.press(view.getByTestId(`faith-dhikr-rename-${id}`));
     // Entering rename mode is a state change too, so the field does not exist until it lands.
     await flush();
-    fireEvent.changeText(view.getByTestId(`faith-dhikr-rename-input-${id}`), 'Evening count');
+    await fireEvent.changeText(view.getByTestId(`faith-dhikr-rename-input-${id}`), 'Evening count');
     await flush();
-    fireEvent.press(view.getByTestId(`faith-dhikr-rename-save-${id}`));
+    await fireEvent.press(view.getByTestId(`faith-dhikr-rename-save-${id}`));
 
     await waitFor(() => expect(view.queryByText('Evening count')).not.toBeNull());
     // The id survives the rename, so the session and history still point at the same counter.
     expect(view.getByTestId(`faith-dhikr-counter-${id}`)).toBeTruthy();
 
-    fireEvent.press(view.getByTestId(`faith-dhikr-remove-${id}`));
+    await fireEvent.press(view.getByTestId(`faith-dhikr-remove-${id}`));
     await waitFor(() => expect(view.queryByText('Evening count')).toBeNull());
   });
 
   it('marks every private label as Personal, in the row and to a screen reader', async () => {
     const view = await renderSelector();
 
-    fireEvent.changeText(await view.findByTestId('faith-dhikr-new-input'), 'My own count');
+    await fireEvent.changeText(await view.findByTestId('faith-dhikr-new-input'), 'My own count');
     await flush();
-    fireEvent.press(view.getByTestId('faith-dhikr-create'));
+    await fireEvent.press(view.getByTestId('faith-dhikr-create'));
 
     await waitFor(() => expect(view.queryByText('My own count')).not.toBeNull());
 

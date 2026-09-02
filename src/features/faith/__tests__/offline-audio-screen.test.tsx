@@ -232,7 +232,7 @@ describe('removal is confirmed, and says what it costs', () => {
     await service.start({ kind: 'complete' });
     const view = await renderOffline(service);
 
-    fireEvent.press(view.getByTestId('faith-offline-audio-remove-all'));
+    await fireEvent.press(view.getByTestId('faith-offline-audio-remove-all'));
 
     /* `fireEvent` does not flush in this environment, so the dialog is awaited rather than read. */
     expect(await view.findByTestId('faith-offline-audio-confirm')).toBeTruthy();
@@ -244,14 +244,14 @@ describe('removal is confirmed, and says what it costs', () => {
     await service.hydrate();
     await service.start({ kind: 'complete' });
     const view = await renderOffline(service);
-    fireEvent.press(view.getByTestId('faith-offline-audio-remove-all'));
+    await fireEvent.press(view.getByTestId('faith-offline-audio-remove-all'));
 
     expect(
       String(
         (await view.findByTestId('faith-offline-audio-confirm-cancel')).props.accessibilityLabel,
       ),
     ).toMatch(/keep the downloaded audio/i);
-    fireEvent.press(view.getByTestId('faith-offline-audio-confirm-cancel'));
+    await fireEvent.press(view.getByTestId('faith-offline-audio-confirm-cancel'));
     await waitFor(() => expect(view.queryByTestId('faith-offline-audio-confirm')).toBeNull());
     expect(service.snapshot().playableAyat).toBe(7);
   });
@@ -261,7 +261,7 @@ describe('removal is confirmed, and says what it costs', () => {
     await service.hydrate();
     await service.start({ kind: 'complete' });
     const view = await renderOffline(service);
-    fireEvent.press(view.getByTestId('faith-offline-audio-remove-all'));
+    await fireEvent.press(view.getByTestId('faith-offline-audio-remove-all'));
     await view.findByTestId('faith-offline-audio-confirm');
 
     const body = view

@@ -272,7 +272,7 @@ describe('there is no per-ayah playback control', () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
     await view.findByTestId('faith-reader-player');
 
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
     await view.findByTestId('faith-reader-ayah-actions');
 
     /*
@@ -393,7 +393,7 @@ describe('the reciting verse is marked', () => {
       'Aya 1',
     );
 
-    fireEvent.press(await view.findByTestId('faith-reader-player-next'));
+    await fireEvent.press(await view.findByTestId('faith-reader-player-next'));
     await waitFor(() => expect(mockPlaylist.currentUri()).toContain('s1-a2'));
     mockPlaylist.setStatus({ playing: true, isLoaded: true });
 
@@ -456,7 +456,7 @@ describe('playback speed', () => {
   it('is offered on an idle player and honoured when playback starts', async () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED });
 
-    fireEvent.press(await view.findByTestId('faith-reader-player-speed'));
+    await fireEvent.press(await view.findByTestId('faith-reader-player-speed'));
 
     await playFromAyah(view, 1);
     /*

@@ -607,8 +607,8 @@ describe('sessions', () => {
     // double tap actually is, and it is the case the `busy` guard exists to swallow. Awaiting each
     // press would let the first request finish first and prove nothing.
     await act(async () => {
-      fireEvent.press(accept);
-      fireEvent.press(accept);
+      void fireEvent.press(accept);
+      void fireEvent.press(accept);
     });
 
     await waitFor(() => expect(port.calls.signOutEverywhere).toHaveBeenCalledTimes(1));

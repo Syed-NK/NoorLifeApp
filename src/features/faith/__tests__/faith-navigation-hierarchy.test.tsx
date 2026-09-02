@@ -85,7 +85,7 @@ describe('the parent map', () => {
 describe('Faith Home', () => {
   it('back arrow returns to Main Home', async () => {
     const view = await renderIn(<ModuleHomeScreen moduleId="faith" />);
-    fireEvent.press(await view.findByTestId('faith-home-header-back'));
+    await fireEvent.press(await view.findByTestId('faith-home-header-back'));
     await waitFor(() => expect(dismissTo).toHaveBeenCalledWith(globalRoutes.home));
   });
 });
@@ -114,13 +114,13 @@ const CHILDREN: readonly (readonly [string, ReactElement, string])[] = [
 describe('every Faith child returns to Faith Home', () => {
   it.each(CHILDREN)('%s back arrow goes to /faith', async (_name, element, testID) => {
     const view = await renderIn(element);
-    fireEvent.press(await view.findByTestId(`${testID}-header-back`));
+    await fireEvent.press(await view.findByTestId(`${testID}-header-back`));
     await waitFor(() => expect(dismissTo).toHaveBeenCalledWith(faithRoutes.home));
   });
 
   it.each(CHILDREN)('%s back arrow never goes to Main Home', async (_n, element, testID) => {
     const view = await renderIn(element);
-    fireEvent.press(await view.findByTestId(`${testID}-header-back`));
+    await fireEvent.press(await view.findByTestId(`${testID}-header-back`));
     await waitFor(() => expect(dismissTo).toHaveBeenCalled());
     expect(dismissTo).not.toHaveBeenCalledWith(globalRoutes.home);
     expect(push).not.toHaveBeenCalledWith(globalRoutes.home);
@@ -133,7 +133,7 @@ describe('a deep-linked child still returns to Faith Home', () => {
     // `replace()` would duplicate the parent when it *is* present; `dismissTo` handles
     // both, so asserting it is called with the parent is the whole guarantee.
     const view = await renderIn(<TasbihScreen />);
-    fireEvent.press(await view.findByTestId('faith-tasbih-header-back'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-header-back'));
 
     await waitFor(() => expect(dismissTo).toHaveBeenCalledWith(faithRoutes.home));
     // Never a raw history pop, which is what breaks on a cold link.
@@ -150,14 +150,14 @@ describe('Faith bottom navigation', () => {
     ['more', faithRoutes.more],
   ])('%s slot navigates to %s', async (slot, destination) => {
     const view = await renderIn(<ModuleHomeScreen moduleId="faith" />);
-    fireEvent.press(await view.findByTestId(`faith-home-nav-${slot}`));
+    await fireEvent.press(await view.findByTestId(`faith-home-nav-${slot}`));
     // `navigate`, not `push` — peers must not stack.
     await waitFor(() => expect(mockRouter.navigate).toHaveBeenCalledWith(destination));
   });
 
   it('does not push, so tapping between tabs cannot grow the stack', async () => {
     const view = await renderIn(<ModuleHomeScreen moduleId="faith" />);
-    fireEvent.press(await view.findByTestId('faith-home-nav-quran'));
+    await fireEvent.press(await view.findByTestId('faith-home-nav-quran'));
     await waitFor(() => expect(mockRouter.navigate).toHaveBeenCalled());
     expect(push).not.toHaveBeenCalledWith(faithRoutes.quran);
   });

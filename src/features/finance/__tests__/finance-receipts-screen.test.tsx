@@ -156,7 +156,7 @@ async function settle(): Promise<void> {
 
 async function press(target: Parameters<typeof fireEvent.press>[0]): Promise<void> {
   await act(async () => {
-    fireEvent.press(target);
+    void fireEvent.press(target);
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
@@ -165,7 +165,7 @@ async function press(target: Parameters<typeof fireEvent.press>[0]): Promise<voi
 
 async function type(testID: string, value: string): Promise<void> {
   await act(async () => {
-    fireEvent.changeText(ui().getByTestId(testID), value);
+    void fireEvent.changeText(ui().getByTestId(testID), value);
     await Promise.resolve();
   });
 }
@@ -518,8 +518,8 @@ describe('nothing reaches the ledger before confirmation', () => {
       the ledger would hold two records of one receipt. Only a ref is written between them.
     */
     await act(async () => {
-      fireEvent.press(button);
-      fireEvent.press(button);
+      void fireEvent.press(button);
+      void fireEvent.press(button);
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();

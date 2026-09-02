@@ -139,7 +139,7 @@ async function openComposer(fontScale: number) {
   await settle();
 
   await act(async () => {
-    fireEvent.press(screen.getByTestId('finance-open-composer'));
+    void fireEvent.press(screen.getByTestId('finance-open-composer'));
     await Promise.resolve();
     await Promise.resolve();
   });
