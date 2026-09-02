@@ -2,6 +2,9 @@
 const { defineConfig } = require('eslint/config');
 const expoConfig = require('eslint-config-expo/flat');
 
+const AWAIT_RNTL =
+  'Await this. `render`, `rerender`, `unmount` and `cleanup` are async in RNTL 14; assigning one without awaiting leaves its act scope open and silently swallows the next render (#157, #160).';
+
 module.exports = defineConfig([
   expoConfig,
   {
@@ -101,6 +104,30 @@ module.exports = defineConfig([
           selector: "ExpressionStatement > CallExpression[callee.name='render']",
           message:
             'Await this render(). It is async in RNTL 14, and `screen` throws "render function has not been called" until it settles (#157).',
+        },
+        /*
+          The same four APIs, in the shape the statement selectors above cannot see: assigned rather
+          than fired and forgotten. `const view = render(<X />)` leaves the render`s act scope open, so
+          a later `rerender` on that view is **swallowed** — the component never re-renders, an effect
+          keyed on changed props never re-runs, and the case fails for a reason nowhere near the cause.
+          That is exactly how `quran-content-sync-due-timer` kept a due boundary armed across a
+          sign-out it had been told about — issue #160. An `await` makes `init` an AwaitExpression, so
+          a correct call never reaches these selectors.
+        */
+        { selector: "VariableDeclarator[init.callee.name='render']", message: AWAIT_RNTL },
+        { selector: "VariableDeclarator[init.callee.name='cleanup']", message: AWAIT_RNTL },
+        {
+          selector: "VariableDeclarator[init.callee.property.name='rerender']",
+          message: AWAIT_RNTL,
+        },
+        {
+          selector: "VariableDeclarator[init.callee.property.name='unmount']",
+          message: AWAIT_RNTL,
+        },
+        { selector: "AssignmentExpression[right.callee.name='render']", message: AWAIT_RNTL },
+        {
+          selector: "AssignmentExpression[right.callee.property.name='rerender']",
+          message: AWAIT_RNTL,
         },
       ],
     },
