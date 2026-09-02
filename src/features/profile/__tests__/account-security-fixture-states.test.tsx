@@ -16,12 +16,13 @@ import { ChangeEmailScreen } from '../screens/change-email-screen';
 import { ChangePasswordScreen } from '../screens/change-password-screen';
 import { PrivacySecurityScreen } from '../screens/privacy-security-screen';
 
-installMockLatencyTimers(() =>
-  render(
-    <AppProviders>
-      <PrivacySecurityScreen port={socialIdentityPort()} />
-    </AppProviders>,
-  ),
+installMockLatencyTimers(
+  async () =>
+    await render(
+      <AppProviders>
+        <PrivacySecurityScreen port={socialIdentityPort()} />
+      </AppProviders>,
+    ),
 );
 
 /**

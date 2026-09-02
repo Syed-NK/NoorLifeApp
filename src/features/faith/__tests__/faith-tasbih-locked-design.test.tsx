@@ -59,7 +59,7 @@ async function settle(ms = 380): Promise<void> {
 }
 
 async function renderTasbih(): Promise<typeof screen> {
-  render(
+  await render(
     <FaithRepositoryProvider repositories={createMockFaithRepositories()}>
       <TasbihScreen />
     </FaithRepositoryProvider>,

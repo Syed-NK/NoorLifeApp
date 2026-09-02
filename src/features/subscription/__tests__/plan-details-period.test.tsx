@@ -55,7 +55,7 @@ describe('the period route parameter', () => {
 
     // Re-render the same mounted screen with the other parameter, which is what a deep link or
     // "Switch billing period" does. Before the fix the toggle stayed on yearly.
-    view.rerender(
+    await view.rerender(
       <EntitlementProvider adapter={new MockPurchaseAdapter()}>
         <PlanDetailsScreen plan="premium_single" initialPeriod="monthly" />
       </EntitlementProvider>,

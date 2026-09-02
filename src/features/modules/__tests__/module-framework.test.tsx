@@ -22,12 +22,13 @@ import {
 
 // Mounts screens backed by simulated-latency mocks. Advancing those timers rather than
 // sleeping through them is what keeps this suite inside Jest's default per-test budget.
-installMockLatencyTimers(() =>
-  render(
-    <PlannerOwners>
-      <ModuleHomeScreen moduleId="planner" />
-    </PlannerOwners>,
-  ),
+installMockLatencyTimers(
+  async () =>
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="planner" />
+      </PlannerOwners>,
+    ),
 );
 
 /**

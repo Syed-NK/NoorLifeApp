@@ -145,7 +145,7 @@ describe('the processing screen', () => {
 
     const first = await renderProcessing(adapter, intent.nonce);
     await waitFor(() => expect(hasPendingIntent()).toBe(false));
-    first.unmount();
+    await first.unmount();
 
     // Reopening the same URL: the intent is spent, so the screen redirects and buys nothing more.
     const spy = jest.spyOn(adapter, 'purchase');

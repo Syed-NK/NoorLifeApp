@@ -597,7 +597,7 @@ describe('every Planner surface and Main Home agree on the day', () => {
     */
     harness.setNow(justAfterMidnight());
     await act(async () => {
-      view.rerender(
+      await view.rerender(
         <TodayAgendaProvider
           repository={createPlannerTaskRepository({
             ownerId: OTHER,

@@ -40,12 +40,13 @@ const insightProvider: ModuleRepositoryProvider = (moduleId) => ({
 // Two costs this removes: the simulated latency the mock data sources sleep through on every
 // mount, and the one-off compile cost of the first mount, warmed up in `beforeAll` so that no
 // individual test is charged for it.
-installMockLatencyTimers(() =>
-  render(
-    <PlannerOwners>
-      <ModuleHomeScreen moduleId="planner" />
-    </PlannerOwners>,
-  ),
+installMockLatencyTimers(
+  async () =>
+    await render(
+      <PlannerOwners>
+        <ModuleHomeScreen moduleId="planner" />
+      </PlannerOwners>,
+    ),
 );
 
 /**

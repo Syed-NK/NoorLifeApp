@@ -119,7 +119,7 @@ async function drain(passes = 8): Promise<void> {
 
 async function renderAt(width: number, fontScale: number) {
   viewport(width, fontScale);
-  render(
+  await render(
     <FaithRepositoryProvider repositories={createMockFaithRepositories()}>
       <PrayerLocationScreen />
     </FaithRepositoryProvider>,

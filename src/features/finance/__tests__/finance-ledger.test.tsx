@@ -594,7 +594,7 @@ describe('the provider owns the ledger', () => {
     expect(screen.getByTestId('probe').props.children).toBe('AED:0:ok');
 
     await act(async () => {
-      view.rerender(
+      await view.rerender(
         <FinanceProvider repository={repo(storage, OTHER)}>
           <Probe />
         </FinanceProvider>,
@@ -624,7 +624,7 @@ describe('the provider owns the ledger', () => {
     const fast = memory();
     await repo(fast, OTHER).setCurrency('GBP');
     await act(async () => {
-      view.rerender(
+      await view.rerender(
         <FinanceProvider repository={repo(fast, OTHER)}>
           <Probe />
         </FinanceProvider>,
@@ -689,7 +689,7 @@ describe('the provider owns the ledger', () => {
     const fast = memory();
     await repo(fast, OTHER).setCurrency('JPY');
     await act(async () => {
-      view.rerender(
+      await view.rerender(
         <FinanceProvider repository={repo(fast, OTHER)}>
           <Probe />
         </FinanceProvider>,

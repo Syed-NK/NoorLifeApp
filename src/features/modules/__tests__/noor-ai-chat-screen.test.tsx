@@ -330,7 +330,7 @@ describe('one invocation per question', () => {
       await ask();
 
       await act(async () => {
-        view.unmount();
+        await view.unmount();
       });
       await act(async () => {
         port.settle({
@@ -379,7 +379,7 @@ describe('cancellation', () => {
     await ask();
 
     await act(async () => {
-      view.unmount();
+      await view.unmount();
     });
 
     expect(port.calls[0]?.options?.signal?.aborted).toBe(true);

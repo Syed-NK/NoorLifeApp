@@ -104,7 +104,7 @@ async function drain(passes = 8): Promise<void> {
 
 async function renderCategory(categoryId: string, fontScale = 1): Promise<typeof screen> {
   viewport(fontScale);
-  render(
+  await render(
     <FaithRepositoryProvider
       repositories={{ ...createMockFaithRepositories(), retainedQuran: retainedDouble() }}
     >

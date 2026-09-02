@@ -119,8 +119,8 @@ async function drain(passes = 10): Promise<void> {
   }
 }
 
-function renderPrayerTimes(repositories: ReturnType<typeof repositoriesWithLocationPort>) {
-  render(
+async function renderPrayerTimes(repositories: ReturnType<typeof repositoriesWithLocationPort>) {
+  await render(
     <FaithRepositoryProvider repositories={repositories}>
       <PrayerTimesScreen />
     </FaithRepositoryProvider>,
@@ -158,7 +158,7 @@ async function saveDubaiThroughRepository(
 
 warmUpFirstMount(async () => {
   await seed(DEVICE);
-  renderPrayerTimes(repositoriesWithLocationPort(createRecordingLocationPort().port));
+  await renderPrayerTimes(repositoriesWithLocationPort(createRecordingLocationPort().port));
   await drain();
 });
 
@@ -179,7 +179,7 @@ describe('a user-selected authority never reaches the platform', () => {
       await seed(saved);
       const fake = forbiddenPort();
 
-      renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+      await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
       await drain();
 
       // The screen rendered: this is a real mount, not a tree that failed before reaching the card.
@@ -198,7 +198,7 @@ describe('a user-selected authority never reaches the platform', () => {
       await seed(saved);
       const fake = forbiddenPort();
 
-      renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+      await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
       await drain();
 
       /*
@@ -255,10 +255,10 @@ describe('a user-selected authority never reaches the platform', () => {
     await seed(saved);
     const fake = forbiddenPort();
 
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
     // A second mount is what a return through the bottom navigation produces.
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
 
     expect((await readStoredLocation())?.mode).toBe(mode);
@@ -272,7 +272,7 @@ describe('the controls each authority is offered', () => {
     ['typed coordinates', COORDINATES],
   ] as const)('offers no GPS refresh on %s', async (_name, saved) => {
     await seed(saved);
-    renderPrayerTimes(repositoriesWithLocationPort(forbiddenPort().port));
+    await renderPrayerTimes(repositoriesWithLocationPort(forbiddenPort().port));
     await drain();
 
     expect(
@@ -284,7 +284,7 @@ describe('the controls each authority is offered', () => {
     await seed(DEVICE);
     const fake = createRecordingLocationPort();
 
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
 
     expect(screen.getByTestId('faith-prayer-location-refresh')).toBeTruthy();
@@ -304,7 +304,7 @@ describe('the controls each authority is offered', () => {
     */
     const fake = createRecordingLocationPort();
 
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
 
     expect(screen.getByTestId('faith-prayer-location-change')).toBeTruthy();
@@ -323,7 +323,7 @@ describe('device authority acquires, exactly once per intent', () => {
     await seed(DEVICE);
     const fake = createRecordingLocationPort();
 
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
 
     // The mount acquisition is a separate intent; settle it and start counting from zero.
@@ -344,7 +344,7 @@ describe('device authority acquires, exactly once per intent', () => {
     await seed(DEVICE);
     const fake = createRecordingLocationPort();
 
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
     fake.releaseAll('timed-out');
     await drain();
@@ -378,7 +378,7 @@ describe('device authority acquires, exactly once per intent', () => {
     const revisionBeforeRefresh = activeLocationRevision();
     const fake = createRecordingLocationPort();
 
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
     fake.releaseAll('timed-out');
     await drain();
@@ -402,7 +402,7 @@ describe('a device warning belongs to the location it was about', () => {
     await seed(DEVICE);
     const fake = createRecordingLocationPort();
 
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
     fake.releaseAll('timed-out');
     await drain();
@@ -436,7 +436,7 @@ describe('a device warning belongs to the location it was about', () => {
     const fake = createRecordingLocationPort();
     const repositories = repositoriesWithLocationPort(fake.port);
 
-    renderPrayerTimes(repositories);
+    await renderPrayerTimes(repositories);
     await drain();
     // The acquisition is genuinely in flight: it has asked, and it has not been answered.
     expect(fake.count('getCurrentPosition')).toBe(1);
@@ -473,7 +473,7 @@ describe('a device warning belongs to the location it was about', () => {
     const fake = createRecordingLocationPort({ label: 'Mountain View, United States' });
     const repositories = repositoriesWithLocationPort(fake.port);
 
-    renderPrayerTimes(repositories);
+    await renderPrayerTimes(repositories);
     await drain();
     expect(fake.pendingPositions).toHaveLength(1);
 
@@ -499,10 +499,10 @@ describe('reloading identical city calculations changes nothing downstream', () 
     resetActiveLocationRevisionForTest();
     const fake = forbiddenPort();
 
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
     // A second entry, which is what returning through the bottom navigation produces.
-    renderPrayerTimes(repositoriesWithLocationPort(fake.port));
+    await renderPrayerTimes(repositoriesWithLocationPort(fake.port));
     await drain();
 
     /*
@@ -523,9 +523,9 @@ describe('reloading identical city calculations changes nothing downstream', () 
     const fake = forbiddenPort();
     const repositories = { ...repositoriesWithLocationPort(fake.port), notifications };
 
-    renderPrayerTimes(repositories);
+    await renderPrayerTimes(repositories);
     await drain();
-    renderPrayerTimes(repositories);
+    await renderPrayerTimes(repositories);
     await drain();
 
     expect(await readStoredLocation()).toEqual(before);

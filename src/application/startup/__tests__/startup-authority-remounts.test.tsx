@@ -203,7 +203,7 @@ describe('a launch whose tree goes away', () => {
     await settle();
     expect(view.getByTestId('probe').props.children).toBe('unknown:none');
 
-    view.unmount();
+    await view.unmount();
     slow.settle({ kind: 'authenticated', user: USER });
     await settle(SESSION_RESOLUTION_TIMEOUT_MS * 2);
 

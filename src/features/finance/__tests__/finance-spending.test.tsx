@@ -777,7 +777,7 @@ describe('faults are stated, never presented as empty', () => {
     expect(inList().getByText('42.00 AED')).toBeTruthy();
 
     await act(async () => {
-      view.rerender(
+      await view.rerender(
         <FinanceProvider repository={repo(storage, OTHER)}>
           <FinanceSpendingScreen />
         </FinanceProvider>,
@@ -854,7 +854,7 @@ describe('one ledger, every surface', () => {
       cached copy.
     */
     await act(async () => {
-      view.rerender(
+      await view.rerender(
         <FinanceProvider repository={repo(storage)}>
           <FinanceSpendingScreen />
         </FinanceProvider>,

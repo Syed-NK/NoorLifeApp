@@ -312,7 +312,7 @@ describe('the two states share their geometry', () => {
     );
     const liveDial = await live.findByTestId('faith-qibla-dial');
     const liveSize = liveDial.props.style.width;
-    live.unmount();
+    await live.unmount();
 
     const fallback = await renderQibla(fakeLocationPort({ hasCompass: async () => false }));
     const fallbackDial = await fallback.findByTestId('faith-qibla-dial');
@@ -320,5 +320,35 @@ describe('the two states share their geometry', () => {
     expect(typeof liveSize).toBe('number');
     expect(fallbackDial.props.style.width).toBe(liveSize);
     expect(fallbackDial.props.style.height).toBe(liveDial.props.style.height);
+  });
+
+  /**
+   * A remount must leave the next live heading observable — issue #157.
+   *
+   * `unmount()` is async in RNTL 14. Un-awaited, it tears the tree down while the next `render` is
+   * starting, and the renderer never delivers again: every later `findBy*` in the file waits out its
+   * full timeout and fails with "unable to find element". The case above was the only one in this
+   * file that unmounts, and it is declared **last** — so nothing followed it to break, and the file
+   * passed 38/38 in declared order while failing 37 of 38 under seed 404.
+   *
+   * This asserts the property directly, and in one case so it holds at every seed: after an
+   * unmount, a fresh live render still reports a trusted heading. Drop the `await` on either
+   * `unmount()` and the second `findByTestId` below times out.
+   */
+  it('still reports a live heading after an unmount and remount', async () => {
+    const live = portReporting({ trueHeading: 10, magneticHeading: 10, accuracy: 3 });
+
+    const first = await renderQibla(live);
+    await first.findByTestId('faith-qibla-live');
+    await first.unmount();
+
+    const second = await renderQibla(live);
+    expect(await second.findByTestId('faith-qibla-live')).toBeTruthy();
+    // The guidance the live state exists to give, not merely the container.
+    expect(second.getByTestId('faith-qibla-guidance')).toBeTruthy();
+
+    await second.unmount();
+    const third = await renderQibla(live);
+    expect(await third.findByTestId('faith-qibla-live')).toBeTruthy();
   });
 });

@@ -70,7 +70,7 @@ describe('the progress surface across mounts', () => {
     const spy = jest.spyOn(console, 'error').mockImplementation((...args) => {
       errors.push(args);
     });
-    view.unmount();
+    await view.unmount();
     await advanceLaunch(STARTUP_PRESENTATION_CEILING_MS * 2);
     spy.mockRestore();
 

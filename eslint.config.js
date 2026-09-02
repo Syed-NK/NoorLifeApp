@@ -76,6 +76,32 @@ module.exports = defineConfig([
           message:
             'Await this fireEvent call. It is async in RNTL 14, and two un-awaited calls in one test overlap act() and break every later render in the file (#155). To fire in one tick on purpose - a double-tap a busy guard must swallow - keep it inside an act() batch and mark it `void fireEvent...`.',
         },
+        /*
+          `render`, `rerender`, `unmount` and `cleanup` are all async in RNTL 14 as well, and a floating
+          one is worse than a floating `fireEvent`: an un-awaited `unmount()` tears the tree down while
+          the next `render` is starting, and every later `findBy*` in the file then waits out its full
+          timeout. One un-awaited `live.unmount()` in `faith-qibla-states.test.tsx` failed 37 of its 38
+          cases under seed 404 while passing 38/38 in declared order — issue #157.
+        */
+        {
+          selector: "ExpressionStatement > CallExpression[callee.property.name='unmount']",
+          message:
+            'Await this unmount(). It is async in RNTL 14, and an un-awaited one leaves every later findBy* in the file waiting out its timeout (#157).',
+        },
+        {
+          selector: "ExpressionStatement > CallExpression[callee.property.name='rerender']",
+          message:
+            'Await this rerender(). It is async in RNTL 14, and an un-awaited one renders into a tree the next line assumes is settled (#157).',
+        },
+        {
+          selector: "ExpressionStatement > CallExpression[callee.name='cleanup']",
+          message: 'Await this cleanup(). It is async in RNTL 14 (#157).',
+        },
+        {
+          selector: "ExpressionStatement > CallExpression[callee.name='render']",
+          message:
+            'Await this render(). It is async in RNTL 14, and `screen` throws "render function has not been called" until it settles (#157).',
+        },
       ],
     },
   },

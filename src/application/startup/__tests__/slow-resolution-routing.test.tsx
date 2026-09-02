@@ -345,7 +345,7 @@ describe('a launch abandoned mid-resolution leaves nothing behind', () => {
     const view = await render(<Probe />);
     await settle();
     await advance(5_000);
-    view.unmount();
+    await view.unmount();
 
     await advance(60_000);
     await settle();

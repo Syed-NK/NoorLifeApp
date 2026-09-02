@@ -21,12 +21,13 @@ import { mockRouter } from '../../../../jest.setup';
 // `userEvent.type` drives fifty-four keystrokes through the full Sign Up screen, and each one is a
 // press-in, a press-out and a re-render. Advancing the clock rather than sleeping through it, and
 // warming the first mount, is what keeps these four inside Jest's default per-test budget.
-installMockLatencyTimers(() =>
-  render(
-    <AuthProvider>
-      <SignUpScreen />
-    </AuthProvider>,
-  ),
+installMockLatencyTimers(
+  async () =>
+    await render(
+      <AuthProvider>
+        <SignUpScreen />
+      </AuthProvider>,
+    ),
 );
 
 const client = supabase as unknown as {

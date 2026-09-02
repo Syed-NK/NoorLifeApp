@@ -550,7 +550,7 @@ describe('the boundary moves with the account, not with the launch', () => {
       what is being tested.
     */
     await act(async () => {
-      view.rerender(tree(OTHER));
+      await view.rerender(tree(OTHER));
     });
     expect(screen.getByTestId('probe').props.children).toBe(NEUTRAL_TITLE);
 

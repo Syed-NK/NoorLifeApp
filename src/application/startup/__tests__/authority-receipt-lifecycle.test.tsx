@@ -470,7 +470,7 @@ describe('a tree unmounted after validation but before enrichment', () => {
     expect(writes()).toHaveLength(1);
     expect(writes()[0]?.userId).toBe(USER.id);
 
-    view.unmount();
+    await view.unmount();
     profile.settle(profileRow('Durable Name'));
     await settle(60_000);
 

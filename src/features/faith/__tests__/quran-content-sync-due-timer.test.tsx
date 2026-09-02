@@ -153,8 +153,8 @@ beforeEach(() => {
   resetContentSyncCoordinator();
 });
 
-afterEach(() => {
-  cleanup();
+afterEach(async () => {
+  await cleanup();
   resetContentSyncCoordinator();
   jest.clearAllTimers();
   jest.useRealTimers();
@@ -282,7 +282,7 @@ describe('what the timer does with each outcome', () => {
 
 /** Re-renders the same tree, so an auth change runs the existing effect's cleanup and body. */
 async function rerender(view: { rerender: (node: ReactElement) => void }) {
-  view.rerender(<ContentSyncCoordinator />);
+  await view.rerender(<ContentSyncCoordinator />);
   await settle();
 }
 
@@ -296,7 +296,7 @@ describe('one scheduler, one owner', () => {
     await advance(SYNC_INTERVAL + 1000);
 
     expect(mockRun.mock.calls.length).toBe(afterDispose);
-    view.unmount();
+    await view.unmount();
   });
 });
 

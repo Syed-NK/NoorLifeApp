@@ -569,7 +569,7 @@ describe('the lifecycle coordinator', () => {
     const view = await mountCoordinator();
 
     await act(async () => {
-      view.unmount();
+      await view.unmount();
       await Promise.resolve();
     });
 
