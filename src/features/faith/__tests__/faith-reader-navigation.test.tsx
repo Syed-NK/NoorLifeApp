@@ -102,8 +102,8 @@ describe('the surah catalogue opens the surah it names', () => {
   it('pushes a different address for each row', async () => {
     const view = await withRepositories(<QuranScreen />);
 
-    fireEvent.press(await view.findByTestId('faith-quran-surah-2'));
-    fireEvent.press(await view.findByTestId('faith-quran-surah-18'));
+    await fireEvent.press(await view.findByTestId('faith-quran-surah-2'));
+    await fireEvent.press(await view.findByTestId('faith-quran-surah-18'));
 
     expect(mockRouter.push).toHaveBeenCalledWith(readerHref(2));
     expect(mockRouter.push).toHaveBeenCalledWith(readerHref(18));
@@ -230,7 +230,7 @@ describe('bookmarks open their verse', () => {
     );
 
     const view = await withRepositories(<BookmarksScreen />);
-    fireEvent.press(await view.findByTestId('faith-bookmark-ayah-18:32'));
+    await fireEvent.press(await view.findByTestId('faith-bookmark-ayah-18:32'));
 
     expect(mockRouter.push).toHaveBeenCalledWith(readerHref(18, 32));
   });
@@ -252,7 +252,7 @@ describe('bookmarks open their verse', () => {
     const view = await withRepositories(<BookmarksScreen />);
     const row = await view.findByTestId('faith-bookmark-hadith-bukhari-1');
 
-    fireEvent.press(row);
+    await fireEvent.press(row);
     // No hadith screen is addressable yet, so the row carries no handler and no chevron —
     // rather than a tap that silently does nothing.
     expect(mockRouter.push).not.toHaveBeenCalled();
@@ -282,8 +282,8 @@ describe('reading progress is measured, not asserted', () => {
     setRouteParams({ surah: '1' });
     const view = await withRepositories(<ReaderScreen />);
 
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-read'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-read'));
     await view.findByTestId('faith-reader-success');
 
     const stored = JSON.parse(

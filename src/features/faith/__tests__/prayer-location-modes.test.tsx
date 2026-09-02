@@ -137,26 +137,29 @@ async function drain(passes = 8): Promise<void> {
 
 /** Drives the coordinate form exactly as a person would: open, fill, preview, save. */
 async function saveThroughCoordinateForm(label: string, latitude: string, longitude: string) {
-  fireEvent.press(screen.getByTestId('faith-prayer-location-mode-coordinates'));
+  await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-coordinates'));
   await drain();
-  fireEvent.changeText(screen.getByTestId('faith-prayer-location-label-input'), label);
+  await fireEvent.changeText(screen.getByTestId('faith-prayer-location-label-input'), label);
   await drain();
-  fireEvent.changeText(screen.getByTestId('faith-prayer-location-latitude-input'), latitude);
+  await fireEvent.changeText(screen.getByTestId('faith-prayer-location-latitude-input'), latitude);
   await drain();
-  fireEvent.changeText(screen.getByTestId('faith-prayer-location-longitude-input'), longitude);
+  await fireEvent.changeText(
+    screen.getByTestId('faith-prayer-location-longitude-input'),
+    longitude,
+  );
   await drain();
-  fireEvent.press(screen.getByTestId('faith-prayer-location-preview-action'));
+  await fireEvent.press(screen.getByTestId('faith-prayer-location-preview-action'));
   await drain();
-  fireEvent.press(screen.getByTestId('faith-prayer-location-save'));
+  await fireEvent.press(screen.getByTestId('faith-prayer-location-save'));
   await drain();
   await settle();
 }
 
 /** Opens the city panel and types a query, draining until the offline search has landed. */
 async function searchFor(query: string) {
-  fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
+  await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
   await drain(2);
-  fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), query);
+  await fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), query);
   await drain();
   return screen.getByTestId('faith-prayer-location-city-results');
 }
@@ -164,10 +167,10 @@ async function searchFor(query: string) {
 /** Search, select a result, preview it, and save. The whole city path. */
 async function saveCity(query: string, geonamesId: number) {
   await searchFor(query);
-  fireEvent.press(screen.getByTestId(`faith-prayer-location-city-result-${geonamesId}`));
+  await fireEvent.press(screen.getByTestId(`faith-prayer-location-city-result-${geonamesId}`));
   await drain();
   screen.getByTestId('faith-prayer-location-city-preview');
-  fireEvent.press(screen.getByTestId('faith-prayer-location-city-save'));
+  await fireEvent.press(screen.getByTestId('faith-prayer-location-city-save'));
   await drain();
 }
 
@@ -245,13 +248,13 @@ describe('reaching the screen', () => {
 describe('offline city search', () => {
   it('says nothing until two meaningful characters have been typed', async () => {
     await renderLocationScreen();
-    fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
     await drain();
 
     expect(screen.getByTestId('faith-prayer-location-city-prompt')).toBeTruthy();
 
     // Punctuation is not a character to search on: "d-" is one meaningful character.
-    fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), 'd-');
+    await fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), 'd-');
     await drain();
     expect(screen.getByTestId('faith-prayer-location-city-prompt')).toBeTruthy();
     expect(
@@ -311,9 +314,12 @@ describe('offline city search', () => {
 
   it('reports no matches rather than an empty list of nothing', async () => {
     await renderLocationScreen();
-    fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
     await drain();
-    fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), 'zzzznowherezzzz');
+    await fireEvent.changeText(
+      screen.getByTestId('faith-prayer-location-city-input'),
+      'zzzznowherezzzz',
+    );
     await drain();
 
     expect(screen.getByTestId('faith-prayer-location-city-empty')).toBeTruthy();
@@ -358,13 +364,13 @@ describe('offline city search', () => {
       </FaithRepositoryProvider>,
     );
     await drain();
-    fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
     await drain();
 
     const input = screen.getByTestId('faith-prayer-location-city-input');
-    fireEvent.changeText(input, 'mo');
+    await fireEvent.changeText(input, 'mo');
     await drain();
-    fireEvent.changeText(input, 'dubai');
+    await fireEvent.changeText(input, 'dubai');
     await drain();
 
     expect(pending.map((entry) => entry.query)).toEqual(['mo', 'dubai']);
@@ -388,13 +394,13 @@ describe('offline city search', () => {
 
   it('discards results for a query that has been cleared', async () => {
     await renderLocationScreen();
-    fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
     await drain();
 
     const input = screen.getByTestId('faith-prayer-location-city-input');
-    fireEvent.changeText(input, 'Dubai');
+    await fireEvent.changeText(input, 'Dubai');
     await drain();
-    fireEvent.changeText(input, '');
+    await fireEvent.changeText(input, '');
     await drain();
     await settle();
 
@@ -409,7 +415,9 @@ describe('the city preview', () => {
   it('shows the city, its coordinates, its zone and the GeoNames credit', async () => {
     await renderLocationScreen();
     await searchFor('Dubai');
-    fireEvent.press(screen.getByTestId(`faith-prayer-location-city-result-${DUBAI_GEONAMES_ID}`));
+    await fireEvent.press(
+      screen.getByTestId(`faith-prayer-location-city-result-${DUBAI_GEONAMES_ID}`),
+    );
     await drain();
 
     const preview = screen.getByTestId('faith-prayer-location-city-preview');
@@ -430,7 +438,9 @@ describe('the city preview', () => {
   it('requires an explicit save — selecting a result writes nothing', async () => {
     await renderLocationScreen();
     await searchFor('Dubai');
-    fireEvent.press(screen.getByTestId(`faith-prayer-location-city-result-${DUBAI_GEONAMES_ID}`));
+    await fireEvent.press(
+      screen.getByTestId(`faith-prayer-location-city-result-${DUBAI_GEONAMES_ID}`),
+    );
     await drain();
     screen.getByTestId('faith-prayer-location-city-preview');
     await settle();
@@ -445,11 +455,13 @@ describe('the city preview', () => {
   it('is invalidated by another keystroke, so Save cannot commit an unseen city', async () => {
     await renderLocationScreen();
     await searchFor('Dubai');
-    fireEvent.press(screen.getByTestId(`faith-prayer-location-city-result-${DUBAI_GEONAMES_ID}`));
+    await fireEvent.press(
+      screen.getByTestId(`faith-prayer-location-city-result-${DUBAI_GEONAMES_ID}`),
+    );
     await drain();
     screen.getByTestId('faith-prayer-location-city-preview');
 
-    fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), 'Lahore');
+    await fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), 'Lahore');
     await drain();
 
     expect(
@@ -596,7 +608,7 @@ describe('typed coordinates', () => {
 
   it('states that the label is not verified, in the required words', async () => {
     await renderLocationScreen();
-    fireEvent.press(screen.getByTestId('faith-prayer-location-mode-coordinates'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-coordinates'));
     await drain();
 
     expect(String(screen.getByTestId('faith-prayer-location-disclosure').props.children)).toBe(
@@ -693,7 +705,7 @@ describe('switching back to device mode', () => {
     await saveCity('Dubai', DUBAI_GEONAMES_ID);
 
     await renderLocationScreen();
-    fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
     await drain();
     await settle();
 
@@ -725,7 +737,7 @@ describe('switching back to device mode', () => {
       'No location set',
     );
 
-    fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
     await drain();
     await settle();
 
@@ -820,11 +832,11 @@ describe('the device control cannot be pressed into two native requests', () => 
     );
     await drain();
 
-    fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
     await drain();
 
     // A second tap while the first is still running starts nothing.
-    fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-use-device'));
     await drain();
     expect(count()).toBe(1);
 

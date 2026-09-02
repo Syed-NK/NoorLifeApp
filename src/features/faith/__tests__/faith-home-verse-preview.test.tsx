@@ -134,7 +134,7 @@ describe('the card opens the verse it previewed', () => {
     await renderHome(withLongVerse());
     const card = await screen.findByTestId('faith-ayah');
 
-    fireEvent.press(card);
+    await fireEvent.press(card);
     expect(mockRouter.push).toHaveBeenCalled();
   });
 

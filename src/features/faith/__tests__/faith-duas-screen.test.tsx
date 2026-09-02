@@ -231,7 +231,7 @@ describe('search', () => {
     const view = await renderGrid();
     await view.findByTestId('faith-duas-grid');
 
-    fireEvent.changeText(view.getByTestId('faith-duas-search'), 'evening');
+    await fireEvent.changeText(view.getByTestId('faith-duas-search'), 'evening');
 
     await waitFor(() => {
       expect(view.getByTestId('faith-duas-result-q.2.255.255')).toBeTruthy();
@@ -245,7 +245,7 @@ describe('search', () => {
     await view.findByTestId('faith-duas-grid');
     expect(view.queryByTestId('faith-duas-search-clear')).toBeNull();
 
-    fireEvent.changeText(view.getByTestId('faith-duas-search'), 'x');
+    await fireEvent.changeText(view.getByTestId('faith-duas-search'), 'x');
     await waitFor(() => {
       expect(view.getByTestId('faith-duas-search-clear')).toBeTruthy();
     });
@@ -255,7 +255,7 @@ describe('search', () => {
     const view = await renderGrid();
     await view.findByTestId('faith-duas-grid');
 
-    fireEvent.changeText(view.getByTestId('faith-duas-search'), 'zzzz');
+    await fireEvent.changeText(view.getByTestId('faith-duas-search'), 'zzzz');
     await waitFor(() => {
       expect(view.getByTestId('faith-duas-search-empty')).toBeTruthy();
     });
@@ -267,7 +267,7 @@ describe('search', () => {
     const view = await renderGrid();
     await view.findByTestId('faith-duas-grid');
 
-    fireEvent.changeText(view.getByTestId('faith-duas-search'), '2:255');
+    await fireEvent.changeText(view.getByTestId('faith-duas-search'), '2:255');
     await waitFor(() => {
       expect(view.getByTestId('faith-duas-result-q.2.255.255')).toBeTruthy();
     });
@@ -281,7 +281,7 @@ describe('filters', () => {
     const view = await renderGrid();
     await view.findByTestId('faith-duas-grid');
 
-    fireEvent.press(view.getByTestId('faith-duas-filter'));
+    await fireEvent.press(view.getByTestId('faith-duas-filter'));
     await waitFor(() => {
       expect(view.getByTestId('faith-duas-filter-all')).toBeTruthy();
     });
@@ -295,9 +295,9 @@ describe('filters', () => {
     const view = await renderGrid();
     await view.findByTestId('faith-duas-grid');
 
-    fireEvent.press(view.getByTestId('faith-duas-filter'));
+    await fireEvent.press(view.getByTestId('faith-duas-filter'));
     await waitFor(() => expect(view.getByTestId('faith-duas-filter-selections')).toBeTruthy());
-    fireEvent.press(view.getByTestId('faith-duas-filter-selections'));
+    await fireEvent.press(view.getByTestId('faith-duas-filter-selections'));
 
     await waitFor(() => {
       expect(view.getByTestId('faith-duas-result-q.2.255.255')).toBeTruthy();
@@ -311,9 +311,9 @@ describe('filters', () => {
     const view = await renderGrid();
     await view.findByTestId('faith-duas-grid');
 
-    fireEvent.press(view.getByTestId('faith-duas-filter'));
+    await fireEvent.press(view.getByTestId('faith-duas-filter'));
     await waitFor(() => expect(view.getByTestId('faith-duas-filter-favourites')).toBeTruthy());
-    fireEvent.press(view.getByTestId('faith-duas-filter-favourites'));
+    await fireEvent.press(view.getByTestId('faith-duas-filter-favourites'));
 
     await waitFor(() => {
       expect(view.getByTestId('faith-duas-result-q.2.255.255')).toBeTruthy();
@@ -326,9 +326,9 @@ describe('filters', () => {
     const view = await renderGrid();
     await view.findByTestId('faith-duas-grid');
 
-    fireEvent.press(view.getByTestId('faith-duas-filter'));
+    await fireEvent.press(view.getByTestId('faith-duas-filter'));
     await waitFor(() => expect(view.getByTestId('faith-duas-filter-reviewed')).toBeTruthy());
-    fireEvent.press(view.getByTestId('faith-duas-filter-reviewed'));
+    await fireEvent.press(view.getByTestId('faith-duas-filter-reviewed'));
 
     await waitFor(() => {
       expect(view.getByTestId('faith-duas-search-empty')).toBeTruthy();
@@ -409,7 +409,9 @@ describe('the personal categories still work', () => {
     await repository.increment();
 
     const view = await renderCategory('my-quran-selections');
-    fireEvent.press(await view.findByTestId('faith-dua-category-selection-remove-q.2.255.255'));
+    await fireEvent.press(
+      await view.findByTestId('faith-dua-category-selection-remove-q.2.255.255'),
+    );
 
     await waitFor(async () => {
       expect(await readQuranSelections()).toHaveLength(0);
@@ -476,7 +478,7 @@ describe('sending a selection to Tasbih', () => {
     await repository.increment();
 
     const view = await renderCategory('my-quran-selections');
-    fireEvent.press(await view.findByTestId('faith-dua-category-selection-use-q.2.255.255'));
+    await fireEvent.press(await view.findByTestId('faith-dua-category-selection-use-q.2.255.255'));
 
     await waitFor(async () => {
       const session = await createLocalTasbihRepository().getSession();

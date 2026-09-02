@@ -178,7 +178,7 @@ describe('every supported viewport and text size', () => {
   it.each(WIDTHS)('meets the minimum touch height on every control at %ddp', async (width) => {
     // The largest supported text size, where a fixed-height control is most likely to be squeezed.
     await renderAt(width, 1.5);
-    fireEvent.press(screen.getByTestId('faith-prayer-location-mode-coordinates'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-coordinates'));
     await drain();
 
     const minimum = Math.round(moduleLayout.minTouchTarget * scaleFor(width));
@@ -202,7 +202,7 @@ describe('every supported viewport and text size', () => {
 
   it.each(WIDTHS)('renders no royal blue at %ddp', async (width) => {
     await renderAt(width, 1);
-    fireEvent.press(screen.getByTestId('faith-prayer-location-mode-coordinates'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-coordinates'));
     await drain();
 
     const colours = coloursIn(screen.getByTestId('faith-prayer-location'));
@@ -221,9 +221,9 @@ function scaleFor(width: number): number {
 describe('the search results are usable without sight', () => {
   it('gives every result row an accessible name and a full-size target', async () => {
     await renderAt(360, 1.3);
-    fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
     await drain(2);
-    fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), 'Dubai');
+    await fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), 'Dubai');
     await drain();
 
     const row = screen.getByTestId('faith-prayer-location-city-result-292223');
@@ -245,9 +245,9 @@ describe('the search results are usable without sight', () => {
   */
   it('puts the results and Save inside the scroll region rather than a docked panel', async () => {
     await renderAt(360, 1);
-    fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-mode-city'));
     await drain(2);
-    fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), 'Dubai');
+    await fireEvent.changeText(screen.getByTestId('faith-prayer-location-city-input'), 'Dubai');
     await drain();
 
     /*

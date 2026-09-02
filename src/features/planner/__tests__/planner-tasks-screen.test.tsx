@@ -12,7 +12,7 @@ const OWNER = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 
 async function press(testID: string): Promise<void> {
   await act(async () => {
-    fireEvent.press(screen.getByTestId(testID));
+    void fireEvent.press(screen.getByTestId(testID));
     await Promise.resolve();
   });
 }

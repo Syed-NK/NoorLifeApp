@@ -54,6 +54,29 @@ module.exports = defineConfig([
     files: ['**/*.test.ts', '**/*.test.tsx', 'jest.setup.ts'],
     rules: {
       'no-restricted-imports': 'off',
+      /*
+        `fireEvent` is async in React Native Testing Library 14, and firing two events in one test
+        without awaiting them overlaps React`s act() scopes. That does not fail the test that did it —
+        it leaves the renderer dead, so every later `render` in the same file yields an empty tree and
+        every later query fails. The suite then passes only in its declared order, which is what
+        issue #155 was reporting.
+
+        Matching the bare statement is the whole rule: an awaited call is an `AwaitExpression`, so it
+        never reaches this selector.
+      */
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "ExpressionStatement > CallExpression[callee.object.name='fireEvent']",
+          message:
+            'Await this fireEvent call. It is async in RNTL 14, and two un-awaited calls in one test overlap act() and break every later render in the file (#155). To fire in one tick on purpose - a double-tap a busy guard must swallow - keep it inside an act() batch and mark it `void fireEvent...`.',
+        },
+        {
+          selector: "ExpressionStatement > CallExpression[callee.name='fireEvent']",
+          message:
+            'Await this fireEvent call. It is async in RNTL 14, and two un-awaited calls in one test overlap act() and break every later render in the file (#155). To fire in one tick on purpose - a double-tap a busy guard must swallow - keep it inside an act() batch and mark it `void fireEvent...`.',
+        },
+      ],
     },
   },
 ]);

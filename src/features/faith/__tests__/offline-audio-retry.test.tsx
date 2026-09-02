@@ -145,7 +145,7 @@ describe('a press reaches the existing download path', () => {
       would have passed against the dead `onPress` too. What makes it meaningful is the union type on
       `FaithRowProps` and the affordance file's check that the row itself is not pressable.
     */
-    fireEvent.press(view.getByTestId(retryId(1)));
+    await fireEvent.press(view.getByTestId(retryId(1)));
 
     expect(retrySurah).toHaveBeenCalledTimes(1);
     expect(retrySurah).toHaveBeenCalledWith(1);
@@ -162,7 +162,7 @@ describe('a press reaches the existing download path', () => {
     const removeSurah = jest.spyOn(service, 'removeSurah');
     const view = await renderOffline(service);
 
-    fireEvent.press(view.getByTestId(removeId(1)));
+    await fireEvent.press(view.getByTestId(removeId(1)));
 
     /*
       Two gestures, not one. This is the assertion the old shape could never have passed honestly: an

@@ -143,7 +143,7 @@ describe('the switches are independently reachable', () => {
     const view = await renderReminders(notifications);
     await drain();
 
-    fireEvent(view.getByTestId('faith-prayer-notifications-master'), 'valueChange', true);
+    await fireEvent(view.getByTestId('faith-prayer-notifications-master'), 'valueChange', true);
     await drain();
 
     /*
@@ -276,7 +276,7 @@ describe('the screen reports what is scheduled, not what is preferred', () => {
     await drain(30);
     expect(notifications.pending().length).toBeGreaterThan(0);
 
-    fireEvent(view.getByTestId('faith-prayer-notifications-master'), 'valueChange', false);
+    await fireEvent(view.getByTestId('faith-prayer-notifications-master'), 'valueChange', false);
     await drain(30);
 
     /* Leaving alerts behind after the user turned them off is the one failure that wakes somebody. */
@@ -297,7 +297,7 @@ describe('the screen reports what is scheduled, not what is preferred', () => {
     await drain(30);
     const before = notifications.pending().length;
 
-    fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', false);
+    await fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', false);
     await drain(30);
 
     const after = notifications.pending();
@@ -317,7 +317,7 @@ describe('the screen reports what is scheduled, not what is preferred', () => {
     await drain(30);
     const first = notifications.pending().length;
 
-    fireEvent.press(view.getByTestId('faith-prayer-notifications-refresh'));
+    await fireEvent.press(view.getByTestId('faith-prayer-notifications-refresh'));
     await drain(30);
 
     /* Same inputs, same identifiers still pending: the cheap path does no platform work at all. */
@@ -350,7 +350,7 @@ describe('the OS is asked only when a person switches something on', () => {
     const view = await renderReminders(notifications);
     await drain(30);
 
-    fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', true);
+    await fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', true);
     await drain(30);
 
     const calls = notifications.calls();
@@ -366,9 +366,9 @@ describe('the OS is asked only when a person switches something on', () => {
     const view = await renderReminders(notifications);
     await drain(30);
 
-    fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', true);
+    await fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', true);
     await drain(30);
-    fireEvent(view.getByTestId('faith-prayer-reminder-asr'), 'valueChange', true);
+    await fireEvent(view.getByTestId('faith-prayer-reminder-asr'), 'valueChange', true);
     await drain(30);
 
     /* Already granted: there is nothing to ask, and asking anyway is how an app gets muted. */
@@ -392,7 +392,7 @@ describe('the OS is asked only when a person switches something on', () => {
     const view = await renderReminders(notifications);
     await drain(30);
 
-    fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', false);
+    await fireEvent(view.getByTestId('faith-prayer-reminder-fajr'), 'valueChange', false);
     await drain(30);
 
     expect(notifications.calls()).not.toContain('requestPermission');
@@ -408,7 +408,7 @@ describe('each row opens its own settings, and the choices survive a restart', (
     const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
     await drain(30);
 
-    fireEvent.press(view.getByTestId('faith-prayer-reminder-open-isha'));
+    await fireEvent.press(view.getByTestId('faith-prayer-reminder-open-isha'));
     await drain(10);
 
     expect(view.getByTestId('faith-prayer-alert-sheet-isha')).toBeTruthy();
@@ -431,7 +431,7 @@ describe('each row opens its own settings, and the choices survive a restart', (
     const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
     await drain(30);
 
-    fireEvent.press(view.getByTestId('faith-prayer-reminder-open-asr'));
+    await fireEvent.press(view.getByTestId('faith-prayer-reminder-open-asr'));
     await drain(10);
 
     const sheet = 'faith-prayer-alert-sheet-asr';
@@ -445,7 +445,7 @@ describe('each row opens its own settings, and the choices survive a restart', (
     const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
     await drain(30);
 
-    fireEvent.press(view.getByTestId('faith-prayer-reminder-open-fajr'));
+    await fireEvent.press(view.getByTestId('faith-prayer-reminder-open-fajr'));
     await drain(10);
 
     const control = view.getByTestId('faith-prayer-alert-sheet-fajr-full-adhan');
@@ -510,7 +510,7 @@ describe('each row opens its settings from its own button', () => {
     const view = await renderReminders(createFakeNotificationPort({ permission: 'granted' }));
     await drain();
 
-    fireEvent.press(view.getByTestId('faith-prayer-reminder-open-maghrib'));
+    await fireEvent.press(view.getByTestId('faith-prayer-reminder-open-maghrib'));
     await drain(10);
 
     expect(view.getByTestId('faith-prayer-alert-sheet-maghrib')).toBeTruthy();

@@ -428,7 +428,7 @@ describe('behaviour is unchanged by the migration', () => {
   it('keeps the Expense / Income / Refund labels, roles and state', async () => {
     await renderSpending(1);
     await act(async () => {
-      fireEvent.press(screen.getByTestId('finance-open-composer'));
+      void fireEvent.press(screen.getByTestId('finance-open-composer'));
       await Promise.resolve();
       await Promise.resolve();
     });

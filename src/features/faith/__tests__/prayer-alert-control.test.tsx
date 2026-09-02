@@ -105,7 +105,7 @@ describe('every one of the six rows offers a notification control', () => {
   it('opens that time’s sheet, and only that one', async () => {
     const view = await renderResolved(createFakeNotificationPort({ permission: 'granted' }));
 
-    fireEvent.press(view.getByTestId('faith-prayer-journey-asr-notify'));
+    await fireEvent.press(view.getByTestId('faith-prayer-journey-asr-notify'));
     await drain();
 
     expect(view.getByTestId(sheetId('asr'))).toBeTruthy();
@@ -115,7 +115,7 @@ describe('every one of the six rows offers a notification control', () => {
   it('offers sunrise its own settings, and marks it as not a prayer', async () => {
     const view = await renderResolved(createFakeNotificationPort({ permission: 'granted' }));
 
-    fireEvent.press(view.getByTestId('faith-prayer-journey-sunrise-notify'));
+    await fireEvent.press(view.getByTestId('faith-prayer-journey-sunrise-notify'));
     await drain();
 
     expect(view.getByTestId(sheetId('sunrise'))).toBeTruthy();
@@ -131,7 +131,7 @@ describe('every one of the six rows offers a notification control', () => {
   it('names the prayer from the repository, not from a string built in the view', async () => {
     const view = await renderResolved(createFakeNotificationPort({ permission: 'granted' }));
 
-    fireEvent.press(view.getByTestId('faith-prayer-journey-maghrib-notify'));
+    await fireEvent.press(view.getByTestId('faith-prayer-journey-maghrib-notify'));
     await drain();
 
     const rowLabel = String(view.getByTestId('faith-prayer-journey-maghrib-label').props.children);
@@ -170,7 +170,7 @@ describe('rendering the Prayer screen asks the platform for nothing', () => {
     const notifications = createFakeNotificationPort({ permission: 'undetermined' });
     const view = await renderResolved(notifications);
 
-    fireEvent.press(view.getByTestId('faith-prayer-journey-fajr-notify'));
+    await fireEvent.press(view.getByTestId('faith-prayer-journey-fajr-notify'));
     await drain();
 
     /*
@@ -187,7 +187,7 @@ describe('rendering the Prayer screen asks the platform for nothing', () => {
     const notifications = createFakeNotificationPort({ permission: 'denied' });
     const view = await renderResolved(notifications);
 
-    fireEvent.press(view.getByTestId('faith-prayer-journey-fajr-notify'));
+    await fireEvent.press(view.getByTestId('faith-prayer-journey-fajr-notify'));
     await drain();
 
     /*

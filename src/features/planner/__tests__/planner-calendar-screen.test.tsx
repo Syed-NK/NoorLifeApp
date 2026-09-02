@@ -110,7 +110,7 @@ async function renderCalendar(repo: PlannerTaskRepository) {
 
 async function press(testID: string): Promise<void> {
   await act(async () => {
-    fireEvent.press(screen.getByTestId(testID));
+    void fireEvent.press(screen.getByTestId(testID));
     await Promise.resolve();
   });
 }

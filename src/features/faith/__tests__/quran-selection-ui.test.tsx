@@ -152,7 +152,7 @@ describe('browsing to a verse', () => {
   it('offers a typed reference as its own destination', async () => {
     const view = await renderSelection();
 
-    fireEvent.changeText(await view.findByTestId('faith-quran-selection-search'), '2:2');
+    await fireEvent.changeText(await view.findByTestId('faith-quran-selection-search'), '2:2');
     const jump = await view.findByTestId('faith-quran-selection-jump');
     expect(String(jump.props.accessibilityLabel)).toContain('2:2');
   });
@@ -160,7 +160,7 @@ describe('browsing to a verse', () => {
   it('previews the exact retained Arabic with its reference and translator', async () => {
     const view = await renderSelection();
 
-    fireEvent.press(await view.findByTestId('faith-quran-selection-surah-2'));
+    await fireEvent.press(await view.findByTestId('faith-quran-selection-surah-2'));
 
     const arabic = await view.findByTestId('faith-quran-selection-preview-body-arabic-2:1');
     // Rendered byte for byte, from the generation, matched on the verse key it was asked for.
@@ -176,10 +176,10 @@ describe('browsing to a verse', () => {
 
   it('extends the preview to the whole range when the last verse moves', async () => {
     const view = await renderSelection();
-    fireEvent.press(await view.findByTestId('faith-quran-selection-surah-2'));
+    await fireEvent.press(await view.findByTestId('faith-quran-selection-surah-2'));
     await view.findByTestId('faith-quran-selection-preview-body-arabic-2:1');
 
-    fireEvent.press(view.getByTestId('faith-quran-selection-end-up'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-end-up'));
 
     const second = await view.findByTestId('faith-quran-selection-preview-body-arabic-2:2');
     expect(String(second.props.children)).toBe(ARABIC['2:2']);
@@ -187,7 +187,7 @@ describe('browsing to a verse', () => {
 
   it('refuses a range past the end of the surah rather than previewing a hole', async () => {
     const view = await renderSelection();
-    fireEvent.press(await view.findByTestId('faith-quran-selection-surah-112'));
+    await fireEvent.press(await view.findByTestId('faith-quran-selection-surah-112'));
 
     // Surah 112 holds one verse in this generation, so the stepper has nowhere to go.
     const up = await view.findByTestId('faith-quran-selection-end-up');
@@ -197,8 +197,8 @@ describe('browsing to a verse', () => {
   it('says the Qur’an is not downloaded rather than spinning against a network', async () => {
     const view = await renderSelection(emptyRetained());
 
-    fireEvent.changeText(await view.findByTestId('faith-quran-selection-search'), '2:1');
-    fireEvent.press(await view.findByTestId('faith-quran-selection-jump'));
+    await fireEvent.changeText(await view.findByTestId('faith-quran-selection-search'), '2:1');
+    await fireEvent.press(await view.findByTestId('faith-quran-selection-jump'));
 
     await view.findByTestId('faith-quran-selection-preview-body-unavailable');
     expect(view.getByText(/not on this device yet/i)).toBeTruthy();
@@ -208,8 +208,8 @@ describe('browsing to a verse', () => {
 describe('saving a selection', () => {
   it('writes the reference and no scripture at all', async () => {
     const view = await renderSelection();
-    fireEvent.press(await view.findByTestId('faith-quran-selection-surah-2'));
-    fireEvent.press(await view.findByTestId('faith-quran-selection-save'));
+    await fireEvent.press(await view.findByTestId('faith-quran-selection-surah-2'));
+    await fireEvent.press(await view.findByTestId('faith-quran-selection-save'));
 
     await waitFor(async () => {
       expect(await readQuranSelections()).toHaveLength(1);
@@ -226,9 +226,9 @@ describe('saving a selection', () => {
 
   it('confirms the save on the control that made it', async () => {
     const view = await renderSelection();
-    fireEvent.press(await view.findByTestId('faith-quran-selection-surah-2'));
+    await fireEvent.press(await view.findByTestId('faith-quran-selection-surah-2'));
     const save = await view.findByTestId('faith-quran-selection-save');
-    fireEvent.press(save);
+    await fireEvent.press(save);
 
     await waitFor(() => {
       expect(String(view.getByTestId('faith-quran-selection-save').props.accessibilityLabel)).toBe(

@@ -239,7 +239,7 @@ describe('the reader is the only thing that records', () => {
 
     const more = view.queryByTestId('faith-reader-load-more');
     if (more !== null) {
-      fireEvent.press(more);
+      await fireEvent.press(more);
     }
     expect(totalAyatRead(await readReadingLog())).toBe(0);
   });
@@ -250,8 +250,8 @@ describe('the reader is the only thing that records', () => {
 
     // The two deliberate taps: press the verse, then Read in its sheet. Opening the sheet on its
     // own records nothing — that case is in `quran-reader-actions.test.tsx`.
-    fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
-    fireEvent.press(await view.findByTestId('faith-reader-action-read'));
+    await fireEvent.press(await view.findByTestId('faith-reader-ayah-1-2'));
+    await fireEvent.press(await view.findByTestId('faith-reader-action-read'));
     await view.findByTestId('faith-reader-success');
 
     const log = await readReadingLog();
@@ -289,11 +289,11 @@ describe('the progress screen', () => {
     await recordReading(18, 14, todayIsoDate());
     const view = await withRepositories(<ProgressScreen />);
 
-    fireEvent.press(await view.findByTestId('faith-progress-goal-up'));
+    await fireEvent.press(await view.findByTestId('faith-progress-goal-up'));
     expect(await view.findByText(String(DEFAULT_DAILY_GOAL + 5))).toBeTruthy();
     expect((await readReadingLog()).dailyGoal).toBe(DEFAULT_DAILY_GOAL + 5);
 
-    fireEvent.press(await view.findByTestId('faith-progress-goal-down'));
+    await fireEvent.press(await view.findByTestId('faith-progress-goal-down'));
     // Awaited through the rendered value, not straight from storage: the write is asynchronous, and
     // reading the store before the component has re-rendered races it.
     expect(await view.findByText(String(DEFAULT_DAILY_GOAL))).toBeTruthy();
@@ -307,7 +307,7 @@ describe('the progress screen', () => {
     const reset = await view.findByTestId('faith-progress-reset');
     expect(String(reset.props.accessibilityHint)).toMatch(/Erases/);
 
-    fireEvent.press(reset);
+    await fireEvent.press(reset);
     // The confirmation is a native Alert, so nothing is erased by the press itself.
     expect(totalAyatRead(await readReadingLog())).toBe(14);
   });

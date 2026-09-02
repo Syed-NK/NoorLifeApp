@@ -323,7 +323,7 @@ describe('the verse list renders once, not once per unrelated commit', () => {
       the sheet on verse one from anywhere in the surah.
     */
     await mountReader({ surah: '2', ayah: '286' }, []);
-    fireEvent.press(screen.getByTestId('faith-reader-ayah-number-2-12'));
+    await fireEvent.press(screen.getByTestId('faith-reader-ayah-number-2-12'));
 
     const sheet = await screen.findByTestId('faith-reader-ayah-actions');
     expect(within(sheet).getByText('Aya 2:12')).toBeTruthy();

@@ -144,7 +144,7 @@ async function renderBrowser(
 }
 
 async function type(view: typeof screen, text: string): Promise<void> {
-  fireEvent.changeText(view.getByTestId('faith-quran-selection-search'), text);
+  await fireEvent.changeText(view.getByTestId('faith-quran-selection-search'), text);
   await drain();
 }
 
@@ -233,7 +233,7 @@ describe('finding a verse by remembered words', () => {
   it('opens the chosen verse as a single ayah, with no range guessed for the user', async () => {
     const view = await renderBrowser();
     await type(view, 'gratitude');
-    fireEvent.press(view.getByTestId('faith-quran-selection-verse-2:3'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-verse-2:3'));
     await drain();
 
     /*
@@ -249,7 +249,7 @@ describe('finding a verse by remembered words', () => {
   it('previews the verse it opened, with Arabic, rendering and translator', async () => {
     const view = await renderBrowser();
     await type(view, 'patience');
-    fireEvent.press(view.getByTestId('faith-quran-selection-verse-2:2'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-verse-2:2'));
     await drain();
 
     const body = view.getByTestId('faith-quran-selection-preview-body-arabic-2:2');
@@ -262,9 +262,9 @@ describe('finding a verse by remembered words', () => {
   it('saves what was previewed, as the user’s own selection', async () => {
     const view = await renderBrowser();
     await type(view, 'guardianship');
-    fireEvent.press(view.getByTestId('faith-quran-selection-verse-2:1'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-verse-2:1'));
     await drain();
-    fireEvent.press(view.getByTestId('faith-quran-selection-save'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-save'));
     await drain(20);
 
     const stored = await readQuranSelections();
@@ -289,7 +289,7 @@ describe('the routes that already worked still work', () => {
 
     const jump = view.getByTestId('faith-quran-selection-jump');
     expect(String(jump.props.accessibilityLabel)).toContain('2:2');
-    fireEvent.press(jump);
+    await fireEvent.press(jump);
     await drain();
     expect(view.getByTestId('faith-quran-selection-range')).toBeTruthy();
   });
@@ -300,12 +300,12 @@ describe('the routes that already worked still work', () => {
 
     const view = await renderBrowser();
     await type(view, '2:1');
-    fireEvent.press(view.getByTestId('faith-quran-selection-jump'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-jump'));
     await drain();
 
     expect(String(view.getByTestId('faith-quran-selection-start-input').props.value)).toBe('1');
     expect(String(view.getByTestId('faith-quran-selection-end-input').props.value)).toBe('1');
-    fireEvent.changeText(view.getByTestId('faith-quran-selection-end-input'), '3');
+    await fireEvent.changeText(view.getByTestId('faith-quran-selection-end-input'), '3');
     await drain();
     expect(view.getByTestId('faith-quran-selection-preview')).toBeTruthy();
   });
@@ -358,9 +358,9 @@ describe('a verse found this way is still only the user’s own', () => {
   it('is saved with no reviewed or popular classification anywhere on it', async () => {
     const view = await renderBrowser();
     await type(view, 'guardianship');
-    fireEvent.press(view.getByTestId('faith-quran-selection-verse-2:1'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-verse-2:1'));
     await drain();
-    fireEvent.press(view.getByTestId('faith-quran-selection-save'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-save'));
     await drain(20);
 
     const stored = await readQuranSelections();
@@ -388,9 +388,9 @@ describe('a verse found this way is still only the user’s own', () => {
     setActiveFaithScope(USER_A);
     const view = await renderBrowser();
     await type(view, 'oneness');
-    fireEvent.press(view.getByTestId('faith-quran-selection-verse-112:1'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-verse-112:1'));
     await drain();
-    fireEvent.press(view.getByTestId('faith-quran-selection-save'));
+    await fireEvent.press(view.getByTestId('faith-quran-selection-save'));
     await drain(20);
     expect(await readQuranSelections()).toHaveLength(1);
 

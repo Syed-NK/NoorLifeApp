@@ -159,7 +159,7 @@ describe('every control reports what is stored and reports a change once', () =>
 
   it('reports a notify change without changing anything itself', async () => {
     const on = await renderSheet({ settings: FAJR_OFF });
-    fireEvent(screen.getByTestId(id('fajr', '-notify')), 'valueChange', true);
+    await fireEvent(screen.getByTestId(id('fajr', '-notify')), 'valueChange', true);
 
     expect(on.notify).toHaveBeenCalledTimes(1);
     expect(on.notify).toHaveBeenCalledWith(true);
@@ -181,7 +181,7 @@ describe('every control reports what is stored and reports a change once', () =>
 
   it('removes a selected day and keeps the rest', async () => {
     const on = await renderSheet({ settings: FAJR });
-    fireEvent.press(screen.getByTestId(id('fajr', '-day-3')));
+    await fireEvent.press(screen.getByTestId(id('fajr', '-day-3')));
 
     expect(on.days).toHaveBeenCalledTimes(1);
     expect(on.days).toHaveBeenCalledWith([0, 1, 2, 4, 5, 6]);
@@ -190,7 +190,7 @@ describe('every control reports what is stored and reports a change once', () =>
   it('adds an unselected day in sorted order', async () => {
     const only = { ...FAJR, repeatDays: [1, 5] };
     const on = await renderSheet({ settings: only });
-    fireEvent.press(screen.getByTestId(id('fajr', '-day-3')));
+    await fireEvent.press(screen.getByTestId(id('fajr', '-day-3')));
 
     expect(on.days).toHaveBeenCalledWith([1, 3, 5]);
   });
@@ -210,7 +210,7 @@ describe('every control reports what is stored and reports a change once', () =>
   it.each(PRE_REMINDER_CHOICES)('offers %s minutes and reports it once', async (minutes) => {
     const on = await renderSheet({ settings: { ...FAJR, preReminderMinutes: 0 } });
     const control = screen.getByTestId(id('fajr', `-pre-${minutes}`));
-    fireEvent.press(control);
+    await fireEvent.press(control);
 
     expect(on.pre).toHaveBeenCalledTimes(1);
     expect(on.pre).toHaveBeenCalledWith(minutes);
@@ -231,7 +231,7 @@ describe('every control reports what is stored and reports a change once', () =>
     expect(screen.getByTestId(id('fajr', '-sound-system-default'))).toBeTruthy();
     expect(screen.getByTestId(id('fajr', '-sound-silent'))).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId(id('fajr', '-sound-silent')));
+    await fireEvent.press(screen.getByTestId(id('fajr', '-sound-silent')));
     expect(on.sound).toHaveBeenCalledWith('silent');
   });
 
@@ -271,7 +271,7 @@ describe('the sheet states what it cannot promise', () => {
 
     const notice = screen.getByTestId(id('fajr', '-permission'));
     expect(notice).toBeTruthy();
-    fireEvent.press(screen.getByTestId(id('fajr', '-permission-action')));
+    await fireEvent.press(screen.getByTestId(id('fajr', '-permission-action')));
     expect(on.settings).toHaveBeenCalledTimes(1);
   });
 
@@ -355,8 +355,8 @@ describe('the sheet states what it cannot promise', () => {
 
   it('closes from the scrim and from the close control', async () => {
     const on = await renderSheet();
-    fireEvent.press(screen.getByTestId(id('fajr', '-close')));
-    fireEvent.press(screen.getByTestId(id('fajr', '-scrim')));
+    await fireEvent.press(screen.getByTestId(id('fajr', '-close')));
+    await fireEvent.press(screen.getByTestId(id('fajr', '-scrim')));
     expect(on.close).toHaveBeenCalledTimes(2);
   });
 });

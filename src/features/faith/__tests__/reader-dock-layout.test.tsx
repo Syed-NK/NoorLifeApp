@@ -247,7 +247,7 @@ describe('the player is fixed and the content scrolls under nothing', () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
     const before = flatStyle(await view.findByTestId('faith-reader-docked')).marginBottom;
 
-    fireEvent.scroll(view.getByTestId('faith-reader-scroll'), {
+    await fireEvent.scroll(view.getByTestId('faith-reader-scroll'), {
       nativeEvent: {
         contentOffset: { y: 400, x: 0 },
         contentSize: { height: 2000, width: 361 },
@@ -285,7 +285,7 @@ describe('the navigation is still a navigation', () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
     await view.findByTestId('faith-reader-player');
 
-    fireEvent.press(view.getByTestId('faith-reader-nav-worship'));
+    await fireEvent.press(view.getByTestId('faith-reader-nav-worship'));
 
     expect(mockRouter.navigate).toHaveBeenCalled();
   });
@@ -294,7 +294,7 @@ describe('the navigation is still a navigation', () => {
     const { view } = await renderReader({ downloaded: READER_DOWNLOADED, insets: INSETS });
     await view.findByTestId('faith-reader-player');
 
-    fireEvent.press(view.getByTestId('faith-reader-nav-ai'));
+    await fireEvent.press(view.getByTestId('faith-reader-nav-ai'));
 
     expect(mockRouter.navigate).toHaveBeenCalled();
   });

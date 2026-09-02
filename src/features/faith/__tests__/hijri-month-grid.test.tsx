@@ -326,7 +326,7 @@ describe('the calendar screen', () => {
     const view = await renderCalendar();
     await view.findByTestId('faith-calendar-grid');
 
-    fireEvent.press(view.getByTestId('faith-calendar-grid-day-3'));
+    await fireEvent.press(view.getByTestId('faith-calendar-grid-day-3'));
 
     const card = await view.findByTestId('faith-calendar-selected');
     expect(card).toBeTruthy();
@@ -350,7 +350,7 @@ describe('the calendar screen', () => {
     const view = await renderCalendar();
     const before = String((await view.findByTestId('faith-calendar-month-title')).props.children);
 
-    fireEvent.press(view.getByTestId('faith-calendar-next'));
+    await fireEvent.press(view.getByTestId('faith-calendar-next'));
 
     /**
      * `waitFor`, not a bare `findByTestId`.

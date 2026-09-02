@@ -105,7 +105,7 @@ describe('counting', () => {
     expect(await countValue(view)).toBe('0');
 
     // The card itself is the control. There is no inner button to miss.
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
 
     await waitFor(async () => expect(await countValue(view)).toBe('1'));
   });
@@ -129,8 +129,8 @@ describe('counting', () => {
 
   it('persists the count across a remount', async () => {
     const view = await renderTasbih();
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
     await waitFor(async () => expect(await countValue(view)).toBe('2'));
 
     // A count is an act of worship in progress; losing it to a backgrounded app is not acceptable.
@@ -140,7 +140,7 @@ describe('counting', () => {
 
   it('undoes a mis-tap without going below zero', async () => {
     const view = await renderTasbih();
-    fireEvent.press(await view.findByTestId('faith-tasbih-undo'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-undo'));
     await waitFor(async () => expect(await countValue(view)).toBe('0'));
   });
 });
@@ -155,28 +155,28 @@ describe('the controls do not count', () => {
    */
   it('undo removes a bead rather than adding one', async () => {
     const view = await renderTasbih();
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
     await waitFor(async () => expect(await countValue(view)).toBe('2'));
 
-    fireEvent.press(await view.findByTestId('faith-tasbih-undo'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-undo'));
     await waitFor(async () => expect(await countValue(view)).toBe('1'));
   });
 
   it('the target stepper does not add a bead', async () => {
     const view = await renderTasbih();
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
     await waitFor(async () => expect(await countValue(view)).toBe('1'));
 
-    fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
-    fireEvent.press(await view.findByTestId('faith-tasbih-target-down'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-target-down'));
 
     await waitFor(async () => expect(await countValue(view)).toBe('1'));
   });
 
   it('Change does not add a bead on its way to the selector', async () => {
     const view = await renderTasbih();
-    fireEvent.press(await view.findByTestId('faith-tasbih-change'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-change'));
 
     // It sits inside the sheet rather than on the counting surface, so a thumb reaching for it
     // cannot bank a repetition the user did not make.
@@ -192,13 +192,21 @@ describe('the round', () => {
     const view = await renderTasbih();
     await view.findByTestId('faith-tasbih-count');
 
-    fireEvent.press(view.getByTestId('faith-tasbih-count'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-count'));
 
-    // At the target the count returns to zero and the round is banked, as a physical strand does.
+    /*
+      At the target the count returns to zero and the round is banked, as a physical strand does.
+
+      The label is the round being *counted*, not the number banked: a fresh session reads
+      "Round 1" with nothing banked, so banking the first round advances it to "Round 2". This
+      asserted `/Round 1/` — the value from *before* the press — and passed only because the press
+      never took effect: `fireEvent` is async in RNTL 14 and was not awaited, so the tap was
+      dropped and the seeded state was what got asserted. See #155.
+    */
     await waitFor(
       async () =>
         expect(String((await view.findByTestId('faith-tasbih-rounds')).props.children)).toMatch(
-          /Round 1/,
+          /Round 2/,
         ),
       { timeout: 4000 },
     );
@@ -207,11 +215,11 @@ describe('the round', () => {
 
   it('keeps the count when the target changes', async () => {
     const view = await renderTasbih();
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
     await waitFor(async () => expect(await countValue(view)).toBe('2'));
 
-    fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
 
     // The taps already made were real. Discarding them because somebody adjusted their intention
     // would be the counter deciding their dhikr did not happen.
@@ -236,7 +244,7 @@ describe('the target', () => {
       pass: the approved design has minus, the current target and plus, and five circles in a row
       read as a settings form rather than as part of a counter.
     */
-    fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
     await waitFor(async () =>
       expect(String((await view.findByTestId('faith-tasbih-target-value')).props.children)).toBe(
         '34',
@@ -246,7 +254,7 @@ describe('the target', () => {
 
   it('persists across a remount', async () => {
     const view = await renderTasbih();
-    fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-target-up'));
     await waitFor(async () =>
       expect(String((await view.findByTestId('faith-tasbih-target-value')).props.children)).toBe(
         '34',
@@ -268,7 +276,7 @@ describe('the target', () => {
     const view = await renderTasbih();
     await view.findByTestId('faith-tasbih-target-down');
 
-    fireEvent.press(view.getByTestId('faith-tasbih-target-down'));
+    await fireEvent.press(view.getByTestId('faith-tasbih-target-down'));
 
     await waitFor(
       async () =>

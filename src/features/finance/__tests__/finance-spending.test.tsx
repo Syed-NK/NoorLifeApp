@@ -105,7 +105,7 @@ let harness: PlannerDayHarness | null = null;
 /** One event, flushed. Anything reading state after this sees the state the event produced. */
 async function press(target: Parameters<typeof fireEvent.press>[0]): Promise<void> {
   await act(async () => {
-    fireEvent.press(target);
+    void fireEvent.press(target);
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -113,7 +113,7 @@ async function press(target: Parameters<typeof fireEvent.press>[0]): Promise<voi
 
 async function type(testID: string, value: string): Promise<void> {
   await act(async () => {
-    fireEvent.changeText(screen.getByTestId(testID), value);
+    void fireEvent.changeText(screen.getByTestId(testID), value);
     await Promise.resolve();
   });
 }
@@ -458,8 +458,8 @@ describe('recording a transaction', () => {
 
     await act(async () => {
       const save = screen.getByTestId('finance-save');
-      fireEvent.press(save);
-      fireEvent.press(save);
+      void fireEvent.press(save);
+      void fireEvent.press(save);
       await Promise.resolve();
       await Promise.resolve();
     });

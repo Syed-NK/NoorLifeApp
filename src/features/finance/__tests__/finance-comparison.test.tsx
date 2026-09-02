@@ -165,7 +165,7 @@ async function settle(): Promise<void> {
 
 async function press(target: Parameters<typeof fireEvent.press>[0]): Promise<void> {
   await act(async () => {
-    fireEvent.press(target);
+    void fireEvent.press(target);
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -173,7 +173,7 @@ async function press(target: Parameters<typeof fireEvent.press>[0]): Promise<voi
 
 async function type(testID: string, value: string): Promise<void> {
   await act(async () => {
-    fireEvent.changeText(screen.getByTestId(testID), value);
+    void fireEvent.changeText(screen.getByTestId(testID), value);
     await Promise.resolve();
   });
 }

@@ -510,20 +510,20 @@ describe('the translation screen', () => {
       language without a chip is still reachable, which is what stops the chip row from becoming the
       same wall of options the unfiltered list was.
     */
-    fireEvent.press(await view.findByTestId('faith-translations-filter-other'));
+    await fireEvent.press(await view.findByTestId('faith-translations-filter-other'));
     expect(await view.findByTestId(`faith-translations-row-${BOSNIAN.id}`)).toBeTruthy();
     expect(view.queryByTestId(`faith-translations-row-${ABDEL_HALEEM.id}`)).toBeNull();
 
     // And Urdu, which does have a chip, is reached by its own.
-    fireEvent.press(await view.findByTestId('faith-translations-filter-urdu'));
+    await fireEvent.press(await view.findByTestId('faith-translations-filter-urdu'));
     expect(await view.findByTestId(`faith-translations-row-${URDU.id}`)).toBeTruthy();
   });
 
   it('searches across languages by translator', async () => {
     const view = await withRepositories(<TranslationScreen />, { quran: quranWith({}) });
 
-    fireEvent.press(await view.findByTestId('faith-translations-filter-all'));
-    fireEvent.changeText(await view.findByTestId('faith-translations-search'), 'korkut');
+    await fireEvent.press(await view.findByTestId('faith-translations-filter-all'));
+    await fireEvent.changeText(await view.findByTestId('faith-translations-search'), 'korkut');
     expect(await view.findByTestId(`faith-translations-row-${BOSNIAN.id}`)).toBeTruthy();
     expect(view.queryByTestId(`faith-translations-row-${SAHEEH.id}`)).toBeNull();
   });
@@ -531,7 +531,7 @@ describe('the translation screen', () => {
   it('shows a no-results state rather than an empty screen', async () => {
     const view = await withRepositories(<TranslationScreen />, { quran: quranWith({}) });
 
-    fireEvent.changeText(
+    await fireEvent.changeText(
       await view.findByTestId('faith-translations-search'),
       'zzzz-no-such-edition',
     );
@@ -579,7 +579,7 @@ describe('the reciter screen', () => {
       }),
     });
 
-    fireEvent.changeText(await view.findByTestId('faith-reciters-search'), 'minshawi');
+    await fireEvent.changeText(await view.findByTestId('faith-reciters-search'), 'minshawi');
     expect(await view.findByTestId('faith-reciters-row-9')).toBeTruthy();
     expect(view.queryByTestId('faith-reciters-row-3')).toBeNull();
   });

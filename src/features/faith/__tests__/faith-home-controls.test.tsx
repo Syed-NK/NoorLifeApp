@@ -67,7 +67,7 @@ const CONTROL_DESTINATIONS: readonly (readonly [string, string])[] = [
 describe('Faith Home controls', () => {
   it.each(CONTROL_DESTINATIONS)('%s navigates to %s', async (testID, destination) => {
     const view = await renderFaithHome();
-    fireEvent.press(await view.findByTestId(testID));
+    await fireEvent.press(await view.findByTestId(testID));
     await waitFor(() => expect(push).toHaveBeenCalledWith(destination));
   });
 
@@ -92,7 +92,7 @@ describe('Faith Home controls', () => {
     );
 
     const view = await renderFaithHome();
-    fireEvent.press(await view.findByTestId('faith-continue'));
+    await fireEvent.press(await view.findByTestId('faith-continue'));
 
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith({
@@ -105,7 +105,7 @@ describe('Faith Home controls', () => {
   it('routes no control to the coming-soon placeholder', async () => {
     const view = await renderFaithHome();
     for (const [testID] of CONTROL_DESTINATIONS) {
-      fireEvent.press(await view.findByTestId(testID));
+      await fireEvent.press(await view.findByTestId(testID));
     }
     for (const call of push.mock.calls) {
       const target = call[0];
@@ -118,7 +118,7 @@ describe('Faith Home controls', () => {
 describe('Faith Home header', () => {
   it('sends Back to Main Home rather than popping one screen', async () => {
     const view = await renderFaithHome();
-    fireEvent.press(await view.findByTestId('faith-home-header-back'));
+    await fireEvent.press(await view.findByTestId('faith-home-header-back'));
     // `dismissTo`, so a Faith Home reached by deep link still lands on Main Home
     // instead of exiting the app.
     await waitFor(() => expect(dismissTo).toHaveBeenCalledWith('/home'));
@@ -126,13 +126,13 @@ describe('Faith Home header', () => {
 
   it('opens Help', async () => {
     const view = await renderFaithHome();
-    fireEvent.press(await view.findByTestId('faith-home-header-help'));
+    await fireEvent.press(await view.findByTestId('faith-home-header-help'));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/settings/help'));
   });
 
   it('opens the profile from the portrait', async () => {
     const view = await renderFaithHome();
-    fireEvent.press(await view.findByTestId('faith-home-header-profile'));
+    await fireEvent.press(await view.findByTestId('faith-home-header-profile'));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/profile'));
   });
 });
@@ -146,7 +146,7 @@ describe('Faith bottom navigation', () => {
     ['faith-home-nav-more', faithRoutes.more],
   ])('%s navigates to %s', async (testID, destination) => {
     const view = await renderFaithHome();
-    fireEvent.press(await view.findByTestId(testID));
+    await fireEvent.press(await view.findByTestId(testID));
     // `navigate`, not `push`: the five slots are peers and must not stack.
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(destination));
   });

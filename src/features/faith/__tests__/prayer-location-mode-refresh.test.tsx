@@ -206,11 +206,11 @@ describe('a user-selected authority never reaches the platform', () => {
         offered: the location card itself, and both action cards. A native call from any of them
         would fail inside the port.
       */
-      fireEvent.press(screen.getByTestId('faith-prayer-location'));
+      await fireEvent.press(screen.getByTestId('faith-prayer-location'));
       await drain();
-      fireEvent.press(screen.getByTestId('faith-prayer-calculation-settings'));
+      await fireEvent.press(screen.getByTestId('faith-prayer-calculation-settings'));
       await drain();
-      fireEvent.press(screen.getByTestId('faith-prayer-reminders-action'));
+      await fireEvent.press(screen.getByTestId('faith-prayer-reminders-action'));
       await drain();
 
       expect(fake.calls).toEqual([]);
@@ -331,7 +331,7 @@ describe('device authority acquires, exactly once per intent', () => {
     await drain();
     fake.reset();
 
-    fireEvent.press(screen.getByTestId('faith-prayer-location-refresh'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-refresh'));
     await drain();
 
     expect(fake.count('getCurrentPosition')).toBe(1);
@@ -350,7 +350,7 @@ describe('device authority acquires, exactly once per intent', () => {
     await drain();
     fake.reset();
 
-    fireEvent.press(screen.getByTestId('faith-prayer-location-refresh'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-refresh'));
     await drain();
     /*
       The second press is separated by a drain rather than fired in the same tick. A same-tick pair
@@ -359,9 +359,9 @@ describe('device authority acquires, exactly once per intent', () => {
       React's queue does not survive it. This is the protection a user actually meets: a second tap
       always lands at least a frame later.
     */
-    fireEvent.press(screen.getByTestId('faith-prayer-location-refresh'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-refresh'));
     await drain();
-    fireEvent.press(screen.getByTestId('faith-prayer-location-refresh'));
+    await fireEvent.press(screen.getByTestId('faith-prayer-location-refresh'));
     await drain();
 
     expect(fake.count('getCurrentPosition')).toBe(1);

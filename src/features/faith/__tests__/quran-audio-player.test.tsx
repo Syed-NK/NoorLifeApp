@@ -551,11 +551,11 @@ describe('the seek bar', () => {
       of zero and silently do nothing — which is exactly what an unmeasured seek bar does.
     */
     await act(async () => {
-      fireEvent(track, 'layout', {
+      void fireEvent(track, 'layout', {
         nativeEvent: { layout: { width: 200, height: 4, x: 0, y: 0 } },
       });
     });
-    fireEvent.press(track, { nativeEvent: { locationX: 100 } });
+    await fireEvent.press(track, { nativeEvent: { locationX: 100 } });
 
     expect(onSeek).toHaveBeenCalledWith(30);
   });
@@ -577,10 +577,10 @@ describe('the controls call the transport and nothing else', () => {
       onChangeRate,
     });
 
-    fireEvent.press(view.getByTestId('faith-reader-player-toggle'));
-    fireEvent.press(view.getByTestId('faith-reader-player-previous'));
-    fireEvent.press(view.getByTestId('faith-reader-player-next'));
-    fireEvent.press(view.getByTestId('faith-reader-player-speed'));
+    await fireEvent.press(view.getByTestId('faith-reader-player-toggle'));
+    await fireEvent.press(view.getByTestId('faith-reader-player-previous'));
+    await fireEvent.press(view.getByTestId('faith-reader-player-next'));
+    await fireEvent.press(view.getByTestId('faith-reader-player-speed'));
 
     expect(onTogglePlay).toHaveBeenCalledTimes(1);
     expect(onPrevious).toHaveBeenCalledTimes(1);

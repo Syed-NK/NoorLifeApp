@@ -73,16 +73,16 @@ describe('search', () => {
 
   it('shows no-results for a term that matches nothing', async () => {
     const view = await withRepositories(<SearchScreen />);
-    fireEvent.changeText(await view.findByTestId('faith-search-input'), 'zzzznothing');
-    fireEvent.press(await view.findByTestId('faith-search-submit'));
+    await fireEvent.changeText(await view.findByTestId('faith-search-input'), 'zzzznothing');
+    await fireEvent.press(await view.findByTestId('faith-search-submit'));
 
     expect(await view.findByText(/No results found/)).toBeTruthy();
   });
 
   it('finds a verse by its translation', async () => {
     const view = await withRepositories(<SearchScreen />);
-    fireEvent.changeText(await view.findByTestId('faith-search-input'), 'hardship');
-    fireEvent.press(await view.findByTestId('faith-search-submit'));
+    await fireEvent.changeText(await view.findByTestId('faith-search-input'), 'hardship');
+    await fireEvent.press(await view.findByTestId('faith-search-submit'));
 
     expect(await view.findByTestId('faith-search-ayat')).toBeTruthy();
   });
@@ -152,7 +152,7 @@ describe('reader pagination', () => {
   it('appends the next page instead of replacing what is on screen', async () => {
     const { view, requestedCursors } = await readerWithPages();
 
-    fireEvent.press(await view.findByTestId('faith-reader-load-more'));
+    await fireEvent.press(await view.findByTestId('faith-reader-load-more'));
 
     // The new verses are there…
     expect(await view.findByTestId('faith-reader-ayah-2-3')).toBeTruthy();
@@ -164,7 +164,7 @@ describe('reader pagination', () => {
   it('stops offering more once the surah ends', async () => {
     const { view } = await readerWithPages();
 
-    fireEvent.press(await view.findByTestId('faith-reader-load-more'));
+    await fireEvent.press(await view.findByTestId('faith-reader-load-more'));
     expect(await view.findByTestId('faith-reader-ayah-2-4')).toBeTruthy();
 
     expect(view.queryByTestId('faith-reader-load-more')).toBeNull();
@@ -189,7 +189,7 @@ describe('reader pagination', () => {
       },
     });
 
-    fireEvent.press(await view.findByTestId('faith-reader-load-more'));
+    await fireEvent.press(await view.findByTestId('faith-reader-load-more'));
 
     expect(await view.findByText(/could not be loaded/)).toBeTruthy();
     expect(await view.findByTestId('faith-reader-ayah-2-1')).toBeTruthy();
@@ -220,14 +220,14 @@ describe('tasbih', () => {
     const value = await view.findByTestId('faith-tasbih-count-value');
     expect(value.props.children).toBe('0');
 
-    fireEvent.press(await view.findByTestId('faith-tasbih-count'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-count'));
 
     expect(await view.findByText('1')).toBeTruthy();
   });
 
   it('undoes a mis-tap without going below zero', async () => {
     const view = await withRepositories(<TasbihScreen />);
-    fireEvent.press(await view.findByTestId('faith-tasbih-undo'));
+    await fireEvent.press(await view.findByTestId('faith-tasbih-undo'));
     expect(await view.findByText('0')).toBeTruthy();
   });
 
@@ -248,7 +248,7 @@ describe('tasbih', () => {
       so the label states the action instead.
     */
     expect(String(change.props.accessibilityLabel)).toMatch(/choose what to count/i);
-    fireEvent.press(change);
+    await fireEvent.press(change);
 
     // The counting screen itself never grows a counter list; the selector owns that.
     expect(view.queryByTestId('faith-tasbih-counters')).toBeNull();
@@ -260,7 +260,7 @@ describe('worship checklist', () => {
     const view = await withRepositories(<WorshipScreen />);
     expect(await view.findByTestId('faith-worship-summary')).toBeTruthy();
 
-    fireEvent.press(await view.findByTestId('faith-worship-entry-fajr'));
+    await fireEvent.press(await view.findByTestId('faith-worship-entry-fajr'));
 
     // The repository returns the whole day, so the row renders from the persisted answer
     // rather than from an optimistic guess.
@@ -276,19 +276,19 @@ describe('Faith AI', () => {
 
   it('renders a limitation for a jurisprudential question', async () => {
     const view = await withRepositories(<FaithAiScreen />);
-    fireEvent.changeText(
+    await fireEvent.changeText(
       await view.findByTestId('faith-ai-input'),
       'is it permissible to do this?',
     );
-    fireEvent.press(await view.findByTestId('faith-ai-send'));
+    await fireEvent.press(await view.findByTestId('faith-ai-send'));
 
     expect(await view.findByTestId('faith-ai-limitation')).toBeTruthy();
   });
 
   it('offers a hand-off and renders no answer for an out-of-scope question', async () => {
     const view = await withRepositories(<FaithAiScreen />);
-    fireEvent.changeText(await view.findByTestId('faith-ai-input'), 'how did I sleep?');
-    fireEvent.press(await view.findByTestId('faith-ai-send'));
+    await fireEvent.changeText(await view.findByTestId('faith-ai-input'), 'how did I sleep?');
+    await fireEvent.press(await view.findByTestId('faith-ai-send'));
 
     expect(await view.findByTestId('faith-ai-handoff')).toBeTruthy();
     expect(view.queryByTestId('faith-ai-answer')).toBeNull();
@@ -308,8 +308,8 @@ describe('Faith AI', () => {
    */
   it('answers an in-scope question without quoting scripture', async () => {
     const view = await withRepositories(<FaithAiScreen />);
-    fireEvent.changeText(await view.findByTestId('faith-ai-input'), 'explain this ayah');
-    fireEvent.press(await view.findByTestId('faith-ai-send'));
+    await fireEvent.changeText(await view.findByTestId('faith-ai-input'), 'explain this ayah');
+    await fireEvent.press(await view.findByTestId('faith-ai-send'));
 
     expect(await view.findByTestId('faith-ai-answer')).toBeTruthy();
     // Nothing is presented as scripture, so nothing needs a provenance badge.
