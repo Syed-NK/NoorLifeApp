@@ -1,12 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { cleanup, render, screen } from '@testing-library/react-native';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react-native';
 import React from 'react';
 import { Text, View } from 'react-native';
 
 import { seedTranslationPreference } from '@/test-support/faith-preferences-fixtures';
+import { warmUpFirstMount } from '@/test-support/mock-latency-timers';
 import { MAX_SETTLE_TURNS, settleUntilLoaded } from '@/test-support/settle-until-loaded';
 
 import { setRouteParams } from '../../../../jest.setup';
@@ -21,6 +22,7 @@ import {
   type SurahSummary,
   type TranslationId,
 } from '../data/quran-content.repository';
+import { AyahBlock } from '../components/reader/ayah-block';
 import { FaithRepositoryProvider } from '../di/faith-repository-context';
 import { ReaderScreen } from '../screens/reader-screen';
 
@@ -48,11 +50,17 @@ import { ReaderScreen } from '../screens/reader-screen';
 
 const SUITE = join(__dirname, 'quran-ayah-deep-link.test.tsx');
 const HELPER = join(__dirname, '..', '..', '..', 'test-support', 'settle-until-loaded.ts');
+const READER = join(__dirname, '..', 'screens', 'reader-screen.tsx');
 
 function code(path: string): string {
   return readFileSync(path, 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/.*$/gm, '');
+}
+
+/** `code`, split for guards that must distinguish a real statement from a quoted copy of one. */
+function lines(path: string): readonly string[] {
+  return code(path).split('\n');
 }
 
 const AL_BAQARAH_AYAT = 286;
@@ -154,6 +162,16 @@ beforeEach(async () => {
   await AsyncStorage.clear();
   await seedTranslationPreference();
 });
+
+/*
+  This file mounts the 286-row reader in five of its cases, so it pays the same one-off compile cost
+  the suite it polices pays — and it was paying it *inside* the first timed case: 1795 ms against
+  153 ms for the next comparable one, a twelve-fold cold-start spread. That is the very defect the
+  'warms the expensive path' guard below was written to prevent, one file over, which is why #55 kept
+  recurring after the suite itself was fixed. Warming the same 286-verse path moves the cost into
+  `beforeAll`, where it has its own budget and no case is charged for it.
+*/
+warmUpFirstMount(() => mountReader({ surah: '2', ayah: '286' }, []));
 
 describe('readiness is a state transition, not elapsed time', () => {
   it('returns on the turn the loading marker is already gone', async () => {
@@ -266,6 +284,52 @@ describe('nothing from one case leaks into the next', () => {
   });
 });
 
+describe('the verse list renders once, not once per unrelated commit', () => {
+  /*
+    The other half of #55, and the half that was production behaviour rather than test setup.
+
+    Opening a deep link into Al-Baqarah committed three passes over the 286-row list: the mount, then
+    two more as the transport settled and pointed itself at the target. No row displays anything that
+    changed in those passes. Measured on the suite’s heaviest case, rendering rows is over 80% of it
+    (about 815 ms of 1000), so the two wasted passes were most of the margin that ran out under load.
+  */
+
+  it('gives every row one shared handler rather than a closure each', () => {
+    /*
+      This is the regression, and it has to be read off the call site: RNTL 14 exposes only the host
+      tree, so a composite prop cannot be queried back out of a mounted reader.
+
+      The call site read `onOpenActions={() => onSelect(item)}`, which handed every row a function
+      rebuilt on each parent render. Memoising the row would then have compared a fresh prop 286 times
+      and re-rendered anyway — the memo below is only worth anything while this stays stable.
+    */
+    const reader = code(READER);
+
+    expect(reader).toContain('onOpenActions={openActionsFor}');
+    // The exact reverted shape; Prettier keeps this spacing, so a literal is enough.
+    expect(reader).not.toContain('onOpenActions={() =>');
+  });
+
+  it('is memoised, so those passes are skipped rather than merely cheap', () => {
+    // Stable prop identity buys nothing if the row itself never compares.
+    const component = AyahBlock as unknown as { readonly $$typeof: symbol };
+    expect(component.$$typeof).toBe(Symbol.for('react.memo'));
+  });
+
+  it('still opens the actions for the verse actually pressed', async () => {
+    /*
+      Sharing one handler is only safe if it can still tell the rows apart: it now takes the verse
+      number the row passes in. A handler that closed over the wrong verse, or ignored it, would open
+      the sheet on verse one from anywhere in the surah.
+    */
+    await mountReader({ surah: '2', ayah: '286' }, []);
+    fireEvent.press(screen.getByTestId('faith-reader-ayah-number-2-12'));
+
+    const sheet = await screen.findByTestId('faith-reader-ayah-actions');
+    expect(within(sheet).getByText('Aya 2:12')).toBeTruthy();
+  });
+});
+
 describe('the deep-link suite keeps the shape this fix depends on', () => {
   const suite = code(SUITE);
 
@@ -286,9 +350,48 @@ describe('the deep-link suite keeps the shape this fix depends on', () => {
       surah compiled the provider stack but never the 286-row list, so the first heavy case still paid
       for it — measured as a slowest-case spread of 1267–2333 ms before, against 928–1165 ms after.
     */
-    expect(suite).toMatch(
-      /warmUpFirstMount\(\(\) => openReader\(\{ surah: '2', ayah: '286' \}\)\)/,
+    expect(suite).toContain("warmUpFirstMount(() => openReader({ surah: '2', ayah: '286' }))");
+  });
+
+  it('holds every deep-link file that mounts the reader to that same warm-up', () => {
+    /*
+      The guard above policed one file. This one mounts the same 286-row reader in five of its cases
+      and was not held to the rule, so it paid the cold mount inside its first timed case and #55 kept
+      recurring after the suite itself had been fixed. The rule is therefore pinned to *every* file
+      here that mounts the reader, which is what stops a third one reintroducing it.
+
+      Only a **top-level** registration counts. Matching the name anywhere in the file made this guard
+      pass by finding the sibling guard's own quoted copy of the call above — it stayed green with the
+      warm-up deleted until that was found, which is the second way a source-shape guard can lie.
+    */
+    const inThisFolder = readdirSync(__dirname).filter(
+      (name) => name.startsWith('quran-ayah-deep-link') && name.endsWith('.test.tsx'),
     );
+    const mounting = inThisFolder.filter((name) =>
+      lines(join(__dirname, name)).some(
+        (line) => line.startsWith('import') && line.includes('ReaderScreen'),
+      ),
+    );
+
+    /*
+      Naming the two known files proves the filter still matches something — a bare loop over an empty
+      list passes vacuously. The loop itself is left open-ended so a *third* file that mounts the
+      reader is covered the day it is added, with no list to remember to update.
+    */
+    expect(mounting).toContain('quran-ayah-deep-link.test.tsx');
+    expect(mounting).toContain('quran-ayah-deep-link-harness.test.tsx');
+    for (const name of mounting) {
+      const registration = lines(join(__dirname, name)).find((line) =>
+        line.startsWith('warmUpFirstMount('),
+      );
+      expect(`${name} registers a warm-up: ${registration !== undefined}`).toBe(
+        `${name} registers a warm-up: true`,
+      );
+      // And warms the expensive path, not a seven-verse surah that compiles no long list.
+      expect(`${name} warms 286: ${registration?.includes("ayah: '286'") === true}`).toBe(
+        `${name} warms 286: true`,
+      );
+    }
   });
 
   it('needs no timeout of its own', () => {

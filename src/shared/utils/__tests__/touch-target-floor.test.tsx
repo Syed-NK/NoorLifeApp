@@ -1083,8 +1083,14 @@ describe('the controls #120 corrected', () => {
   });
 
   it('keeps the row press and the pill press on the same action', () => {
+    /*
+      The handler is `openActions` rather than the `onOpenActions` prop itself since #55: the prop now
+      takes the verse number, and the row wraps it once in a `useCallback` so that memoising the row is
+      worth anything. What this guard is for is unchanged, and is now stated exactly — the pill and the
+      verse body must press the *same* function, not two that merely agree.
+    */
     const source = reader();
-    expect((source.match(/onPress=\{onOpenActions\}/g) ?? []).length).toBeGreaterThanOrEqual(1);
+    expect(source.split('onPress={openActions}').length - 1).toBe(2);
     expect(source).toContain('onPress={onPress}');
   });
 
