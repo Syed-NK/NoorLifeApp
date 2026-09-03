@@ -1131,11 +1131,35 @@ jest.mock('expo-secure-store', () => {
    * suite that simulates a process restart that way would silently lose the very storage it is
    * checking survived. Real secure storage outlives a process; this double now does too.
    */
-  const globals = globalThis as { __noorlifeSecureStore?: Map<string, string> };
-  globals.__noorlifeSecureStore ??= new Map<string, string>([
+  const globals = globalThis as {
+    __noorlifeSecureStore?: Map<string, string>;
+    __noorlifeSecureStoreReset?: () => void;
+  };
+  const SEEDED: readonly (readonly [string, string])[] = [
     ['noorlife.auth.accessToken', 'jest-seeded-token'],
-  ]);
+  ];
+  globals.__noorlifeSecureStore ??= new Map<string, string>(SEEDED);
   const store = globals.__noorlifeSecureStore;
+  /*
+    ── Why a reset lives here and is called between cases — issue #166 ──────
+    Real secure storage outlives a process and this double does too, which is right for a suite
+    simulating a restart. What it must not do is let one case *add* to it and change the launch every
+    later case gets. `AuthProvider` writes an offline authority receipt whenever a session resolves,
+    and a device holding a valid receipt is granted authority immediately — correctly, that is the
+    offline-auth feature. So a case that means to watch authority being awaited only sees the wait
+    while no receipt exists, and the first case to resolve a session silently takes that away from
+    every case after it.
+
+    Restoring the documented seed rather than emptying the map: a token present is the realistic
+    precondition described above, and the suites that need the signed-out path still clear it
+    themselves. The baseline is named once, here, so it cannot drift from the seed.
+  */
+  globals.__noorlifeSecureStoreReset = () => {
+    store.clear();
+    for (const [key, value] of SEEDED) {
+      store.set(key, value);
+    }
+  };
   return {
     isAvailableAsync: () => Promise.resolve(true),
     getItemAsync: (key: string) => Promise.resolve(store.get(key) ?? null),
@@ -1407,6 +1431,8 @@ export function setRouteParams(params: Readonly<Record<string, string | string[]
 }
 
 beforeEach(async () => {
+  /* The Keystore double, back to its seed. See the note beside it for what one case can leave. */
+  (globalThis as { __noorlifeSecureStoreReset?: () => void }).__noorlifeSecureStoreReset?.();
   /*
     First, because everything below it is a cache *over* this one.
 
