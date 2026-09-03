@@ -189,6 +189,31 @@ const CONNECTIVITY_TIMEOUT_MS = 2000;
  * on a flapping link. So the timeout branch has exactly two outcomes — adopt the receipt if there is
  * one, or stay `unknown` and let the startup machine hold. Never Authentication Options.
  *
+ * ── What the bound cannot shorten, stated explicitly — issue #130 ─────────
+ * `getSession()`'s first statement awaits the auth client's memoised `initializePromise`, created
+ * eagerly in its constructor at module import. When the stored token is expired within the refresh
+ * margin, that initialization performs a refresh whose fetch carries no timeout of its own —
+ * measured at **130,645 ms** on a degraded link, with every caller in the process parked behind that
+ * one promise for the whole of it.
+ *
+ * So the division is deliberate and worth naming: **the caller is bounded while the underlying
+ * request may remain in flight.** A bound elapsing does not cancel anything, and the next attempt
+ * does not open a second socket — it awaits the same memoised promise. Until that initialization
+ * settles, no application-side action can make a retry reach the network sooner, and this provider
+ * does not pretend otherwise: it adopts the receipt, keeps the request, and applies the real answer
+ * when it lands.
+ *
+ * What is *not* needed, and was measured rather than assumed: damping. Bounding the fetch itself
+ * with an `AbortController` made auth-js retry immediately — four attempts in 33 s — so a naive
+ * request timeout trades one stall for churn. Because this bounds the wait instead, no additional
+ * refresh is created: auth-js single-flights through `refreshingDeferred`, so concurrent callers
+ * share one in-flight refresh. A cooldown on top of that was tried and removed; it bought nothing
+ * and it regressed #124's contract that a later foreground is a real attempt.
+ *
+ * A bound is also never an error. It resolves to the `TIMED_OUT` sentinel, which never reaches
+ * `classifyAuthFailure` — so #130's warning about React Native reporting an abort as a generic
+ * `Error` cannot misclassify a caller-initiated timeout here. There is no abort to classify.
+ *
  * ── Why six seconds ───────────────────────────────────────────────────────
  * The measured refresh on a live link is sub-second to about two, so six is well clear of a healthy
  * round trip and will not pre-empt one that was going to succeed. The ceiling on it is the one that
@@ -1006,10 +1031,27 @@ export function AuthProvider({
             are how a remote sign-out reaches a device running from a receipt, and suppressing one to
             protect a newer state would make the receipt unrevocable for the life of the process.
           */
-            await applyServerAnswer(
-              late,
-              (previous) => previous.status === 'unknown' || previous.authority === 'offline',
-            );
+            /*
+              ── And only for the account it belongs to — issue #130 ────────────
+              The guard above is authority-shaped, which is not enough on its own. A launch that
+              adopted a receipt for one account, followed by a switch to another that also runs
+              offline, leaves `authority: offline` true again — so a late `authenticated` for the
+              *first* account would satisfy it and be adopted over the second. The window is the
+              measured 130 s the initialization can stay in flight, which is long enough to switch
+              accounts in.
+
+              So identity is checked as well: a late answer may complete a session nobody has
+              established yet, and it may confirm the account already in hand, but it may not
+              replace one account with another. A verdict is still exempt and never reaches here —
+              `applyServerAnswer` consults this only on the `authenticated` branch.
+            */
+            const lateUserId = late.kind === 'authenticated' ? late.user.id : null;
+            await applyServerAnswer(late, (previous) => {
+              const nothingNewerHasSpoken =
+                previous.status === 'unknown' || previous.authority === 'offline';
+              const sameAccount = previous.user === null || previous.user.id === lateUserId;
+              return nothingNewerHasSpoken && sameAccount;
+            });
           },
           () => {
             /* A rejection tells the launch nothing it has not already assumed. */
