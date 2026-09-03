@@ -313,16 +313,36 @@ export const moduleNeutrals = {
   /** Bottom-navigation bar. */
   navBackground: '#FFFFFF',
   /**
-   * Inactive navigation label and icon.
+   * Inactive navigation label and icon — raised to clear AA in issue #88.
    *
-   * Measured 4.42:1 on `navBackground`, not the 4.6:1 this comment used to claim — recorded while
-   * building the surface contract (issue #86), which had to measure it to assert the selected slot
-   * reads as selection rather than as hue. That is 0.08 under AA for normal text and is a
-   * pre-existing shortfall in a rendered colour, so it is **not** changed here: this contract
-   * preserves every rendered value. It needs its own decision, because raising it darkens the
-   * inactive state on every module bar.
+   * Was `#6B7896`, measured 4.4191:1 on `navBackground`. #86 recorded that shortfall and pinned it
+   * rather than moving it, because it preserved every rendered colour. This is the decision it was
+   * waiting for.
+   *
+   * The value is `textSecondary`'s own hex, deliberately: this is secondary text on a light ground,
+   * so the palette already had the right colour and no new one was introduced. Measured with
+   * `contrastRatio`, unrounded:
+   *
+   *     on navBackground #FFFFFF            5.3619   (AA text 4.5)
+   *     worst navSelectedSurface #FFF7EE     4.8583   (headroom for #91's opt-in)
+   *
+   * ── Why darkening the inactive label does not flatten the selected state ───
+   * #88's stated risk is that too dark an inactive label stops the selected one reading as
+   * selected. Measured, lightness was never carrying that distinction. Against the eight module
+   * inks the old value separated by only 1.0998–1.2780:1, and the new one by 1.0480–1.1032:1 —
+   * both far under the 3:1 that makes a lightness difference legible at all. On the Health bar the
+   * old separation was already 1.0998.
+   *
+   * What actually carries selection is unchanged by this token: the 2.5 dp marker in
+   * `theme.ink` above the selected slot, the hue shift from neutral to the module's own, Finance's
+   * tinted `navSelectedSurface` ground, and `accessibilityState.selected`. Every one of those
+   * clears its own threshold — see `nav-inactive-contrast.test.tsx`, which measures them off the
+   * rendered tree rather than off this file.
+   *
+   * Main Home's bar does **not** read this token. It has its own, `navigationColors.inactive`
+   * `#7A8496` at 3.7713:1, which is a §3.2 specification value and a separate decision.
    */
-  navInactive: '#6B7896',
+  navInactive: '#5A6B8C',
   /** Skeleton base and its highlight. */
   skeleton: '#E8ECF3',
   skeletonHighlight: '#F2F5F9',
