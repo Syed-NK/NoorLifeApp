@@ -15,6 +15,15 @@ on:
   push:
     branches:
       - feature/entry-auth-supabase
+  # Lets a reported seed be replayed here, not only locally. Blank on every other
+  # event, so ordinary runs keep drawing a fresh one rather than pinning to a
+  # seed that happens to pass.
+  workflow_dispatch:
+    inputs:
+      jest_seed:
+        description: Seed to replay. Leave blank to draw a fresh one.
+        required: false
+        type: string
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -47,8 +56,58 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
 
-      - name: Jest (complete suite)
-        run: npx jest --ci
+      - name: Jest (complete suite, randomized)
+        # ── Why the order is shuffled — issue #155 ─────────────────────────────
+        # Six suites passed only in their declared order, and every one of them was
+        # a real defect: an offending case declared last so nothing followed it to
+        # break, or an assertion reading an absence a neighbour had created. Two of
+        # them were passing without their interaction happening at all. Declaration
+        # order hid all six, so the order is shuffled here to keep them from coming
+        # back — `--randomize` reorders cases *within* each file and changes nothing
+        # about which files run or how.
+        #
+        # The seed is drawn per run and printed before the suite starts, so a failure
+        # is reproducible rather than a story about a bad day. It is printed twice on
+        # purpose: once here, which survives a killed or timed-out job, and once by
+        # `--showSeed` in Jest's own summary.
+        #
+        # `--ci` is unchanged, and nothing else is passed: discovery, `maxWorkers`,
+        # timeouts, coverage and failure propagation all stay with `package.json`.
+        #
+        # A replayed seed is the *order*, not the outcome. A failure that depended on timing
+        # or load may not return under its own seed, and two intermittents on this suite are
+        # on record as unexplained — see #155. Capture the whole log before re-running.
+        env:
+          SUPPLIED_SEED: ${{ inputs.jest_seed }}
+        run: |
+          set -euo pipefail
+
+          # The dispatch input arrives through the environment above and is never interpolated
+          # into this script, so nothing a caller types can be executed here. It is still
+          # validated, because Jest does not reject a bad one: `--seed=abc` runs the suite with
+          # no seed at all and prints none, and `--seed=1.5` silently becomes 1. Either would
+          # mean a "replayed" run that is not the order anyone reported.
+          seed="$(printf "%s" "${SUPPLIED_SEED:-}" | tr -d "[:space:]")"
+
+          if [ -z "$seed" ]; then
+            # No seed asked for: draw one, so ordinary runs are never pinned to a fixed order.
+            seed=$(( (RANDOM << 15) | RANDOM ))
+          else
+            # A sign is allowed and 0 is a real seed; Jest accepts the whole signed 32-bit range.
+            if [[ ! "$seed" =~ ^[+-]?[0-9]+$ ]]; then
+              echo "::error::jest_seed must be an integer. Got: ${SUPPLIED_SEED}"
+              exit 1
+            fi
+            if [ "$seed" -lt -2147483648 ] || [ "$seed" -gt 2147483647 ]; then
+              echo "::error::jest_seed must be between -2147483648 and 2147483647. Got: ${SUPPLIED_SEED}"
+              exit 1
+            fi
+          fi
+
+          echo "Jest seed: $seed"
+          echo "Replay this exact order locally with:"
+          echo "  npx jest --randomize --seed=$seed"
+          npx jest --ci --randomize --showSeed --seed="$seed"
 
       - name: Focused-test gate covers every test location
         # The gate below is only as good as the paths it looks at. It originally named
