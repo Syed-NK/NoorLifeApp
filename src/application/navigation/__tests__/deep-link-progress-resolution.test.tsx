@@ -1,4 +1,5 @@
 import { STARTUP_PRESENTATION_CEILING_MS } from '@application/startup/startup-machine';
+import { readOfflineReceipt } from '@services/auth/offline-receipt';
 import { STARTUP_RESOLVING_MESSAGE } from '@features/entry-auth/components/startup-resolving-notice';
 
 import {
@@ -47,6 +48,20 @@ describe('when authority finally lands', () => {
   it('reveals the route and removes the notice, for a live session', async () => {
     const session = deferred<{ kind: 'authenticated'; user: typeof LAUNCH_USER }>();
     mockResolveSession.mockReturnValue(session.promise);
+
+    /*
+      ── The precondition this case actually needs, stated rather than inherited — issue #166 ──
+      A device holding a valid offline receipt is granted authority immediately, which is correct and
+      is the whole offline-auth feature. So there is only something to *wait* for while no receipt
+      exists, and this case used to depend on that being true because nothing had resolved a session
+      before it. Whichever case ran first wrote a receipt and took the wait away from the rest: under
+      seed 8675309 this one found `protected-child` already rendered while its own session promise
+      was still pending.
+
+      The pending session is controlled by `deferred` above; the absence of prior authority is
+      controlled here. Neither is left to the order cases happen to run in.
+    */
+    expect(await readOfflineReceipt()).toBeNull();
 
     const view = await launchDeepLink();
     await advanceLaunch(STARTUP_PRESENTATION_CEILING_MS);
