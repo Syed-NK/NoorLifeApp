@@ -344,18 +344,30 @@ describe('selected and inactive stay distinguishable from each other', () => {
 describe('the change stops at the module bars', () => {
   it('leaves Main Home on its own token, which #88 misattributes to this one', () => {
     /*
-      #88 says `navInactive` renders on "all eight module themes plus Main Home". The first half is
-      right; the second is not. Main Home's bar — and the placeholder bar in the design system —
-      read `navigationColors.inactive`, a §3.2 specification value of `#7A8496` measuring 3.7713:1
-      on the same white. That is a worse shortfall than the one #88 reports, on a different token,
-      pinned by a spec-conformance test and rendered on locked Main Home; changing a specified
-      colour there is a product decision and is filed separately.
+      #88 says `navInactive` renders on "all eight module themes plus Main Home". The first half
+      is right; the second is not. Main Home's bar — and the placeholder bar in the design system
+      — read `navigationColors.inactive` instead, which #88 measured at `#7A8496` / 3.7713:1 and
+      left alone, because it was a §3.2 specification value on locked Main Home and therefore a
+      product decision rather than an implementation one.
 
-      Pinned here so the two are not confused again, and so that fixing the other one has to come
-      past this comment.
+      That decision was taken in **issue #171**: §3.2 and the Main Home lock were amended and the
+      token raised to `#667085` (4.9748:1). So both bars now clear AA, by two separate tokens, and
+      this case has stopped recording a shortfall and become what it always meant — the two are
+      *different* tokens, and neither fix may quietly reach across into the other.
+
+      The AA floor for Main Home lives with its own contract, in `tokens.test.ts` §3.2 and in
+      `main-home-nav-contrast.test.tsx`, which measures it off the rendered bar.
     */
-    expect(navigationColors.inactive).toBe('#7A8496');
     expect(navigationColors.inactive).not.toBe(moduleNeutrals.navInactive);
-    expect(contrastRatio(navigationColors.inactive, neutralColors.surface)).toBeLessThan(AA_TEXT);
+    /* Each is its own palette’s secondary text, and the two palettes differ. */
+    expect(navigationColors.inactive).toBe(neutralColors.textSecondary);
+    expect(moduleNeutrals.navInactive).toBe(moduleNeutrals.textSecondary);
+    /* Both above the bar now; neither borrowed the other’s value to get there. */
+    expect(contrastRatio(navigationColors.inactive, neutralColors.surface)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
+    expect(
+      contrastRatio(moduleNeutrals.navInactive, moduleNeutrals.navBackground),
+    ).toBeGreaterThanOrEqual(AA_TEXT);
   });
 });

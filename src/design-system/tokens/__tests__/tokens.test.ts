@@ -1,3 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { AA_TEXT, contrastRatio } from '@features/modules/contrast';
+
 import {
   elementSize,
   iconSize,
@@ -211,8 +216,97 @@ describe('§3.1, §3.2, §8 sizes', () => {
 });
 
 describe('§3.2 navigation colours', () => {
+  /**
+   * A literal backtick, so the checks below can look for a markdown-quoted hex in the governing
+   * documents without a backtick appearing in this file and closing a template literal.
+   */
+  const QUOTE = String.fromCharCode(96);
+
+  /*
+    The specification-pinned assertion, protecting the *corrected* contract — issue #171.
+
+    §3.2 and Main Home implementation-lock §13 both said `#7A8496`. This case used to hold the
+    token to that literal, which is what a conformance test is for; the problem was that the
+    literal measured 3.7713:1 on the white bar it names, so conforming to the specification and
+    meeting AA were mutually exclusive. Both documents were amended alongside the token rather
+    than this test being deleted or loosened, so the pin still names one exact value — it is
+    simply the corrected one.
+  */
   it('uses the specified inactive colour', () => {
-    expect(navigationColors.inactive).toBe('#7A8496');
+    expect(navigationColors.inactive).toBe('#667085');
+  });
+
+  it('is the corrected literal in §3.2 and in the Main Home lock, in both documents', () => {
+    /*
+      A token and a specification that disagree is how #171 came to exist: the value here was
+      faithful to a document that could not be satisfied. Reading both files means the token
+      cannot move again without the governing text moving with it.
+    */
+    for (const file of [
+      'docs/NOORLIFE_UI_DESIGN_SPEC.md',
+      'design-reference/implementation-pack/main-home/MAIN_HOME_IMPLEMENTATION_LOCK.md',
+    ]) {
+      const text = fs.readFileSync(path.join(process.cwd(), file), 'utf8');
+      const quoted = QUOTE + navigationColors.inactive + QUOTE;
+      expect(`${file} prescribes ${navigationColors.inactive}`).toBe(
+        text.includes(quoted)
+          ? `${file} prescribes ${navigationColors.inactive}`
+          : `${file} does not prescribe it`,
+      );
+      /* And no longer prescribes the value that could not clear AA. */
+      const stale = new RegExp(
+        'inactive items use ' +
+          QUOTE +
+          '#7A8496' +
+          QUOTE +
+          '|Inactive: ' +
+          QUOTE +
+          '#7A8496' +
+          QUOTE,
+      );
+      expect(`${file} drops the old literal`).toBe(
+        stale.test(text) ? `${file} still prescribes #7A8496` : `${file} drops the old literal`,
+      );
+    }
+  });
+
+  it('clears AA for an enabled, unselected label on the white navigation surface', () => {
+    /*
+      The reason the literal moved, asserted as a floor rather than as a value. Unrounded: the
+      old `#7A8496` measured 3.7713 and the corrected `#667085` measures 4.9748, against 4.5.
+
+      An inactive tab is enabled and unselected, not disabled — Main Home dims nothing, and a
+      locked tab renders in this very tint — so no disabled exemption applies. Main Home's
+      `navLabel` is 9.5 dp at weight 500 and scales with the OS, so at Android’s 2.0 ceiling it
+      reaches 19 dp against the 24 px non-bold large-text threshold: normal text at every scale,
+      and the 3:1 allowance is never available to it.
+    */
+    expect(contrastRatio(navigationColors.inactive, neutralColors.surface)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
+    /* The value it replaced does not, which is what stops it returning through this door. */
+    expect(contrastRatio('#7A8496', neutralColors.surface)).toBeLessThan(AA_TEXT);
+  });
+
+  it('keeps the active item darker than the inactive one, so selection still reads', () => {
+    /*
+      §3.2 communicates the active tab by colour, and Main Home draws no marker under it, so the
+      direction of the pair matters here in a way it did not on the module bars. `#3157C8`
+      measures 6.3103 on the same white and is unchanged, so it stays the darker of the two; the
+      separation between the states narrows from 1.6733 to 1.2685, both well under the 3:1 at
+      which lightness alone would be doing the work. The hue step and `accessibilityState`
+      carry it, and neither is touched by this change.
+    */
+    const active = contrastRatio(semanticColors.primary, neutralColors.surface);
+    const inactive = contrastRatio(navigationColors.inactive, neutralColors.surface);
+    expect(active).toBeGreaterThan(inactive);
+    expect(active).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(semanticColors.primary).not.toBe(navigationColors.inactive);
+  });
+
+  it('reuses an approved palette entry rather than introducing a colour', () => {
+    /* #171 was authorised to take an existing token, not to invent a shade. */
+    expect(navigationColors.inactive).toBe(neutralColors.textSecondary);
   });
 });
 

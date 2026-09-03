@@ -291,7 +291,15 @@ Every module has its own five-item bottom navigation:
 - Module AI icon is 52 × 52 px
 - AI ring uses the current module primary color
 - Navigation surface is white with a top divider
-- Only the active item uses module color; inactive items use `#7A8496`
+- Only the active item uses module color; inactive items use `#667085`
+
+  Corrected from `#7A8496` by issue #171. On the white navigation surface this section specifies,
+  `#7A8496` measures 3.7713:1, and an inactive tab label is enabled, unselected, normal-sized text
+  that owes WCAG AA 4.5:1 — so the previous literal could not be both conformed to and met.
+  `#667085` is `neutralColors.textSecondary`, already in the §2.2 palette, and measures 4.9748:1;
+  the active item stays the darker of the two, so selection reads in the same direction. Main Home
+  implementation-lock §13 was amended in the same change, and `navigationColors.inactive` carries
+  the value. The module bars read `moduleNeutrals.navInactive` instead, corrected separately by #88.
 
 ### 3.3 Hero-card component
 

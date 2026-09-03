@@ -44,7 +44,8 @@ export type ModuleBottomNavigationProps = {
  *   • fixed outside the ScrollView, 72 dp tall plus safe-area inset, above content
  *   • white surface with a 1 dp `#E2E6EC` top border
  *   • five equal slots; the third (`AI_NAV_INDEX`) is always module AI
- *   • 22 dp glyphs, 9.5/13 labels, active `#3157C8`, inactive `#7A8496`
+ *   • 22 dp glyphs, 9.5/13 labels, active `#3157C8`, inactive `#667085` (raised from `#7A8496`
+ *     by issue #171, which corrected the §3.2 literal to one that clears AA on this white bar)
  *   • centre AI is a 54 dp white circle with a 3 dp ring, raised 17 dp, holding a
  *     38 dp robot head
  *
