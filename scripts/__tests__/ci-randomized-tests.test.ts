@@ -54,6 +54,32 @@ function invocation(): string {
   return line ?? '';
 }
 
+/** The step as written, comments and all, for checks about the YAML itself. */
+function rawStep(): string {
+  const lines = readFileSync(WORKFLOW, 'utf8')
+    .split(LF)
+    .map((line) => (line.endsWith(CR) ? line.slice(0, -1) : line));
+  const start = lines.findIndex((line) => line.includes('name: Jest'));
+  const body: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trimStart().startsWith('- name:')) break;
+    body.push(line);
+  }
+  return body.join(LF);
+}
+
+/** Just the shell, so a rule about executable code is not satisfied by a comment. */
+function shell(): string {
+  const step = rawStep();
+  const at = step.indexOf('run: |');
+  expect(at).toBeGreaterThanOrEqual(0);
+  return step
+    .slice(at)
+    .split(LF)
+    .filter((line) => !line.trim().startsWith('#'))
+    .join(LF);
+}
+
 describe('the CI test command', () => {
   it('shuffles the order of cases within each file', () => {
     expect(invocation()).toContain('--randomize');
@@ -113,5 +139,46 @@ describe('the CI test command', () => {
     ]) {
       expect(`${escape}: ${step.includes(escape)}`).toBe(`${escape}: false`);
     }
+  });
+
+  it('never interpolates the dispatch input into executable shell', () => {
+    /*
+      A `${{ }}` expansion inside `run:` is substituted before the shell sees it, so anything a
+      caller types becomes code. The input must reach the script through the environment instead —
+      which it does, and this is what keeps it that way.
+    */
+    const script = shell();
+    expect(script).not.toContain('${{');
+    expect(rawStep()).toContain('SUPPLIED_SEED: ${{ inputs.jest_seed }}');
+  });
+
+  it('rejects a seed that is not an integer, rather than quietly drawing another', () => {
+    /*
+      Measured, not assumed: `--seed=abc` makes Jest run the suite with **no** seed and print none,
+      and `--seed=1.5` silently becomes 1. Either would mean a replayed run that is not the order
+      anyone reported, so the step refuses the input instead.
+    */
+    const script = shell();
+    expect(script).toContain('^[+-]?[0-9]+$');
+    expect(script).toContain('::error::jest_seed must be an integer');
+    /* And it stops. A warning that fell through to a fresh seed would be the same silent swap. */
+    expect(script.split('exit 1').length - 1).toBeGreaterThanOrEqual(2);
+  });
+
+  it('holds a supplied seed to the range Jest actually supports', () => {
+    /* Measured at the boundaries: -2147483648 and 2147483647 are accepted, either side is not. */
+    const script = shell();
+    expect(script).toContain('-2147483648');
+    expect(script).toContain('2147483647');
+  });
+
+  it('keeps 0 and a negative seed usable', () => {
+    /*
+      0 is a real seed and Jest takes negatives too, so the "was one supplied?" test has to be
+      emptiness. A truthiness or numeric test would throw 0 away and draw a different order than the
+      one being replayed.
+    */
+    const script = shell();
+    expect(script).toContain('if [ -z "$seed" ]; then');
   });
 });
