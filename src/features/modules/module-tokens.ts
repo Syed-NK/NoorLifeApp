@@ -340,7 +340,8 @@ export const moduleNeutrals = {
    * rendered tree rather than off this file.
    *
    * Main Home's bar does **not** read this token. It has its own, `navigationColors.inactive`
-   * `#7A8496` at 3.7713:1, which is a §3.2 specification value and a separate decision.
+   * `navigationColors.inactive`, which issue #171 corrected separately from `#7A8496` (3.7713:1)
+   * to `#667085` (4.9748:1), amending §3.2 and the Main Home lock with it.
    */
   navInactive: '#5A6B8C',
   /** Skeleton base and its highlight. */

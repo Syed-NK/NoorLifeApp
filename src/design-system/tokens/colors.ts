@@ -71,12 +71,34 @@ export const semanticColors = {
 /**
  * Inactive bottom-navigation item colour.
  *
- * Specification addition: §3.2 states "inactive items use `#7A8496`" inline
- * rather than in the token tables, so it is lifted here to keep the value out
- * of component code. The literal is unchanged from the specification.
+ * Specification addition: §3.2 states the inactive item colour inline rather than in the token
+ * tables, so it is lifted here to keep the value out of component code.
+ *
+ * ── The specified literal was corrected in issue #171 ──────────────────────
+ * §3.2 and Main Home implementation-lock §13 both said `#7A8496`. On the bar it renders on —
+ * `neutralColors.surface` `#FFFFFF` — that measures **3.7713:1** against AA's 4.5 for normal text,
+ * so the specified value could not be conformed to and met at the same time. The spec and the lock
+ * were amended together with this token; the conformance test in `tokens.test.ts` pins the corrected
+ * value, not a relaxed bound.
+ *
+ * The replacement is `neutralColors.textSecondary`'s own hex, deliberately: an inactive tab label is
+ * secondary text on a white ground, so the palette already had the right colour and no new one was
+ * introduced. Measured with `contrastRatio`, unrounded:
+ *
+ *     on neutralColors.surface #FFFFFF     3.7713  ->  4.9748
+ *     against active #3157C8 (6.3103)      1.6733  ->  1.2685
+ *
+ * The active item stays the darker of the two, so selection reads in the same direction it always
+ * did — that ordering is preserved, unlike on the module bars, where #88 had no approved token that
+ * could both clear AA and stay lighter than the inks. Neither separation figure reached the 3:1 at
+ * which a lightness difference becomes legible on its own, so what distinguishes the states here is
+ * the hue step from desaturated grey-blue to saturated `#3157C8`, plus `accessibilityState.selected`.
+ *
+ * A locked tab renders in exactly this tint too — nothing in the slot is dimmed, the padlock is the
+ * whole signal — so raising it raises the locked state with it. See `home-bottom-navigation.tsx`.
  */
 export const navigationColors = {
-  inactive: '#7A8496',
+  inactive: '#667085',
 } as const;
 
 /**

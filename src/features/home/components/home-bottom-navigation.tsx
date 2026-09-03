@@ -225,7 +225,13 @@ function NavSlot({ item, isActive, onNavigate, testID }: NavSlotProps) {
             rather than against the slot — whose width is a flexed fifth and therefore not a fixed
             offset to measure from. It adds no size of its own, so the bar's height is unchanged. */}
         <View style={styles.iconWrap}>
-          <AppIcon name={item.icon} size={dp(LOCKED.bottomNav.icon)} color={tint} />
+          <AppIcon
+            name={item.icon}
+            size={dp(LOCKED.bottomNav.icon)}
+            color={tint}
+            /* So the icon's own tint is measurable rather than inferred from the label — #171. */
+            testID={`${testID}-icon`}
+          />
           {/* Additional to the approved icon, never a replacement for it. */}
           {isLocked ? (
             <View

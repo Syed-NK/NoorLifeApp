@@ -297,7 +297,15 @@ Normal items:
 - Icon: 22 dp
 - Label: 9.5/13
 - Active: `#3157C8`
-- Inactive: `#7A8496`
+- Inactive: `#667085` — corrected from `#7A8496` by issue #171
+
+  `#7A8496` measured 3.7713:1 on this bar's white surface, against the 4.5:1 an enabled,
+  unselected, normal-sized label owes. This is the one locked colour that could not be met and
+  conformed to at once. `#667085` is `neutralColors.textSecondary` from the existing palette and
+  measures 4.9748:1; `#3157C8` is unchanged and stays the darker of the two, so the active tab
+  reads as active in the same direction as before. Design spec §3.2 was amended in the same change.
+  Nothing else about the bar moves: geometry, type ramp, touch targets, the raised centre control
+  and the padlock treatment are all as locked.
 
 Center AI:
 
