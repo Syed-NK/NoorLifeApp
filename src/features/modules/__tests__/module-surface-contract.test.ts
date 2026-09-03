@@ -273,16 +273,20 @@ describe('semantic and neutral colours are excluded', () => {
       inactive label's contrast is measured where it actually sits, and it must stay a neutral —
       a tinted inactive label would make the selected state read as hue rather than as selection.
     */
-    expect(moduleNeutrals.navInactive).toBe('#6B7896');
     expect(moduleNeutrals.navBackground).toBe('#FFFFFF');
     /*
-      Measured at 4.42:1, which is 0.08 under AA for normal text — a pre-existing shortfall in a
-      rendered colour, recorded here rather than corrected, because this contract changes no
-      rendered value. Pinned so it cannot drift further while it waits for its own decision.
+      A bar, not a shortfall, since issue #88. This case used to pin `#6B7896` at 4.42:1 and assert
+      it stayed *under* AA — "this is where we are" — because #86 changed no rendered colour. #88
+      raised the value, so the shape inverts: the pin on the old hex is gone and the floor is the
+      real one. Restoring `#6B7896` fails here.
     */
     const inactive = contrast(moduleNeutrals.navInactive, moduleNeutrals.navBackground);
-    expect(inactive).toBeGreaterThanOrEqual(4.4);
-    expect(inactive).toBeLessThan(AA_TEXT);
+    expect(inactive).toBeGreaterThanOrEqual(AA_TEXT);
+    /*
+      And it came out of the palette rather than being hand-tuned to just clear the bar: inactive
+      navigation *is* secondary text on a light ground.
+    */
+    expect(moduleNeutrals.navInactive).toBe(moduleNeutrals.textSecondary);
 
     const moduleHexes = new Set(
       FRAMEWORK_MODULE_IDS.flatMap((id) => Object.values(moduleColorThemes[id])),

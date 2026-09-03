@@ -176,6 +176,13 @@ export function ModuleBottomNavigation({
                 */
                   isActive ? { backgroundColor: surfaces.navSelected } : null,
                 ]}
+                /*
+                  Identified so the ground under a label is measurable — issue #88. Contrast is a
+                  property of a pair, and the selected slot is the only thing that paints its own
+                  ground; a guard that cannot find this View has to read the token instead and so
+                  cannot tell whether the component still uses it.
+                */
+                testID={`${prefix}-${item.key}-slot`}
               >
                 {/*
                 Active state is carried by a marker as well as by colour, so it is never
@@ -188,7 +195,11 @@ export function ModuleBottomNavigation({
               */}
                 {isActive ? (
                   <View style={styles.activeBarRow} pointerEvents="none" accessible={false}>
-                    <View style={[styles.activeBar, { backgroundColor: module.theme.ink }]} />
+                    <View
+                      style={[styles.activeBar, { backgroundColor: module.theme.ink }]}
+                      /* The non-colour half of the selected state, identified for the same reason. */
+                      testID={`${prefix}-${item.key}-marker`}
+                    />
                   </View>
                 ) : null}
                 <PressableScale
@@ -199,7 +210,13 @@ export function ModuleBottomNavigation({
                   style={[styles.slotContent, { minHeight: minimumTouchTargetSize() }]}
                   testID={`${prefix}-${item.key}`}
                 >
-                  <AppIcon name={item.icon} size={dp(moduleLayout.navIcon)} color={tint} />
+                  <AppIcon
+                    name={item.icon}
+                    size={dp(moduleLayout.navIcon)}
+                    color={tint}
+                    /* So the icon's own tint is measurable, not inferred from the label — #88. */
+                    testID={`${prefix}-${item.key}-icon`}
+                  />
                   <ModuleText
                     token="navLabel"
                     color={tint}

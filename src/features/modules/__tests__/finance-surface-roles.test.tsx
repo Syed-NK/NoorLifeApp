@@ -295,7 +295,13 @@ describe('body text on the Finance page', () => {
     const surfaces = moduleSurfaces('finance');
     expect(surfaces.navSelected).not.toBe(moduleNeutrals.navBackground);
     // The inactive label stays neutral, so selection reads as selection rather than as hue.
-    expect(contrast(moduleNeutrals.navInactive, moduleNeutrals.navBackground)).toBeGreaterThan(4.4);
+    expect(
+      contrast(moduleNeutrals.navInactive, moduleNeutrals.navBackground),
+    ).toBeGreaterThanOrEqual(AA_TEXT);
+    /* And it holds up on Finance's own selected ground too — issue #88. */
+    expect(contrast(moduleNeutrals.navInactive, surfaces.navSelected)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
     expect(contrast(moduleColorThemes.finance.ink, surfaces.navSelected)).toBeGreaterThanOrEqual(
       AA_TEXT,
     );
