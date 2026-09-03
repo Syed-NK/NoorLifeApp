@@ -1112,3 +1112,88 @@ describe('the controls #120 corrected', () => {
     expect(source).toContain('minHeight: minimumTouchTargetSize()');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A floor that layout takes back
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('a floor layout can remove', () => {
+  /*
+    ── The fourth defect class, in the disguise #123 found it in ────────────
+    `AuthHeader` asked for a 44 dp square and got one. Then its stylesheet pulled the whole box 10 dp
+    left to line the chevron up with the page gutter — and because the parent *is* the gutter, that
+    moved a tenth of the target outside the parent, which clipped it away. The accessibility node
+    measured 34.133 dp wide on a Samsung SM-G556B while every declaration in the file read correctly.
+
+    Neither half looks wrong alone, which is why this reads them together: the floor was applied
+    inline and the offset came from a named style, composed onto the same element. So the rule is
+    scoped to exactly that composition — a named style appearing in the *same* style array as a floor
+    may not push the box off its own origin. A negative margin elsewhere in a file is somebody
+    else's business, which is what keeps this from flagging a 1 dp label nudge.
+  */
+  it('refuses a negative offset on a style composed onto a touch-target floor', () => {
+    const FLOOR = ['minimumTouchTargetSize', 'pixelSafeTouchTarget'];
+    const OFFSETS = [
+      'margin',
+      'marginLeft',
+      'marginRight',
+      'marginTop',
+      'marginBottom',
+      'marginHorizontal',
+      'marginVertical',
+      'marginStart',
+      'marginEnd',
+      'left',
+      'right',
+      'top',
+      'bottom',
+    ];
+
+    const offending: string[] = [];
+    for (const { file, code } of production) {
+      const OPEN = 'style={[';
+      for (let at = code.indexOf(OPEN); at !== -1; at = code.indexOf(OPEN, at + 1)) {
+        const close = code.indexOf(']}', at);
+        if (close === -1) {
+          break;
+        }
+        const composed = code.slice(at, close);
+        if (!FLOOR.some((marker) => composed.includes(marker))) {
+          continue;
+        }
+
+        /* The named styles this element composes alongside its floor. */
+        const REF = 'styles.';
+        for (let ref = composed.indexOf(REF); ref !== -1; ref = composed.indexOf(REF, ref + 1)) {
+          const after = composed.slice(ref + REF.length);
+          const name = after.split(/[^A-Za-z0-9_]/)[0];
+          if (name === '') {
+            continue;
+          }
+          const decl = code.indexOf(name + ': {');
+          if (decl === -1) {
+            continue;
+          }
+          const bodyEnd = code.indexOf('},', decl);
+          const body = code.slice(decl, bodyEnd === -1 ? code.length : bodyEnd);
+          for (const key of OFFSETS) {
+            if (body.includes(key + ': -')) {
+              offending.push(`${file} → styles.${name} sets ${key} negative`);
+            }
+          }
+        }
+      }
+    }
+
+    expect(offending).toEqual([]);
+  });
+
+  it('has enough files to be looking at anything', () => {
+    /* A rule over an empty list passes for the wrong reason. */
+    const carrying = production.filter(
+      ({ code }) =>
+        code.includes('minimumTouchTargetSize') || code.includes('pixelSafeTouchTarget'),
+    );
+    expect(carrying.length).toBeGreaterThan(40);
+  });
+});
