@@ -42,10 +42,32 @@ export function AuthHeader({
 }: AuthHeaderProps) {
   const { dp } = useEntryAuthMetrics();
   const target = minimumTouchTargetSize();
+  const chevron = dp(10);
+  /**
+   * Where the chevron sits inside the target, so its position is unchanged by #123's fix.
+   *
+   * Centred, the glyph would sit `(target - chevron) / 2` from the target edge. The old
+   * `marginLeft: -10` then moved the whole target 10 dp left, putting the glyph 10 dp closer to
+   * the page gutter. With the target no longer moving, the same 10 dp comes off this inset
+   * instead — identical rendering, and nothing outside the parent.
+   *
+   * `target` is pixel-safe rather than scaled and never drops below 44, while `chevron` only
+   * ever downscales, so this cannot go negative and reintroduce the defect by another route.
+   */
+  const glyphInset = Math.max((target - chevron) / 2 - 10, 0);
 
   return (
     <View style={{ gap: dp(6) }} testID={testID}>
-      <View style={[styles.backRow, { height: target }]}>
+      {/*
+        Identified so the reserve is measurable — issue #123. The row is given the target's own
+        height, so the control is never asked to fit a parent shorter than itself; the heading stays
+        in its own row below, which is what keeps it centred on the page rather than pushed by the
+        control. A guard can only hold that if it can find the row.
+      */}
+      <View
+        style={[styles.backRow, { height: target }]}
+        testID={`${testID ?? 'auth-header'}-back-row`}
+      >
         {onBack === undefined ? null : (
           <Pressable
             onPress={onBack}
@@ -58,16 +80,31 @@ export function AuthHeader({
               {
                 minWidth: minimumTouchTargetSize(),
                 minHeight: minimumTouchTargetSize(),
-                alignItems: 'center',
+                /*
+                  The glyph is inset rather than the target being pulled out — issue #123.
+
+                  The optical intent has not changed: the chevron sits where it always did, its
+                  visual edge on the page gutter rather than its target box centred there. What
+                  changed is which box moves. `paddingLeft` shifts the glyph *within* a target that
+                  now starts at the gutter, so the whole 44 dp square is inside the scroll
+                  container and reachable. Before, `marginLeft: -10` moved the target itself, and
+                  the container clipped the 10 dp that ended up outside it — leaving an
+                  accessibility node 34.133 dp wide against a 44 dp floor.
+
+                  Left-aligned rather than centred, because centring would re-centre the glyph in
+                  the box and undo the inset. Vertical centring is unaffected.
+                */
+                alignItems: 'flex-start',
                 justifyContent: 'center',
+                paddingLeft: glyphInset,
               },
             ]}
             testID={`${testID ?? 'auth-header'}-back`}
           >
             <View
               style={{
-                width: dp(10),
-                height: dp(10),
+                width: chevron,
+                height: chevron,
                 borderLeftWidth: 2,
                 borderBottomWidth: 2,
                 borderColor: entryAuthColors.textPrimary,
@@ -95,9 +132,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backTarget: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    // Pulled left so the 44 dp target's edge lines up with the page padding, not its centre.
-    marginLeft: -10,
+    /*
+      Deliberately carries no margin — issue #123.
+
+      This held `marginLeft: -10` to line the glyph's edge up with the page gutter. The parent is
+      the scroll container whose own left edge *is* that gutter, so the negative margin did not
+      move the target into the margin; it moved 10 dp of the target out of the parent, which
+      clipped it. `hitSlop` could not rescue it either, being clipped by the same edge.
+
+      The offset now lives on the glyph inside the target. See `glyphInset`.
+    */
   },
 });
