@@ -614,6 +614,7 @@ function PrayerDay({
           onSetRepeatDays={(days) => void notifications.setRepeatDays(alertSheet, days)}
           onSetPreReminder={(minutes) => void notifications.setPreReminder(alertSheet, minutes)}
           onSetSound={(sound) => void notifications.setSound(alertSheet, sound)}
+          onSetMode={(mode) => void notifications.setMode(alertSheet, mode)}
           onOpenSystemSettings={() => void notifications.openSystemSettings()}
           onClose={() => setAlertSheet(null)}
         />

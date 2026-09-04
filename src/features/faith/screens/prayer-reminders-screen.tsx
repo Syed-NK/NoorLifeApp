@@ -359,6 +359,7 @@ export function PrayerRemindersScreen() {
           onSetRepeatDays={(days) => void notifications.setRepeatDays(openSheet, days)}
           onSetPreReminder={(minutes) => void notifications.setPreReminder(openSheet, minutes)}
           onSetSound={(sound) => void notifications.setSound(openSheet, sound)}
+          onSetMode={(mode) => void notifications.setMode(openSheet, mode)}
           onOpenSystemSettings={() => void notifications.openSystemSettings()}
           onClose={() => setOpenSheet(null)}
         />

@@ -777,6 +777,12 @@ describe('the stored preference migrates without inventing a notification', () =
       repeatDays: [2],
       preReminderMinutes: 15,
       sound: 'silent',
+      /*
+        The stored record predates modes and carries no `mode` key, so it reads as the default —
+        which is exactly the behaviour it already had. That is what makes the upgrade inaudible:
+        this record keeps its silent notification and gains nothing it did not ask for (#178).
+      */
+      mode: 'notification-only',
     });
     expect(migrated.find((entry) => entry.time === 'fajr')?.notify).toBe(false);
   });

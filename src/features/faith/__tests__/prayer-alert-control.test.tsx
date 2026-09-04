@@ -124,7 +124,7 @@ describe('every one of the six rows offers a notification control', () => {
     );
     /* And it can never be given a call to prayer, for a reason a licence will not change. */
     expect(
-      String(view.getByTestId(`${sheetId('sunrise')}-full-adhan-reason`).props.children),
+      String(view.getByTestId(`${sheetId('sunrise')}-mode-full-adhan-reason`).props.children),
     ).toMatch(/time marker, not a prayer/i);
   });
 

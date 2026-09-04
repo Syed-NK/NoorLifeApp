@@ -22,6 +22,12 @@ import {
   type PreReminderMinutes,
 } from '../data/notifications/prayer-alert-preferences';
 import { type PrayerKey } from '../data/prayer-times.repository';
+import {
+  currentAlertPlatform,
+  nextStoredMode,
+  type PrayerAlertMode,
+} from '../data/notifications/prayer-alert-mode';
+import { licensedAudioLookup } from '../data/notifications/prayer-alert-audio-manifest';
 import { useFaithRepositories } from '../di/faith-repository-context';
 import type { FaithPreferences } from '../storage/faith-preferences';
 import { getFaithPreferencesSnapshot } from '../state/faith-preferences-store';
@@ -79,6 +85,14 @@ export type UsePrayerNotifications = {
   readonly setPreReminder: (time: PrayerKey, minutes: PreReminderMinutes) => Promise<void>;
   /** Sets the sound for one time. */
   readonly setSound: (time: PrayerKey, sound: AlertSoundChoice) => Promise<void>;
+  /**
+   * Chooses how much of the call an alert plays — issue #178.
+   *
+   * Refuses a mode this platform and licence state cannot honour, rather than storing an intention
+   * nothing can act on. That refusal is the same rule the sheet renders as a disabled control, asked
+   * of the one place that writes.
+   */
+  readonly setMode: (time: PrayerKey, mode: PrayerAlertMode) => Promise<void>;
   /** One time's current settings, always defined. */
   readonly settingsForTime: (time: PrayerKey) => PrayerAlertSettings;
   /** Rebuilds the schedule from current inputs. */
@@ -368,6 +382,29 @@ export function usePrayerNotifications(reconcileOnMount = true): UsePrayerNotifi
     [updateSettings],
   );
 
+  const setMode = useCallback(
+    async (time: PrayerKey, mode: PrayerAlertMode) => {
+      /*
+        The refusal lives in `nextStoredMode`, not in an `if` here.
+
+        A guard at this call site was deletable without a single test failing — the sheet disables an
+        unavailable mode and a disabled Pressable fires nothing, so the whole UI suite passed either
+        way. Routing the decision through a named function makes it both testable and conspicuous.
+      */
+      await updateSettings(time, (settings) => ({
+        ...settings,
+        mode: nextStoredMode({
+          current: settings.mode,
+          requested: mode,
+          time,
+          platform: currentAlertPlatform(),
+          hasLicensedAudio: licensedAudioLookup(currentAlertPlatform()),
+        }),
+      }));
+    },
+    [updateSettings],
+  );
+
   const sendTestNotification = useCallback(async () => {
     const identifier = await notifications.presentNow({
       /*
@@ -401,6 +438,7 @@ export function usePrayerNotifications(reconcileOnMount = true): UsePrayerNotifi
     setRepeatDays,
     setPreReminder,
     setSound,
+    setMode,
     settingsForTime: (time: PrayerKey) => settingsFor(alertSettings(preferences), time),
     refreshSchedule,
     sendTestNotification,
