@@ -1,6 +1,10 @@
 {
-  "platforms": ["ios"],
-  "ios": {
-    "modules": ["QuranBackupExclusionModule"]
+  "platforms": [
+    "apple"
+  ],
+  "apple": {
+    "modules": [
+      "QuranBackupExclusionModule"
+    ]
   }
 }

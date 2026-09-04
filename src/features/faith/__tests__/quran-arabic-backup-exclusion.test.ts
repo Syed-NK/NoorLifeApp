@@ -41,11 +41,15 @@ describe('the native module', () => {
 
     const config = JSON.parse(read(CONFIG)) as {
       platforms: string[];
-      ios: { modules: string[] };
+      apple: { modules: string[] };
     };
-    /* Android needs no per-directory action, so building this there would be capability for nothing. */
-    expect(config.platforms).toEqual(['ios']);
-    expect(config.ios.modules).toContain('QuranBackupExclusionModule');
+    /*
+      Android needs no per-directory action, so building this there would be capability for nothing.
+      The key is `apple`, not the legacy `ios`: SDK 57 reads both, but only one is the current
+      shape, and the linkage assertions live in `quran-backup-exclusion-linkage.test.ts`.
+    */
+    expect(config.platforms).toEqual(['apple']);
+    expect(config.apple.modules).toContain('QuranBackupExclusionModule');
   });
 
   it('adds no third-party dependency', () => {
