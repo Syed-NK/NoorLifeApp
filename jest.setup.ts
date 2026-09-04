@@ -124,6 +124,17 @@ const mockRouterInstance = {
  */
 const mockRouteParams: Record<string, string | string[]> = {};
 
+/**
+ * The path the next render reads from `usePathname`.
+ *
+ * Mutable and module-level for the same reason `mockRouteParams` is: the `jest.mock` factory is
+ * hoisted and cannot close over a suite-local value. It used to be the literal `/home`, which was
+ * fine while nothing branched on it — the authentication boundary now records the route a
+ * signed-out visitor was refused (issue #62), so a fixed path would make every resume test assert
+ * the same one. `setPathname` in `beforeEach` keeps one test's route out of the next.
+ */
+let mockPathname = '/home';
+
 // Fonts: in tests the faces are always "loaded", so components render with their
 // real styles instead of being gated behind a readiness flag.
 jest.mock('expo-font', () => ({
@@ -1369,7 +1380,7 @@ jest.mock('expo-router', () => ({
   useRouter: () => mockRouterInstance,
   useLocalSearchParams: () => ({ ...mockRouteParams }),
   useGlobalSearchParams: () => ({ ...mockRouteParams }),
-  usePathname: () => '/home',
+  usePathname: () => mockPathname,
   useSegments: () => [],
   /**
    * A focus effect that actually runs, because a screen under test is a focused screen.
@@ -1423,6 +1434,11 @@ export const mockRouter = mockRouterInstance;
  * Call before rendering a screen that lives at a parameterised route — the reader at
  * `/faith/reader/[surah]` is the first of them.
  */
+/** Sets the path `usePathname` reports for the next render. Reset to `/home` between tests. */
+export function setPathname(path: string): void {
+  mockPathname = path;
+}
+
 export function setRouteParams(params: Readonly<Record<string, string | string[]>>): void {
   for (const key of Object.keys(mockRouteParams)) {
     delete mockRouteParams[key];
@@ -1448,6 +1464,8 @@ beforeEach(async () => {
   }
   // Unconditional, so a suite that never sets parameters cannot inherit another's.
   setRouteParams({});
+  // Same rule for the path: a suite that never sets one starts at the ordinary default.
+  setPathname('/home');
   mockAudio.reset();
   // The playlist double is module-level like the player double, and leaks between tests without this.
   mockPlaylist.reset();

@@ -5,6 +5,7 @@ import { FaithScopeProvider } from '@features/faith/di/faith-scope-provider';
 import { QuranCatalogueWarmup } from '@features/faith/di/quran-warmup';
 import { EntitlementProvider } from '@features/subscription/services/entitlement-context';
 
+import { ResumeIntentActor } from '@application/navigation/resume-intent-actor';
 import { AccessibilityProvider } from './accessibility-provider';
 import { AuthCallbackProvider } from './auth-callback-provider';
 import { AuthProvider } from './auth-provider';
@@ -67,6 +68,15 @@ export function AppProviders({ children }: { readonly children: React.ReactNode 
               <FontProvider>
                 <AuthCallbackProvider>
                   <AuthProvider>
+                    {/*
+                      Renders nothing. Ends a remembered post-authentication destination when the
+                      session that could have consumed it ends — issue #62.
+
+                      Inside Auth because it watches the session, and inside AuthCallback because
+                      that is where the destination lives. It only ever clears, so it can neither
+                      change where a launch lands nor keep one waiting.
+                    */}
+                    <ResumeIntentActor />
                     {/*
                     Renders nothing, and must sit here rather than in the entry gate.
 

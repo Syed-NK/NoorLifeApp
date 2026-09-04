@@ -8,6 +8,7 @@ import { useRecoveryContainmentState } from '@application/providers/recovery-con
 import { SET_NEW_PASSWORD_ROUTE } from '@features/auth-callback/auth-callback-routes';
 import { StartupWaitPresentation } from '@application/startup/startup-wait-presentation';
 
+import { RememberIntendedRoute } from './remember-intended-route';
 import { protectedRouteAccess } from './protected-routes';
 import { recoveryRouteAccess } from './recovery-route-access';
 
@@ -53,7 +54,6 @@ import { recoveryRouteAccess } from './recovery-route-access';
 export function ProtectedRouteBoundary({ children }: { readonly children: ReactNode }) {
   const auth = useAuth();
   const access = protectedRouteAccess(auth);
-
   if (access === 'wait') {
     /*
       Nothing yet — and, past the presentation ceiling, something true.
@@ -75,7 +75,22 @@ export function ProtectedRouteBoundary({ children }: { readonly children: ReactN
     return <StartupWaitPresentation />;
   }
   if (access === 'redirect') {
-    return <Redirect href={authRoutes.welcome} />;
+    /*
+      Refused — and, unlike before, the request is not thrown away with the route (issue #62).
+
+      `RememberIntendedRoute` records the path this visitor was reaching for so the authentication
+      landings can return them to it. It renders nothing and decides nothing; the verdict above is
+      unchanged, and it is mounted *only* on this branch so the gate itself stays the pure,
+      effect-free consumer that `recovery-containment-boundary.test.ts` requires it to be.
+
+      Ordered before the redirect so the record exists before the navigation is issued.
+    */
+    return (
+      <>
+        <RememberIntendedRoute />
+        <Redirect href={authRoutes.welcome} />
+      </>
+    );
   }
   /*
     Authority established. One more question before protected content mounts — see below. Composed

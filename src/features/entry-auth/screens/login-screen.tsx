@@ -11,6 +11,7 @@ import {
 
 import { authRoutes, globalRoutes } from '@application/navigation/routes';
 import { useAuthActions } from '@application/providers/auth-provider';
+import { useAuthCallbackActions } from '@application/providers/auth-callback-provider';
 import { isValidEmail } from '@services/auth/mock-auth-service';
 import { readRememberedEmail, writeRememberedEmail } from '@services/auth/session-storage';
 
@@ -47,6 +48,7 @@ import { minimumTouchTargetSize } from '@shared/utils/a11y';
 export function LoginScreen() {
   const router = useRouter();
   const { signIn, signInWithProvider } = useAuthActions();
+  const { takeDestination } = useAuthCallbackActions();
   const submit = useSubmit();
   const { dp } = useEntryAuthMetrics();
 
@@ -87,8 +89,24 @@ export function LoginScreen() {
       })
       .then((ok) => {
         if (ok) {
-          // Replaces the stack: Back from Main Home must not return to the sign-in form.
-          router.replace(globalRoutes.home);
+          /**
+           * Back to whatever the visitor was refused, if anything — issue #62.
+           *
+           * ── Why this is not a second routing decision ────────────────────────
+           * The destination was recorded by `ProtectedRouteBoundary` when it turned this user away,
+           * and it is only ever a route on `RESUMABLE_ROUTE_PREFIXES`. Taking it clears it, so it is
+           * replayed exactly once and a later sign-in in the same process gets the fallback.
+           *
+           * Nothing is skipped by resuming. Every gate the route normally has still runs on arrival:
+           * a session owing its plan choice still meets the chooser, a contained recovery still meets
+           * the password screen, and entitlement still decides whether a paid module opens. This
+           * chooses *where to point*, exactly as `auth-callback-screen.tsx` does for the link flows —
+           * see the note beside the cast there, which applies unchanged.
+           *
+           * `replace`, as before: Back from the resumed route must not return to the sign-in form.
+           */
+          const resumed = takeDestination();
+          router.replace((resumed ?? globalRoutes.home) as Parameters<typeof router.replace>[0]);
         }
       });
   };
