@@ -575,14 +575,18 @@ describe('nothing reaches the ledger before confirmation', () => {
     await settle();
 
     /*
-      The #92 envelope, exactly. A receipt exposes a merchant, a tax number and an image path, and
-      none of them belongs in a transaction — widening the envelope is a migration, not a
-      convenience, and a stored record carrying an unknown key would fail that decoder outright.
+      The #92 envelope, exactly. A receipt exposes a merchant, a tax number, line items and a card
+      fragment, and none of those belongs in a transaction — widening the envelope for them would be
+      a migration rather than a convenience.
 
       `goalId` is on this list because #95 put it there deliberately, and Receipts writes it as
       `null`: a receipt is a purchase, not a contribution to somebody's savings. Its presence here
       is the guard, not a concession — if a receipt ever started attributing money to a goal, this
       assertion is where it would show up.
+
+      `receiptUri` joins it for #101, and it is the *only* thing the receipt contributes: a path to
+      the image the user asked to keep, and nothing that was written on it. This list is what keeps
+      that narrow — a merchant name appearing here is the failure this assertion exists to catch.
     */
     expect(Object.keys((await mounted.ledger()).rows[0] as object).sort()).toEqual([
       'amountMinor',
@@ -594,14 +598,22 @@ describe('nothing reaches the ledger before confirmation', () => {
       'kind',
       'note',
       'occurredOn',
+      'receiptUri',
       'updatedAt',
     ]);
     /*
       `kind` is on this list because #96 put it there, and Receipts writes `'ordinary'`: a receipt
       records a purchase, and nothing about scanning one can decide that money came back. If
       Receipts ever started inferring a refund, this assertion is where it would show up.
+
+      `receiptUri` is `null` here because this draft did not ask to keep the image — the default. A
+      transaction that kept nothing carries no attachment, which is the absence it is.
     */
-    expect((await mounted.ledger()).rows[0]).toMatchObject({ goalId: null, kind: 'ordinary' });
+    expect((await mounted.ledger()).rows[0]).toMatchObject({
+      goalId: null,
+      kind: 'ordinary',
+      receiptUri: null,
+    });
   });
 
   it('refuses an amount the ledger cannot hold, and records nothing', async () => {
@@ -880,7 +892,7 @@ describe('the receipt image is not kept unless asked for', () => {
     expect(stagedFiles()).toEqual([]);
   });
 
-  it('records no path to the kept image in the transaction', async () => {
+  it('records the kept image on the transaction, so it has an owner', async () => {
     const mounted = await capture();
 
     await press(ui().getByTestId('finance-receipts-retain'));
@@ -888,11 +900,45 @@ describe('the receipt image is not kept unless asked for', () => {
     await settle();
 
     /*
-      Deliberately no durable link. #92's envelope has no field for it and adding one is a schema
-      migration whose consequences — an old build reading a new record, a decoder that refuses
-      unknown keys — belong to a decision nobody has made yet.
+      ── This reverses an earlier deliberate deferral, and the reason it is safe ──
+      This case used to assert the *opposite* — that no path was recorded — on the grounds that
+      "adding one is a schema migration whose consequences — an old build reading a new record, a
+      decoder that refuses unknown keys — belong to a decision nobody has made yet."
+
+      Both halves of that were checked before it was changed. This ledger's decoder is
+      `isFinanceTransaction`, which tests the fields it knows over an `isRecord` guard and **has no
+      unknown-key rejection at all**, so neither an old build reading a new record nor the reverse
+      quarantines anything. And the same additive-optional shape has already been applied twice —
+      `goalId` for #95 and `kind` for #96 — each time without moving the schema version, for the
+      reason the ledger's own header states: a bump would quarantine every existing ledger over a
+      field whose absence is already unambiguous.
+
+      What the deferral cost was the contract #101 actually states — "deleting the transaction
+      deletes the image". Without a reference the kept file is an orphan: a random name under the
+      account's directory that no screen can show and no deletion can reach, accumulating for as
+      long as the user keeps receipts. That is a worse privacy outcome than the migration risk it
+      was avoiding.
     */
-    expect(JSON.stringify((await mounted.ledger()).rows)).not.toContain('finance-receipts');
+    const [row] = (await mounted.ledger()).rows as { receiptUri?: string | null }[];
+    expect(typeof row?.receiptUri).toBe('string');
+    const kept = keptFiles();
+    expect(kept).toHaveLength(1);
+    const [name] = kept;
+    expect(name).toBeDefined();
+    /* The reference names the file that actually exists, not merely some string. */
+    expect(row?.receiptUri).toContain(name as string);
+  });
+
+  it('records the attachment only when the image was actually kept', async () => {
+    const mounted = await capture();
+
+    await press(ui().getByTestId('finance-receipts-confirm'));
+    await settle();
+
+    /* Retention off — the default — so there is nothing to point at and the field says so. */
+    const [row] = (await mounted.ledger()).rows as { receiptUri?: string | null }[];
+    expect(row?.receiptUri).toBeNull();
+    expect(keptFiles()).toEqual([]);
   });
 
   it('keeps nothing for a draft that was never confirmed, whatever the toggle said', async () => {

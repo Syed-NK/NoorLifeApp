@@ -19,6 +19,7 @@ import {
   type FinanceBudgetRepository,
 } from '../data/finance-budget.repository';
 import { canChangeFinanceCurrency } from '../data/finance-currency-lock';
+import { discardRetainedImage } from '../receipts/receipt-image-store';
 import { type FinanceGoal, type FinanceGoalDraft } from '../data/finance-goal';
 import {
   createFinanceGoalRepository,
@@ -556,7 +557,49 @@ export function FinanceProvider({
         attributionIsKnown(draft.goalId)
           ? apply(() => repository.updateTransaction(id, draft))
           : Promise.resolve({ kind: 'invalid', fault: 'unknown-goal' } as const),
-      removeTransaction: (id) => apply(() => repository.removeTransaction(id)),
+      /**
+       * Removes the transaction, and with it the receipt image it owned — issue #101.
+       *
+       * ═══════════════════════════════════════════════════════════════════════
+       * ── Why the cascade is here and not in the repository ──────────────────
+       * The ledger domain is pure and knows nothing about a filesystem, which is what lets it be
+       * tested as a function. This layer already holds the owner, so it is the narrowest place that
+       * can see both the record and the directory the image sits in.
+       *
+       * ── Why this cascades where `removeGoal` deliberately does not ─────────
+       * A goal's contributions are *money that moved*, and #95 makes the ledger the single record of
+       * it, so deleting a target may not erase history. A retained receipt image is not history; it
+       * is a derivative of one record, kept because that record was kept. #101's retention contract
+       * says so directly — deleting the transaction deletes the image — and the alternative is a
+       * file the user can never see, never reach and never remove.
+       *
+       * ── Record first, file second ──────────────────────────────────────────
+       * The same ordering the confirm path uses. A filesystem that refuses to delete leaves an image
+       * whose record is gone, which is untidy; deleting the file first and then failing to remove
+       * the record would leave a transaction pointing at nothing, which is a defect in somebody's
+       * money. So the authoritative write goes first and the cleanup after it cannot fail it.
+       *
+       * `discardRetainedImage` re-checks containment against this owner's own directory and refuses
+       * everything else, so even a path that reached storage some other way can only ever delete
+       * inside the account that stored it.
+       */
+      removeTransaction: async (id) => {
+        const attached = owned.ledger.transactions.find(
+          (transaction) => transaction.id === id,
+        )?.receiptUri;
+        const result = await apply(() => repository.removeTransaction(id));
+        if (result.kind === 'ok' && typeof attached === 'string') {
+          /*
+            The owner comes from the repository, not from the session read a second time — the rule
+            `FinanceState.ownerId` states for exactly this case. The repository decides which address
+            the record was written at, so the image has to be looked for under the same answer; taking
+            it from `useAuth` here would scope the delete to a different one whenever the two differ,
+            and the delete would then silently refuse.
+          */
+          discardRetainedImage({ uri: attached }, repository.ownerId);
+        }
+        return result;
+      },
       createBudget: (draft) => applyBudget(() => budgetRepository.createBudget(draft)),
       updateBudget: (id, draft) => applyBudget(() => budgetRepository.updateBudget(id, draft)),
       removeBudget: (id) => applyBudget(() => budgetRepository.removeBudget(id)),
