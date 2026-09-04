@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react-native';
 
+import { AuthCallbackProvider } from '@application/providers/auth-callback-provider';
 import { AuthProvider } from '@application/providers/auth-provider';
 
 import { ENTRY_STEP_COUNT, entryStepIndex } from '../entry-steps';
@@ -58,10 +59,18 @@ describe('the authentication screens', () => {
   });
 
   it('shows no step indicator on Login', async () => {
+    /*
+      Wrapped in the callback boundary as well, in the order `app-providers.tsx` composes them.
+
+      Sign In resumes a destination the authentication boundary recorded (issue #62), so it reads
+      the callback actions. Every other screen here still needs only the session.
+    */
     await render(
-      <AuthProvider>
-        <LoginScreen />
-      </AuthProvider>,
+      <AuthCallbackProvider>
+        <AuthProvider>
+          <LoginScreen />
+        </AuthProvider>
+      </AuthCallbackProvider>,
     );
 
     await waitFor(() => expect(screen.getByTestId('login-screen')).toBeTruthy());
