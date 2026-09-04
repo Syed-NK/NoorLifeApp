@@ -49,6 +49,7 @@ async function renderSheet() {
         onSetRepeatDays={jest.fn()}
         onSetPreReminder={jest.fn()}
         onSetSound={jest.fn()}
+        onSetMode={jest.fn()}
         onOpenSystemSettings={jest.fn()}
         onClose={close}
       />

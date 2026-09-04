@@ -448,9 +448,9 @@ describe('each row opens its own settings, and the choices survive a restart', (
     await fireEvent.press(view.getByTestId('faith-prayer-reminder-open-fajr'));
     await drain(10);
 
-    const control = view.getByTestId('faith-prayer-alert-sheet-fajr-full-adhan');
-    expect(control.props.disabled).toBe(true);
-    expect(control.props.value).toBe(false);
+    /* A radio pill since #178, so the state is read from `accessibilityState` rather than a switch. */
+    const control = view.getByTestId('faith-prayer-alert-sheet-fajr-mode-full-adhan');
+    expect(control.props.accessibilityState).toMatchObject({ selected: false, disabled: true });
   });
 
   it('says on the screen itself that no adhān is available', async () => {

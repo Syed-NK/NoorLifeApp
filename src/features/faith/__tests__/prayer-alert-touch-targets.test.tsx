@@ -56,6 +56,7 @@ async function renderSheet() {
         onSetRepeatDays={() => {}}
         onSetPreReminder={() => {}}
         onSetSound={() => {}}
+        onSetMode={() => {}}
         onOpenSystemSettings={() => {}}
         onClose={() => {}}
       />

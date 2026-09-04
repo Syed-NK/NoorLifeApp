@@ -27,7 +27,16 @@ import {
   type PrayerAlertSettings,
   type PreReminderMinutes,
 } from '../data/notifications/prayer-alert-preferences';
-import { fullAdhanAvailability } from '../data/notifications/prayer-alert-sound';
+import {
+  currentAlertPlatform,
+  modeAvailability,
+  effectiveMode,
+  prayerAlertModeLabel,
+  PRAYER_ALERT_MODES,
+  type ModeAvailability,
+  type PrayerAlertMode,
+} from '../data/notifications/prayer-alert-mode';
+import { licensedAudioLookup } from '../data/notifications/prayer-alert-audio-manifest';
 import type { PrayerKey } from '../data/prayer-times.repository';
 
 /**
@@ -81,6 +90,7 @@ export type PrayerAlertSheetProps = {
   readonly onSetRepeatDays: (days: readonly number[]) => void;
   readonly onSetPreReminder: (minutes: PreReminderMinutes) => void;
   readonly onSetSound: (sound: AlertSoundChoice) => void;
+  readonly onSetMode: (mode: PrayerAlertMode) => void;
   readonly onOpenSystemSettings: () => void;
   readonly onClose: () => void;
 };
@@ -96,6 +106,7 @@ export function PrayerAlertSheet({
   onSetRepeatDays,
   onSetPreReminder,
   onSetSound,
+  onSetMode,
   onOpenSystemSettings,
   onClose,
 }: PrayerAlertSheetProps) {
@@ -104,7 +115,30 @@ export function PrayerAlertSheet({
   const insets = useSafeAreaInsets();
 
   const prayer = isObligatory(time);
-  const adhan = fullAdhanAvailability();
+  /*
+    Availability is asked per mode, for this time and this platform, and computed once per render.
+
+    The platform is read here rather than inside the rules so the whole sheet answers as one device —
+    a mixed answer within a single screen would be a bug nobody could see.
+  */
+  const platform = currentAlertPlatform();
+  const hasLicensedAudio = licensedAudioLookup(platform);
+  const modeAvailabilities: Record<PrayerAlertMode, ModeAvailability> = {
+    'notification-only': modeAvailability({
+      mode: 'notification-only',
+      time,
+      platform,
+      hasLicensedAudio,
+    }),
+    'short-adhan': modeAvailability({ mode: 'short-adhan', time, platform, hasLicensedAudio }),
+    'full-adhan': modeAvailability({ mode: 'full-adhan', time, platform, hasLicensedAudio }),
+  };
+  const effective = effectiveMode({
+    stored: settings.mode,
+    time,
+    platform,
+    hasLicensedAudio,
+  });
   const testID = `faith-prayer-alert-sheet-${time}`;
 
   /*
@@ -249,33 +283,47 @@ export function PrayerAlertSheet({
               />
             </View>
 
-            {/* ── Full adhān: present, disabled, and honest about which reason ── */}
-            <View style={styles.controlRow}>
-              <View
-                style={styles.flex}
-                accessible
-                accessibilityLabel={`Full adhān for ${label}. ${fullAdhanReason(time, adhan.reason)}`}
-              >
-                <ModuleText token="rowLabel" color={moduleNeutrals.textTertiary}>
-                  Full adhān
-                </ModuleText>
-                <ModuleText token="caption" testID={`${testID}-full-adhan-reason`}>
-                  {fullAdhanReason(time, adhan.reason)}
-                </ModuleText>
+            {/* ── How much is played: the four modes, each honest about itself ── */}
+            <View style={{ rowGap: dp(8) }} testID={`${testID}-modes`}>
+              <ModuleText token="rowLabel">Alert</ModuleText>
+              <View style={[styles.options, { columnGap: dp(6), rowGap: dp(6) }]}>
+                {PRAYER_ALERT_MODES.map((mode) => {
+                  const availability = modeAvailabilities[mode];
+                  return (
+                    <Choice
+                      key={mode}
+                      label={prayerAlertModeLabel(mode)}
+                      /*
+                        Selected is the *effective* mode, not the stored one. If a stored audio mode
+                        can no longer be honoured the pill for it is not lit — the screen must never
+                        show an adhān as active while a chime is what plays.
+                      */
+                      selected={effective === mode}
+                      disabled={!editable || !availability.available}
+                      onPress={() => onSetMode(mode)}
+                      testID={`${testID}-mode-${mode}`}
+                    />
+                  );
+                })}
               </View>
-              <Switch
-                value={false}
-                /*
-                  Disabled, and `false` regardless of anything stored. There is no preference behind
-                  this control: a stored "play the adhān" that nothing can honour would be the same
-                  class of defect as the pre-reminder that sat unread in storage for three releases.
-                */
-                disabled
-                accessibilityLabel={`Full adhān for ${label}`}
-                accessibilityState={{ disabled: true, checked: false }}
-                trackColor={{ true: theme.primary, false: moduleNeutrals.border }}
-                testID={`${testID}-full-adhan`}
-              />
+              {/*
+                One reason per unavailable mode, in the order the modes are shown. Each is a
+                different kind of no — sunrise is permanent, the platform limit outlives the licence,
+                and only the licence will change — so they are rendered separately rather than
+                collapsed into a single "unavailable" line.
+              */}
+              {PRAYER_ALERT_MODES.filter((mode) => !modeAvailabilities[mode].available).map(
+                (mode) => (
+                  <ModuleText
+                    key={mode}
+                    token="caption"
+                    color={moduleNeutrals.textTertiary}
+                    testID={`${testID}-mode-${mode}-reason`}
+                  >
+                    {`${prayerAlertModeLabel(mode)}: ${modeAvailabilities[mode].reason}`}
+                  </ModuleText>
+                ),
+              )}
             </View>
 
             {/* ── Repeat days ──────────────────────────────────────────────── */}

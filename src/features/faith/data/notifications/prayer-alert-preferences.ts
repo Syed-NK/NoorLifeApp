@@ -1,4 +1,9 @@
 import { OBLIGATORY_PRAYERS, type PrayerKey } from '../prayer-times.repository';
+import {
+  DEFAULT_PRAYER_ALERT_MODE,
+  isPrayerAlertMode,
+  type PrayerAlertMode,
+} from './prayer-alert-mode';
 
 /**
  * What the user has chosen for each of the day's six times.
@@ -215,6 +220,21 @@ export type PrayerAlertSettings = {
   readonly repeatDays: readonly number[];
   readonly preReminderMinutes: PreReminderMinutes;
   readonly sound: AlertSoundChoice;
+  /**
+   * How much of the call to prayer this alert plays — issue #178.
+   *
+   * ── Why this is beside `sound` rather than folded into it ─────────────────
+   * They answer different questions and both remain true at once. `mode` is *how much is played*;
+   * `sound` is whether the notification-only mode makes a system sound or is silent. Folding
+   * "silent" into the mode enum would have made a user who wants a quiet reminder pick between
+   * silence and an adhān, which are not alternatives.
+   *
+   * Stored as a preference and re-checked on read. `effectiveMode` decides what actually runs,
+   * because availability can fall — a restored backup, a platform that cannot honour the mode, a
+   * build without the licence — and a stored `full-adhan` that nothing can play must degrade to a
+   * notification rather than let the screen claim an adhān is playing.
+   */
+  readonly mode: PrayerAlertMode;
 };
 
 /**
@@ -233,6 +253,8 @@ export function defaultAlertSettings(time: PrayerKey): PrayerAlertSettings {
     repeatDays: [],
     preReminderMinutes: 0,
     sound: 'system-default',
+    /* Exactly today's behaviour, so an upgrade changes nothing a user can hear. */
+    mode: DEFAULT_PRAYER_ALERT_MODE,
   };
 }
 
@@ -284,6 +306,13 @@ export function normaliseAlertSettings(value: unknown): PrayerAlertSettings | nu
       ? record.preReminderMinutes
       : base.preReminderMinutes,
     sound: isAlertSoundChoice(record.sound) ? record.sound : base.sound,
+    /*
+      Absent is the pre-#178 record and reads as the default, which is the behaviour it already had.
+      An unrecognised value is *not* guessed at: it becomes the default too, because a mode this
+      build cannot name is a mode it certainly cannot play, and defaulting is the direction that
+      cannot invent a sound.
+    */
+    mode: isPrayerAlertMode(record.mode) ? record.mode : base.mode,
   };
 }
 

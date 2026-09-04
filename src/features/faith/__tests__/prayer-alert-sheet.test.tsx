@@ -49,6 +49,7 @@ type Handlers = {
   days: jest.Mock;
   pre: jest.Mock;
   sound: jest.Mock;
+  mode: jest.Mock;
   settings: jest.Mock;
   close: jest.Mock;
 };
@@ -59,6 +60,7 @@ function handlers(): Handlers {
     days: jest.fn(),
     pre: jest.fn(),
     sound: jest.fn(),
+    mode: jest.fn(),
     settings: jest.fn(),
     close: jest.fn(),
   };
@@ -89,6 +91,7 @@ async function renderSheet(
         onSetRepeatDays={on.days}
         onSetPreReminder={on.pre}
         onSetSound={on.sound}
+        onSetMode={on.mode}
         onOpenSystemSettings={on.settings}
         onClose={on.close}
       />
@@ -108,25 +111,63 @@ beforeEach(async () => {
 // The full adhān row
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('the full adhān row explains an absence rather than hiding it', () => {
-  it('is disabled and off for a prayer, with the licensing reason', async () => {
+describe('the mode selector explains each absence rather than hiding it', () => {
+  /*
+    ── Why these read pills rather than a switch ──────────────────────────────
+    The single "Full adhān" switch became a four-mode selector for #178, so the assertions moved
+    from `props.value` to the radio's selected/disabled state. The *intent* is unchanged and is the
+    reason this suite exists: an audio mode must be visibly present, unselectable, and accompanied by
+    a reason that says which kind of no it is.
+  */
+  it('offers Notification only as the selected, enabled mode', async () => {
     await renderSheet();
 
-    const control = screen.getByTestId(id('fajr', '-full-adhan'));
-    expect(control.props.value).toBe(false);
-    expect(control.props.disabled).toBe(true);
-    expect(String(screen.getByTestId(id('fajr', '-full-adhan-reason')).props.children)).toMatch(
-      /no licensed adh/i,
-    );
+    const notificationOnly = screen.getByTestId(id('fajr', '-mode-notification-only'));
+    expect(notificationOnly.props.accessibilityState).toMatchObject({
+      selected: true,
+      disabled: false,
+    });
   });
 
-  it('gives sunrise a different reason, which will still be true after a licence', async () => {
+  it('shows both audio modes disabled, with the licensing reason', async () => {
+    await renderSheet();
+
+    for (const mode of ['short-adhan', 'full-adhan']) {
+      const pill = screen.getByTestId(id('fajr', `-mode-${mode}`));
+      expect(pill.props.accessibilityState).toMatchObject({ selected: false, disabled: true });
+    }
+    /* Short adhān waits only on a licence, so that is what it says. */
+    expect(
+      String(screen.getByTestId(id('fajr', '-mode-short-adhan-reason')).props.children),
+    ).toMatch(/no licensed adh/i);
+  });
+
+  it('gives full adhān a platform reason, not a licensing one', async () => {
+    await renderSheet();
+
+    /*
+      The distinction #178 turns on. Full adhān is not merely unlicensed — on iOS it cannot be
+      honoured through a notification at all, and on Android this build has no mechanism for it. That
+      reason must survive #42 closing, so it must not mention a licence.
+    */
+    const reason = String(screen.getByTestId(id('fajr', '-mode-full-adhan-reason')).props.children);
+    expect(reason).not.toMatch(/no licensed adh/i);
+    expect(reason).toMatch(/background on Android yet|cannot play a full adh/i);
+  });
+
+  it('gives sunrise a reason that will still be true after a licence', async () => {
     await renderSheet({ time: 'sunrise', label: 'Sunrise', settings: SUNRISE });
 
-    const reason = String(screen.getByTestId(id('sunrise', '-full-adhan-reason')).props.children);
-    expect(reason).toMatch(/time marker, not a prayer/i);
-    expect(reason).not.toMatch(/not available yet|licensed/i);
-    expect(screen.getByTestId(id('sunrise', '-full-adhan')).props.disabled).toBe(true);
+    for (const mode of ['short-adhan', 'full-adhan']) {
+      const reason = String(
+        screen.getByTestId(id('sunrise', `-mode-${mode}-reason`)).props.children,
+      );
+      expect(reason).toMatch(/time marker, not a prayer/i);
+      expect(reason).not.toMatch(/not available yet|licensed/i);
+      expect(
+        screen.getByTestId(id('sunrise', `-mode-${mode}`)).props.accessibilityState,
+      ).toMatchObject({ disabled: true });
+    }
   });
 
   it('separates the two reasons at the source', () => {
@@ -135,12 +176,24 @@ describe('the full adhān row explains an absence rather than hiding it', () => 
     expect(fullAdhanReason('sunrise', unavailable)).not.toBe(unavailable);
   });
 
-  it('never offers it as something that can be switched on today', async () => {
+  it('never offers an audio mode as selectable, at any time of day', async () => {
     for (const time of NOTIFIABLE_TIMES) {
       await renderSheet({ time, label: time, settings: alertSettingsFixture({ on: [time] })[0] });
-      expect(screen.getByTestId(id(time, '-full-adhan')).props.disabled).toBe(true);
-      expect(screen.getByTestId(id(time, '-full-adhan')).props.value).toBe(false);
+      for (const mode of ['short-adhan', 'full-adhan']) {
+        expect(
+          screen.getByTestId(id(time, `-mode-${mode}`)).props.accessibilityState,
+        ).toMatchObject({ selected: false, disabled: true });
+      }
     }
+  });
+
+  it('does not call the setter when a disabled audio mode is pressed', async () => {
+    const on = await renderSheet();
+
+    await fireEvent.press(screen.getByTestId(id('fajr', '-mode-full-adhan')));
+
+    /* A disabled Pressable fires nothing, which is what keeps an unplayable mode out of storage. */
+    expect(on.mode).not.toHaveBeenCalled();
   });
 });
 
@@ -335,7 +388,9 @@ describe('the sheet states what it cannot promise', () => {
       '-exactness',
       '-battery',
       '-sound-note',
-      '-full-adhan-reason',
+      /* The mode reasons replaced the single full-adhān caption for #178. */
+      '-mode-short-adhan-reason',
+      '-mode-full-adhan-reason',
     ]) {
       expect(String(screen.getByTestId(id('fajr', suffix)).props.children)).not.toMatch(/\balarm/i);
     }
