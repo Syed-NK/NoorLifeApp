@@ -3,9 +3,13 @@
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * ── Why Finance may not import the recogniser directly ─────────────────────
- * Exactly one file in this repository imports `@react-native-ml-kit/text-recognition`, and it is the
- * adapter beside this one. Everything else — the review screen, the parser, the ledger — talks to
- * this type.
+ * Exactly one file in this repository imports the recogniser — `device-receipt-ocr.ts`, the adapter
+ * beside this one, which loads this project's own `modules/noorlife-text-recognition`. Everything
+ * else — the review screen, the parser, the ledger — talks to this type.
+ *
+ * The recogniser it names has changed once already: `@react-native-ml-kit/text-recognition` was
+ * removed because it declared all five OCR scripts on both platforms with no way to narrow them.
+ * That the swap touched one file and no caller is the seam doing its job.
  *
  * That is not tidiness. The vendor SDK returns blocks, lines, elements, corner points, bounding
  * frames and recognised-language guesses for every word on a receipt, and a screen holding that

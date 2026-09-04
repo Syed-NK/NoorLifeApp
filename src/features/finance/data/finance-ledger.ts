@@ -59,6 +59,54 @@ export const MAX_FINANCE_TRANSACTIONS = 5000;
 const MAX_CATEGORY_LENGTH = 40;
 const MAX_NOTE_LENGTH = 280;
 
+/**
+ * The longest receipt path this ledger will store.
+ *
+ * A sandbox path is well under it. A bound rather than a guess, for the same reason the sanitiser in
+ * `pending-destination.ts` carries one: an unbounded string reaching storage is a string somebody
+ * else chose the length of.
+ */
+const MAX_RECEIPT_URI_LENGTH = 512;
+
+/** Codepoints no path this app generates can contain. */
+const RECEIPT_URI_SPACE = 0x20;
+const RECEIPT_URI_DELETE = 0x7f;
+const RECEIPT_URI_BACKSLASH = 0x5c;
+
+/**
+ * Whether a receipt attachment is a shape this app could have written — issue #101.
+ *
+ * A local `file://` URI, bounded, with no traversal segment and no character a path this app
+ * generated could contain. The stored name is 32 hex characters and an extension, so anything
+ * carrying `..`, a control character, a backslash or a query fragment did not come from
+ * `retainReceiptImage` and is refused rather than stored and later handed to a delete.
+ *
+ * Shape only. Containment inside the account's own directory is enforced where the filesystem is
+ * known — see the fault's note.
+ */
+function isReceiptAttachment(value: string): boolean {
+  if (value.length === 0 || value.length > MAX_RECEIPT_URI_LENGTH) {
+    return false;
+  }
+  if (!value.startsWith('file:///')) {
+    return false;
+  }
+  if (value.includes('?') || value.includes('#')) {
+    return false;
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (
+      code <= RECEIPT_URI_SPACE ||
+      code === RECEIPT_URI_DELETE ||
+      code === RECEIPT_URI_BACKSLASH
+    ) {
+      return false;
+    }
+  }
+  return !value.split('/').some((segment) => segment === '..' || segment === '.');
+}
+
 /** `finance.` plus a v4-shaped UUID, so an id cannot be a sequence a caller invented. */
 const TRANSACTION_ID_PATTERN = /^finance\.[0-9a-f-]{36}$/i;
 
@@ -112,6 +160,37 @@ export type FinanceTransaction = {
    * the same reasoning `goalId` records above.
    */
   readonly kind?: FinanceRecordFlavour;
+  /**
+   * The retained receipt image this transaction was recorded from — issue #101.
+   *
+   * ═══════════════════════════════════════════════════════════════════════════
+   * ── Why this belongs in the record rather than in an index beside it ───────
+   * #101's retention contract is that "deleting the transaction deletes the image". That is a
+   * statement about one thing owning another, and the only way to keep it true is for the owner to
+   * hold the reference. A second store keyed by transaction id would be two writes that can
+   * disagree — the exact objection `finance-provider` already records against `addContribution`,
+   * where "a method that wrote to two stores could not be atomic".
+   *
+   * Without it a kept image is an orphan: a random filename under the account's retention directory
+   * that nothing points at, that no screen can show, and that no deletion can ever reach. Receipts
+   * are among the most sensitive things this app holds, and an unbounded store of them with no
+   * deletion path is a worse privacy outcome than not keeping them at all.
+   *
+   * ── It is a reference the user created, which is the test this schema applies ──
+   * The header note refuses `syncedAt`, `remoteId`, `dirty` and `deviceId` because each anticipates
+   * a server. This anticipates nothing: it is a local file the user explicitly asked to keep,
+   * recorded for the same reason `goalId` is — so the thing they created can be found again.
+   *
+   * Optional and permanently so, exactly as `goalId` and `kind` are. Records written before
+   * Receipts existed decode unchanged and read as unattached, so the schema version does not move
+   * and no existing ledger is quarantined over a field whose absence is already unambiguous.
+   *
+   * **Never an accounting input.** No total, budget, goal progress or refund effect reads it, which
+   * `finance-receipt-attachment.test.ts` asserts by attaching one and comparing every derived
+   * figure.
+   * ═══════════════════════════════════════════════════════════════════════════
+   */
+  readonly receiptUri?: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
@@ -152,6 +231,14 @@ export type FinanceDraft = {
    * ordinary expense by editing its note.
    */
   readonly kind?: FinanceRecordFlavour;
+  /**
+   * The retained receipt image to attach — issue #101. Three-valued for the same reason.
+   *
+   * Omitting the key preserves an existing attachment, so editing an amount from the Spending
+   * screen — which knows nothing about receipts — cannot detach the image and strand it. `null`
+   * detaches deliberately.
+   */
+  readonly receiptUri?: string | null;
 };
 
 export type FinanceFault =
@@ -176,6 +263,15 @@ export type FinanceFault =
   /** A refund attributed to a savings goal. #96 defines no such combination, so it is refused. */
   | 'refund-cannot-be-savings'
   | 'not-found'
+  /**
+   * The receipt attachment is not a shape this app could have written — issue #101.
+   *
+   * Shape only, like `invalid-goal`. Whether the file exists, and whether it sits inside *this*
+   * account's retention directory, are questions about the filesystem this module must know nothing
+   * about; `discardRetainedImage` answers the second one and refuses everything else, so a stored
+   * path can never reach outside the account that stored it however it got here.
+   */
+  | 'invalid-receipt'
   | 'ledger-full';
 
 /**
@@ -193,6 +289,7 @@ export type ValidatedFinanceDraft = {
   readonly note: string | null;
   readonly goalId?: string | null;
   readonly kind?: FinanceRecordFlavour;
+  readonly receiptUri?: string | null;
 };
 
 export type FinanceValidation =
@@ -262,6 +359,18 @@ export function validateFinanceDraft(draft: FinanceDraft): FinanceValidation {
       return { kind: 'invalid', fault: 'refund-cannot-be-savings' };
     }
   }
+  if (
+    draft.receiptUri !== undefined &&
+    draft.receiptUri !== null &&
+    !isReceiptAttachment(draft.receiptUri)
+  ) {
+    /*
+      Refused rather than dropped. Silently discarding a malformed attachment would record the
+      transaction and strand the image the user asked to keep, which is the orphan this field exists
+      to prevent.
+    */
+    return { kind: 'invalid', fault: 'invalid-receipt' };
+  }
   return {
     kind: 'valid',
     draft: {
@@ -273,6 +382,7 @@ export function validateFinanceDraft(draft: FinanceDraft): FinanceValidation {
       /* Spread rather than assigned, so an omitted key stays omitted rather than becoming a value. */
       ...(draft.kind === undefined ? {} : { kind: draft.kind }),
       ...(draft.goalId === undefined ? {} : { goalId: draft.goalId }),
+      ...(draft.receiptUri === undefined ? {} : { receiptUri: draft.receiptUri }),
     },
   };
 }
@@ -303,6 +413,8 @@ export function createFinanceTransaction(
     goalId: draft.goalId ?? null,
     /* Absent means ordinary, so a create stores the flavour it was given or the default. */
     kind: draft.kind ?? 'ordinary',
+    /* A create has nothing to preserve either: no attachment is stored as the absence it is. */
+    receiptUri: draft.receiptUri ?? null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -329,6 +441,12 @@ export function reviseFinanceTransaction(
     goalId: draft.goalId === undefined ? (existing.goalId ?? null) : draft.goalId,
     /* Same three-valued preservation: a draft that says nothing leaves a refund a refund. */
     kind: draft.kind === undefined ? (existing.kind ?? 'ordinary') : draft.kind,
+    /*
+      And again for the receipt — issue #101. Editing an amount from the Spending screen sends a
+      draft with no `receiptUri`, and dropping the attachment there would strand the kept image
+      under a name nothing points at any more.
+    */
+    receiptUri: draft.receiptUri === undefined ? (existing.receiptUri ?? null) : draft.receiptUri,
     updatedAt: at.toISOString(),
   };
 }
@@ -373,6 +491,17 @@ export function isFinanceTransaction(value: unknown): value is FinanceTransactio
     */
     (value.kind !== 'refund' ||
       (value.direction === 'expense' && (value.goalId === undefined || value.goalId === null))) &&
+    /*
+      Absent, `null`, or a path this app could have written — issue #101. Absent is the pre-Receipts
+      record and reads as unattached, on the same terms as `goalId` above.
+
+      A malformed one is **quarantined, not dropped**. Accepting the record and discarding the field
+      would leave a kept image that nothing points at — the orphan the field exists to prevent — and
+      the record itself is evidence something wrote a path this app does not generate.
+    */
+    (value.receiptUri === undefined ||
+      value.receiptUri === null ||
+      (typeof value.receiptUri === 'string' && isReceiptAttachment(value.receiptUri))) &&
     /*
       A record may not carry a currency — issue #96: "a record whose currency does not match the
       ledger's ... must be quarantined, never coerced."

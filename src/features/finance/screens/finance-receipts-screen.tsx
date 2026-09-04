@@ -88,6 +88,12 @@ import type { ReceiptSourceKind, ReceiptSourcePort } from '../receipts/receipt-s
  * defaults to off, and — because retention is confirmed by *recording the transaction* — a kept copy
  * whose transaction is abandoned is removed again.
  *
+ * A kept copy that *is* confirmed is recorded on the transaction as `receiptUri`, which is what gives
+ * it an owner and a lifetime: deleting the transaction deletes the image with it, as #101's retention
+ * contract requires. Before that reference existed a kept image was unreachable — nothing pointed at
+ * it, no screen could show it and no deletion could find it — which is a worse privacy outcome than
+ * not keeping one at all.
+ *
  * Cleanup runs **after** the ledger write and cannot fail it. A filesystem that refuses to delete a
  * temporary file is an inconvenience; a transaction lost or duplicated because of one would be a
  * defect in somebody's money.
@@ -353,6 +359,18 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
       occurredOn,
       category: category.trim() === '' ? null : category.trim(),
       note: note.trim() === '' ? null : note.trim(),
+      /*
+        The attachment, so the kept image belongs to something — issue #101.
+
+        Without it a retained copy is an orphan: a random name under the account's directory that no
+        screen can show and no deletion can reach. Recording the reference is what makes #101's
+        retention contract true, and it is the only reason the image can be removed with the
+        transaction later.
+
+        `null` when nothing was kept, which is the absence it is rather than an omission — a create
+        has no previous attachment to preserve.
+      */
+      receiptUri: kept?.uri ?? null,
     });
 
     if (result.kind !== 'ok') {
@@ -563,7 +581,7 @@ function ReceiptsBody({ ocr, source }: FinanceReceiptsScreenProps) {
               />
               <ModuleText token="caption" color={moduleNeutrals.textSecondary}>
                 {retain
-                  ? 'The image will be kept inside NoorLife on this device, in a folder only your account uses. It is never uploaded. Deleting the transaction later does not delete this image.'
+                  ? 'The image will be kept inside NoorLife on this device, in a folder only your account uses. It is never uploaded. Deleting the transaction later deletes this image with it.'
                   : 'Off. The photo NoorLife made is deleted once you record this, and if you cancel.'}
               </ModuleText>
             </View>
